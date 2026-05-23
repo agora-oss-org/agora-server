@@ -24,8 +24,9 @@ migration `0009`) — blocking `validate()` + fire-and-forget `broadcast()`, HMA
 `*.created.complete` broadcasts. The lib makes every remaining event a ~3-line wire-up.
 
 **Remaining — finish the event coverage (priority order):**
-- [ ] **`notification.created` broadcast** — the push-notification bridge (FCM/APNs/Expo). Highest
-      value; depends on notification fan-out (P1 below). Emit from wherever notifications are created.
+- [x] **`notification.created` broadcast** — the push-notification bridge (FCM/APNs/Expo). Emitted
+      from the single `insert()` in `lib/notifications.ts`, so every fanned-out notification fires it
+      (no-op unless the project subscribes). Now that fan-out exists (P1, done) this covers all types.
 - [ ] **Validation gates for the rest:** `comment.updated`, `entity.updated`, `space.created`/`space.updated`,
       `message.created` (chat send), `user.created`/`user.updated` (sign-up / profile update). Same
       `await validate(...)` → 403 pattern already used in `entities.ts`/`comments.ts`.
@@ -37,14 +38,18 @@ migration `0009`) — blocking `validate()` + fire-and-forget `broadcast()`, HMA
 
 ## P1 — SDK features that are missing/broken
 
-- [ ] **Notification fan-out (biggest gap).** Only `connections.ts` creates notifications
-      (connection-request/accepted). The other ~15 `AppNotificationType`s are never generated. Wire
-      inserts into the write paths:
-  - comment create → `entity-comment` (entity author), `comment-reply` (parent author), `*-mention` (mentioned users) — `routes/comments.ts`
-  - reaction toggle → `entity-reaction`/`comment-reaction` + the 4 `*-milestone-*` types — `routes/entities.ts`/`comments.ts`
-  - follow → `new-follow` — `routes/users.ts`/`follows.ts`
+- [x] **Notification fan-out (DONE).** `lib/notifications.ts` is the single fan-out point; helpers
+      wired into every write path. Live-verified end-to-end via `scripts/notifications-e2e.mjs`
+      (entity-comment, comment-reply, entity-upvote, entity-reaction, new-follow + self-notify guard
+      + metadata shape). Covered:
+  - comment create → `entity-comment` (entity author), `comment-reply` (parent author), `comment-mention` (mentioned, deduped) — `routes/comments.ts`
+  - entity create → `entity-mention` (mentioned users) — `routes/entities.ts`
+  - reaction toggle (active only; `upvote`→`*-upvote`, else `*-reaction`) + the 4 `*-milestone-*` types (thresholds in `MILESTONES`) — `routes/entities.ts`/`comments.ts`
+  - follow → `new-follow` (new follows only) — `routes/users.ts`
   - space approve → `space-membership-approved` — `routes/spaces.ts`
-  - (optional) deliver live via socket.io.
+  - Not delivered over socket.io (the SDK's socket contract has chat events only — matches Replyke; clients poll the inbox).
+  - ⚠️ Untested live (logic + typecheck only): the 4 milestone types (need ≥10 reactions) and
+    `space-membership-approved` (needs a pending join). Add to integration coverage.
 - [ ] **OAuth provider sign-in.** `/oauth/authorize` + `/oauth/link` + callback are NOT implemented
       (only `/oauth/identities` list/delete). The SDK's `useOAuthSignIn` calls these. Wire Supabase
       `signInWithOAuth` (or provider redirect) → mint Agora tokens on callback. (`routes/misc.ts` + `auth.ts`)
@@ -98,12 +103,16 @@ Isolation is by `project_id` — each test mints its own project + users and cas
 - **Unit (32):** `shape` (shapeUser/Entity/Comment, Date→ISO, deleted-comment blanking,
   parseInclude, generateShortId) · `validation` (parseBody + `{feature}/invalid-body` envelope) ·
   `envelope` (paginate/readPagination clamping) · `errors` (status/code mapping).
-- **Integration (32):** entities CRUD + reaction toggle (`toggle_reaction` RPC + `reaction_counts`
+- **Integration (44):** entities CRUD + reaction toggle (`toggle_reaction` RPC + `reaction_counts`
   trigger) + `replies_count` trigger + ownership 403 / scoping 404 / auth 401 · **auth token
   rotation** (rotate / 30s grace / reuse-revokes-family / sign-out) · **chat realtime** (handshake
   auth, message:created + message:reaction fan-out, membership-gated room) · **spaces** (roles,
   approval state machine, members_count trigger, moderation gating, owner-only delete) ·
-  **connections** (full none→pending→connected/declined machine, directional status, counts).
+  **connections** (full none→pending→connected/declined machine, directional status, counts) ·
+  **notifications (12)** — entity-comment/comment-reply/comment-mention/entity-mention fan-out +
+  self-notify guard + mention dedupe + reaction upvote-vs-reaction (add-only, not toggle-off) +
+  comment-reaction + 10-vote milestone-specific/-total (lastThreeUsers + reactionCounts) +
+  new-follow (fresh-only) + space-membership-approved + inbox list/count/mark-as-read/mark-all + 404.
 
 ### P1 — high-risk, untested
 - [ ] **Comment reactions** — `toggle_reaction` with `target=comment` (no `refresh_entity_score`).
@@ -111,8 +120,9 @@ Isolation is by `project_id` — each test mints its own project + users and cas
       sub-collections · per-user ownership scoping.
 - [ ] **Users / follows graph** — follow/unfollow edge · followers/following lists + counts ·
       `check-username` · profile PATCH ownership.
-- [ ] **Notifications** — list + unread count + mark(-all)-as-read; assert connection-request/
-      accepted rows get created (broader fan-out is still an unbuilt P1 feature).
+- [x] **Notifications** — fan-out across all write paths + inbox list/count/mark(-all)-as-read,
+      covered in `test/integration/notifications.test.ts` (12 tests). Connection-request/accepted
+      row creation is still asserted only indirectly; add explicit assertions to `connections.test.ts`.
 
 ### P2 — fidelity / depth
 - [ ] **Entities feed** — hot/new sort + spaceId/userId/keywords filter ordering & pagination ·
