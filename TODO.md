@@ -166,13 +166,13 @@ Isolation is by `project_id` — each test mints its own project + users and cas
       createCollection/addEntity, createReport, signUp/signIn/changePassword/email/verifyEmail/oauth/externalUser).
 
 ### P2 — fidelity / depth (partial domains)
-- [ ] **Comment reactions** — `toggle_reaction` with `target=comment` (no `refresh_entity_score`).
-- [ ] **Entities feed** — hot/new sort + spaceId/userId/keywords filter ordering & pagination ·
-      drafts · by-foreign-id/by-short-id · publish · PATCH update. (Meaningful hot-rank assertions
-      need ≥~10 net votes — `hot_score` is logarithmic.)
-- [ ] **Comments** — one-level threaded list via `parentId` · soft-delete content blanking · by-foreign-id.
-- [ ] **Spaces depth** — rules CRUD + reorder · digest-config (admin-gated, secret masking) ·
-      breadcrumb/children · reparenting cycle guard (self/descendant → 400) · by-slug/check-slug · leave.
+- [x] **Comment reactions** — `target=comment` toggle (like→1→0, userReaction) in `comments.test.ts`.
+- [x] **Entities feed** — covered by `entity-filters.test.ts` (10) from the feed-filters feature work.
+- [x] **Comments** — threaded `parentId` list + parent `replies_count` trigger, by-foreign-id, PATCH
+      ownership, soft-delete hides the row. (`comments.test.ts`)
+- [x] **Spaces depth** — reparenting cycle guard (self/descendant → 400) + valid move/detach,
+      breadcrumb/children, rules CRUD + reorder, digest-config (admin-gated + secret masking),
+      slug lookup/availability, leave. (`spaces-depth.test.ts`)
 - [ ] **Chat depth** — message edit/delete/remove events · typing relay · member:joined/left ·
       conversation:updated/deleted · thread:reply_count · read-state · group conversations ·
       non-member POST → 403.
