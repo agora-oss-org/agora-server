@@ -78,13 +78,67 @@ migration `0009`) — blocking `validate()` + fire-and-forget `broadcast()`, HMA
 - [ ] **RLS write policies** — only public-read (Option A) done; needed only if the Data API is
       enabled for writes (currently server-only via Drizzle).
 - [ ] **Refresh-token cleanup** — expired rows in `refresh_tokens` accrue; add a sweep.
-- [ ] **Finish + run the vitest integration suite** (`server/test/`, `app.ts`, `vitest.integration.config.ts` — in progress).
+- [x] **Vitest harness up + running** (`server/test/`, `app.ts`, `vitest.integration.config.ts`).
+      Ongoing coverage tracked in the **Testing** section below.
 - [ ] **🔐 Rotate exposed secrets** — Voyage key, Supabase secret/anon keys, DB password (all hit chat transcripts).
 - [ ] **Deploy** — host the server (`createApp` split is serverless-ready); set the SDK/demo
       `VITE_API_BASE_URL`; configure Supabase Auth SMTP for real emails.
 - [ ] **Push** — add a remote to the `agora` server repo + push; push SDK to `origin` (private mirror).
 - [ ] **SDK** — verify `react-native` + `expo` packages; decide publish vs workspace.
 - [ ] **Cleanup** — throwaway demo rows (Alpha/Beta/Gamma/Delta/test spaces, test comments).
+
+## Testing
+
+Harness: **vitest** — unit (`src/**/*.test.ts`, no DB) + integration (`test/integration/**`,
+real cloud Postgres via `TEST_DATABASE_URL`; in-process `app.request()`, plus a booted server
+for socket.io). Commands: `npm test` · `npm run test:integration` · `npm run typecheck`.
+Isolation is by `project_id` — each test mints its own project + users and cascade-cleans.
+
+### ✅ Covered
+- **Unit (32):** `shape` (shapeUser/Entity/Comment, Date→ISO, deleted-comment blanking,
+  parseInclude, generateShortId) · `validation` (parseBody + `{feature}/invalid-body` envelope) ·
+  `envelope` (paginate/readPagination clamping) · `errors` (status/code mapping).
+- **Integration (32):** entities CRUD + reaction toggle (`toggle_reaction` RPC + `reaction_counts`
+  trigger) + `replies_count` trigger + ownership 403 / scoping 404 / auth 401 · **auth token
+  rotation** (rotate / 30s grace / reuse-revokes-family / sign-out) · **chat realtime** (handshake
+  auth, message:created + message:reaction fan-out, membership-gated room) · **spaces** (roles,
+  approval state machine, members_count trigger, moderation gating, owner-only delete) ·
+  **connections** (full none→pending→connected/declined machine, directional status, counts).
+
+### P1 — high-risk, untested
+- [ ] **Comment reactions** — `toggle_reaction` with `target=comment` (no `refresh_entity_score`).
+- [ ] **Collections** — `entity_count` trigger on add/remove · `is-entity-saved` · nested
+      sub-collections · per-user ownership scoping.
+- [ ] **Users / follows graph** — follow/unfollow edge · followers/following lists + counts ·
+      `check-username` · profile PATCH ownership.
+- [ ] **Notifications** — list + unread count + mark(-all)-as-read; assert connection-request/
+      accepted rows get created (broader fan-out is still an unbuilt P1 feature).
+
+### P2 — fidelity / depth
+- [ ] **Entities feed** — hot/new sort + spaceId/userId/keywords filter ordering & pagination ·
+      drafts · by-foreign-id/by-short-id · publish · PATCH update. (Note: meaningful hot-rank
+      assertions need ≥~10 net votes — `hot_score` is logarithmic.)
+- [ ] **Comments** — one-level threaded list via `parentId` · soft-delete content blanking through
+      the route · by-foreign-id.
+- [ ] **Spaces depth** — rules CRUD + reorder · digest-config (admin-gated, secret masking) ·
+      breadcrumb/children · reparenting cycle guard (self/descendant → 400) · by-slug/check-slug · leave.
+- [ ] **Reports** — create (entity/comment/message) · moderated list · in-space resolution.
+- [ ] **Chat depth** — message edit/delete/remove events · typing relay · member:joined/left ·
+      conversation:updated/deleted · thread:reply_count · read-state · group conversations ·
+      non-member POST → 403.
+- [ ] **Unit: remaining shapers + libs** — shapeSpace/Rule/AuthUser/File/Report + chat shapers ·
+      SSRF guard in `utils/get-metadata` · webhook HMAC sign/verify (`lib/webhooks.ts`).
+
+### E2E / external-service (opt-in; need real creds)
+- [ ] **Auth (Supabase-backed)** — sign-up / sign-in / change-password / verify-email / password
+      reset. (Rotation is already covered without Supabase.)
+- [ ] **External auth** — RS256 `verify-external-user` (set a project public key, mint a test JWT).
+- [ ] **Search** — `/search/content` + `/ask` (Voyage embed + LLM). `/search/spaces` + `/users`
+      are plain ILIKE — no key needed, promote those to P2.
+- [ ] **Storage** — `/storage` upload + `/storage/images` variants (Supabase Storage bucket).
+- [ ] **Webhooks** — validate (allow/deny/unavailable) + `*.complete` broadcast HMAC delivery
+      (against a live test endpoint).
+- [ ] **OAuth sign-in** — once `/oauth/authorize` exists (P1 feature).
 
 ## Notes
 - The server is the trust boundary (Drizzle direct over the pooler; supabase-js only for Auth/Storage).
