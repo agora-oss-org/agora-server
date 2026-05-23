@@ -8,7 +8,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { db } from "../db/index.js";
 import {
   reactions, profiles, spaces, spaceRules, collections, appNotifications, reports,
-  conversations, conversationMembers, chatMessages,
+  conversations, conversationMembers, chatMessages, files,
 } from "../db/schema/index.js";
 
 // ─── Reaction taxonomy (must match db enum + SDK exactly) ────────────────────
@@ -404,6 +404,30 @@ export function shapeReport(row: ReportRow) {
     resolvedAt: iso(row.resolvedAt),
     resolvedById: row.resolvedById ?? null,
     createdAt: iso(row.createdAt)!,
+  };
+}
+
+// ─── file shaper ─────────────────────────────────────────────────────────────
+type FileRow = typeof files.$inferSelect;
+
+export function shapeFile(row: FileRow) {
+  return {
+    id: row.id,
+    projectId: row.projectId,
+    userId: row.userId ?? null,
+    entityId: row.entityId ?? null,
+    commentId: row.commentId ?? null,
+    chatMessageId: row.chatMessageId ?? null,
+    spaceId: row.spaceId ?? null,
+    type: row.type,
+    originalPath: row.originalPath,
+    originalSize: row.originalSize,
+    originalMimeType: row.originalMimeType ?? null,
+    position: row.position,
+    metadata: (row.metadata as Record<string, unknown>) ?? {},
+    image: (row.image as Record<string, unknown>) ?? undefined,
+    createdAt: iso(row.createdAt)!,
+    updatedAt: iso(row.updatedAt)!,
   };
 }
 

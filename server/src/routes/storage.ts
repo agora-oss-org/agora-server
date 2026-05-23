@@ -1,8 +1,95 @@
-// /v7/:projectId/storage/*  (uploads land in Supabase Storage; rows in `files`)
+// /v7/:projectId/storage/*  — uploads land in Supabase Storage; rows in `files`.
 import { Hono } from "hono";
+import { randomUUID } from "node:crypto";
+import sharp from "sharp";
 import type { Variables } from "../http/context.js";
 import { Errors } from "../http/errors.js";
+import { requireAuth } from "../middleware/auth.js";
+import { db } from "../db/index.js";
+import { files } from "../db/schema/index.js";
+import { uploadBytes, inferFileType } from "../lib/storage.js";
+import { shapeFile } from "../lib/shape.js";
+
+// Pull the uploaded File + optional associations out of a multipart body.
+async function readUpload(c: any) {
+  const body = await c.req.parseBody();
+  const file = body["file"];
+  if (!file || typeof file === "string") throw Errors.badRequest("storage/no-file", "Expected a multipart 'file' field", "file");
+  return {
+    file: file as File,
+    assoc: {
+      entityId: (body["entityId"] as string) || null,
+      commentId: (body["commentId"] as string) || null,
+      chatMessageId: (body["chatMessageId"] as string) || null,
+      spaceId: (body["spaceId"] as string) || null,
+    },
+  };
+}
+
+const IMAGE_VARIANTS: { name: string; width: number }[] = [
+  { name: "thumbnail", width: 150 },
+  { name: "small", width: 400 },
+  { name: "medium", width: 800 },
+];
 
 export const storageRoutes = new Hono<{ Variables: Variables }>()
-  .post("/", (c) => { throw Errors.notImplemented("storage/upload"); })
-  .post("/images", (c) => { throw Errors.notImplemented("storage/upload-image"); }); // sharp variants -> FileImage
+  .post("/", requireAuth, async (c) => {
+    const projectId = c.var.projectId;
+    const { file, assoc } = await readUpload(c);
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const fileId = randomUUID();
+    const ext = file.name.includes(".") ? "." + file.name.split(".").pop() : "";
+    const path = `${projectId}/files/${fileId}${ext}`;
+    const url = await uploadBytes(path, bytes, file.type || "application/octet-stream");
+    const [row] = await db.insert(files).values({
+      id: fileId, projectId, userId: c.var.auth!.userId,
+      type: inferFileType(file.type), originalPath: url, originalSize: bytes.length,
+      originalMimeType: file.type || null, ...assoc,
+    }).returning();
+    return c.json(shapeFile(row!), 201);
+  })
+  .post("/images", requireAuth, async (c) => {
+    const projectId = c.var.projectId;
+    const { file, assoc } = await readUpload(c);
+    if (!file.type.startsWith("image/")) throw Errors.badRequest("storage/not-an-image", "File is not an image", "file");
+    const input = Buffer.from(await file.arrayBuffer());
+    const fileId = randomUUID();
+
+    let meta: sharp.Metadata;
+    try { meta = await sharp(input).metadata(); }
+    catch { throw Errors.badRequest("storage/bad-image", "Could not read image"); }
+
+    // EXIF-stripped webp original + sized variants.
+    const variants: Record<string, unknown> = {};
+    const make = async (name: string, width?: number) => {
+      let pipeline = sharp(input).rotate(); // rotate() applies+strips EXIF orientation
+      if (width) pipeline = pipeline.resize({ width, withoutEnlargement: true });
+      const { data, info } = await pipeline.webp({ quality: 85 }).toBuffer({ resolveWithObject: true });
+      const path = `${projectId}/images/${fileId}/${name}.webp`;
+      const publicPath = await uploadBytes(path, new Uint8Array(data), "image/webp");
+      return { path, publicPath, width: info.width, height: info.height, size: info.size, format: "webp" };
+    };
+
+    const original = await make("original");
+    for (const v of IMAGE_VARIANTS) {
+      if (meta.width && v.width <= meta.width) variants[v.name] = await make(v.name, v.width);
+    }
+
+    const image = {
+      fileId, originalWidth: meta.width ?? null, originalHeight: meta.height ?? null,
+      variants, processingStatus: "completed", processingError: null,
+      format: "webp", quality: 85, exifStripped: true,
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+    };
+    const [row] = await db.insert(files).values({
+      id: fileId, projectId, userId: c.var.auth!.userId, type: "image",
+      originalPath: original.publicPath, originalSize: original.size, originalMimeType: "image/webp",
+      image, ...assoc,
+    }).returning();
+    // Image response shape (MODELS.md): fileId + original + variants + metadata.
+    return c.json({
+      fileId, imageId: fileId, status: "completed", original, variants,
+      metadata: { originalFormat: meta.format, originalSize: input.length, exifStripped: true },
+      file: shapeFile(row!), createdAt: image.createdAt,
+    }, 201);
+  });
