@@ -20,6 +20,10 @@ const schema = z.object({
   VOYAGE_API_KEY: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
   VOYAGE_MODEL: z.string().default("voyage-3.5"),
   EMBEDDING_DIMENSIONS: z.coerce.number().default(1024),
+  // LLM (Anthropic) — powers /search/ask RAG Q&A. Optional until that endpoint is used.
+  ANTHROPIC_API_KEY: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
+  ANTHROPIC_MODEL: z.string().default("claude-sonnet-4-6"),
+  ANTHROPIC_MAX_TOKENS: z.coerce.number().default(1024),
 });
 
 export const env = schema.parse(process.env);

@@ -53,8 +53,11 @@ migration `0009`) — blocking `validate()` + fire-and-forget `broadcast()`, HMA
 - [ ] **OAuth provider sign-in.** `/oauth/authorize` + `/oauth/link` + callback are NOT implemented
       (only `/oauth/identities` list/delete). The SDK's `useOAuthSignIn` calls these. Wire Supabase
       `signInWithOAuth` (or provider redirect) → mint Agora tokens on callback. (`routes/misc.ts` + `auth.ts`)
-- [ ] **`/search/ask`** (RAG/LLM Q&A) — the SDK's `useAskContent`. Retrieve via `match_entities`,
-      prompt an LLM (Claude), return an answer + sources. (`routes/search.ts`)
+- [x] **`/search/ask`** (RAG/LLM Q&A, DONE) — the SDK's `useAskContent`. Shared `retrieveContent()`
+      (match_entities) → stream a Claude answer over SSE (`token`→`sources`→`done`/`error`) via
+      `lib/llm.ts` (Anthropic Messages API over fetch, no SDK dep). Env: `ANTHROPIC_API_KEY` +
+      `ANTHROPIC_MODEL` (default `claude-sonnet-4-6`) + `ANTHROPIC_MAX_TOKENS`. Live-verified via
+      `scripts/ask-e2e.mjs` (grounded answer w/ citations + shaped sources). (`routes/search.ts`)
 - [ ] **Verify `/search/spaces` + `/search/users` contract.** We fixed `/content` (POST + bare array);
       confirm these two match the SDK's `useSearchSpaces`/`useSearchUsers` method + response shape (ours are GET).
 - [ ] **`/crypto/sign-testing-jwt/v2`** — last `notImplemented` stub (dev convenience; signs an
