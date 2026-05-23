@@ -58,8 +58,10 @@ migration `0009`) — blocking `validate()` + fire-and-forget `broadcast()`, HMA
       `lib/llm.ts` (Anthropic Messages API over fetch, no SDK dep). Env: `ANTHROPIC_API_KEY` +
       `ANTHROPIC_MODEL` (default `claude-sonnet-4-6`) + `ANTHROPIC_MAX_TOKENS`. Live-verified via
       `scripts/ask-e2e.mjs` (grounded answer w/ citations + shaped sources). (`routes/search.ts`)
-- [ ] **Verify `/search/spaces` + `/search/users` contract.** We fixed `/content` (POST + bare array);
-      confirm these two match the SDK's `useSearchSpaces`/`useSearchUsers` method + response shape (ours are GET).
+- [x] **Verify `/search/spaces` + `/search/users` contract (DONE).** Were GET + `{data:[…]}`; the SDK's
+      `useSearchSpaces`/`useSearchUsers` POST `{query, limit?}` and expect a BARE `{similarity, record}[]`.
+      Rewrote both to POST + bare array (ILIKE + cheap exact/prefix/substring `relevance` score, since
+      spaces/users aren't embedded — semantic indexing for them is P2). Live-verified; MANIFEST §search updated.
 - [ ] **`/crypto/sign-testing-jwt/v2`** — last `notImplemented` stub (dev convenience; signs an
       external-auth JWT). Needed for the SDK's `useSignTestingJwt` quick-start path.
 
