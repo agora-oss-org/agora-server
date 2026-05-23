@@ -1,7 +1,8 @@
--- Agora 0007 — RPC: atomic ops + ranking the server calls via supabase.rpc()
+-- RPC: atomic ops + ranking the server calls via db.execute(sql`select fn(...)`).
+-- Idempotent (create or replace).
 
 -- ─── toggle_reaction: idempotent set/switch/clear of a user's reaction ───────
--- Returns the target's fresh reaction_counts. Counts maintained by 0006 trigger.
+-- Returns the target's fresh reaction_counts (maintained by the 0002 trigger).
 create or replace function toggle_reaction(
   p_project uuid, p_target reaction_target, p_target_id uuid, p_user uuid, p_type reaction_type
 ) returns jsonb language plpgsql as $$
@@ -25,9 +26,9 @@ begin
   else select reaction_counts into result from comments where id=p_target_id; end if;
   return result;
 end $$;
+--> statement-breakpoint
 
 -- ─── hot_score: Reddit-style ranking over net votes + age ────────────────────
--- net = upvote+like+love*2+wow+funny - downvote (tunable). Use to maintain entities.score.
 create or replace function hot_score(rc jsonb, created timestamptz) returns double precision
 language sql immutable as $$
   select
@@ -41,12 +42,14 @@ language sql immutable as $$
            then 1 else -1 end as sign
   ) let
 $$;
+--> statement-breakpoint
 
 -- recompute score for one entity (call after vote changes, or batch via cron)
 create or replace function refresh_entity_score(p_entity uuid) returns void language sql as $$
   update entities set score = hot_score(reaction_counts, created_at), score_updated_at = now()
   where id = p_entity;
 $$;
+--> statement-breakpoint
 
 -- ─── fetch_comment_thread: nested comments via recursive CTE ──────────────────
 -- Returns a flat ordered set with depth; the server nests into a tree.
@@ -72,6 +75,7 @@ create or replace function fetch_comment_thread(
   select * from thread order by depth, created_at
   limit p_limit offset p_offset;
 $$;
+--> statement-breakpoint
 
 -- ─── match_entities: pgvector semantic search (/search/content) ──────────────
 create or replace function match_entities(

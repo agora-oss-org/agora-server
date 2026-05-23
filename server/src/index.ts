@@ -1,5 +1,6 @@
 // Agora API server entrypoint.
 // Mounts /v7/:projectId/* (Replyke-compatible) + a socket.io realtime server.
+import "dotenv/config"; // load .env before env.ts validates process.env
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { cors } from "hono/cors";

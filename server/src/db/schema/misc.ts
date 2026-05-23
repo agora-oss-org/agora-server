@@ -1,0 +1,92 @@
+// collections, collection_entities, files, app_notifications, reports, entity_embeddings (ex-0005)
+import { sql } from "drizzle-orm";
+import {
+  pgTable, uuid, text, integer, bigint, jsonb, timestamp, boolean, index, primaryKey, vector,
+  type AnyPgColumn,
+} from "drizzle-orm/pg-core";
+import { reactionTarget } from "./_shared.js";
+import { projects, profiles } from "./projects.js";
+import { entities, comments } from "./content.js";
+import { spaces } from "./spaces.js";
+import { chatMessages } from "./chat.js";
+
+export const collections = pgTable("collections", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  projectId: uuid("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").notNull().references(() => profiles.id, { onDelete: "cascade" }),
+  parentId: uuid("parent_id").references((): AnyPgColumn => collections.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  entityCount: integer("entity_count").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  index("collections_user_idx").on(t.projectId, t.userId, t.parentId),
+]);
+
+export const collectionEntities = pgTable("collection_entities", {
+  collectionId: uuid("collection_id").notNull().references(() => collections.id, { onDelete: "cascade" }),
+  entityId: uuid("entity_id").notNull().references(() => entities.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  primaryKey({ columns: [t.collectionId, t.entityId] }),
+]);
+
+export const files = pgTable("files", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  projectId: uuid("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").references(() => profiles.id, { onDelete: "set null" }),
+  entityId: uuid("entity_id").references(() => entities.id, { onDelete: "cascade" }),
+  commentId: uuid("comment_id").references(() => comments.id, { onDelete: "cascade" }),
+  chatMessageId: uuid("chat_message_id").references(() => chatMessages.id, { onDelete: "cascade" }),
+  spaceId: uuid("space_id").references(() => spaces.id, { onDelete: "cascade" }),
+  type: text("type").notNull(),
+  originalPath: text("original_path").notNull(),
+  originalSize: bigint("original_size", { mode: "number" }).notNull().default(0),
+  originalMimeType: text("original_mime_type"),
+  position: integer("position").notNull().default(0),
+  metadata: jsonb("metadata").notNull().default(sql`'{}'::jsonb`),
+  image: jsonb("image"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  index("files_entity_idx").on(t.entityId),
+  index("files_comment_idx").on(t.commentId),
+  index("files_chat_idx").on(t.chatMessageId),
+]);
+
+export const appNotifications = pgTable("app_notifications", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  projectId: uuid("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").notNull().references(() => profiles.id, { onDelete: "cascade" }),
+  type: text("type").notNull(),
+  action: text("action"),
+  isRead: boolean("is_read").notNull().default(false),
+  metadata: jsonb("metadata").notNull().default(sql`'{}'::jsonb`),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  index("app_notifications_inbox_idx").on(t.projectId, t.userId, t.isRead, t.createdAt.desc()),
+]);
+
+export const reports = pgTable("reports", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  projectId: uuid("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  reporterId: uuid("reporter_id").references(() => profiles.id, { onDelete: "set null" }),
+  targetType: reactionTarget("target_type").notNull(),
+  targetId: uuid("target_id").notNull(),
+  spaceId: uuid("space_id").references(() => spaces.id, { onDelete: "cascade" }),
+  reason: text("reason").notNull(),
+  details: text("details"),
+  resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+  resolvedById: uuid("resolved_by_id").references(() => profiles.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  index("reports_queue_idx").on(t.projectId, t.spaceId, t.resolvedAt),
+  index("reports_target_idx").on(t.targetType, t.targetId),
+]);
+
+export const entityEmbeddings = pgTable("entity_embeddings", {
+  entityId: uuid("entity_id").primaryKey().references(() => entities.id, { onDelete: "cascade" }),
+  projectId: uuid("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  embedding: vector("embedding", { dimensions: 1536 }),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
