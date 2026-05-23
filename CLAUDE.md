@@ -13,7 +13,7 @@ socket.io events) and `docs/MODELS.md` (response shapes) exactly, or the SDK's t
 
 ```
 client + forked Replyke SDK
-   │  HTTPS  /v7/:projectId/<domain>/...        (+ socket.io for chat — not yet built)
+   │  HTTPS  /v7/:projectId/<domain>/...        (+ socket.io for chat realtime)
    ▼
 @agora/server  (Hono)   endpoints + business logic + permission checks
    │  Drizzle ORM (postgres.js, Supabase transaction pooler :6543, prepare:false)
@@ -40,7 +40,10 @@ Supabase Postgres   schema + triggers + RPC + pgvector + PostGIS
   `loadUsers`); `lib/validation.ts` — zod schemas + `parseBody()`.
 - `server/src/http/` — `envelope.ts` (`paginate`/`readPagination`), `errors.ts` (`ApiError`/`Errors`), `context.ts`.
 - `server/src/middleware/` — `project.ts` (resolves `:projectId`), `auth.ts` (verifies JWT).
-- `server/src/routes/` — one router per domain; `realtime/socket.ts` — socket.io (stub).
+- `server/src/routes/` — one router per domain; `realtime/socket.ts` — socket.io server
+  (module singleton; REST handlers fan out via `emitToConversation()`).
+- `server/src/lib/` — also `tokens.ts` (mint/rotate Agora tokens), `embeddings.ts` (Voyage),
+  `storage.ts` (Supabase Storage uploads), `supabase.ts` (lazy `getSupabase()`).
 
 ## Commands
 
@@ -58,8 +61,10 @@ url=$(grep '^DATABASE_URL=' .env | cut -d= -f2-); psql "$url" -v ON_ERROR_STOP=1
 ```
 
 **Env:** the root `.env` is the single source (direnv `dotenv`), symlinked to `server/.env` so
-dotenv resolves from `server/`. `DATABASE_URL` is the Supabase **transaction pooler (:6543)**.
-`SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY` are optional until Auth/Storage handlers exist.
+dotenv resolves from `server/`. `DATABASE_URL` is the Supabase **transaction pooler (:6543)** and
+is the only hard requirement. The rest gate specific features and are validated as optional:
+`SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` + `SUPABASE_ANON_KEY` (Auth + Storage),
+`VOYAGE_API_KEY` (semantic search). Empty strings are treated as unset.
 
 **Mint a test JWT** (for authed routes; HS256 over `ACCESS_TOKEN_SECRET`, `sub`=userId):
 ```bash
@@ -82,7 +87,11 @@ journal order and written **idempotently** (`create extension if not exists`, `c
 - `0001_postgis` — `geography(Point,4326)` columns + GIN/GiST/IVFFlat indexes (kept out of TS schema)
 - `0002_triggers` — denormalized counts + reputation
 - `0003_functions` — `toggle_reaction`, `hot_score`/`refresh_entity_score`, `fetch_comment_thread`, `match_entities`
-- `0004_rls` — enable RLS (deny-all backstop; no policies yet)
+- `0004_rls` — enable RLS on all tables (deny-all backstop)
+- `0005_refresh_tokens` — token rotation table (auth)
+- `0006_message_report_enum` — extend `reaction_target` with `message` (chat-message reports)
+- `0007_embeddings_1024` — `entity_embeddings.embedding` → `vector(1024)` (Voyage voyage-3.5)
+- `0008_rls_public_read` — public SELECT policies (entities/comments/spaces/rules/follows/reactions); writes + private tables stay deny-all; `profiles` not exposed (column leak)
 
 To change schema: edit `src/db/schema/*.ts` → `db:generate` → `db:migrate`. Edit triggers/functions/
 RLS/PostGIS by hand in their custom migration files.
@@ -103,8 +112,9 @@ RLS/PostGIS by hand in their custom migration files.
   Keep both v6 `upvotes[]`/`downvotes[]` and v7 `reaction_counts` (SDK exposes both).
 - **Ownership/role checks live in handlers** (`ownedEntity`/`ownedComment`/`ownedCollection`,
   spaces' `requireSpaceRole` where owner⇒admin). Trust boundary is the server, not RLS.
-- **Auth:** `requireAuth`/`optionalAuth` only *verify* tokens. Token minting + refresh
-  rotation/reuse-detection/30s-grace is the unbuilt auth service (MANIFEST §1).
+- **Auth:** `requireAuth`/`optionalAuth` only *verify* tokens; minting + refresh
+  rotation/reuse-detection/30s-grace live in `lib/tokens.ts` (`refresh_tokens` table).
+  Identity is backed by Supabase Auth via the lazy anon client.
 - **Realtime is socket.io** — event names in `realtime/socket.ts` must stay byte-identical to
   `@replyke/core/types/socket.ts`; REST handlers fan out via `emitToConversation()` after writing.
 
