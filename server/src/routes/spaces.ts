@@ -45,7 +45,9 @@ async function requireSpaceRole(c: any, space: SpaceRow, roles: Array<"admin" | 
 export const spaceRoutes = new Hono<{ Variables: Variables }>()
   .get("/", async (c) => {
     const { page, limit, offset } = readPagination(c);
-    const parent = c.req.query("parentSpaceId");
+    // SDK sends an absent parent filter as the literal string "null"/"undefined".
+    const pq = c.req.query("parentSpaceId");
+    const parent = pq && pq !== "null" && pq !== "undefined" ? pq : undefined;
     const where = and(
       eq(spaces.projectId, c.var.projectId),
       isNull(spaces.deletedAt),
