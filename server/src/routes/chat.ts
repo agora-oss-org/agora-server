@@ -17,6 +17,7 @@ import {
   addConversationMemberSchema, convMemberRoleSchema,
 } from "../lib/validation.js";
 import { emitToConversation } from "../realtime/socket.js";
+import { indexContentAsync } from "../lib/embeddings.js";
 
 type ConversationRow = typeof conversations.$inferSelect;
 type MemberRow = typeof conversationMembers.$inferSelect;
@@ -229,6 +230,7 @@ export const chatRoutes = new Hono<{ Variables: Variables }>()
       parentMessageId: body.parentMessageId, quotedMessageId: body.quotedMessageId,
     }).returning();
     const shaped = shapeChatMessage(row!);
+    indexContentAsync(c.var.projectId, "message", row!.id, row!.content);
     emitToConversation(convo.id, "message:created", shaped);
     if (row!.parentMessageId) {
       const [parent] = await db.select({ n: chatMessages.threadReplyCount }).from(chatMessages).where(eq(chatMessages.id, row!.parentMessageId)).limit(1);

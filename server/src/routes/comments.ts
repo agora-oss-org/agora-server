@@ -18,6 +18,7 @@ import {
 } from "../lib/validation.js";
 import * as webhooks from "../lib/webhooks.js";
 import { notifyOnComment, notifyOnReaction } from "../lib/notifications.js";
+import { indexContentAsync } from "../lib/embeddings.js";
 
 export const commentRoutes = new Hono<{ Variables: Variables }>()
   .get("/", async (c) => {
@@ -80,6 +81,7 @@ export const commentRoutes = new Hono<{ Variables: Variables }>()
       })
       .returning();
     if (!row) throw Errors.badRequest("comments/create-failed", "Insert returned no row");
+    indexContentAsync(projectId, "comment", row.id, row.content);
     await notifyOnComment(projectId, row);
     const shaped = shapeComment(row);
     webhooks.broadcast(projectId, "comment.created.complete", shaped);
@@ -118,6 +120,7 @@ export const commentRoutes = new Hono<{ Variables: Variables }>()
     if (body.mentions !== undefined) patch.mentions = body.mentions;
     if (body.metadata !== undefined) patch.metadata = body.metadata;
     const [updated] = await db.update(comments).set(patch).where(eq(comments.id, row.id)).returning();
+    if (body.content !== undefined) indexContentAsync(c.var.projectId, "comment", updated!.id, updated!.content);
     return c.json(shapeComment(updated!));
   })
   .delete("/:id", requireAuth, async (c) => {

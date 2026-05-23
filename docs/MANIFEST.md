@@ -247,7 +247,7 @@ array** of `{ similarity, record }` results (NOT a `{ data, pagination }` envelo
 against the SDK's `useSearchContent`/`useAskContent`/`useSearchSpaces`/`useSearchUsers`.
 | Method | Path | Status |
 |---|---|---|
-| POST | `/search/content` (semantic; Voyage→pgvector) → `ContentSearchResult[]` | ✅ |
+| POST | `/search/content` (semantic across entity/comment/message; Voyage→`match_content` pgvector; honors `sourceTypes`) → `ContentSearchResult[]` | ✅ |
 | POST | `/search/ask` (RAG; SSE stream `token`→`sources`→`done`/`error`) | ✅ |
 | POST | `/search/spaces` (ILIKE) → `SpaceSearchResult[]` | ✅ |
 | POST | `/search/users` (ILIKE) → `UserSearchResult[]` | ✅ |

@@ -90,3 +90,18 @@ export const entityEmbeddings = pgTable("entity_embeddings", {
   embedding: vector("embedding", { dimensions: 1024 }), // Voyage voyage-3.5 @ 1024
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
+
+// Generic content embeddings across source types (entity | comment | message) for semantic
+// search. source_id is the row's uuid in its own table; we don't FK it (it spans 3 tables) —
+// match_content filters out soft-deleted/missing rows at query time. The ivfflat index on
+// `embedding` is added in a custom migration (extension op). Cascades on project delete.
+export const contentEmbeddings = pgTable("content_embeddings", {
+  projectId: uuid("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  sourceType: text("source_type").notNull(), // "entity" | "comment" | "message"
+  sourceId: uuid("source_id").notNull(),
+  embedding: vector("embedding", { dimensions: 1024 }),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  primaryKey({ columns: [t.sourceType, t.sourceId] }),
+  index("content_embeddings_project_idx").on(t.projectId),
+]);

@@ -91,8 +91,13 @@ migration `0009`) — blocking `validate()` + fire-and-forget `broadcast()`, HMA
       metadata.<key>` + `sortDir`/`sortType`/`sortByReaction`. Gotcha fixed: Drizzle binds a JS array
       in a raw `sql` template as a scalar, so array operands are built as explicit `array[…]::text[]`
       literals. Integration: `test/integration/entity-filters.test.ts` (10). (`routes/entities.ts`)
-- [ ] **Semantic search beyond entities.** Only entities are embedded. Honor `sourceTypes` by
-      indexing comments + chat messages (`lib/embeddings.ts` + `match_entities` → generalize).
+- [x] **Semantic search beyond entities (DONE).** Generic `content_embeddings` table (migration
+      `0011`, backfilled from `entity_embeddings`) keyed by `(source_type, source_id)`; `lib/embeddings.ts`
+      → `indexContent(sourceType,…)` wired into entity/comment/message write paths. New `match_content`
+      RPC searches across types honoring `sourceTypes`, with per-type liveness + (entity/comment) space
+      scope (messages drop out under a space filter). `retrieveContent` hydrates Entity/Comment/
+      ChatMessage records in similarity order, so `/content` + `/ask` now return all three. RPC tested
+      deterministically (`semantic-search.test.ts`, 4) + full pipeline live-verified (`content-search-e2e.mjs`).
 - [ ] **Storage image variant modes.** We do fixed thumbnail/small/medium. SDK's `UploadImageOptions`
       has exact-dimensions / aspect-ratio-width|height / original-aspect / multi-aspect-ratio. (`routes/storage.ts`)
 - [ ] **Hot-score batch recompute.** `refresh_entity_score` runs per-vote only; add a cron/Edge

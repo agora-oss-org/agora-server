@@ -8,14 +8,13 @@ import { and, eq, or, ilike, isNull, inArray, sql } from "drizzle-orm";
 import type { Variables } from "../http/context.js";
 import { Errors } from "../http/errors.js";
 import { db } from "../db/index.js";
-import { entities, spaces, profiles } from "../db/schema/index.js";
-import { shapeEntity, shapeSpace, shapeUser } from "../lib/shape.js";
-import { embedText, embeddingsEnabled } from "../lib/embeddings.js";
+import { entities, comments, chatMessages, spaces, profiles } from "../db/schema/index.js";
+import { shapeEntity, shapeComment, shapeChatMessage, shapeSpace, shapeUser } from "../lib/shape.js";
+import { embedText, embeddingsEnabled, type SourceType } from "../lib/embeddings.js";
 import { streamText, llmEnabled } from "../lib/llm.js";
 
-// Mirrors the SDK's ContentSearchResult (interfaces/models). Only entities are embedded today,
-// so every record is a shaped Entity; the union is kept for forward-compat with comments/messages.
-type ContentSearchResult = { sourceType: "entity" | "comment" | "message"; similarity: number; record: unknown };
+// Mirrors the SDK's ContentSearchResult (interfaces/models): a shaped Entity | Comment | ChatMessage.
+type ContentSearchResult = { sourceType: SourceType; similarity: number; record: unknown };
 type AskBody = { query?: string; sourceTypes?: string[]; spaceId?: string; conversationId?: string; limit?: number };
 
 /** Read { query, limit } from a POST body (the SDK's search hooks post JSON, not query params). */
@@ -42,33 +41,60 @@ function relevance(q: string, ...fields: (string | null | undefined)[]): number 
   return best;
 }
 
-/** Semantic retrieval shared by /content and /ask. Returns results in similarity order. */
+const VALID_SOURCE_TYPES: SourceType[] = ["entity", "comment", "message"];
+
+/** Semantic retrieval across source types, shared by /content and /ask. Similarity order preserved. */
 async function retrieveContent(
   projectId: string,
   q: string,
   opts: { sourceTypes?: string[]; spaceId?: string | null; limit?: number }
 ): Promise<ContentSearchResult[]> {
-  // Only entity embeddings exist; if the caller restricts away from "entity", there's nothing to match.
-  if (Array.isArray(opts.sourceTypes) && !opts.sourceTypes.includes("entity")) return [];
   const limit = Math.min(50, Math.max(1, Number(opts.limit) || 20));
   const space = opts.spaceId ?? null;
+  // null = all types; otherwise restrict to the (validated) requested set.
+  const requested = Array.isArray(opts.sourceTypes)
+    ? opts.sourceTypes.filter((t): t is SourceType => (VALID_SOURCE_TYPES as string[]).includes(t))
+    : null;
+  if (requested && requested.length === 0) return [];
+
   const vec = await embedText(q, "query");
   const lit = `[${vec.join(",")}]`;
+  // Drizzle binds JS arrays as a scalar in raw sql, so build an explicit text[] literal (or NULL).
+  const typesArg = requested
+    ? sql`array[${sql.join(requested.map((t) => sql`${t}`), sql`, `)}]::text[]`
+    : sql`null::text[]`;
   const matches = (await db.execute(sql`
-    select entity_id, similarity
-    from match_entities(${projectId}::uuid, ${lit}::vector, ${limit}, ${space}::uuid)
-  `)) as unknown as { entity_id: string; similarity: number }[];
-  const ids = matches.map((m) => m.entity_id);
-  if (ids.length === 0) return [];
-  const rows = await db.select().from(entities)
-    .where(and(eq(entities.projectId, projectId), inArray(entities.id, ids), isNull(entities.deletedAt)));
-  const byId = new Map(rows.map((r) => [r.id, r]));
+    select source_type, source_id, similarity
+    from match_content(${projectId}::uuid, ${lit}::vector, ${limit}, ${typesArg}, ${space}::uuid)
+  `)) as unknown as { source_type: SourceType; source_id: string; similarity: number }[];
+  if (matches.length === 0) return [];
+
+  // Hydrate records per type in bulk, then re-emit in match (similarity) order.
+  const idsByType = (t: SourceType) => matches.filter((m) => m.source_type === t).map((m) => m.source_id);
+  const record = new Map<string, unknown>();
+
+  const entIds = idsByType("entity");
+  if (entIds.length) {
+    for (const r of await db.select().from(entities)
+      .where(and(eq(entities.projectId, projectId), inArray(entities.id, entIds), isNull(entities.deletedAt))))
+      record.set(r.id, shapeEntity(r));
+  }
+  const cmtIds = idsByType("comment");
+  if (cmtIds.length) {
+    for (const r of await db.select().from(comments)
+      .where(and(eq(comments.projectId, projectId), inArray(comments.id, cmtIds), isNull(comments.deletedAt))))
+      record.set(r.id, shapeComment(r));
+  }
+  const msgIds = idsByType("message");
+  if (msgIds.length) {
+    for (const r of await db.select().from(chatMessages)
+      .where(and(eq(chatMessages.projectId, projectId), inArray(chatMessages.id, msgIds), isNull(chatMessages.userDeletedAt))))
+      record.set(r.id, shapeChatMessage(r));
+  }
+
   return matches
-    .map((m) => {
-      const row = byId.get(m.entity_id);
-      return row ? { sourceType: "entity" as const, similarity: m.similarity, record: shapeEntity(row) } : null;
-    })
-    .filter((r): r is NonNullable<typeof r> => r !== null);
+    .map((m) => (record.has(m.source_id) ? { sourceType: m.source_type, similarity: m.similarity, record: record.get(m.source_id) } : null))
+    .filter((r): r is ContentSearchResult => r !== null);
 }
 
 const ASK_SYSTEM =

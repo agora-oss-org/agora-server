@@ -1,9 +1,10 @@
 // Voyage AI embeddings (Anthropic-recommended). Used for semantic content search.
 // input_type matters for retrieval quality: "query" for searches, "document" for stored text.
-import { eq } from "drizzle-orm";
 import { db } from "../db/index.js";
-import { entityEmbeddings } from "../db/schema/index.js";
+import { contentEmbeddings } from "../db/schema/index.js";
 import { env } from "./env.js";
+
+export type SourceType = "entity" | "comment" | "message";
 
 const VOYAGE_URL = "https://api.voyageai.com/v1/embeddings";
 
@@ -31,16 +32,21 @@ export async function embedText(text: string, inputType: "query" | "document"): 
   return vec;
 }
 
-/** Embed an entity's text and upsert into entity_embeddings. No-op if embeddings are off or text is empty. */
-export async function indexEntity(projectId: string, entityId: string, text: string | null | undefined): Promise<void> {
+/** Embed a piece of content and upsert into content_embeddings. No-op if embeddings are off / text empty. */
+export async function indexContent(projectId: string, sourceType: SourceType, sourceId: string, text: string | null | undefined): Promise<void> {
   if (!embeddingsEnabled() || !text?.trim()) return;
   const embedding = await embedText(text, "document");
-  await db.insert(entityEmbeddings)
-    .values({ entityId, projectId, embedding })
-    .onConflictDoUpdate({ target: entityEmbeddings.entityId, set: { embedding, updatedAt: new Date() } });
+  await db.insert(contentEmbeddings)
+    .values({ projectId, sourceType, sourceId, embedding })
+    .onConflictDoUpdate({ target: [contentEmbeddings.sourceType, contentEmbeddings.sourceId], set: { embedding, updatedAt: new Date() } });
 }
 
 /** Fire-and-forget indexing for write paths — never let embedding failures break the request. */
+export function indexContentAsync(projectId: string, sourceType: SourceType, sourceId: string, text: string | null | undefined): void {
+  indexContent(projectId, sourceType, sourceId, text).catch((e) => console.error(`indexContent(${sourceType}) failed:`, e?.message ?? e));
+}
+
+/** Back-compat convenience for entity write paths. */
 export function indexEntityAsync(projectId: string, entityId: string, text: string | null | undefined): void {
-  indexEntity(projectId, entityId, text).catch((e) => console.error("indexEntity failed:", e?.message ?? e));
+  indexContentAsync(projectId, "entity", entityId, text);
 }
