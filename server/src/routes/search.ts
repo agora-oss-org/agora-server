@@ -18,11 +18,17 @@ function query(c: any): string {
 }
 
 export const searchRoutes = new Hono<{ Variables: Variables }>()
-  .get("/content", async (c) => {
+  // POST per the SDK's useSearchContent: body { query, sourceTypes?, spaceId?, limit? } →
+  // returns a BARE array of ContentSearchResult { sourceType, similarity, record }.
+  .post("/content", async (c) => {
     if (!embeddingsEnabled()) throw Errors.badRequest("search/embeddings-disabled", "Semantic search is not configured (VOYAGE_API_KEY unset)");
-    const q = query(c);
-    const { limit } = readPagination(c, { page: 1, limit: 20 });
-    const space = c.req.query("spaceId") ?? null;
+    const body = (await c.req.json().catch(() => ({}))) as { query?: string; sourceTypes?: string[]; spaceId?: string; limit?: number };
+    const q = (body.query ?? "").trim();
+    if (!q) throw Errors.badRequest("search/missing-query", "query is required", "query");
+    // Only entity embeddings are indexed; if the caller restricts to other source types, return empty.
+    if (Array.isArray(body.sourceTypes) && !body.sourceTypes.includes("entity")) return c.json([]);
+    const limit = Math.min(50, Math.max(1, Number(body.limit) || 20));
+    const space = body.spaceId ?? null;
     const vec = await embedText(q, "query");
     const lit = `[${vec.join(",")}]`;
     const matches = (await db.execute(sql`
@@ -30,15 +36,15 @@ export const searchRoutes = new Hono<{ Variables: Variables }>()
       from match_entities(${c.var.projectId}::uuid, ${lit}::vector, ${limit}, ${space}::uuid)
     `)) as unknown as { entity_id: string; similarity: number }[];
     const ids = matches.map((m) => m.entity_id);
-    if (ids.length === 0) return c.json({ data: [] });
+    if (ids.length === 0) return c.json([]);
     const rows = await db.select().from(entities)
       .where(and(eq(entities.projectId, c.var.projectId), inArray(entities.id, ids), isNull(entities.deletedAt)));
     const byId = new Map(rows.map((r) => [r.id, r]));
-    // preserve similarity order from the RPC
-    const data = matches
-      .map((m) => { const row = byId.get(m.entity_id); return row ? { ...shapeEntity(row), similarity: m.similarity } : null; })
+    // ContentSearchResult[] in similarity order from the RPC
+    const results = matches
+      .map((m) => { const row = byId.get(m.entity_id); return row ? { sourceType: "entity" as const, similarity: m.similarity, record: shapeEntity(row) } : null; })
       .filter(Boolean);
-    return c.json({ data });
+    return c.json(results);
   })
   .get("/spaces", async (c) => {
     const q = query(c);
