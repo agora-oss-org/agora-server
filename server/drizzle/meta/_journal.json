@@ -57,6 +57,13 @@
       "when": 1779514118959,
       "tag": "0007_embeddings_1024",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1779517739761,
+      "tag": "0008_rls_public_read",
+      "breakpoints": true
     }
   ]
 }
