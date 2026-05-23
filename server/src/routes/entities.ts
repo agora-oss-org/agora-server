@@ -36,10 +36,12 @@ export const entityRoutes = new Hono<{ Variables: Variables }>()
       isNull(entities.deletedAt),
       eq(entities.isDraft, false),
     ];
-    const spaceId = c.req.query("spaceId");
-    const userId = c.req.query("userId");
-    const sourceId = c.req.query("sourceId");
-    const keywords = c.req.query("keywords");
+    // SDK sends absent filters as the literal string "null"/"undefined" — treat those as unset.
+    const clean = (v: string | undefined) => (v && v !== "null" && v !== "undefined" ? v : undefined);
+    const spaceId = clean(c.req.query("spaceId"));
+    const userId = clean(c.req.query("userId"));
+    const sourceId = clean(c.req.query("sourceId"));
+    const keywords = clean(c.req.query("keywords"));
     if (spaceId) conds.push(eq(entities.spaceId, spaceId));
     if (userId) conds.push(eq(entities.userId, userId));
     if (sourceId) conds.push(eq(entities.sourceId, sourceId));
@@ -83,10 +85,11 @@ export const entityRoutes = new Hono<{ Variables: Variables }>()
         foreignId: body.foreignId,
         sourceId: body.sourceId,
         spaceId: body.spaceId,
-        keywords: body.keywords,
-        mentions: body.mentions,
-        attachments: body.attachments,
-        metadata: body.metadata,
+        // null → undefined so Drizzle applies the NOT NULL array/jsonb defaults
+        keywords: body.keywords ?? undefined,
+        mentions: body.mentions ?? undefined,
+        attachments: body.attachments ?? undefined,
+        metadata: body.metadata ?? undefined,
         isDraft: body.isDraft ?? false,
       })
       .returning();

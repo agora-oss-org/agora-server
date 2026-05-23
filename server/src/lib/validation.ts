@@ -15,20 +15,23 @@ export function parseBody<T>(schema: z.ZodType<T>, raw: unknown, feature: string
   return result.data;
 }
 
-const mentions = z.array(z.unknown()).optional();
-const metadata = z.record(z.string(), z.unknown()).optional();
+// .nullish() (= nullable + optional): SDK clients commonly send absent fields as `null`
+// rather than omitting them. Accepting null avoids spurious 400s; handlers coerce null →
+// undefined for columns that have NOT NULL defaults.
+const mentions = z.array(z.unknown()).nullish();
+const metadata = z.record(z.string(), z.unknown()).nullish();
 
 export const createEntitySchema = z.object({
-  title: z.string().optional(),
-  content: z.string().optional(),
-  foreignId: z.string().optional(),
-  sourceId: z.string().optional(),
-  spaceId: z.string().uuid().optional(),
-  keywords: z.array(z.string()).optional(),
+  title: z.string().nullish(),
+  content: z.string().nullish(),
+  foreignId: z.string().nullish(),
+  sourceId: z.string().nullish(),
+  spaceId: z.string().uuid().nullish(),
+  keywords: z.array(z.string()).nullish(),
   mentions,
-  attachments: z.array(z.unknown()).optional(),
+  attachments: z.array(z.unknown()).nullish(),
   metadata,
-  isDraft: z.boolean().optional(),
+  isDraft: z.boolean().nullish(),
 });
 
 export const updateEntitySchema = z
@@ -44,10 +47,10 @@ export const updateEntitySchema = z
 
 export const createCommentSchema = z.object({
   entityId: z.string().uuid(),
-  parentId: z.string().uuid().optional(),
-  content: z.string().optional(),
-  gif: z.unknown().optional(),
-  foreignId: z.string().optional(),
+  parentId: z.string().uuid().nullish(),
+  content: z.string().nullish(),
+  gif: z.unknown().nullish(),
+  foreignId: z.string().nullish(),
   mentions,
   metadata,
 });

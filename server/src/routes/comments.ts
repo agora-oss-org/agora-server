@@ -65,12 +65,13 @@ export const commentRoutes = new Hono<{ Variables: Variables }>()
         projectId,
         userId,
         entityId: body.entityId,
-        parentId: body.parentId,
+        parentId: body.parentId ?? undefined,
         content: body.content,
-        gif: body.gif,
+        gif: body.gif ?? undefined,
         foreignId: body.foreignId,
-        mentions: body.mentions,
-        metadata: body.metadata,
+        // null → undefined so Drizzle applies the NOT NULL jsonb defaults
+        mentions: body.mentions ?? undefined,
+        metadata: body.metadata ?? undefined,
       })
       .returning();
     if (!row) throw Errors.badRequest("comments/create-failed", "Insert returned no row");
