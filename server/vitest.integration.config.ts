@@ -24,6 +24,12 @@ export default defineConfig({
       DATABASE_URL: dbUrl,
       ACCESS_TOKEN_SECRET:
         process.env.ACCESS_TOKEN_SECRET ?? "integration-test-secret-integration-test-secret",
+      // Hermetic: force the external-service keys empty so the embed/LLM write paths are no-ops
+      // (env.ts treats "" as unset). Otherwise dotenv leaks .env keys into the worker and tests
+      // would make real Voyage/Anthropic calls — network + cost + non-deterministic. The
+      // synthetic-vector test (semantic-search.test.ts) covers match_content offline instead.
+      VOYAGE_API_KEY: "",
+      ANTHROPIC_API_KEY: "",
     },
   },
 });
