@@ -7,6 +7,7 @@ import type { Variables } from "../http/context.js";
 import { Errors } from "../http/errors.js";
 import { requireAuth } from "../middleware/auth.js";
 import { db } from "../db/index.js";
+import { indexEntityAsync } from "../lib/embeddings.js";
 import { entities, reactions, collections, collectionEntities } from "../db/schema/index.js";
 import { readPagination, paginate } from "../http/envelope.js";
 import {
@@ -90,6 +91,7 @@ export const entityRoutes = new Hono<{ Variables: Variables }>()
       })
       .returning();
     if (!row) throw Errors.badRequest("entities/create-failed", "Insert returned no row");
+    indexEntityAsync(projectId, row.id, [row.title, row.content].filter(Boolean).join("\n"));
     return c.json(shapeEntity(row), 201);
   })
   .get("/drafts", requireAuth, async (c) => {
@@ -157,6 +159,9 @@ export const entityRoutes = new Hono<{ Variables: Variables }>()
     if (body.attachments !== undefined) patch.attachments = body.attachments;
     if (body.metadata !== undefined) patch.metadata = body.metadata;
     const [updated] = await db.update(entities).set(patch).where(eq(entities.id, row.id)).returning();
+    if (body.title !== undefined || body.content !== undefined) {
+      indexEntityAsync(c.var.projectId, updated!.id, [updated!.title, updated!.content].filter(Boolean).join("\n"));
+    }
     return c.json(shapeEntity(updated!));
   })
   .delete("/:id", requireAuth, async (c) => {

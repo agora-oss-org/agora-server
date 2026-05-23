@@ -16,6 +16,10 @@ const schema = z.object({
   ACCESS_TOKEN_SECRET: z.string().min(1),
   REFRESH_TOKEN_GRACE_SECONDS: z.coerce.number().default(30),
   CORS_ORIGIN: z.string().default("*"),
+  // Embeddings (Voyage AI). Optional until semantic search is used.
+  VOYAGE_API_KEY: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
+  VOYAGE_MODEL: z.string().default("voyage-3.5"),
+  EMBEDDING_DIMENSIONS: z.coerce.number().default(1024),
 });
 
 export const env = schema.parse(process.env);

@@ -121,8 +121,10 @@ RLS/PostGIS by hand in their custom migration files.
 - ✅ **Chat**: REST conversations/members/messages/reactions in `chat.ts`; socket.io fan-out via
   `emitToConversation()` (module singleton in `realtime/socket.ts`). E2E-validated incl. realtime
   delivery (`scripts/chat-e2e.mjs`). Message reports use the `reaction_target` enum extended with `message`.
-- 🚧 **Stubbed** (`Errors.notImplemented`): `search` (embeddings), `storage` (Supabase Storage),
-  `misc` (oauth/projects/utils).
+- ✅ **Search**: `search.ts` — `/content` (Voyage `voyage-3.5` @ 1024 dims embed query → `match_entities`
+  pgvector RPC), `/spaces` + `/users` (ILIKE). `lib/embeddings.ts` embeds entities on create/update
+  (fire-and-forget `indexEntityAsync`). Embedding column is `vector(1024)`; set `VOYAGE_API_KEY` to enable.
+- 🚧 **Stubbed** (`Errors.notImplemented`): `storage` (Supabase Storage), `misc` (oauth/projects/utils).
 - ⬜ RLS policies (only enablement done); fork + repoint `@replyke/core` base URL (MANIFEST §0).
 
 `server/src/routes/entities.ts` is the reference for a fully-built domain router.

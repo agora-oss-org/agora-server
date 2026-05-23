@@ -50,6 +50,13 @@
       "when": 1779513008474,
       "tag": "0006_message_report_enum",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1779514118959,
+      "tag": "0007_embeddings_1024",
+      "breakpoints": true
     }
   ]
 }

@@ -87,6 +87,6 @@ export const reports = pgTable("reports", {
 export const entityEmbeddings = pgTable("entity_embeddings", {
   entityId: uuid("entity_id").primaryKey().references(() => entities.id, { onDelete: "cascade" }),
   projectId: uuid("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
-  embedding: vector("embedding", { dimensions: 1536 }),
+  embedding: vector("embedding", { dimensions: 1024 }), // Voyage voyage-3.5 @ 1024
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
