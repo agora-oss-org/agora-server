@@ -2,6 +2,7 @@
 import { randomUUID } from "node:crypto";
 import { Hono } from "hono";
 import { and, eq } from "drizzle-orm";
+import { importPKCS8, SignJWT } from "jose";
 import type { Provider } from "@supabase/supabase-js";
 import type { Variables } from "../http/context.js";
 import { Errors } from "../http/errors.js";
@@ -10,7 +11,7 @@ import { db } from "../db/index.js";
 import { oauthIdentities, oauthStates, profiles, projects, projectIntegrations } from "../db/schema/index.js";
 import { pkceClient, oauthConfigured } from "../lib/oauth.js";
 import { mintSession } from "../lib/tokens.js";
-import { parseBody, oauthAuthorizeSchema } from "../lib/validation.js";
+import { parseBody, oauthAuthorizeSchema, signTestingJwtSchema } from "../lib/validation.js";
 
 type ProfileRow = typeof profiles.$inferSelect;
 
@@ -101,8 +102,27 @@ export const miscRoutes = new Hono<{ Variables: Variables }>()
       .from(projectIntegrations).where(eq(projectIntegrations.projectId, c.var.projectId));
     return c.json({ id: project.id, name: project.name, integrations });
   })
-  // ── crypto (testing only) — stubbed; external-auth JWT minting is a dev convenience ──
-  .post("/crypto/sign-testing-jwt/v2", (c) => { throw Errors.notImplemented("crypto/sign-testing-jwt"); })
+  // ── crypto (testing only) — sign an external-auth JWT so devs can exercise verify-external-user
+  // without a backend. The client sends its OWN private key (NOT secure; dev/quick-start only).
+  // Output is consumed by /auth/verify-external-user, so claims must match what it checks:
+  // RS256, issuer=projectId, audience="replyke.com", sub=userData.id, userData=userData.
+  .post("/crypto/sign-testing-jwt/v2", async (c) => {
+    const body = parseBody(signTestingJwtSchema, await c.req.json().catch(() => ({})), "crypto");
+    try {
+      const key = await importPKCS8(body.privateKey, "RS256");
+      const jwt = await new SignJWT({ userData: body.userData })
+        .setProtectedHeader({ alg: "RS256" })
+        .setSubject(String(body.userData.id))
+        .setIssuer(c.var.projectId)
+        .setAudience("replyke.com")
+        .setIssuedAt()
+        .setExpirationTime("1h")
+        .sign(key);
+      return c.json(jwt); // SDK reads response.data as a bare JWT string
+    } catch (e: any) {
+      throw Errors.badRequest("crypto/sign-failed", `Could not sign JWT: ${e?.message ?? "invalid private key"}`);
+    }
+  })
   // ── link/OG metadata fetcher ────────────────────────────────────────────────
   .get("/utils/get-metadata", async (c) => {
     const url = c.req.query("url");

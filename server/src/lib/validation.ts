@@ -188,8 +188,19 @@ export const verifyEmailSchema = z.object({
   type: z.enum(["signup", "email", "recovery"]).optional(),
 });
 
-export const externalUserSchema = z.object({
-  token: z.string().min(1), // RS256 JWT signed by the host app's private key
+export const externalUserSchema = z
+  .object({
+    // The SDK posts `userJwt`; `token` kept as a legacy alias.
+    userJwt: z.string().min(1).optional(),
+    token: z.string().min(1).optional(),
+  })
+  .refine((v) => !!(v.userJwt || v.token), { message: "userJwt is required", path: ["userJwt"] });
+
+export const signTestingJwtSchema = z.object({
+  // Dev-only: the client sends its OWN external-auth private key (PKCS8 PEM) to sign a test JWT.
+  privateKey: z.string().min(1),
+  userData: z.object({ id: z.union([z.string(), z.number()]) }).passthrough(),
+  projectId: z.string().optional(), // SDK includes it; we sign with the path projectId
 });
 
 export const oauthAuthorizeSchema = z.object({

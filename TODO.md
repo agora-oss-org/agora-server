@@ -72,8 +72,13 @@ migration `0009`) — blocking `validate()` + fire-and-forget `broadcast()`, HMA
       `useSearchSpaces`/`useSearchUsers` POST `{query, limit?}` and expect a BARE `{similarity, record}[]`.
       Rewrote both to POST + bare array (ILIKE + cheap exact/prefix/substring `relevance` score, since
       spaces/users aren't embedded — semantic indexing for them is P2). Live-verified; MANIFEST §search updated.
-- [ ] **`/crypto/sign-testing-jwt/v2`** — last `notImplemented` stub (dev convenience; signs an
-      external-auth JWT). Needed for the SDK's `useSignTestingJwt` quick-start path.
+- [x] **`/crypto/sign-testing-jwt/v2` (DONE).** Implemented in `routes/misc.ts`: the client sends its
+      own external-auth private key (PKCS8) + `userData`; we sign an RS256 JWT (issuer=projectId,
+      aud="replyke.com", sub=userData.id, claim `userData`) and return it as a bare string — exactly
+      what `/auth/verify-external-user` consumes. **Also fixed a latent P1 bug:** verify-external-user
+      read `{ token }` but the SDK posts `{ userJwt }` → it now accepts `userJwt` (legacy `token` kept).
+      Round-trip live-verified (`scripts/crypto-e2e.mjs`) + `test/integration/crypto.test.ts` (5).
+      That clears the last `notImplemented` stub — **the REST surface is now fully implemented.**
 
 ## P2 — fidelity / depth
 
@@ -118,41 +123,47 @@ Isolation is by `project_id` — each test mints its own project + users and cas
 - **Unit (32):** `shape` (shapeUser/Entity/Comment, Date→ISO, deleted-comment blanking,
   parseInclude, generateShortId) · `validation` (parseBody + `{feature}/invalid-body` envelope) ·
   `envelope` (paginate/readPagination clamping) · `errors` (status/code mapping).
-- **Integration (44):** entities CRUD + reaction toggle (`toggle_reaction` RPC + `reaction_counts`
+- **Integration (74):** entities CRUD + reaction toggle (`toggle_reaction` RPC + `reaction_counts`
   trigger) + `replies_count` trigger + ownership 403 / scoping 404 / auth 401 · **auth token
   rotation** (rotate / 30s grace / reuse-revokes-family / sign-out) · **chat realtime** (handshake
   auth, message:created + message:reaction fan-out, membership-gated room) · **spaces** (roles,
   approval state machine, members_count trigger, moderation gating, owner-only delete) ·
   **connections** (full none→pending→connected/declined machine, directional status, counts) ·
-  **notifications (12)** — entity-comment/comment-reply/comment-mention/entity-mention fan-out +
-  self-notify guard + mention dedupe + reaction upvote-vs-reaction (add-only, not toggle-off) +
-  comment-reaction + 10-vote milestone-specific/-total (lastThreeUsers + reactionCounts) +
-  new-follow (fresh-only) + space-membership-approved + inbox list/count/mark-as-read/mark-all + 404.
+  **notifications (12)** — fan-out across write paths + self-notify guard + mention dedupe +
+  milestone types + inbox list/count/mark(-all)-as-read · **collections** (`entity_count` trigger,
+  is-entity-saved, idempotent add, nesting, ownership) · **users+follows** (lookups, username
+  availability, follow edge + counts + lists + own /follows views, self-follow/idempotent/unfollow)
+  · **reports** (create, validation, create→resolve-in-space→/moderated loop) · **misc** (SSRF
+  guard matrix, oauth identities list + ownership-scoped delete, projects/lean).
 
-### P1 — high-risk, untested
+### P1 — dark domains ✅ DONE
+- [x] **Collections** — `entity_count` trigger on add/remove · `is-entity-saved` · nested
+      sub-collections · per-user ownership scoping. (`collections.test.ts`)
+- [x] **Users + follows** — follow/unfollow edge · followers/following lists + counts ·
+      `check-username` · profile PATCH ownership. (`users-follows.test.ts`)
+- [x] **Reports** — create + moderated list + in-space resolution. (`reports.test.ts`)
+- [x] **Misc** — `utils/get-metadata` SSRF guard · oauth identities list/delete · projects/lean.
+      (`misc.test.ts`) — `/oauth/authorize|callback` + `lib/oauth.ts` still need an E2E (Supabase network).
+- [x] **Notifications** — fan-out + inbox covered (`notifications.test.ts`, 12). Connection-request/
+      accepted rows still asserted only indirectly; add explicit assertions to `connections.test.ts`.
+
+### P1.5 — cheap unit wins (pure logic, no DB)
+- [ ] **`webhooks.ts` HMAC** sign/verify (`X-Signature`/`X-Response-Signature`) — security-critical.
+- [ ] **SSRF guard** in `utils/get-metadata` (pure URL check).
+- [ ] **Remaining shapers** — shapeSpace/Rule/AuthUser/File/Report + chat shapers.
+- [ ] **Remaining validation schemas** — space/rule/collection/report/auth.
+
+### P2 — fidelity / depth (partial domains)
 - [ ] **Comment reactions** — `toggle_reaction` with `target=comment` (no `refresh_entity_score`).
-- [ ] **Collections** — `entity_count` trigger on add/remove · `is-entity-saved` · nested
-      sub-collections · per-user ownership scoping.
-- [ ] **Users / follows graph** — follow/unfollow edge · followers/following lists + counts ·
-      `check-username` · profile PATCH ownership.
-- [x] **Notifications** — fan-out across all write paths + inbox list/count/mark(-all)-as-read,
-      covered in `test/integration/notifications.test.ts` (12 tests). Connection-request/accepted
-      row creation is still asserted only indirectly; add explicit assertions to `connections.test.ts`.
-
-### P2 — fidelity / depth
 - [ ] **Entities feed** — hot/new sort + spaceId/userId/keywords filter ordering & pagination ·
-      drafts · by-foreign-id/by-short-id · publish · PATCH update. (Note: meaningful hot-rank
-      assertions need ≥~10 net votes — `hot_score` is logarithmic.)
-- [ ] **Comments** — one-level threaded list via `parentId` · soft-delete content blanking through
-      the route · by-foreign-id.
+      drafts · by-foreign-id/by-short-id · publish · PATCH update. (Meaningful hot-rank assertions
+      need ≥~10 net votes — `hot_score` is logarithmic.)
+- [ ] **Comments** — one-level threaded list via `parentId` · soft-delete content blanking · by-foreign-id.
 - [ ] **Spaces depth** — rules CRUD + reorder · digest-config (admin-gated, secret masking) ·
       breadcrumb/children · reparenting cycle guard (self/descendant → 400) · by-slug/check-slug · leave.
-- [ ] **Reports** — create (entity/comment/message) · moderated list · in-space resolution.
 - [ ] **Chat depth** — message edit/delete/remove events · typing relay · member:joined/left ·
       conversation:updated/deleted · thread:reply_count · read-state · group conversations ·
       non-member POST → 403.
-- [ ] **Unit: remaining shapers + libs** — shapeSpace/Rule/AuthUser/File/Report + chat shapers ·
-      SSRF guard in `utils/get-metadata` · webhook HMAC sign/verify (`lib/webhooks.ts`).
 
 ### E2E / external-service (opt-in; need real creds)
 - [ ] **Auth (Supabase-backed)** — sign-up / sign-in / change-password / verify-email / password

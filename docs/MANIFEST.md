@@ -72,7 +72,7 @@ Status codes: `400 / 401 / 403 / 404 / 409 / 429 / 500`.
 | POST | `/auth/request-password-reset` | ✅ |
 | POST | `/auth/verify-email` | ✅ |
 | POST | `/auth/send-verification-email` | ✅ |
-| POST | `/auth/verify-external-user` | ✅ |
+| POST | `/auth/verify-external-user` (body `{ userJwt }`; legacy `{ token }` also accepted) | ✅ |
 
 ### oauth
 Sign-in/link use Supabase as the OAuth broker (code + PKCE). `authorize`/`link` return
@@ -88,9 +88,12 @@ mints Agora tokens, and 302-redirects to `redirectAfterAuth#accessToken=…&refr
 | DELETE | `/oauth/identities/:id` | ✅ |
 
 ### crypto (testing only)
+Dev/quick-start only — the client sends its OWN external-auth private key (PKCS8) and the server
+signs an RS256 JWT (issuer=projectId, aud="replyke.com", sub=userData.id, claim `userData`) that
+`/auth/verify-external-user` then accepts. Returns a bare JWT string.
 | Method | Path | Status |
 |---|---|---|
-| POST | `/crypto/sign-testing-jwt/v2` | ✅ |
+| POST | `/crypto/sign-testing-jwt/v2` (body `{ privateKey, userData:{id,…} }` → JWT string) | ✅ |
 
 ### projects
 | Method | Path | Status |
