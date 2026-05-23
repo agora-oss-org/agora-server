@@ -45,9 +45,8 @@ async function notify(projectId: string, recipientId: string, type: string, init
 }
 
 export const connectionRoutes = new Hono<{ Variables: Variables }>()
-  .use("*", requireAuth)
   // ── request / status / remove against a specific user ──────────────────────
-  .post("/users/:userId/connection", async (c) => {
+  .post("/users/:userId/connection", requireAuth, async (c) => {
     const self = await me(c);
     const target = c.req.param("userId");
     if (target === self.id) throw Errors.badRequest("connections/self", "Cannot connect with yourself");
@@ -69,7 +68,7 @@ export const connectionRoutes = new Hono<{ Variables: Variables }>()
     await notify(self.projectId, target, "connection-request", self, row!.id);
     return c.json({ id: row!.id, status: row!.status, createdAt: iso(row!.createdAt) }, 201);
   })
-  .get("/users/:userId/connection", async (c) => {
+  .get("/users/:userId/connection", requireAuth, async (c) => {
     const self = await me(c);
     const row = await between(self.projectId, self.id, c.req.param("userId"));
     if (!row) return c.json({ status: "none" });
@@ -80,7 +79,7 @@ export const connectionRoutes = new Hono<{ Variables: Variables }>()
     if (row.status === "pending") return c.json({ status: "pending", type, connectionId: row.id, createdAt: iso(row.createdAt) });
     return c.json({ status: "declined", type, connectionId: row.id, respondedAt: iso(row.respondedAt) });
   })
-  .delete("/users/:userId/connection", async (c) => {
+  .delete("/users/:userId/connection", requireAuth, async (c) => {
     const self = await me(c);
     const row = await between(self.projectId, self.id, c.req.param("userId"));
     if (!row) throw Errors.notFound("connections/not-found", "No connection with this user");
@@ -88,12 +87,12 @@ export const connectionRoutes = new Hono<{ Variables: Variables }>()
     await db.delete(connections).where(eq(connections.id, row.id));
     return c.json({ id: row.id, action, message: "Connection removed" });
   })
-  .get("/users/:userId/connections-count", async (c) => {
+  .get("/users/:userId/connections-count", requireAuth, async (c) => {
     const self = await me(c);
     return c.json({ count: await connectedCount(self.projectId, c.req.param("userId")) });
   })
   // ── established + counts for the current user ───────────────────────────────
-  .get("/connections", async (c) => {
+  .get("/connections", requireAuth, async (c) => {
     const self = await me(c);
     const { page, limit, offset } = readPagination(c);
     const where = and(eq(connections.projectId, self.projectId), eq(connections.status, "connected"),
@@ -107,20 +106,20 @@ export const connectionRoutes = new Hono<{ Variables: Variables }>()
     }));
     return c.json(paginate(data, n, page, limit));
   })
-  .get("/connections/count", async (c) => {
+  .get("/connections/count", requireAuth, async (c) => {
     const self = await me(c);
     return c.json({ count: await connectedCount(self.projectId, self.id) });
   })
-  .get("/connections/pending/received", async (c) => {
+  .get("/connections/pending/received", requireAuth, async (c) => {
     const self = await me(c);
     return c.json(await pendingList(c, self, "received"));
   })
-  .get("/connections/pending/sent", async (c) => {
+  .get("/connections/pending/sent", requireAuth, async (c) => {
     const self = await me(c);
     return c.json(await pendingList(c, self, "sent"));
   })
   // ── accept / decline / withdraw a connection by id ──────────────────────────
-  .patch("/connections/:id/accept", async (c) => {
+  .patch("/connections/:id/accept", requireAuth, async (c) => {
     const self = await me(c);
     const [row] = await db.select().from(connections)
       .where(and(eq(connections.id, c.req.param("id")), eq(connections.addresseeId, self.id), eq(connections.status, "pending"))).limit(1);
@@ -129,14 +128,14 @@ export const connectionRoutes = new Hono<{ Variables: Variables }>()
     await notify(self.projectId, row.requesterId, "connection-accepted", self, row.id);
     return c.json({ id: updated!.id, status: "connected", respondedAt: iso(updated!.respondedAt) });
   })
-  .patch("/connections/:id/decline", async (c) => {
+  .patch("/connections/:id/decline", requireAuth, async (c) => {
     const self = await me(c);
     const [row] = await db.update(connections).set({ status: "declined", respondedAt: new Date() })
       .where(and(eq(connections.id, c.req.param("id")), eq(connections.addresseeId, self.id), eq(connections.status, "pending"))).returning();
     if (!row) throw Errors.notFound("connections/not-pending", "No pending request to decline");
     return c.json({ id: row.id, status: "declined", respondedAt: iso(row.respondedAt) });
   })
-  .delete("/connections/:id", async (c) => {
+  .delete("/connections/:id", requireAuth, async (c) => {
     const self = await me(c);
     const [row] = await db.select().from(connections)
       .where(and(eq(connections.id, c.req.param("id")),
