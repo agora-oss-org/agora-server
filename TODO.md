@@ -82,9 +82,15 @@ migration `0009`) — blocking `validate()` + fire-and-forget `broadcast()`, HMA
 
 ## P2 — fidelity / depth
 
-- [ ] **Full entity-feed filters.** Feed handles only `spaceId/userId/sourceId/keywords/sortBy`.
-      SDK sends `followedOnly`, `timeFrame`, `sortByReaction`, `sortType`, and title/content/
-      attachments/location/metadata filters (`@agora/core` `interfaces/entity-filters`). (`routes/entities.ts`)
+- [x] **Full entity-feed filters (DONE).** `lib/entity-filters.ts` parses the SDK's Axios
+      bracket-notation query (`metadataFilters[includes][k]=v`, `keywordsFilters[includes][0]=x`, …)
+      into nested objects and translates to SQL: `timeFrame`, `followedOnly`, keywords (has-all /
+      has-none), title/content (hasTitle/hasContent + includes/doesNotInclude ILIKE), attachments
+      (hasAttachments), metadata (includes/includesAny/doesNotInclude `@>`, exists/doesNotExist
+      `?&`/`?|`), location (`ST_DWithin` on the geography column), and sort `hot|top|new|controversial|
+      metadata.<key>` + `sortDir`/`sortType`/`sortByReaction`. Gotcha fixed: Drizzle binds a JS array
+      in a raw `sql` template as a scalar, so array operands are built as explicit `array[…]::text[]`
+      literals. Integration: `test/integration/entity-filters.test.ts` (10). (`routes/entities.ts`)
 - [ ] **Semantic search beyond entities.** Only entities are embedded. Honor `sourceTypes` by
       indexing comments + chat messages (`lib/embeddings.ts` + `match_entities` → generalize).
 - [ ] **Storage image variant modes.** We do fixed thumbnail/small/medium. SDK's `UploadImageOptions`
@@ -120,9 +126,10 @@ for socket.io). Commands: `npm test` · `npm run test:integration` · `npm run t
 Isolation is by `project_id` — each test mints its own project + users and cascade-cleans.
 
 ### ✅ Covered
-- **Unit (32):** `shape` (shapeUser/Entity/Comment, Date→ISO, deleted-comment blanking,
-  parseInclude, generateShortId) · `validation` (parseBody + `{feature}/invalid-body` envelope) ·
-  `envelope` (paginate/readPagination clamping) · `errors` (status/code mapping).
+- **Unit (44):** `shape` — shapeUser/Entity/Comment + shapeSpace/Rule/AuthUser/Report/File +
+  chat shapers (Conversation/Member/ChatMessage); Date→ISO, deleted-comment/message blanking,
+  isMember/opt fields, parseInclude, generateShortId · `validation` (parseBody +
+  `{feature}/invalid-body` envelope) · `envelope` (paginate/readPagination clamping) · `errors`.
 - **Integration (74):** entities CRUD + reaction toggle (`toggle_reaction` RPC + `reaction_counts`
   trigger) + `replies_count` trigger + ownership 403 / scoping 404 / auth 401 · **auth token
   rotation** (rotate / 30s grace / reuse-revokes-family / sign-out) · **chat realtime** (handshake
@@ -134,7 +141,9 @@ Isolation is by `project_id` — each test mints its own project + users and cas
   is-entity-saved, idempotent add, nesting, ownership) · **users+follows** (lookups, username
   availability, follow edge + counts + lists + own /follows views, self-follow/idempotent/unfollow)
   · **reports** (create, validation, create→resolve-in-space→/moderated loop) · **misc** (SSRF
-  guard matrix, oauth identities list + ownership-scoped delete, projects/lean).
+  guard matrix, oauth identities list + ownership-scoped delete, projects/lean) · **webhooks**
+  (real local receiver: HMAC request signing + response-signature verify; allow/deny/forged-sig/
+  unsubscribed/fail-closed + signed broadcast). Plus oauth + crypto suites from the feature work.
 
 ### P1 — dark domains ✅ DONE
 - [x] **Collections** — `entity_count` trigger on add/remove · `is-entity-saved` · nested
@@ -148,10 +157,13 @@ Isolation is by `project_id` — each test mints its own project + users and cas
       accepted rows still asserted only indirectly; add explicit assertions to `connections.test.ts`.
 
 ### P1.5 — cheap unit wins (pure logic, no DB)
-- [ ] **`webhooks.ts` HMAC** sign/verify (`X-Signature`/`X-Response-Signature`) — security-critical.
-- [ ] **SSRF guard** in `utils/get-metadata` (pure URL check).
-- [ ] **Remaining shapers** — shapeSpace/Rule/AuthUser/File/Report + chat shapers.
-- [ ] **Remaining validation schemas** — space/rule/collection/report/auth.
+- [x] **`webhooks.ts` HMAC** — covered via `webhooks.test.ts` integration (real receiver verifies
+      our `X-Signature`; we verify the receiver's `X-Response-Signature`; allow/deny/forged/fail-closed).
+- [x] **SSRF guard** in `utils/get-metadata` — covered in `misc.test.ts` (blocked-host matrix).
+- [x] **Remaining shapers** — shapeSpace/Rule/AuthUser/File/Report + chat shapers (`shape-extra.test.ts`).
+- [x] **Remaining validation schemas** — space/rule/collection/report/auth covered in
+      `validation-extra.test.ts` (createSpace/updateSpace, createRule/reorder, memberRole, moderation,
+      createCollection/addEntity, createReport, signUp/signIn/changePassword/email/verifyEmail/oauth/externalUser).
 
 ### P2 — fidelity / depth (partial domains)
 - [ ] **Comment reactions** — `toggle_reaction` with `target=comment` (no `refresh_entity_score`).

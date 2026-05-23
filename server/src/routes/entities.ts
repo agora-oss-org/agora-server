@@ -10,6 +10,7 @@ import { db } from "../db/index.js";
 import { indexEntityAsync } from "../lib/embeddings.js";
 import * as webhooks from "../lib/webhooks.js";
 import { notifyOnEntityMentions, notifyOnReaction } from "../lib/notifications.js";
+import { parseBracketQuery, buildFeedConditions, buildFeedOrder } from "../lib/entity-filters.js";
 import { entities, reactions, collections, collectionEntities } from "../db/schema/index.js";
 import { readPagination, paginate } from "../http/envelope.js";
 import {
@@ -43,21 +44,23 @@ export const entityRoutes = new Hono<{ Variables: Variables }>()
     const spaceId = clean(c.req.query("spaceId"));
     const userId = clean(c.req.query("userId"));
     const sourceId = clean(c.req.query("sourceId"));
-    const keywords = clean(c.req.query("keywords"));
+    const keywords = clean(c.req.query("keywords")); // legacy flat param (kept for back-compat)
     if (spaceId) conds.push(eq(entities.spaceId, spaceId));
     if (userId) conds.push(eq(entities.userId, userId));
     if (sourceId) conds.push(eq(entities.sourceId, sourceId));
     if (keywords) conds.push(arrayOverlaps(entities.keywords, keywords.split(",").map((k) => k.trim())));
-    const where = and(...conds);
 
-    const sortBy = c.req.query("sortBy") ?? "new";
-    const orderCol = sortBy === "hot" || sortBy === "top" ? entities.score : entities.createdAt;
+    // Rich filters + sort (timeFrame / followedOnly / keywords|title|content|attachments|metadata|
+    // location filters, sortBy hot/top/new/controversial/metadata.x, sortDir, sortType, sortByReaction).
+    const parsed = parseBracketQuery(c.req.url);
+    conds.push(...buildFeedConditions(parsed, c.var.auth?.userId));
+    const where = and(...conds);
 
     const rows = await db
       .select()
       .from(entities)
       .where(where)
-      .orderBy(desc(orderCol))
+      .orderBy(...buildFeedOrder(parsed))
       .limit(limit)
       .offset(offset);
     const total = await countWhere(where);
