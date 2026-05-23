@@ -16,6 +16,7 @@ import {
   updateCommentSchema,
   reactionSchema,
 } from "../lib/validation.js";
+import * as webhooks from "../lib/webhooks.js";
 
 export const commentRoutes = new Hono<{ Variables: Variables }>()
   .get("/", async (c) => {
@@ -58,6 +59,9 @@ export const commentRoutes = new Hono<{ Variables: Variables }>()
     const projectId = c.var.projectId;
     const userId = c.var.auth!.userId;
     const body = parseBody(createCommentSchema, await c.req.json().catch(() => ({})), "comments");
+    // Blocking validation webhook (host app may veto). Passes through if unconfigured/unsubscribed.
+    const check = await webhooks.validate(projectId, "comment.created", { ...body, userId });
+    if (!check.valid) throw Errors.forbidden("comments/rejected", check.message ?? "Comment rejected by validation webhook");
     // Trigger (0002) bumps entity.replies_count + parent.replies_count on insert.
     const [row] = await db
       .insert(comments)
@@ -75,7 +79,9 @@ export const commentRoutes = new Hono<{ Variables: Variables }>()
       })
       .returning();
     if (!row) throw Errors.badRequest("comments/create-failed", "Insert returned no row");
-    return c.json(shapeComment(row), 201);
+    const shaped = shapeComment(row);
+    webhooks.broadcast(projectId, "comment.created.complete", shaped);
+    return c.json(shaped, 201);
   })
   .get("/by-foreign-id", async (c) => {
     const projectId = c.var.projectId;

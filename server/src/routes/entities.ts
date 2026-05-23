@@ -8,6 +8,7 @@ import { Errors } from "../http/errors.js";
 import { requireAuth } from "../middleware/auth.js";
 import { db } from "../db/index.js";
 import { indexEntityAsync } from "../lib/embeddings.js";
+import * as webhooks from "../lib/webhooks.js";
 import { entities, reactions, collections, collectionEntities } from "../db/schema/index.js";
 import { readPagination, paginate } from "../http/envelope.js";
 import {
@@ -74,6 +75,9 @@ export const entityRoutes = new Hono<{ Variables: Variables }>()
     const projectId = c.var.projectId;
     const userId = c.var.auth!.userId;
     const body = parseBody(createEntitySchema, await c.req.json().catch(() => ({})), "entities");
+    // Blocking validation webhook (host app may veto). Passes through if unconfigured/unsubscribed.
+    const check = await webhooks.validate(projectId, "entity.created", { ...body, userId });
+    if (!check.valid) throw Errors.forbidden("entities/rejected", check.message ?? "Entity rejected by validation webhook");
     const [row] = await db
       .insert(entities)
       .values({
@@ -95,7 +99,9 @@ export const entityRoutes = new Hono<{ Variables: Variables }>()
       .returning();
     if (!row) throw Errors.badRequest("entities/create-failed", "Insert returned no row");
     indexEntityAsync(projectId, row.id, [row.title, row.content].filter(Boolean).join("\n"));
-    return c.json(shapeEntity(row), 201);
+    const shaped = shapeEntity(row);
+    webhooks.broadcast(projectId, "entity.created.complete", shaped);
+    return c.json(shaped, 201);
   })
   .get("/drafts", requireAuth, async (c) => {
     const projectId = c.var.projectId;

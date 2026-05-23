@@ -10,6 +10,11 @@ export const projects = pgTable("projects", {
   clientId: text("client_id").notNull(),
   name: text("name").notNull(),
   externalAuthPublicKey: text("external_auth_public_key"),
+  // Project webhooks (Replyke-style): one URL + shared secret + the events opted into.
+  // Validation events (e.g. "entity.created") block the op; broadcast events ("*.complete") notify.
+  webhookUrl: text("webhook_url"),
+  webhookSecret: text("webhook_secret"),
+  webhookEvents: text("webhook_events").array().notNull().default(sql`'{}'`),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
