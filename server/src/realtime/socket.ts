@@ -3,6 +3,9 @@
 //
 // Connection from SDK: io(origin, { auth: { token }, query: { projectId } })
 import { Server, type Socket } from "socket.io";
+import { and, eq } from "drizzle-orm";
+import { db } from "../db/index.js";
+import { conversationMembers } from "../db/schema/index.js";
 import type { Server as HttpServer } from "node:http";
 import { jwtVerify } from "jose";
 import { env } from "../lib/env.js";
@@ -38,11 +41,28 @@ interface SocketData {
 const accessSecret = new TextEncoder().encode(env.ACCESS_TOKEN_SECRET);
 const room = (conversationId: string) => `conversation:${conversationId}`;
 
+type AgoraIO = Server<ClientToServerEvents, ServerToClientEvents, Record<string, never>, SocketData>;
+
+async function isConversationMember(projectId: string, conversationId: string, userId: string): Promise<boolean> {
+  const [m] = await db.select({ id: conversationMembers.id }).from(conversationMembers)
+    .where(and(
+      eq(conversationMembers.projectId, projectId),
+      eq(conversationMembers.conversationId, conversationId),
+      eq(conversationMembers.userId, userId),
+      eq(conversationMembers.isActive, true)
+    )).limit(1);
+  return !!m;
+}
+
+// Module-level handle so REST handlers can fan out events without threading `io` through.
+let ioRef: AgoraIO | null = null;
+
 export function attachRealtime(httpServer: HttpServer) {
-  const io = new Server<ClientToServerEvents, ServerToClientEvents, Record<string, never>, SocketData>(
+  const io: AgoraIO = new Server<ClientToServerEvents, ServerToClientEvents, Record<string, never>, SocketData>(
     httpServer,
     { cors: { origin: env.CORS_ORIGIN } }
   );
+  ioRef = io;
 
   // Authenticate from handshake auth.token + scope by query.projectId.
   io.use(async (socket, next) => {
@@ -61,9 +81,11 @@ export function attachRealtime(httpServer: HttpServer) {
   });
 
   io.on("connection", (socket: Socket<ClientToServerEvents, ServerToClientEvents, Record<string, never>, SocketData>) => {
-    socket.on("join:conversation", ({ conversationId }) => {
-      // TODO: verify membership before joining
-      socket.join(room(conversationId));
+    socket.on("join:conversation", async ({ conversationId }) => {
+      // Only members may subscribe to a conversation's room.
+      if (await isConversationMember(socket.data.projectId, conversationId, socket.data.userId)) {
+        socket.join(room(conversationId));
+      }
     });
     socket.on("leave:conversation", ({ conversationId }) => {
       socket.leave(room(conversationId));
@@ -79,13 +101,13 @@ export function attachRealtime(httpServer: HttpServer) {
   return io;
 }
 
-// REST handlers call these to fan out durable events after writing to Postgres.
-// e.g. after POST /chat/.../messages: emitToConversation(io, convId, "message:created", row)
+// REST handlers call this to fan out durable events after writing to Postgres.
+// No-op if the socket server isn't attached (e.g. in tests). e.g. after sending a message:
+//   emitToConversation(convId, "message:created", shapedMessage)
 export function emitToConversation<E extends keyof ServerToClientEvents>(
-  io: Server<ClientToServerEvents, ServerToClientEvents, Record<string, never>, SocketData>,
   conversationId: string,
   event: E,
   ...args: Parameters<ServerToClientEvents[E]>
 ) {
-  io.to(room(conversationId)).emit(event, ...args);
+  ioRef?.to(room(conversationId)).emit(event, ...args);
 }

@@ -9,7 +9,8 @@ import { sql } from "drizzle-orm";
 // ─── Enums (mirror @replyke/core types) ──────────────────────────────────────
 export const userRole = pgEnum("user_role", ["admin", "moderator", "visitor"]);
 export const reactionType = pgEnum("reaction_type", ["upvote", "downvote", "like", "love", "wow", "sad", "angry", "funny"]);
-export const reactionTarget = pgEnum("reaction_target", ["entity", "comment"]);
+// "message" is used by reports (chat-message reports); reactions only ever use entity|comment.
+export const reactionTarget = pgEnum("reaction_target", ["entity", "comment", "message"]);
 export const moderationStatus = pgEnum("moderation_status", ["approved", "removed"]);
 export const moderatedByType = pgEnum("moderated_by_type", ["client", "user"]);
 export const readingPermission = pgEnum("reading_permission", ["anyone", "members"]);

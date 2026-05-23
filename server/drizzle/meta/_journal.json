@@ -36,6 +36,20 @@
       "when": 1779507515551,
       "tag": "0004_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1779510738590,
+      "tag": "0005_refresh_tokens",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1779513008474,
+      "tag": "0006_message_report_enum",
+      "breakpoints": true
     }
   ]
 }

@@ -4,17 +4,27 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { env } from "./env.js";
 
-let client: SupabaseClient | null = null;
+let adminClient: SupabaseClient | null = null;
+let anonClient: SupabaseClient | null = null;
 
+const NO_SESSION = { auth: { autoRefreshToken: false, persistSession: false } } as const;
+
+/** Service-role client — admin ops (createUser, generateLink, updateUserById, deleteUser). */
 export function getSupabase(): SupabaseClient {
-  if (client) return client;
+  if (adminClient) return adminClient;
   if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY) {
-    throw new Error(
-      "Supabase Auth/Storage requires SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in the environment."
-    );
+    throw new Error("Supabase Auth/Storage requires SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.");
   }
-  client = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
-    auth: { autoRefreshToken: false, persistSession: false },
-  });
-  return client;
+  adminClient = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, NO_SESSION);
+  return adminClient;
+}
+
+/** Anon client — user-facing auth (signUp sends confirmation email, signInWithPassword, resetPasswordForEmail, verifyOtp, resend). */
+export function getSupabaseAnon(): SupabaseClient {
+  if (anonClient) return anonClient;
+  if (!env.SUPABASE_URL || !env.SUPABASE_ANON_KEY) {
+    throw new Error("Supabase auth requires SUPABASE_URL and SUPABASE_ANON_KEY.");
+  }
+  anonClient = createClient(env.SUPABASE_URL, env.SUPABASE_ANON_KEY, NO_SESSION);
+  return anonClient;
 }

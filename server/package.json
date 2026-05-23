@@ -28,6 +28,7 @@
     "@types/node": "^22.10.2",
     "dotenv": "^17.4.2",
     "drizzle-kit": "^0.31.10",
+    "socket.io-client": "^4.8.3",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"
   }

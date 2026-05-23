@@ -5,4 +5,5 @@ export * from "./content.js";
 export * from "./spaces.js";
 export * from "./chat.js";
 export * from "./misc.js";
+export * from "./auth.js";
 // re-export inferred row types are available via table.$inferSelect at call sites

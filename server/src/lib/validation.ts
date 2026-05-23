@@ -148,3 +148,97 @@ export const createReportSchema = z.object({
   details: z.string().max(2000).optional(),
   spaceId: z.string().uuid().optional(),
 });
+
+// ─── auth ──────────────────────────────────────────────────────────────────
+export const signUpSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(8).max(128),
+  name: z.string().max(120).optional(),
+  username: z.string().min(1).max(60).optional(),
+});
+
+export const signInSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(1),
+});
+
+export const refreshSchema = z.object({
+  refreshToken: z.string().min(1),
+});
+
+export const signOutSchema = z.object({
+  refreshToken: z.string().min(1).optional(),
+});
+
+export const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1),
+  newPassword: z.string().min(8).max(128),
+});
+
+export const emailSchema = z.object({
+  email: z.string().email(),
+});
+
+export const verifyEmailSchema = z.object({
+  tokenHash: z.string().min(1),
+  type: z.enum(["signup", "email", "recovery"]).optional(),
+});
+
+export const externalUserSchema = z.object({
+  token: z.string().min(1), // RS256 JWT signed by the host app's private key
+});
+
+// ─── chat ──────────────────────────────────────────────────────────────────
+export const createConversationSchema = z.object({
+  type: z.enum(["group", "space"]).optional(),
+  name: z.string().max(120).optional(),
+  description: z.string().max(2000).optional(),
+  spaceId: z.string().uuid().optional(),
+  memberIds: z.array(z.string().uuid()).optional(),
+  postingPermission: z.enum(["members", "admins"]).optional(),
+});
+
+export const directConversationSchema = z.object({
+  userId: z.string().uuid(), // the other participant
+});
+
+export const updateConversationSchema = z
+  .object({
+    name: z.string().max(120).nullable().optional(),
+    description: z.string().max(2000).nullable().optional(),
+  })
+  .refine((v) => Object.keys(v).length > 0, { message: "No updatable fields provided" });
+
+const messageBody = {
+  content: z.string().max(10000).optional(),
+  gif: z.unknown().optional(),
+  mentions,
+  metadata,
+};
+export const sendMessageSchema = z.object({
+  ...messageBody,
+  parentMessageId: z.string().uuid().optional(),
+  quotedMessageId: z.string().uuid().optional(),
+}).refine((v) => v.content || v.gif, { message: "Message needs content or a gif" });
+
+export const editMessageSchema = z
+  .object(messageBody)
+  .refine((v) => Object.keys(v).length > 0, { message: "No updatable fields provided" });
+
+export const messageReactionSchema = z.object({
+  emoji: z.string().min(1).max(64),
+});
+
+export const reportMessageSchema = z.object({
+  reason: z.string().min(1).max(100),
+  details: z.string().max(2000).optional(),
+});
+
+export const addConversationMemberSchema = z.object({
+  userId: z.string().uuid(),
+  role: z.enum(["admin", "member"]).optional(),
+});
+
+export const convMemberRoleSchema = z.object({
+  role: z.enum(["admin", "member"]),
+});

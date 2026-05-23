@@ -8,6 +8,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { db } from "../db/index.js";
 import {
   reactions, profiles, spaces, spaceRules, collections, appNotifications, reports,
+  conversations, conversationMembers, chatMessages,
 } from "../db/schema/index.js";
 
 // ─── Reaction taxonomy (must match db enum + SDK exactly) ────────────────────
@@ -358,6 +359,38 @@ export function shapeNotification(row: NotificationRow) {
   };
 }
 
+// AuthUser = UserFull minus secureMetadata, plus suspensions[] + authMethods[] (MODELS.md).
+// Returned only to the authenticated user themselves (includes email/isVerified/lastActive).
+export interface AuthUser extends User {
+  email: string | null;
+  isVerified: boolean;
+  isActive: boolean;
+  lastActive: string;
+  updatedAt: string;
+  suspensions: { reason: string | null; startDate: string; endDate: string | null }[];
+  authMethods: string[];
+}
+
+export function shapeAuthUser(
+  row: ProfileRow,
+  suspensions: { reason: string | null; startDate: Date; endDate: Date | null }[] = []
+): AuthUser {
+  return {
+    ...(shapeUser(row) as User),
+    email: row.email ?? null,
+    isVerified: row.isVerified,
+    isActive: row.isActive,
+    lastActive: iso(row.lastActive)!,
+    updatedAt: iso(row.updatedAt)!,
+    suspensions: suspensions.map((s) => ({
+      reason: s.reason ?? null,
+      startDate: iso(s.startDate)!,
+      endDate: iso(s.endDate),
+    })),
+    authMethods: row.authMethods ?? [],
+  };
+}
+
 export function shapeReport(row: ReportRow) {
   return {
     id: row.id,
@@ -372,4 +405,83 @@ export function shapeReport(row: ReportRow) {
     resolvedById: row.resolvedById ?? null,
     createdAt: iso(row.createdAt)!,
   };
+}
+
+// ─── chat shapers ────────────────────────────────────────────────────────────
+type ConversationRow = typeof conversations.$inferSelect;
+type ConversationMemberRow = typeof conversationMembers.$inferSelect;
+type ChatMessageRow = typeof chatMessages.$inferSelect;
+
+export function shapeConversation(
+  row: ConversationRow,
+  opts: { unreadCount?: number; lastMessage?: unknown; currentMember?: unknown; memberCount?: number } = {}
+) {
+  const convo: Record<string, unknown> = {
+    id: row.id,
+    projectId: row.projectId,
+    type: row.type,
+    name: row.name ?? null,
+    description: row.description ?? null,
+    spaceId: row.spaceId ?? null,
+    createdById: row.createdById ?? null,
+    avatarFileId: row.avatarFileId ?? null,
+    lastMessageAt: iso(row.lastMessageAt),
+    postingPermission: row.postingPermission ?? null,
+    metadata: (row.metadata as Record<string, unknown>) ?? {},
+    createdAt: iso(row.createdAt)!,
+    updatedAt: iso(row.updatedAt)!,
+  };
+  if (opts.memberCount !== undefined) convo.memberCount = opts.memberCount;
+  if (opts.currentMember !== undefined) convo.currentMember = opts.currentMember;
+  if (opts.unreadCount !== undefined) convo.unreadCount = opts.unreadCount;
+  if (opts.lastMessage !== undefined) convo.lastMessage = opts.lastMessage;
+  return convo;
+}
+
+export function shapeConversationMember(row: ConversationMemberRow, user?: User | null) {
+  const m: Record<string, unknown> = {
+    id: row.id,
+    projectId: row.projectId,
+    conversationId: row.conversationId,
+    userId: row.userId,
+    role: row.role ?? null,
+    lastReadAt: iso(row.lastReadAt),
+    mutedUntil: iso(row.mutedUntil),
+    isActive: row.isActive,
+    leftAt: iso(row.leftAt),
+    createdAt: iso(row.createdAt)!,
+    updatedAt: iso(row.updatedAt)!,
+  };
+  if (user !== undefined) m.user = user;
+  return m;
+}
+
+export function shapeChatMessage(row: ChatMessageRow, opts: { userReactions?: string[]; user?: User | null } = {}) {
+  const deleted = !!row.userDeletedAt;
+  const msg: Record<string, unknown> = {
+    id: row.id,
+    projectId: row.projectId,
+    conversationId: row.conversationId,
+    userId: row.userId ?? null,
+    content: deleted ? null : row.content ?? null,
+    gif: deleted ? null : row.gif ?? null,
+    mentions: (row.mentions as unknown[]) ?? [],
+    metadata: (row.metadata as Record<string, unknown>) ?? {},
+    parentMessageId: row.parentMessageId ?? null,
+    quotedMessageId: row.quotedMessageId ?? null,
+    threadReplyCount: row.threadReplyCount,
+    reactionCounts: (row.reactionCounts as Record<string, number>) ?? {},
+    userReactions: opts.userReactions ?? [],
+    editedAt: iso(row.editedAt),
+    userDeletedAt: iso(row.userDeletedAt),
+    moderationStatus: row.moderationStatus ?? null,
+    moderatedAt: iso(row.moderatedAt),
+    moderatedById: row.moderatedById ?? null,
+    moderatedByType: row.moderatedByType ?? null,
+    moderationReason: row.moderationReason ?? null,
+    createdAt: iso(row.createdAt)!,
+    updatedAt: iso(row.updatedAt)!,
+  };
+  if (opts.user !== undefined) msg.user = opts.user;
+  return msg;
 }
