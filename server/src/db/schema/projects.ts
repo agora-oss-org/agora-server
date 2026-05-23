@@ -77,3 +77,19 @@ export const oauthIdentities = pgTable("oauth_identities", {
 }, (t) => [
   unique("oauth_identity_unique").on(t.projectId, t.provider, t.providerUid),
 ]);
+
+// Short-lived correlation rows for the OAuth code+PKCE flow: created in /oauth/authorize, read
+// (and deleted) in /oauth/callback. Holds the Supabase PKCE verifier + where to redirect back to.
+// profileId is set only for the link flow (plain uuid — no FK; the row is ephemeral).
+export const oauthStates = pgTable("oauth_states", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  projectId: uuid("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  profileId: uuid("profile_id"),
+  provider: text("provider").notNull(),
+  flow: text("flow").notNull(), // "signin" | "link"
+  redirectAfterAuth: text("redirect_after_auth").notNull(),
+  pkce: jsonb("pkce").notNull().default(sql`'{}'::jsonb`),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  index("oauth_states_created_idx").on(t.createdAt),
+]);

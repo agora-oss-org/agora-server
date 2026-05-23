@@ -24,7 +24,7 @@ export async function api(method: string, path: string, init: Init = {}) {
     body: init.body !== undefined ? JSON.stringify(init.body) : undefined,
   });
   const text = await res.text();
-  return { status: res.status, body: text ? JSON.parse(text) : null };
+  return { status: res.status, body: text ? JSON.parse(text) : null, headers: res.headers };
 }
 
 /** Mint an Agora access token the auth middleware will accept (HS256 over ACCESS_TOKEN_SECRET). */

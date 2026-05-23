@@ -75,8 +75,15 @@ Status codes: `400 / 401 / 403 / 404 / 409 / 429 / 500`.
 | POST | `/auth/verify-external-user` | ✅ |
 
 ### oauth
+Sign-in/link use Supabase as the OAuth broker (code + PKCE). `authorize`/`link` return
+`{ authorizationUrl }`; the provider redirects the browser to `callback`, which exchanges the code,
+mints Agora tokens, and 302-redirects to `redirectAfterAuth#accessToken=…&refreshToken=…` (or
+`?error=…&error_description=…`). PKCE verifier is held in `oauth_states` between authorize→callback.
 | Method | Path | Status |
 |---|---|---|
+| POST | `/oauth/authorize` (body `{ provider, redirectAfterAuth }` → `{ authorizationUrl }`) | ✅ |
+| POST | `/oauth/link` (authed; same shape) | ✅ |
+| GET | `/oauth/callback` (`?aid=&code=` or `?aid=&error=` → 302 redirect with tokens/error) | ✅ |
 | GET | `/oauth/identities` | ✅ |
 | DELETE | `/oauth/identities/:id` | ✅ |
 

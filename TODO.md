@@ -50,9 +50,19 @@ migration `0009`) — blocking `validate()` + fire-and-forget `broadcast()`, HMA
   - Not delivered over socket.io (the SDK's socket contract has chat events only — matches Replyke; clients poll the inbox).
   - ⚠️ Untested live (logic + typecheck only): the 4 milestone types (need ≥10 reactions) and
     `space-membership-approved` (needs a pending join). Add to integration coverage.
-- [ ] **OAuth provider sign-in.** `/oauth/authorize` + `/oauth/link` + callback are NOT implemented
-      (only `/oauth/identities` list/delete). The SDK's `useOAuthSignIn` calls these. Wire Supabase
-      `signInWithOAuth` (or provider redirect) → mint Agora tokens on callback. (`routes/misc.ts` + `auth.ts`)
+- [x] **OAuth provider sign-in (DONE).** `/oauth/authorize` + `/oauth/link` + `/oauth/callback`
+      implemented in `routes/misc.ts` (Supabase-brokered, code + PKCE). `lib/oauth.ts` builds a
+      PKCE-capable anon client (persistSession:true so gotrue actually uses our capturable storage —
+      it silently swaps in an internal memory adapter when false); the verifier is persisted in the
+      new `oauth_states` table (migration `0010`) between authorize→callback. Callback exchanges the
+      code, upserts the profile (keyed by Supabase auth user; username NOT auto-claimed — it's
+      unique-per-project), records the `oauth_identities` row + appends to `authMethods`, mints Agora
+      tokens, and 302-redirects to `redirectAfterAuth#accessToken=…&refreshToken=…`.
+      Live-verified: authorize returns a real Supabase PKCE URL + persists the verifier; callback
+      error-passthrough + one-shot state + failed-exchange all redirect correctly. Integration:
+      `test/integration/oauth.test.ts` (7). ⚠️ Untested: the real provider consent → successful
+      exchange (needs a provider configured in the Supabase dashboard + a browser). `authMethods`
+      now reflects linked providers, so `useOAuthSignIn`/`useOAuthLink` are wired end-to-end.
 - [x] **`/search/ask`** (RAG/LLM Q&A, DONE) — the SDK's `useAskContent`. Shared `retrieveContent()`
       (match_entities) → stream a Claude answer over SSE (`token`→`sources`→`done`/`error`) via
       `lib/llm.ts` (Anthropic Messages API over fetch, no SDK dep). Env: `ANTHROPIC_API_KEY` +

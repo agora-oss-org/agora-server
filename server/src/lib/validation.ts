@@ -192,6 +192,13 @@ export const externalUserSchema = z.object({
   token: z.string().min(1), // RS256 JWT signed by the host app's private key
 });
 
+export const oauthAuthorizeSchema = z.object({
+  provider: z.string().min(1), // e.g. "google", "github", "apple" — passed through to Supabase
+  // Where to send the browser after auth completes (default: the SDK sends window.location.href).
+  // Not .url() so mobile deep links (myapp://) are allowed.
+  redirectAfterAuth: z.string().min(1),
+});
+
 // ─── chat ──────────────────────────────────────────────────────────────────
 export const createConversationSchema = z.object({
   type: z.enum(["group", "space"]).optional(),
