@@ -30,7 +30,6 @@ export function mountRoutes() {
   project.route("/comments", commentRoutes);
   project.route("/users", userRoutes);
   project.route("/follows", followRoutes);
-  project.route("/connections", connectionRoutes);
   project.route("/spaces", spaceRoutes);
   project.route("/chat", chatRoutes);
   project.route("/collections", collectionRoutes);
@@ -42,6 +41,9 @@ export function mountRoutes() {
   project.route("/", miscRoutes);
 
   const v7 = new Hono<{ Variables: Variables }>();
+  // Connections live at the /v7 root (project derived from the auth user), NOT under :projectId.
+  // Registered before the param route so the static /connections + /users segments win.
+  v7.route("/", connectionRoutes);
   v7.route("/:projectId", project);
   return v7;
 }

@@ -242,3 +242,8 @@ export const addConversationMemberSchema = z.object({
 export const convMemberRoleSchema = z.object({
   role: z.enum(["admin", "member"]),
 });
+
+// ─── connections ─────────────────────────────────────────────────────────────
+export const connectionRequestSchema = z.object({
+  message: z.string().max(500).optional(),
+});
