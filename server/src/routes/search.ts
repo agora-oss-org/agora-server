@@ -9,7 +9,6 @@ import type { Variables } from "../http/context.js";
 import { Errors } from "../http/errors.js";
 import { db } from "../db/index.js";
 import { entities, spaces, profiles } from "../db/schema/index.js";
-import { readPagination } from "../http/envelope.js";
 import { shapeEntity, shapeSpace, shapeUser } from "../lib/shape.js";
 import { embedText, embeddingsEnabled } from "../lib/embeddings.js";
 import { streamText, llmEnabled } from "../lib/llm.js";
@@ -19,10 +18,28 @@ import { streamText, llmEnabled } from "../lib/llm.js";
 type ContentSearchResult = { sourceType: "entity" | "comment" | "message"; similarity: number; record: unknown };
 type AskBody = { query?: string; sourceTypes?: string[]; spaceId?: string; conversationId?: string; limit?: number };
 
-function query(c: any): string {
-  const q = (c.req.query("query") ?? c.req.query("q") ?? "").trim();
+/** Read { query, limit } from a POST body (the SDK's search hooks post JSON, not query params). */
+async function searchBody(c: any): Promise<{ q: string; limit: number }> {
+  const body = (await c.req.json().catch(() => ({}))) as { query?: string; limit?: number };
+  const q = (body.query ?? "").trim();
   if (!q) throw Errors.badRequest("search/missing-query", "query is required", "query");
-  return q;
+  return { q, limit: Math.min(50, Math.max(1, Number(body.limit) || 20)) };
+}
+
+// spaces/users aren't embedded (semantic indexing is entities-only — see TODO P2), so these are
+// ILIKE matches. We still owe the SDK a `similarity` number per result, so derive a cheap relevance
+// score from how the query lands against the matched text (exact > prefix > substring).
+function relevance(q: string, ...fields: (string | null | undefined)[]): number {
+  const needle = q.toLowerCase();
+  let best = 0.5; // floor: it matched the ILIKE filter on some column
+  for (const f of fields) {
+    if (!f) continue;
+    const s = f.toLowerCase();
+    if (s === needle) best = Math.max(best, 1);
+    else if (s.startsWith(needle)) best = Math.max(best, 0.9);
+    else if (s.includes(needle)) best = Math.max(best, 0.7);
+  }
+  return best;
 }
 
 /** Semantic retrieval shared by /content and /ask. Returns results in similarity order. */
@@ -108,9 +125,9 @@ export const searchRoutes = new Hono<{ Variables: Variables }>()
       }
     });
   })
-  .get("/spaces", async (c) => {
-    const q = query(c);
-    const { limit } = readPagination(c, { page: 1, limit: 20 });
+  // POST per the SDK's useSearchSpaces: body { query, limit? } → BARE SpaceSearchResult[] { similarity, record }.
+  .post("/spaces", async (c) => {
+    const { q, limit } = await searchBody(c);
     const like = `%${q}%`;
     const rows = await db.select().from(spaces)
       .where(and(
@@ -119,11 +136,14 @@ export const searchRoutes = new Hono<{ Variables: Variables }>()
         or(ilike(spaces.name, like), ilike(spaces.slug, like), ilike(spaces.description, like))
       ))
       .limit(limit);
-    return c.json({ data: rows.map((r) => shapeSpace(r)) });
+    const results = rows
+      .map((r) => ({ similarity: relevance(q, r.name, r.slug, r.description), record: shapeSpace(r) }))
+      .sort((a, b) => b.similarity - a.similarity);
+    return c.json(results);
   })
-  .get("/users", async (c) => {
-    const q = query(c);
-    const { limit } = readPagination(c, { page: 1, limit: 20 });
+  // POST per the SDK's useSearchUsers: body { query, limit? } → BARE UserSearchResult[] { similarity, record }.
+  .post("/users", async (c) => {
+    const { q, limit } = await searchBody(c);
     const like = `%${q}%`;
     const rows = await db.select().from(profiles)
       .where(and(
@@ -131,5 +151,8 @@ export const searchRoutes = new Hono<{ Variables: Variables }>()
         or(ilike(profiles.username, like), ilike(profiles.name, like))
       ))
       .limit(limit);
-    return c.json({ data: rows.map(shapeUser) });
+    const results = rows
+      .map((r) => ({ similarity: relevance(q, r.username, r.name), record: shapeUser(r) }))
+      .sort((a, b) => b.similarity - a.similarity);
+    return c.json(results);
   });

@@ -232,11 +232,15 @@ Status codes: `400 / 401 / 403 / 404 / 409 / 429 / 500`.
 | GET | `/reports/moderated` | 🔶 |
 
 ### search
+All search endpoints are **POST** with a JSON body `{ query, limit?, ... }` and return a **bare
+array** of `{ similarity, record }` results (NOT a `{ data, pagination }` envelope) — confirmed
+against the SDK's `useSearchContent`/`useAskContent`/`useSearchSpaces`/`useSearchUsers`.
 | Method | Path | Status |
 |---|---|---|
-| GET | `/search/content` (semantic; needs pgvector) | 🔶 |
-| GET | `/search/spaces` | 🔶 |
-| GET | `/search/users` | 🔶 |
+| POST | `/search/content` (semantic; Voyage→pgvector) → `ContentSearchResult[]` | ✅ |
+| POST | `/search/ask` (RAG; SSE stream `token`→`sources`→`done`/`error`) | ✅ |
+| POST | `/search/spaces` (ILIKE) → `SpaceSearchResult[]` | ✅ |
+| POST | `/search/users` (ILIKE) → `UserSearchResult[]` | ✅ |
 
 ### storage
 | Method | Path | Status |
