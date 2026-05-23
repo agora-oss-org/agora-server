@@ -124,7 +124,11 @@ RLS/PostGIS by hand in their custom migration files.
 - ✅ **Search**: `search.ts` — `/content` (Voyage `voyage-3.5` @ 1024 dims embed query → `match_entities`
   pgvector RPC), `/spaces` + `/users` (ILIKE). `lib/embeddings.ts` embeds entities on create/update
   (fire-and-forget `indexEntityAsync`). Embedding column is `vector(1024)`; set `VOYAGE_API_KEY` to enable.
-- 🚧 **Stubbed** (`Errors.notImplemented`): `storage` (Supabase Storage), `misc` (oauth/projects/utils).
+- ✅ **Storage**: `storage.ts` — POST `/storage` (multipart → Supabase Storage `agora` bucket → `files` row),
+  POST `/storage/images` (sharp → webp original + thumbnail/small/medium variants). `lib/storage.ts`.
+- ✅ **Misc**: `misc.ts` — `/oauth/identities` (list/delete), `/projects/lean`, `/utils/get-metadata`
+  (OG/link preview, SSRF-guarded). Only `crypto/sign-testing-jwt` remains a stub (dev convenience).
+- **REST surface is complete.** Remaining: RLS policies, then fork + repoint the Replyke SDK.
 - ⬜ RLS policies (only enablement done); fork + repoint `@replyke/core` base URL (MANIFEST §0).
 
 `server/src/routes/entities.ts` is the reference for a fully-built domain router.
