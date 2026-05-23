@@ -14,6 +14,7 @@ import {
   parseBody, createSpaceSchema, updateSpaceSchema, createRuleSchema, updateRuleSchema,
   reorderRulesSchema, memberRoleSchema, moderationSchema,
 } from "../lib/validation.js";
+import { notifyOnSpaceApproved } from "../lib/notifications.js";
 
 type SpaceRow = typeof spaces.$inferSelect;
 type Membership = typeof spaceMembers.$inferSelect;
@@ -275,6 +276,9 @@ export const spaceRoutes = new Hono<{ Variables: Variables }>()
     await requireSpaceRole(c, space, ["admin", "moderator"]);
     const [m] = await db.update(spaceMembers).set({ status: "active" }).where(and(eq(spaceMembers.spaceId, space.id), eq(spaceMembers.userId, c.req.param("memberId")))).returning();
     if (!m) throw Errors.notFound("spaces/member-not-found", "Member not found");
+    await notifyOnSpaceApproved(space.projectId, c.req.param("memberId"), c.var.auth!.userId, {
+      id: space.id, name: space.name, shortId: space.shortId, slug: space.slug, avatar: space.avatarFileId,
+    });
     return c.json({ message: "approved", membership: { id: m.id, status: m.status, joinedAt: m.joinedAt } });
   })
   .patch("/:id/members/:memberId/decline", requireAuth, async (c) => {

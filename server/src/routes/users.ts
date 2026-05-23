@@ -10,6 +10,7 @@ import { profiles, follows, connections } from "../db/schema/index.js";
 import { readPagination, paginate } from "../http/envelope.js";
 import { shapeUser } from "../lib/shape.js";
 import { parseBody, updateProfileSchema } from "../lib/validation.js";
+import { notifyOnFollow } from "../lib/notifications.js";
 
 async function findUser(projectId: string, col: typeof profiles.id | typeof profiles.username | typeof profiles.foreignId, value: string) {
   const [row] = await db
@@ -104,6 +105,8 @@ export const userRoutes = new Hono<{ Variables: Variables }>()
         .limit(1);
       return c.json({ id: existing?.id, followedId });
     }
+    // Notify only on a genuinely new follow (onConflictDoNothing returned a row).
+    await notifyOnFollow(c.var.projectId, followerId, followedId);
     return c.json({ id: row.id, followedId }, 201);
   })
   .delete("/:id/follow", requireAuth, async (c) => {

@@ -17,6 +17,7 @@ import {
   reactionSchema,
 } from "../lib/validation.js";
 import * as webhooks from "../lib/webhooks.js";
+import { notifyOnComment, notifyOnReaction } from "../lib/notifications.js";
 
 export const commentRoutes = new Hono<{ Variables: Variables }>()
   .get("/", async (c) => {
@@ -79,6 +80,7 @@ export const commentRoutes = new Hono<{ Variables: Variables }>()
       })
       .returning();
     if (!row) throw Errors.badRequest("comments/create-failed", "Insert returned no row");
+    await notifyOnComment(projectId, row);
     const shaped = shapeComment(row);
     webhooks.broadcast(projectId, "comment.created.complete", shaped);
     return c.json(shaped, 201);
@@ -127,7 +129,17 @@ export const commentRoutes = new Hono<{ Variables: Variables }>()
   })
   .post("/:id/reactions", requireAuth, async (c) => {
     const { type } = parseBody(reactionSchema, await c.req.json().catch(() => ({})), "comments");
-    return c.json(await toggleCommentReaction(c, type));
+    const result = await toggleCommentReaction(c, type);
+    await notifyOnReaction({
+      projectId: c.var.projectId,
+      targetType: "comment",
+      targetId: c.req.param("id"),
+      reactorId: c.var.auth!.userId,
+      reactionType: type,
+      isActive: result.userReaction === type,
+      reactionCounts: result.reactionCounts,
+    });
+    return c.json(result);
   })
   .delete("/:id/reactions", requireAuth, async (c) => {
     return c.json(await clearCommentReaction(c));

@@ -9,6 +9,7 @@ import { requireAuth } from "../middleware/auth.js";
 import { db } from "../db/index.js";
 import { indexEntityAsync } from "../lib/embeddings.js";
 import * as webhooks from "../lib/webhooks.js";
+import { notifyOnEntityMentions, notifyOnReaction } from "../lib/notifications.js";
 import { entities, reactions, collections, collectionEntities } from "../db/schema/index.js";
 import { readPagination, paginate } from "../http/envelope.js";
 import {
@@ -99,6 +100,7 @@ export const entityRoutes = new Hono<{ Variables: Variables }>()
       .returning();
     if (!row) throw Errors.badRequest("entities/create-failed", "Insert returned no row");
     indexEntityAsync(projectId, row.id, [row.title, row.content].filter(Boolean).join("\n"));
+    await notifyOnEntityMentions(projectId, row);
     const shaped = shapeEntity(row);
     webhooks.broadcast(projectId, "entity.created.complete", shaped);
     return c.json(shaped, 201);
@@ -186,7 +188,17 @@ export const entityRoutes = new Hono<{ Variables: Variables }>()
   // ── reactions ─────────────────────────────────────────────────────────────
   .post("/:id/reactions", requireAuth, async (c) => {
     const { type } = parseBody(reactionSchema, await c.req.json().catch(() => ({})), "entities");
-    return c.json(await toggleEntityReaction(c, type));
+    const result = await toggleEntityReaction(c, type);
+    await notifyOnReaction({
+      projectId: c.var.projectId,
+      targetType: "entity",
+      targetId: c.req.param("id"),
+      reactorId: c.var.auth!.userId,
+      reactionType: type,
+      isActive: result.userReaction === type,
+      reactionCounts: result.reactionCounts,
+    });
+    return c.json(result);
   })
   .delete("/:id/reactions", requireAuth, async (c) => {
     return c.json(await clearEntityReaction(c));
