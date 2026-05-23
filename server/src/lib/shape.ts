@@ -1,0 +1,375 @@
+// Row-shaping layer: Drizzle rows -> camelCase API models matching docs/MODELS.md.
+// Drizzle already returns camelCase keys; this layer normalizes Date->ISO strings,
+// strips/derives fields (public User, blanked deleted comments, userReaction, isSaved),
+// and nests included relations. The reusable contract surface every domain copies.
+import { randomBytes } from "node:crypto";
+import type { Context } from "hono";
+import { and, eq, inArray } from "drizzle-orm";
+import { db } from "../db/index.js";
+import {
+  reactions, profiles, spaces, spaceRules, collections, appNotifications, reports,
+} from "../db/schema/index.js";
+
+// ─── Reaction taxonomy (must match db enum + SDK exactly) ────────────────────
+export const REACTION_TYPES = [
+  "upvote",
+  "downvote",
+  "like",
+  "love",
+  "wow",
+  "sad",
+  "angry",
+  "funny",
+] as const;
+export type ReactionType = (typeof REACTION_TYPES)[number];
+export type ReactionCounts = Record<ReactionType, number>;
+
+// Drizzle inferred row types.
+type ProfileRow = typeof profiles.$inferSelect;
+// entities/comments rows are passed structurally to avoid a hard import cycle here.
+type EntityRow = Record<string, any>;
+type CommentRow = Record<string, any>;
+
+// ─── Model interfaces (return shapes; see docs/MODELS.md) ────────────────────
+export interface User {
+  id: string;
+  projectId: string;
+  foreignId: string | null;
+  role: "admin" | "moderator" | "visitor";
+  name: string | null;
+  username: string | null;
+  avatar: string | null;
+  avatarFileId: string | null;
+  bannerFileId: string | null;
+  bio: string | null;
+  birthdate: string | null;
+  location: unknown | null;
+  metadata: Record<string, unknown>;
+  reputation: number;
+  createdAt: string;
+}
+
+export interface Entity {
+  id: string;
+  foreignId: string | null;
+  shortId: string;
+  projectId: string;
+  sourceId: string | null;
+  spaceId: string | null;
+  space?: unknown;
+  userId: string | null;
+  user?: User | null;
+  title: string | null;
+  content: string | null;
+  mentions: unknown[];
+  attachments: unknown[];
+  keywords: string[];
+  upvotes: string[];
+  downvotes: string[];
+  reactionCounts: ReactionCounts;
+  userReaction: ReactionType | null;
+  repliesCount: number;
+  views: number;
+  score: number;
+  scoreUpdatedAt: string;
+  location: unknown | null;
+  metadata: Record<string, unknown>;
+  isSaved?: boolean;
+  createdAt: string;
+  updatedAt: string;
+  deletedAt: string | null;
+  isDraft: boolean;
+  moderationStatus: string | null;
+  moderatedAt: string | null;
+  moderatedById: string | null;
+  moderatedByType: string | null;
+  moderationReason: string | null;
+}
+
+export interface Comment {
+  id: string;
+  projectId: string;
+  foreignId: string | null;
+  entityId: string;
+  userId: string | null;
+  user?: User | null;
+  parentId: string | null;
+  content: string | null;
+  gif: unknown | null;
+  mentions: unknown[];
+  upvotes: string[];
+  downvotes: string[];
+  reactionCounts: ReactionCounts;
+  userReaction: ReactionType | null;
+  repliesCount: number;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+  deletedAt: string | null;
+  userDeletedAt: string | null;
+  moderationStatus: string | null;
+  moderatedAt: string | null;
+  moderatedById: string | null;
+  moderatedByType: string | null;
+  moderationReason: string | null;
+}
+
+// ─── helpers ──────────────────────────────────────────────────────────────────
+
+/** Dates serialize as ISO strings (MODELS.md). Drizzle returns Date for timestamptz. */
+function iso(d: Date | string | null | undefined): string | null {
+  if (d == null) return null;
+  return d instanceof Date ? d.toISOString() : String(d);
+}
+
+// ─── Shapers ─────────────────────────────────────────────────────────────────
+
+/** Public user (omits email/secureMetadata/isVerified/isActive/lastActive/updatedAt). */
+export function shapeUser(row: ProfileRow | null | undefined): User | null {
+  if (!row) return null;
+  return {
+    id: row.id,
+    projectId: row.projectId,
+    foreignId: row.foreignId ?? null,
+    role: row.role,
+    name: row.name ?? null,
+    username: row.username ?? null,
+    avatar: row.avatar ?? null,
+    avatarFileId: row.avatarFileId ?? null,
+    bannerFileId: row.bannerFileId ?? null,
+    bio: row.bio ?? null,
+    birthdate: row.birthdate ?? null,
+    location: null, // PostGIS column not modeled in Drizzle; populated in a later pass
+    metadata: (row.metadata as Record<string, unknown>) ?? {},
+    reputation: row.reputation ?? 0,
+    createdAt: iso(row.createdAt)!,
+  };
+}
+
+export function shapeEntity(
+  row: EntityRow,
+  opts: { userReaction?: ReactionType | null; isSaved?: boolean; user?: User | null } = {}
+): Entity {
+  const entity: Entity = {
+    id: row.id,
+    foreignId: row.foreignId ?? null,
+    shortId: row.shortId,
+    projectId: row.projectId,
+    sourceId: row.sourceId ?? null,
+    spaceId: row.spaceId ?? null,
+    userId: row.userId ?? null,
+    title: row.title ?? null,
+    content: row.content ?? null,
+    mentions: (row.mentions as unknown[]) ?? [],
+    attachments: (row.attachments as unknown[]) ?? [],
+    keywords: row.keywords ?? [],
+    upvotes: row.upvotes ?? [],
+    downvotes: row.downvotes ?? [],
+    reactionCounts: row.reactionCounts as ReactionCounts,
+    userReaction: opts.userReaction ?? null,
+    repliesCount: row.repliesCount ?? 0,
+    views: row.views ?? 0,
+    score: row.score ?? 0,
+    scoreUpdatedAt: iso(row.scoreUpdatedAt)!,
+    location: null, // PostGIS column not modeled in Drizzle
+    metadata: (row.metadata as Record<string, unknown>) ?? {},
+    createdAt: iso(row.createdAt)!,
+    updatedAt: iso(row.updatedAt)!,
+    deletedAt: iso(row.deletedAt),
+    isDraft: row.isDraft ?? false,
+    moderationStatus: row.moderationStatus ?? null,
+    moderatedAt: iso(row.moderatedAt),
+    moderatedById: row.moderatedById ?? null,
+    moderatedByType: row.moderatedByType ?? null,
+    moderationReason: row.moderationReason ?? null,
+  };
+  if (opts.user !== undefined) entity.user = opts.user;
+  if (opts.isSaved !== undefined) entity.isSaved = opts.isSaved;
+  return entity;
+}
+
+export function shapeComment(
+  row: CommentRow,
+  opts: { userReaction?: ReactionType | null; user?: User | null } = {}
+): Comment {
+  const deleted = !!row.userDeletedAt;
+  const comment: Comment = {
+    id: row.id,
+    projectId: row.projectId,
+    foreignId: row.foreignId ?? null,
+    entityId: row.entityId,
+    userId: row.userId ?? null,
+    parentId: row.parentId ?? null,
+    // Reddit-style placeholder: blank content/gif once the author deletes it.
+    content: deleted ? null : row.content ?? null,
+    gif: deleted ? null : row.gif ?? null,
+    mentions: (row.mentions as unknown[]) ?? [],
+    upvotes: row.upvotes ?? [],
+    downvotes: row.downvotes ?? [],
+    reactionCounts: row.reactionCounts as ReactionCounts,
+    userReaction: opts.userReaction ?? null,
+    repliesCount: row.repliesCount ?? 0,
+    metadata: (row.metadata as Record<string, unknown>) ?? {},
+    createdAt: iso(row.createdAt)!,
+    updatedAt: iso(row.updatedAt)!,
+    deletedAt: iso(row.deletedAt),
+    userDeletedAt: iso(row.userDeletedAt),
+    moderationStatus: row.moderationStatus ?? null,
+    moderatedAt: iso(row.moderatedAt),
+    moderatedById: row.moderatedById ?? null,
+    moderatedByType: row.moderatedByType ?? null,
+    moderationReason: row.moderationReason ?? null,
+  };
+  if (opts.user !== undefined) comment.user = opts.user;
+  return comment;
+}
+
+// ─── Request helpers ──────────────────────────────────────────────────────────
+
+/** Parse a comma-separated ?include= list into a Set. */
+export function parseInclude(c: Context): Set<string> {
+  const raw = c.req.query("include");
+  if (!raw) return new Set();
+  return new Set(raw.split(",").map((s) => s.trim()).filter(Boolean));
+}
+
+/** URL-safe ~10-char short id for share links (entities.short_id). */
+export function generateShortId(): string {
+  return randomBytes(8).toString("base64url").slice(0, 10);
+}
+
+/**
+ * Batch-fetch the auth user's reactions for a page of targets in one query.
+ * Returns Map<targetId, reactionType> so list handlers enrich `userReaction` w/o N+1.
+ */
+export async function attachUserReactions(
+  projectId: string,
+  targetType: "entity" | "comment",
+  targetIds: string[],
+  userId: string | undefined
+): Promise<Map<string, ReactionType>> {
+  const map = new Map<string, ReactionType>();
+  if (!userId || targetIds.length === 0) return map;
+  const rows = await db
+    .select({ targetId: reactions.targetId, reactionType: reactions.reactionType })
+    .from(reactions)
+    .where(
+      and(
+        eq(reactions.projectId, projectId),
+        eq(reactions.targetType, targetType),
+        eq(reactions.userId, userId),
+        inArray(reactions.targetId, targetIds)
+      )
+    );
+  for (const r of rows) map.set(r.targetId, r.reactionType as ReactionType);
+  return map;
+}
+
+/** Batch-load shaped public Users by id (for ?include=user). */
+export async function loadUsers(
+  projectId: string,
+  userIds: (string | null | undefined)[]
+): Promise<Map<string, User>> {
+  const map = new Map<string, User>();
+  const ids = [...new Set(userIds.filter((x): x is string => !!x))];
+  if (ids.length === 0) return map;
+  const rows = await db
+    .select()
+    .from(profiles)
+    .where(and(eq(profiles.projectId, projectId), inArray(profiles.id, ids)));
+  for (const r of rows) {
+    const u = shapeUser(r);
+    if (u) map.set(r.id, u);
+  }
+  return map;
+}
+
+// ─── Space / membership / rule / collection / notification / report shapers ──
+
+type SpaceRow = typeof spaces.$inferSelect;
+type RuleRow = typeof spaceRules.$inferSelect;
+type CollectionRow = typeof collections.$inferSelect;
+type NotificationRow = typeof appNotifications.$inferSelect;
+type ReportRow = typeof reports.$inferSelect;
+
+export function shapeSpace(row: SpaceRow, opts: { isMember?: boolean } = {}) {
+  const space = {
+    id: row.id,
+    projectId: row.projectId,
+    shortId: row.shortId,
+    slug: row.slug ?? null,
+    name: row.name,
+    description: row.description ?? null,
+    avatarFileId: row.avatarFileId ?? null,
+    bannerFileId: row.bannerFileId ?? null,
+    userId: row.userId ?? null,
+    readingPermission: row.readingPermission,
+    postingPermission: row.postingPermission,
+    requireJoinApproval: row.requireJoinApproval,
+    parentSpaceId: row.parentSpaceId ?? null,
+    depth: row.depth,
+    metadata: (row.metadata as Record<string, unknown>) ?? {},
+    membersCount: row.membersCount,
+    childSpacesCount: row.childSpacesCount,
+    createdAt: iso(row.createdAt)!,
+    updatedAt: iso(row.updatedAt)!,
+    deletedAt: iso(row.deletedAt),
+  } as Record<string, unknown>;
+  if (opts.isMember !== undefined) space.isMember = opts.isMember;
+  return space;
+}
+
+export function shapeRule(row: RuleRow) {
+  return {
+    id: row.id,
+    projectId: row.projectId,
+    spaceId: row.spaceId,
+    title: row.title,
+    description: row.description ?? null,
+    order: row.order,
+    lastApprovedBy: row.lastApprovedBy ?? null,
+    createdAt: iso(row.createdAt)!,
+    updatedAt: iso(row.updatedAt)!,
+  };
+}
+
+export function shapeCollection(row: CollectionRow) {
+  return {
+    id: row.id,
+    projectId: row.projectId,
+    userId: row.userId,
+    parentId: row.parentId ?? null,
+    name: row.name,
+    entityCount: row.entityCount,
+    createdAt: iso(row.createdAt)!,
+    updatedAt: iso(row.updatedAt)!,
+  };
+}
+
+export function shapeNotification(row: NotificationRow) {
+  return {
+    id: row.id,
+    userId: row.userId,
+    type: row.type,
+    action: row.action ?? null,
+    isRead: row.isRead,
+    metadata: (row.metadata as Record<string, unknown>) ?? {},
+    createdAt: iso(row.createdAt)!,
+  };
+}
+
+export function shapeReport(row: ReportRow) {
+  return {
+    id: row.id,
+    projectId: row.projectId,
+    reporterId: row.reporterId ?? null,
+    targetType: row.targetType,
+    targetId: row.targetId,
+    spaceId: row.spaceId ?? null,
+    reason: row.reason,
+    details: row.details ?? null,
+    resolvedAt: iso(row.resolvedAt),
+    resolvedById: row.resolvedById ?? null,
+    createdAt: iso(row.createdAt)!,
+  };
+}
