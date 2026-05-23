@@ -102,6 +102,7 @@ export const updateSpaceSchema = z
     readingPermission: readingPerm.optional(),
     postingPermission: postingPerm.optional(),
     requireJoinApproval: z.boolean().optional(),
+    parentSpaceId: z.string().uuid().nullable().optional(), // reparent; null = make top-level
     metadata,
   })
   .refine((v) => Object.keys(v).length > 0, { message: "No updatable fields provided" });

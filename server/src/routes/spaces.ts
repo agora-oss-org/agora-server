@@ -2,7 +2,7 @@
 // Static routes (/by-slug, /user-spaces, …) MUST stay above /:id.
 // NOTE: :memberId is treated as the member's USER id (operate on space_members by user).
 import { Hono } from "hono";
-import { and, eq, isNull, desc, asc, count, inArray } from "drizzle-orm";
+import { and, eq, isNull, desc, asc, count, inArray, sql } from "drizzle-orm";
 import type { Variables } from "../http/context.js";
 import { Errors } from "../http/errors.js";
 import { requireAuth } from "../middleware/auth.js";
@@ -40,6 +40,21 @@ async function requireSpaceRole(c: any, space: SpaceRow, roles: Array<"admin" | 
     throw Errors.forbidden("spaces/insufficient-role", "Insufficient space role");
   }
   return m.role;
+}
+
+// True if making `newParentId` the parent of `spaceId` would create a cycle — i.e. newParentId
+// is `spaceId` itself or one of its descendants. Walks up the ancestor chain from newParentId.
+async function wouldCreateCycle(spaceId: string, newParentId: string): Promise<boolean> {
+  let current: string | null = newParentId;
+  const seen = new Set<string>();
+  while (current) {
+    if (current === spaceId) return true;
+    if (seen.has(current)) break; // safety against pre-existing corrupt data
+    seen.add(current);
+    const [p] = await db.select({ parent: spaces.parentSpaceId }).from(spaces).where(eq(spaces.id, current)).limit(1);
+    current = p?.parent ?? null;
+  }
+  return false;
 }
 
 export const spaceRoutes = new Hono<{ Variables: Variables }>()
@@ -128,15 +143,42 @@ export const spaceRoutes = new Hono<{ Variables: Variables }>()
     const space = await getSpace(c);
     await requireSpaceRole(c, space, ["admin"]);
     const body = parseBody(updateSpaceSchema, await c.req.json().catch(() => ({})), "spaces");
-    const [row] = await db.update(spaces).set({
-      ...(body.name !== undefined ? { name: body.name } : {}),
-      ...(body.slug !== undefined ? { slug: body.slug } : {}),
-      ...(body.description !== undefined ? { description: body.description } : {}),
-      ...(body.readingPermission !== undefined ? { readingPermission: body.readingPermission } : {}),
-      ...(body.postingPermission !== undefined ? { postingPermission: body.postingPermission } : {}),
-      ...(body.requireJoinApproval !== undefined ? { requireJoinApproval: body.requireJoinApproval } : {}),
-      ...(body.metadata !== undefined ? { metadata: body.metadata } : {}),
-    }).where(eq(spaces.id, space.id)).returning();
+    const patch: Record<string, unknown> = {};
+    if (body.name !== undefined) patch.name = body.name;
+    if (body.slug !== undefined) patch.slug = body.slug;
+    if (body.description !== undefined) patch.description = body.description;
+    if (body.readingPermission !== undefined) patch.readingPermission = body.readingPermission;
+    if (body.postingPermission !== undefined) patch.postingPermission = body.postingPermission;
+    if (body.requireJoinApproval !== undefined) patch.requireJoinApproval = body.requireJoinApproval;
+    if (body.metadata !== undefined) patch.metadata = body.metadata;
+
+    // Reparenting — only when parentSpaceId actually changes. Guard against cycles.
+    if (body.parentSpaceId !== undefined && body.parentSpaceId !== space.parentSpaceId) {
+      const newParentId = body.parentSpaceId;
+      if (newParentId) {
+        if (newParentId === space.id) throw Errors.badRequest("spaces/cycle", "A space cannot be its own parent", "parentSpaceId");
+        const [parent] = await db.select().from(spaces)
+          .where(and(eq(spaces.projectId, c.var.projectId), eq(spaces.id, newParentId), isNull(spaces.deletedAt))).limit(1);
+        if (!parent) throw Errors.badRequest("spaces/bad-parent", "Parent space not found", "parentSpaceId");
+        if (await wouldCreateCycle(space.id, newParentId)) {
+          throw Errors.badRequest("spaces/cycle", "Cannot move a space under its own descendant", "parentSpaceId");
+        }
+        patch.parentSpaceId = newParentId;
+        patch.depth = parent.depth + 1;
+      } else {
+        patch.parentSpaceId = null;
+        patch.depth = 0;
+      }
+      // child_spaces_count isn't trigger-maintained on UPDATE, so adjust both parents here.
+      if (space.parentSpaceId) {
+        await db.update(spaces).set({ childSpacesCount: sql`greatest(0, ${spaces.childSpacesCount} - 1)` }).where(eq(spaces.id, space.parentSpaceId));
+      }
+      if (newParentId) {
+        await db.update(spaces).set({ childSpacesCount: sql`${spaces.childSpacesCount} + 1` }).where(eq(spaces.id, newParentId));
+      }
+    }
+
+    const [row] = await db.update(spaces).set(patch).where(eq(spaces.id, space.id)).returning();
     return c.json(shapeSpace(row!));
   })
   .delete("/:id", requireAuth, async (c) => {
