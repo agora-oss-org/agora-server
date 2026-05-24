@@ -1,8 +1,9 @@
 # Agora — Build Manifest
 
-> The concrete contract Agora's server must implement to be consumed **1:1** by the
-> (forked) Replyke SDK. Extracted directly from `@replyke/core` source at
-> `github.com/replyke/monorepo` (Apache-2.0), commit fetched 2026-05-22.
+> The concrete contract Agora's server must implement to be consumed **1:1** by the client SDK,
+> [`jenova-marie/agora-sdk`](https://github.com/jenova-marie/agora-sdk) — a fork of `@replyke/core`
+> (Apache-2.0, `github.com/replyke/monorepo`) already repointed at an Agora server. Source extracted
+> from the upstream SDK, commit fetched 2026-05-22.
 >
 > Legend: **✅ SDK-confirmed** = method+path read straight from SDK call sites.
 > **🔶 inferred** = path seen in SDK but method/shape assumed from REST convention or
@@ -10,21 +11,34 @@
 
 ---
 
-## 0. The fork: where the base URL is hardcoded
+## 0. The client SDK (already forked + repointed)
 
-The published SDK will **not** fully point at Agora via env var alone. Fork `@replyke/core`
-(+ the framework packages) and repoint these:
+**You do not need to fork or patch anything** — that work is done in
+[`jenova-marie/agora-sdk`](https://github.com/jenova-marie/agora-sdk) (published under the `@agora/*`
+scope). As a consumer you only point the SDK at your server via the base-URL env var:
 
-| File | Constant | Change to |
+```
+VITE_API_BASE_URL   = https://YOUR_HOST/v7     # Vite
+REACT_APP_API_BASE_URL = https://YOUR_HOST/v7  # CRA / React Native
+# defaults to http://localhost:4000/v7
+```
+
+The socket origin is derived from that base URL, so realtime follows the same setting.
+
+**For reference only** — what the fork repointed. The published Replyke SDK hardcoded
+`https://api.replyke.com/v7` in spots the env var alone didn't cover; `agora-sdk` already patched
+each one, so this table documents *what changed*, not work you need to do:
+
+| File | Constant | Repointed (done in agora-sdk) |
 |---|---|---|
-| `config/axios.ts` | `export const BASE_URL = "https://api.replyke.com/v7"` | your host + `/v7` |
-| `utils/env.ts` | `getApiBaseUrl()` fallback `'https://api.replyke.com/v7'` (×3) | your host |
-| `hooks/search/useAskContent.ts` | hardcoded semantic-search URL | your host |
+| `config/axios.ts` | `export const BASE_URL = "https://api.replyke.com/v7"` | base URL env / your host + `/v7` |
+| `utils/env.ts` | `getApiBaseUrl()` fallback `'https://api.replyke.com/v7'` (×3) | base URL env / your host |
+| `hooks/search/useAskContent.ts` | hardcoded semantic-search URL | base URL env / your host |
 | `context/chat-context.tsx` | `getSocketUrl()` origin (derived from BASE_URL) | your socket host |
-| OAuth sign-in hook (`react-js`) | hardcoded origin | your host |
+| OAuth sign-in hook (`react-js`) | hardcoded origin | base URL env / your host |
 
-Only the RTK-Query layer (`store/api/baseApi.ts`) already respects
-`VITE_API_BASE_URL` / `REACT_APP_API_BASE_URL`.
+(The RTK-Query layer, `store/api/baseApi.ts`, already respected
+`VITE_API_BASE_URL` / `REACT_APP_API_BASE_URL` upstream.)
 
 ---
 
@@ -304,8 +318,8 @@ server speaking these exact event names.
 ```js
 io(socketUrl, { auth: { token: accessToken }, query: { projectId }, autoConnect: true })
 ```
-`socketUrl` = origin of the (forked) BASE_URL. Authenticate the socket from `auth.token`,
-scope it by `query.projectId`.
+`socketUrl` = origin of the SDK's base URL (the env var from §0). Authenticate the socket from
+`auth.token`, scope it by `query.projectId`.
 
 **Server → Client events** (`types/socket.ts` — `ServerToClientEvents`):
 | Event | Payload |
