@@ -1,0 +1,16 @@
+node_modules
+dist
+coverage
+test
+**/*.test.ts
+vitest.config.ts
+vitest.integration.config.ts
+.env
+.env.*
+!.env.example
+*.log
+.git
+.gitignore
+.DS_Store
+Dockerfile
+.dockerignore
