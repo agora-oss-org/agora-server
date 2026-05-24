@@ -201,16 +201,23 @@ Isolation is by `project_id` — each test mints its own project + users and cas
 - [x] **Spaces depth** — reparenting cycle guard (self/descendant → 400) + valid move/detach,
       breadcrumb/children, rules CRUD + reorder, digest-config (admin-gated + secret masking),
       slug lookup/availability, leave. (`spaces-depth.test.ts`)
-- [ ] **Chat depth** — message edit/delete/remove events · typing relay · member:joined/left ·
-      conversation:updated/deleted · thread:reply_count · read-state · group conversations ·
-      non-member POST → 403.
+- [x] **Chat depth** — message:updated/deleted fan-out + author-only 403, member:joined/left,
+      conversation:updated/deleted, thread:reply_count, typing:start/stop relay (excludes sender),
+      group conversations + roles, admins-only posting, non-member POST → 403, admin-only delete,
+      read-state unread counts. (`chat-depth.test.ts`, 12 — socket.io e2e + REST.) ⚠️ `message:removed`
+      is in the socket contract but not emitted by any route (no moderator-remove endpoint yet).
+- [x] **Text search** — `/search/spaces` + `/users` ILIKE (name/slug/description, username/name),
+      exact>prefix>substring relevance ranking, bare-array shape, limit, missing-query 400.
+      (`search-text.test.ts`, 5 — no VOYAGE_API_KEY needed.)
+- [x] **Connection notifications** — explicit `connection-request`/`connection-accepted` inbox
+      assertions (type + `metadata.initiatorId`) added to `connections.test.ts`.
 
 ### E2E / external-service (opt-in; need real creds)
 - [ ] **Auth (Supabase-backed)** — sign-up / sign-in / change-password / verify-email / password
       reset. (Rotation is already covered without Supabase.)
 - [ ] **External auth** — RS256 `verify-external-user` (set a project public key, mint a test JWT).
-- [ ] **Search** — `/search/content` + `/ask` (Voyage embed + LLM). `/search/spaces` + `/users`
-      are plain ILIKE — no key needed, promote those to P2.
+- [ ] **Search** — `/search/content` + `/ask` (Voyage embed + LLM). (`/search/spaces` + `/users`
+      ILIKE now covered in P2 via `search-text.test.ts` — no key needed.)
 - [ ] **Storage** — `/storage` upload + `/storage/images` variants (Supabase Storage bucket).
 - [ ] **Webhooks** — validate (allow/deny/unavailable) + `*.complete` broadcast HMAC delivery
       (against a live test endpoint).
