@@ -103,17 +103,17 @@ signs an RS256 JWT (issuer=projectId, aud="replyke.com", sub=userData.id, claim 
 ### entities
 | Method | Path | Status |
 |---|---|---|
-| GET | `/entities` (feed/list — accepts filters, see §5) | 🔶 |
-| POST | `/entities` | 🔶 |
+| GET | `/entities` (feed/list — accepts filters, see §5) | ✅ |
+| POST | `/entities` | ✅ |
 | GET | `/entities/:id` | ✅ |
 | PATCH | `/entities/:id` | ✅ |
 | DELETE | `/entities/:id` | ✅ |
 | GET | `/entities/by-foreign-id` | ✅ |
 | GET | `/entities/by-short-id` | ✅ |
-| GET | `/entities/drafts` | 🔶 |
-| POST | `/entities/:id/publish` | 🔶 |
-| GET | `/entities/is-entity-saved` | 🔶 |
-| POST/DELETE | `/entities/:id/reactions` | 🔶 |
+| GET | `/entities/drafts` | ✅ |
+| POST | `/entities/:id/publish` | ✅ |
+| GET | `/entities/is-entity-saved` | ✅ |
+| POST/DELETE | `/entities/:id/reactions` | ✅ |
 
 ### comments
 | Method | Path | Status |
@@ -125,13 +125,13 @@ signs an RS256 JWT (issuer=projectId, aud="replyke.com", sub=userData.id, claim 
 | PATCH | `/comments/:id` | ✅ |
 | DELETE | `/comments/:id` | ✅ |
 | GET | `/comments/by-foreign-id` (→ `{ comment }`) | ✅ |
-| POST/DELETE | `/comments/:id/reactions` | 🔶 |
+| POST/DELETE | `/comments/:id/reactions` | ✅ |
 
 ### users
 | Method | Path | Status |
 |---|---|---|
 | GET | `/users/:id` | ✅ |
-| PATCH | `/users/:id` (update profile) | 🔶 |
+| PATCH | `/users/:id` (update profile) | ✅ |
 | GET | `/users/by-foreign-id` | ✅ |
 | GET | `/users/by-username` | ✅ |
 | GET | `/users/check-username` | ✅ |
@@ -139,18 +139,18 @@ signs an RS256 JWT (issuer=projectId, aud="replyke.com", sub=userData.id, claim 
 | GET | `/users/:id/follow` (follow status) | ✅ |
 | POST | `/users/:id/follow` | ✅ |
 | DELETE | `/users/:id/follow` | ✅ |
-| GET | `/users/:id/followers` | 🔶 |
-| GET | `/users/:id/following` | 🔶 |
+| GET | `/users/:id/followers` | ✅ |
+| GET | `/users/:id/following` | ✅ |
 | GET | `/users/:id/followers-count` | ✅ |
 | GET | `/users/:id/following-count` | ✅ |
-| GET | `/users/:id/connections-count` | 🔶 (note: seen without `/:projectId` prefix — verify) |
+| GET | `/users/:id/connections-count` | ✅ (also exposed at the `/v7` root `/users/:userId/connections-count` via the connections module) |
 
 ### follows
 | Method | Path | Status |
 |---|---|---|
 | DELETE | `/follows/:id` | ✅ |
-| GET | `/follows/followers` | 🔶 |
-| GET | `/follows/following` | 🔶 |
+| GET | `/follows/followers` | ✅ |
+| GET | `/follows/following` | ✅ |
 | GET | `/follows/followers-count` | ✅ |
 | GET | `/follows/following-count` | ✅ |
 
@@ -163,7 +163,7 @@ signs an RS256 JWT (issuer=projectId, aud="replyke.com", sub=userData.id, claim 
 ### spaces
 | Method | Path | Status |
 |---|---|---|
-| GET | `/spaces` (list, `?…`) | 🔶 |
+| GET | `/spaces` (list, `?…`) | ✅ |
 | POST | `/spaces` | ✅ |
 | GET | `/spaces/:id` | ✅ |
 | PATCH | `/spaces/:id` | ✅ |
@@ -171,20 +171,20 @@ signs an RS256 JWT (issuer=projectId, aud="replyke.com", sub=userData.id, claim 
 | GET | `/spaces/by-short-id?shortId=` | ✅ |
 | GET | `/spaces/by-slug?slug=` | ✅ |
 | GET | `/spaces/check-slug?slug=` | ✅ |
-| GET | `/spaces/user-spaces` | 🔶 |
+| GET | `/spaces/user-spaces` | ✅ |
 | GET | `/spaces/:id/breadcrumb` | ✅ |
-| GET | `/spaces/:id/children?page=&limit=` | 🔶 |
+| GET | `/spaces/:id/children?page=&limit=` | ✅ |
 | POST | `/spaces/:id/join` | ✅ |
 | DELETE | `/spaces/:id/leave` | ✅ |
-| GET | `/spaces/:id/members?…` | 🔶 |
+| GET | `/spaces/:id/members?…` | ✅ |
 | DELETE | `/spaces/:id/members/:id` | ✅ |
 | PATCH | `/spaces/:id/members/:id/role` | ✅ |
 | PATCH | `/spaces/:id/members/:id/approve` | ✅ |
 | PATCH | `/spaces/:id/members/:id/decline` | ✅ |
 | PATCH | `/spaces/:id/members/:id/unban` | ✅ |
-| GET | `/spaces/:id/membership/me` | 🔶 |
-| GET | `/spaces/:id/team` | 🔶 |
-| GET/PATCH | `/spaces/:id/digest-config` | 🔶 |
+| GET | `/spaces/:id/membership/me` | ✅ |
+| GET | `/spaces/:id/team` | ✅ |
+| GET/PATCH | `/spaces/:id/digest-config` | ✅ |
 | GET | `/spaces/:id/rules` | ✅ |
 | POST | `/spaces/:id/rules` | ✅ |
 | GET | `/spaces/:id/rules/:id` | ✅ |
@@ -222,25 +222,25 @@ signs an RS256 JWT (issuer=projectId, aud="replyke.com", sub=userData.id, claim 
 ### collections
 | Method | Path | Status |
 |---|---|---|
-| GET | `/collections/root` | 🔶 |
-| GET | `/collections/:id` | 🔶 |
-| GET/POST | `/collections/:id/sub-collections` | 🔶 |
-| GET/POST | `/collections/:id/entities` | 🔶 |
-| DELETE | `/collections/:id/entities/:id` | 🔶 |
+| GET | `/collections/root` | ✅ |
+| GET | `/collections/:id` | ✅ |
+| GET/POST | `/collections/:id/sub-collections` | ✅ |
+| GET/POST | `/collections/:id/entities` | ✅ |
+| DELETE | `/collections/:id/entities/:id` | ✅ |
 
 ### app-notifications
 | Method | Path | Status |
 |---|---|---|
-| GET | `/app-notifications` | 🔶 |
-| GET | `/app-notifications/count` | 🔶 |
-| PATCH | `/app-notifications/:id/mark-as-read` | 🔶 |
-| POST | `/app-notifications/mark-all-as-read` | 🔶 |
+| GET | `/app-notifications` | ✅ |
+| GET | `/app-notifications/count` | ✅ |
+| PATCH | `/app-notifications/:id/mark-as-read` | ✅ |
+| POST | `/app-notifications/mark-all-as-read` | ✅ |
 
 ### reports
 | Method | Path | Status |
 |---|---|---|
 | POST | `/reports` | ✅ |
-| GET | `/reports/moderated` | 🔶 |
+| GET | `/reports/moderated` | ✅ |
 
 ### search
 All search endpoints are **POST** with a JSON body `{ query, limit?, ... }` and return a **bare
@@ -262,7 +262,7 @@ against the SDK's `useSearchContent`/`useAskContent`/`useSearchSpaces`/`useSearc
 ### utils
 | Method | Path | Status |
 |---|---|---|
-| GET | `/utils/get-metadata` (URL/OG metadata fetch) | 🔶 |
+| GET | `/utils/get-metadata` (URL/OG metadata fetch) | ✅ |
 
 ---
 
