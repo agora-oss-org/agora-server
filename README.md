@@ -253,17 +253,17 @@ npm run test:integration  # integration (set TEST_DATABASE_URL first)
 
 Clients talk to Agora through **[`agora-sdk`](https://github.com/jenova-marie/agora-sdk)** — a
 TypeScript-first, headless fork of the Replyke SDK, repointed at an Agora server and published under
-the `@agora/*` scope:
+the `@agora-sdk/*` scope:
 
 | Package | Use |
 |---|---|
-| `@agora/core` | core hooks, context providers, utilities (React + React Native) |
-| `@agora/react-js` | React bindings + re-exports from core |
-| `@agora/react-native` | React Native bindings with token management |
-| `@agora/expo` | Expo bindings with secure token storage |
+| `@agora-sdk/core` | core hooks, context providers, utilities (React + React Native) |
+| `@agora-sdk/react-js` | React bindings + re-exports from core |
+| `@agora-sdk/react-native` | React Native bindings with token management |
+| `@agora-sdk/expo` | Expo bindings with secure token storage |
 
 ```bash
-pnpm add @agora/react-js      # or @agora/react-native / @agora/expo
+pnpm add @agora-sdk/react-js      # or @agora-sdk/react-native / @agora-sdk/expo
 ```
 
 Point it at your server with `VITE_API_BASE_URL` (defaults to `http://localhost:4000/v7`) and pass a
@@ -285,7 +285,7 @@ are the contract both sides verify against.
 - ✅ Realtime chat, semantic + RAG search, auth (token rotation + external RS256 + OAuth), storage,
   project webhooks, space digests, and RLS public-read all verified end-to-end.
 - ✅ Idempotent Drizzle migrations `0000`–`0012`; unit + integration test suites green.
-- ✅ Client SDK published — [`agora-sdk`](https://github.com/jenova-marie/agora-sdk) (`@agora/*`),
+- ✅ Client SDK published — [`agora-sdk`](https://github.com/jenova-marie/agora-sdk) (`@agora-sdk/*`),
   repointed at Agora (the 1:1 proof).
 - ⬜ Hardening / ops backlog: rate limiting, refresh-token cleanup sweep, RLS write policies (only
   needed if the Supabase Data API is opened for writes), and deployment.

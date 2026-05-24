@@ -14,7 +14,7 @@
 ## 0. The client SDK (already forked + repointed)
 
 **You do not need to fork or patch anything** — that work is done in
-[`jenova-marie/agora-sdk`](https://github.com/jenova-marie/agora-sdk) (published under the `@agora/*`
+[`jenova-marie/agora-sdk`](https://github.com/jenova-marie/agora-sdk) (published under the `@agora-sdk/*`
 scope). As a consumer you only point the SDK at your server via the base-URL env var:
 
 ```
