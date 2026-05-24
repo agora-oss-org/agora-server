@@ -43,7 +43,7 @@ describe("comments depth (integration)", () => {
 
     // parent.replies_count bumped by trigger
     const refetched = await api("GET", `${B}/comments/${root.body.id}`);
-    expect(refetched.body.repliesCount).toBe(1);
+    expect(refetched.body.comment.repliesCount).toBe(1);
   });
 
   it("toggles a comment reaction (target=comment, no score refresh)", async () => {
@@ -64,7 +64,7 @@ describe("comments depth (integration)", () => {
     const { body: created } = await mkComment(owner.token, { content: "x", foreignId: fid });
     const found = await api("GET", `${B}/comments/by-foreign-id?foreignId=${fid}`);
     expect(found.status).toBe(200);
-    expect(found.body.id).toBe(created.id);
+    expect(found.body.comment.id).toBe(created.id);
   });
 
   it("enforces ownership on edit (non-owner 403, owner 200)", async () => {
