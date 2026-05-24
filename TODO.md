@@ -38,8 +38,14 @@ migration `0009`) — blocking `validate()` + fire-and-forget `broadcast()`, HMA
       (set url/secret/events; secret never returned, only `hasSecret`; cache invalidated on write) +
       `POST /webhooks/test` (signed test ping → delivery result). Admin-gated via profile role.
       Integration: `webhook-config.test.ts` (4).
-- [ ] **Space digest delivery cron** — separate per-space system; `digest_config` columns exist,
-      no sender yet (hourly cron → POST `space.digest` envelope, HMAC-signed like project webhooks).
+- [x] **Space digest delivery (DONE)** — `lib/digests.ts` builds + HMAC-signs (per-space
+      `digest_webhook_secret`) a `space.digest` envelope of a space's recent entities (24h window,
+      top 10) and POSTs it to the space's own `digest_webhook_url`. Due-now gate honors
+      `digest_schedule_hour` in `digest_timezone` (IANA via `Intl`, defaults UTC); empty windows are
+      skipped. Trigger is decoupled: `scripts/send-digests.mjs` (cron-able, standalone — no server
+      needed, run via tsx; `--force`/`--project`/`--space`) and a secret-gated
+      `POST /internal/cron/digests` (`X-Cron-Secret` = `CRON_SECRET`, 503 when unset) for external
+      schedulers / Supabase pg_cron + pg_net. Integration: `digests.test.ts` (5).
 
 ## P1 — SDK features that are missing/broken
 
@@ -120,7 +126,8 @@ migration `0009`) — blocking `validate()` + fire-and-forget `broadcast()`, HMA
 - [x] **Space depth cap (DONE)** — `MAX_SPACE_DEPTH=5` enforced on create + reparent in `spaces.ts`
       (→ 400 `spaces/too-deep`); cycle guard already covered loops. Live-verified (6 levels ok, 7th rejected).
       Note: caps a space's own depth; a reparent that would push *descendants* past the cap isn't checked.
-- [ ] **Space digest delivery** — `digest_config` columns exist; no webhook sender.
+- [x] **Space digest delivery (DONE)** — see the Webhooks section (`lib/digests.ts` +
+      `scripts/send-digests.mjs` + `POST /internal/cron/digests`; `digests.test.ts`).
 - [x] **Comments full-tree endpoint + contract fixes (DONE).** `GET /comments/thread` exposes the
       `fetch_comment_thread` RPC as a nested `{ data: Comment[] }` (each with a `replies[]`); supports
       `rootId` to scope to a subtree. **Also fixed 3 real SDK-contract gaps** (the SDK does lazy one-
