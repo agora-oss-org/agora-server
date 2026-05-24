@@ -16,6 +16,9 @@ const schema = z.object({
   ACCESS_TOKEN_SECRET: z.string().min(1),
   REFRESH_TOKEN_GRACE_SECONDS: z.coerce.number().default(30),
   CORS_ORIGIN: z.string().default("*"),
+  // Shared secret gating POST /internal/cron/digests (external schedulers). Optional: when unset
+  // the endpoint is disabled (503) and digests run only via scripts/send-digests.mjs.
+  CRON_SECRET: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
   // Embeddings (Voyage AI). Optional until semantic search is used.
   VOYAGE_API_KEY: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
   VOYAGE_MODEL: z.string().default("voyage-3.5"),
