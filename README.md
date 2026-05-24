@@ -8,9 +8,10 @@
 
 **Agora is an open-source, self-hosted, 1:1-compatible replacement for the [Replyke](https://github.com/replyke/monorepo) backend, built on Supabase.**
 
-Replyke is a hosted backend for community & social features. Agora reimplements that backend so a
-(forked) `@replyke/core` SDK talks to **your** server instead of `api.replyke.com` — byte-for-byte
-the same REST paths, response shapes, auth semantics, and socket.io events. You keep Replyke's
+Replyke is a hosted backend for community & social features. Agora reimplements that backend so the
+[`agora-sdk`](https://github.com/jenova-marie/agora-sdk) (a repointed fork of the Replyke SDK) talks
+to **your** server instead of `api.replyke.com` — byte-for-byte the same REST paths, response shapes,
+auth semantics, and socket.io events. You keep Replyke's
 opinionated feature set (posts, threaded comments, reactions & feeds, follows & connections, nested
 spaces, real-time chat, notifications, moderation, semantic search) and run it all on infrastructure
 you control, under a permissive license.
@@ -125,8 +126,8 @@ agora/
         └── realtime/    # socket.io server, typed to the SDK's event contract
 ```
 
-The forked `@replyke/core` SDK and a demo client live in companion repositories (see
-`docs/MANIFEST.md §0` for the fork points); this repository is the backend.
+This repository is the backend. The client SDK lives in a companion repository,
+[`jenova-marie/agora-sdk`](https://github.com/jenova-marie/agora-sdk) (see **Client SDK** below).
 
 ## Getting started
 
@@ -248,13 +249,34 @@ npm run test:integration  # integration (set TEST_DATABASE_URL first)
   the work: run `scripts/send-digests.mjs` standalone (cron / launchd), or have an external scheduler
   (e.g. Supabase `pg_cron` + `pg_net`) hit the secret-gated `POST /internal/cron/digests`.
 
-## 1:1 SDK compatibility — the catch
+## Client SDK
 
-The published Replyke SDK hardcodes `https://api.replyke.com/v7` in a few spots, so to point it at
-Agora you **fork `@replyke/core`** and repoint those constants (see `docs/MANIFEST.md §0`). Once
-repointed, the URL shape, auth token semantics, `{ data, pagination }` / `{ error, code }` envelopes,
-response object shapes, and socket.io event names all line up — that's the entire point, and
-`docs/MANIFEST.md` + `docs/MODELS.md` are the contract you verify against.
+Clients talk to Agora through **[`agora-sdk`](https://github.com/jenova-marie/agora-sdk)** — a
+TypeScript-first, headless fork of the Replyke SDK, repointed at an Agora server and published under
+the `@agora/*` scope:
+
+| Package | Use |
+|---|---|
+| `@agora/core` | core hooks, context providers, utilities (React + React Native) |
+| `@agora/react-js` | React bindings + re-exports from core |
+| `@agora/react-native` | React Native bindings with token management |
+| `@agora/expo` | Expo bindings with secure token storage |
+
+```bash
+pnpm add @agora/react-js      # or @agora/react-native / @agora/expo
+```
+
+Point it at your server with `VITE_API_BASE_URL` (defaults to `http://localhost:4000/v7`) and pass a
+`projectId` + a signed user token to the provider; the SDK's typed hooks (`useEntity`, `useComments`,
+`useChat`, …) then work unchanged. See the [agora-sdk README](https://github.com/jenova-marie/agora-sdk#quick-start)
+for a full quick-start. (`useSignTestingJwt` signs a token client-side for development only — sign
+tokens on your server in production.)
+
+**Why a fork?** The published Replyke SDK hardcodes `https://api.replyke.com/v7`; `agora-sdk`
+repoints that base URL (see `docs/MANIFEST.md §0`). Because it does, the URL shape, auth token
+semantics, `{ data, pagination }` / `{ error, code }` envelopes, response object shapes, and
+socket.io event names all line up 1:1 — that's the entire point. `docs/MANIFEST.md` + `docs/MODELS.md`
+are the contract both sides verify against.
 
 ## Status
 
@@ -263,7 +285,8 @@ response object shapes, and socket.io event names all line up — that's the ent
 - ✅ Realtime chat, semantic + RAG search, auth (token rotation + external RS256 + OAuth), storage,
   project webhooks, space digests, and RLS public-read all verified end-to-end.
 - ✅ Idempotent Drizzle migrations `0000`–`0012`; unit + integration test suites green.
-- ✅ `@replyke/core` fork repointed at Agora (the 1:1 proof).
+- ✅ Client SDK published — [`agora-sdk`](https://github.com/jenova-marie/agora-sdk) (`@agora/*`),
+  repointed at Agora (the 1:1 proof).
 - ⬜ Hardening / ops backlog: rate limiting, refresh-token cleanup sweep, RLS write policies (only
   needed if the Supabase Data API is opened for writes), and deployment.
 
