@@ -264,6 +264,17 @@ against the SDK's `useSearchContent`/`useAskContent`/`useSearchSpaces`/`useSearc
 |---|---|---|
 | GET | `/utils/get-metadata` (URL/OG metadata fetch) | ✅ |
 
+### webhooks (project-admin; server-side admin surface, not an SDK hook)
+Replyke-style project webhooks: synchronous `validate` events (host may veto a write → 403) +
+fire-and-forget `*.complete` broadcasts. HMAC `X-Signature`/`X-Timestamp` (+ `X-Response-Signature`
+on validate replies). Covered events: entity/comment/space/message/user `.created`/`.updated` +
+`notification.created`. Config below is admin-gated (profile role `admin`).
+| Method | Path | Status |
+|---|---|---|
+| GET | `/webhooks/config` (→ `{ url, events, hasSecret }`; secret never returned) | ✅ |
+| PATCH | `/webhooks/config` (set `url`/`secret`/`events`; cache-invalidated) | ✅ |
+| POST | `/webhooks/test` (signed test ping → `{ configured, ok, status? }`) | ✅ |
+
 ---
 
 ## 3. Response object models (must match `@replyke/core` interfaces)

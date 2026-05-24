@@ -34,6 +34,30 @@ async function getConfig(projectId: string): Promise<WebhookConfig | null> {
 
 const sign = (secret: string, msg: string) => crypto.createHmac("sha256", secret).update(msg).digest("hex");
 
+/** Drop the cached config (call after an admin updates the project's webhook settings). */
+export function invalidateConfig(projectId: string): void {
+  cache.delete(projectId);
+}
+
+/** Send a signed test ping to the configured URL (ignores the subscribed-events list). */
+export async function sendTest(projectId: string): Promise<{ configured: boolean; ok?: boolean; status?: number; error?: string }> {
+  const cfg = await getConfig(projectId);
+  if (!cfg) return { configured: false };
+  const ts = Date.now().toString();
+  const body = JSON.stringify({ type: "webhook.test", projectId, stage: "complete", data: { message: "Agora test webhook", at: new Date().toISOString() } });
+  try {
+    const res = await fetch(cfg.url, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-signature": sign(cfg.secret, `${ts}.${body}`), "x-timestamp": ts },
+      body,
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+    return { configured: true, ok: res.ok, status: res.status };
+  } catch (e: any) {
+    return { configured: true, ok: false, error: e?.message ?? "unreachable" };
+  }
+}
+
 function timingSafeEqualHex(a: string, b: string): boolean {
   try {
     const ab = Buffer.from(a, "hex");

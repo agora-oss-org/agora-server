@@ -11,7 +11,8 @@ import { db } from "../db/index.js";
 import { oauthIdentities, oauthStates, profiles, projects, projectIntegrations } from "../db/schema/index.js";
 import { pkceClient, oauthConfigured } from "../lib/oauth.js";
 import { mintSession } from "../lib/tokens.js";
-import { parseBody, oauthAuthorizeSchema, signTestingJwtSchema } from "../lib/validation.js";
+import * as webhooks from "../lib/webhooks.js";
+import { parseBody, oauthAuthorizeSchema, signTestingJwtSchema, webhookConfigSchema } from "../lib/validation.js";
 
 type ProfileRow = typeof profiles.$inferSelect;
 
@@ -93,6 +94,30 @@ export const miscRoutes = new Hono<{ Variables: Variables }>()
       return errorRedirect(c, base, "oauth_failed", e?.message ?? "OAuth failed");
     }
   })
+  // ── webhook config (project-admin only; server-side admin surface, not an SDK hook) ─────
+  // GET returns the URL + subscribed events + whether a secret is set (never the secret itself).
+  .get("/webhooks/config", requireAuth, async (c) => {
+    await requireProjectAdmin(c);
+    return c.json(await webhookConfigView(c.var.projectId));
+  })
+  .patch("/webhooks/config", requireAuth, async (c) => {
+    await requireProjectAdmin(c);
+    const body = parseBody(webhookConfigSchema, await c.req.json().catch(() => ({})), "webhooks");
+    const patch: Record<string, unknown> = {};
+    if (body.url !== undefined) patch.webhookUrl = body.url; // null clears
+    if (body.secret !== undefined) patch.webhookSecret = body.secret;
+    if (body.events !== undefined) patch.webhookEvents = body.events ?? [];
+    if (Object.keys(patch).length) await db.update(projects).set(patch).where(eq(projects.id, c.var.projectId));
+    webhooks.invalidateConfig(c.var.projectId); // config is cached 30s — drop it now
+    return c.json(await webhookConfigView(c.var.projectId));
+  })
+  // Send a signed test ping to the configured URL and report the delivery result.
+  .post("/webhooks/test", requireAuth, async (c) => {
+    await requireProjectAdmin(c);
+    const result = await webhooks.sendTest(c.var.projectId);
+    if (!result.configured) throw Errors.badRequest("webhooks/not-configured", "No webhook URL configured for this project");
+    return c.json(result);
+  })
   // ── lean project info ───────────────────────────────────────────────────────
   .get("/projects/lean", async (c) => {
     const [project] = await db.select({ id: projects.id, name: projects.name }).from(projects)
@@ -150,6 +175,21 @@ export const miscRoutes = new Hono<{ Variables: Variables }>()
       throw Errors.badRequest("utils/fetch-failed", "Could not fetch URL metadata", "url");
     }
   });
+
+// ── webhook-admin helpers ───────────────────────────────────────────────────
+// Project-admin gate: the authenticated user's profile must have role "admin".
+async function requireProjectAdmin(c: any): Promise<void> {
+  const [p] = await db.select({ role: profiles.role }).from(profiles)
+    .where(and(eq(profiles.projectId, c.var.projectId), eq(profiles.id, c.var.auth!.userId))).limit(1);
+  if (!p || p.role !== "admin") throw Errors.forbidden("webhooks/not-admin", "Project admin role required");
+}
+
+// Safe view of the webhook config — never returns the secret, only whether one is set.
+async function webhookConfigView(projectId: string) {
+  const [p] = await db.select({ url: projects.webhookUrl, secret: projects.webhookSecret, events: projects.webhookEvents })
+    .from(projects).where(eq(projects.id, projectId)).limit(1);
+  return { url: p?.url ?? null, events: p?.events ?? [], hasSecret: !!p?.secret };
+}
 
 // ── oauth helpers ───────────────────────────────────────────────────────────
 // Ask Supabase for the provider authorization URL, persist the PKCE verifier + flow, return the URL.

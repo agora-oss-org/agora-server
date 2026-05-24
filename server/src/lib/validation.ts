@@ -203,6 +203,12 @@ export const signTestingJwtSchema = z.object({
   projectId: z.string().optional(), // SDK includes it; we sign with the path projectId
 });
 
+export const webhookConfigSchema = z.object({
+  url: z.string().url().nullish(),       // null clears it
+  secret: z.string().min(1).nullish(),
+  events: z.array(z.string()).nullish(), // null/absent → unchanged; [] disables all
+});
+
 export const oauthAuthorizeSchema = z.object({
   provider: z.string().min(1), // e.g. "google", "github", "apple" — passed through to Supabase
   // Where to send the browser after auth completes (default: the SDK sends window.location.href).

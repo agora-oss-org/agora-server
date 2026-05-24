@@ -34,8 +34,10 @@ migration `0009`) — blocking `validate()` + fire-and-forget `broadcast()`, HMA
 - [x] **`*.complete` broadcasts (DONE)** for all of those. Live-verified end-to-end with a real local
       receiver (`scripts/webhooks-events-e2e.mjs`): validation veto→403, allow→write, and HMAC-verified
       `entity.updated`/`space.created`/`message.created`/`user.updated` `.complete` delivery.
-- [ ] **Config surface** — an admin endpoint (or dashboard) to set `webhook_url/secret/events`;
-      currently DB-only. Add subscribed-events management + a "test webhook" ping.
+- [x] **Config surface (DONE)** — project-admin endpoints in `misc.ts`: `GET/PATCH /webhooks/config`
+      (set url/secret/events; secret never returned, only `hasSecret`; cache invalidated on write) +
+      `POST /webhooks/test` (signed test ping → delivery result). Admin-gated via profile role.
+      Integration: `webhook-config.test.ts` (4).
 - [ ] **Space digest delivery cron** — separate per-space system; `digest_config` columns exist,
       no sender yet (hourly cron → POST `space.digest` envelope, HMAC-signed like project webhooks).
 
