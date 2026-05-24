@@ -118,12 +118,13 @@ signs an RS256 JWT (issuer=projectId, aud="replyke.com", sub=userData.id, claim 
 ### comments
 | Method | Path | Status |
 |---|---|---|
-| GET | `/comments` (list; `entityId`, `parentId`, sort, pagination) | 🔶 |
+| GET | `/comments` (list; `entityId`, `parentId`, `sortBy` new/old/top, pagination) | ✅ |
+| GET | `/comments/thread` (full nested subtree; `entityId`, `rootId?` → `{ data: Comment[] }` w/ `replies[]`) | ✅ |
 | POST | `/comments` | ✅ |
-| GET | `/comments/:id` | ✅ |
+| GET | `/comments/:id` (→ `{ comment }`; `include`=user,parent) | ✅ |
 | PATCH | `/comments/:id` | ✅ |
 | DELETE | `/comments/:id` | ✅ |
-| GET | `/comments/by-foreign-id` | ✅ |
+| GET | `/comments/by-foreign-id` (→ `{ comment }`) | ✅ |
 | POST/DELETE | `/comments/:id/reactions` | 🔶 |
 
 ### users

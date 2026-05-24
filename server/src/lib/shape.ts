@@ -95,6 +95,7 @@ export interface Comment {
   userId: string | null;
   user?: User | null;
   parentId: string | null;
+  parentComment?: Comment | null;
   content: string | null;
   gif: unknown | null;
   mentions: unknown[];
@@ -191,7 +192,7 @@ export function shapeEntity(
 
 export function shapeComment(
   row: CommentRow,
-  opts: { userReaction?: ReactionType | null; user?: User | null } = {}
+  opts: { userReaction?: ReactionType | null; user?: User | null; parent?: Comment | null } = {}
 ): Comment {
   const deleted = !!row.userDeletedAt;
   const comment: Comment = {
@@ -222,6 +223,7 @@ export function shapeComment(
     moderationReason: row.moderationReason ?? null,
   };
   if (opts.user !== undefined) comment.user = opts.user;
+  if (opts.parent !== undefined) comment.parentComment = opts.parent;
   return comment;
 }
 

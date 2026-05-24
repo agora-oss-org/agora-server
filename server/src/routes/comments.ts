@@ -1,8 +1,9 @@
 // /v7/:projectId/comments/*
-// Data layer is Drizzle (db). One-level threaded reads (entityId + parentId) match the
-// SDK's lazy "load more replies". fetch_comment_thread RPC stays for a future full-tree endpoint.
+// Data layer is Drizzle (db). One-level threaded reads (entityId + parentId) match the SDK's lazy
+// "load more replies"; /thread additionally exposes the fetch_comment_thread RPC as a full nested
+// subtree (server-only convenience — the SDK builds the tree client-side from one-level fetches).
 import { Hono } from "hono";
-import { and, eq, isNull, asc, count, sql, type SQL } from "drizzle-orm";
+import { and, eq, isNull, asc, desc, count, inArray, sql, type SQL } from "drizzle-orm";
 import type { Variables } from "../http/context.js";
 import { Errors } from "../http/errors.js";
 import { requireAuth } from "../middleware/auth.js";
@@ -23,9 +24,11 @@ import { indexContentAsync } from "../lib/embeddings.js";
 export const commentRoutes = new Hono<{ Variables: Variables }>()
   .get("/", async (c) => {
     const projectId = c.var.projectId;
-    const entityId = c.req.query("entityId");
+    // SDK sends absent filters as the literal "null"/"undefined" — treat those as unset.
+    const clean = (v: string | undefined) => (v && v !== "null" && v !== "undefined" ? v : undefined);
+    const entityId = clean(c.req.query("entityId"));
     if (!entityId) throw Errors.badRequest("comments/missing-entity-id", "entityId is required", "entityId");
-    const parentId = c.req.query("parentId") ?? null;
+    const parentId = clean(c.req.query("parentId")) ?? null;
     const { page, limit, offset } = readPagination(c);
     const include = parseInclude(c);
 
@@ -37,11 +40,18 @@ export const commentRoutes = new Hono<{ Variables: Variables }>()
     ];
     const where = and(...conds);
 
+    // SDK CommentsSortByOptions: "top" | "new" | "old" (new = newest first, old = oldest first).
+    const sortBy = c.req.query("sortBy");
+    const order =
+      sortBy === "top" ? [desc(sql`coalesce((${comments.reactionCounts}->>'upvote')::int, 0)`), desc(comments.createdAt)]
+      : sortBy === "old" ? [asc(comments.createdAt)]
+      : [desc(comments.createdAt)]; // "new" (default)
+
     const rows = await db
       .select()
       .from(comments)
       .where(where)
-      .orderBy(asc(comments.createdAt))
+      .orderBy(...order)
       .limit(limit)
       .offset(offset);
     const totals = await db.select({ total: count() }).from(comments).where(where);
@@ -97,7 +107,49 @@ export const commentRoutes = new Hono<{ Variables: Variables }>()
       .where(and(eq(comments.projectId, projectId), eq(comments.foreignId, foreignId), isNull(comments.deletedAt)))
       .limit(1);
     if (!row) throw Errors.notFound("comments/not-found", "Comment not found");
-    return c.json(shapeComment(row));
+    // SDK's useFetchCommentByForeignId expects { comment }.
+    return c.json({ comment: await hydrateOne(c, row) });
+  })
+  // Full nested subtree for an entity (or under a root comment) via the fetch_comment_thread RPC.
+  // Server-only convenience: returns { data: Comment[] } where each comment carries a `replies` array.
+  .get("/thread", async (c) => {
+    const projectId = c.var.projectId;
+    const entityId = c.req.query("entityId");
+    if (!entityId) throw Errors.badRequest("comments/missing-entity-id", "entityId is required", "entityId");
+    const rootId = c.req.query("rootId") ?? c.req.query("parentId") ?? null;
+    const { limit, offset } = readPagination(c, { page: 1, limit: 50 });
+    const include = parseInclude(c);
+
+    const res = (await db.execute(sql`
+      select id, parent_id, depth from fetch_comment_thread(${entityId}::uuid, ${rootId}::uuid, ${limit}, ${offset})
+    `)) as unknown as { id: string; parent_id: string | null; depth: number }[];
+    if (res.length === 0) return c.json({ data: [] });
+
+    const ids = res.map((r) => r.id);
+    const rows = await db.select().from(comments)
+      .where(and(eq(comments.projectId, projectId), inArray(comments.id, ids)));
+    const byRow = new Map(rows.map((r) => [r.id, r]));
+    const reactionMap = await attachUserReactions(projectId, "comment", ids, c.var.auth?.userId);
+    const userMap = include.has("user") ? await loadUsers(projectId, rows.map((r) => r.userId)) : null;
+
+    type Node = ReturnType<typeof shapeComment> & { replies: Node[] };
+    const nodeById = new Map<string, Node>();
+    for (const r of rows) {
+      const shaped = shapeComment(r, {
+        userReaction: reactionMap.get(r.id) ?? null,
+        ...(userMap ? { user: r.userId ? userMap.get(r.userId) ?? null : null } : {}),
+      });
+      nodeById.set(r.id, { ...shaped, replies: [] });
+    }
+    // RPC rows are ordered by depth then created_at, so a parent is always seen before its children.
+    const roots: Node[] = [];
+    for (const r of res) {
+      const node = nodeById.get(r.id);
+      if (!node) continue;
+      const parent = r.depth > 0 && r.parent_id ? nodeById.get(r.parent_id) : null;
+      (parent ? parent.replies : roots).push(node);
+    }
+    return c.json({ data: roots });
   })
   .get("/:id", async (c) => {
     const projectId = c.var.projectId;
@@ -108,8 +160,8 @@ export const commentRoutes = new Hono<{ Variables: Variables }>()
       .where(and(eq(comments.projectId, projectId), eq(comments.id, id), isNull(comments.deletedAt)))
       .limit(1);
     if (!row) throw Errors.notFound("comments/not-found", "Comment not found");
-    const reactionMap = await attachUserReactions(projectId, "comment", [id], c.var.auth?.userId);
-    return c.json(shapeComment(row, { userReaction: reactionMap.get(id) ?? null }));
+    // SDK's useFetchComment expects { comment }.
+    return c.json({ comment: await hydrateOne(c, row) });
   })
   .patch("/:id", requireAuth, async (c) => {
     const row = await ownedComment(c);
@@ -149,6 +201,28 @@ export const commentRoutes = new Hono<{ Variables: Variables }>()
   });
 
 // ─── shared helpers ────────────────────────────────────────────────────────
+
+// Shape a single comment with userReaction + optional include of `user` / `parent` (→ parentComment).
+async function hydrateOne(c: any, row: typeof comments.$inferSelect) {
+  const projectId = c.var.projectId;
+  const include = parseInclude(c);
+  const reactionMap = await attachUserReactions(projectId, "comment", [row.id], c.var.auth?.userId);
+  const opts: { userReaction: any; user?: any; parent?: any } = { userReaction: reactionMap.get(row.id) ?? null };
+  if (include.has("user")) {
+    const userMap = await loadUsers(projectId, [row.userId]);
+    opts.user = row.userId ? userMap.get(row.userId) ?? null : null;
+  }
+  if (include.has("parent")) {
+    if (row.parentId) {
+      const [p] = await db.select().from(comments)
+        .where(and(eq(comments.projectId, projectId), eq(comments.id, row.parentId))).limit(1);
+      opts.parent = p ? shapeComment(p) : null;
+    } else {
+      opts.parent = null;
+    }
+  }
+  return shapeComment(row, opts);
+}
 
 async function ownedComment(c: any): Promise<{ id: string; userId: string | null }> {
   const projectId = c.var.projectId;

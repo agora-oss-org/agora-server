@@ -105,8 +105,13 @@ migration `0009`) — blocking `validate()` + fire-and-forget `broadcast()`, HMA
 - [ ] **Mentions** — stored as jsonb but not validated/resolved/notified.
 - [ ] **Space depth cap** — cycle guard done; no max-depth limit.
 - [ ] **Space digest delivery** — `digest_config` columns exist; no webhook sender.
-- [ ] **Comments full-tree endpoint** — `fetch_comment_thread` RPC exists but only the one-level
-      (`entityId`+`parentId`) list is exposed.
+- [x] **Comments full-tree endpoint + contract fixes (DONE).** `GET /comments/thread` exposes the
+      `fetch_comment_thread` RPC as a nested `{ data: Comment[] }` (each with a `replies[]`); supports
+      `rootId` to scope to a subtree. **Also fixed 3 real SDK-contract gaps** (the SDK does lazy one-
+      level loading, so the tree endpoint is server-only bonus — but these mattered): `GET /comments/:id`
+      + `/by-foreign-id` now return `{ comment }` (the SDK's `useFetchComment`/`…ByForeignId` read
+      `data.comment`); `include=parent` populates `parentComment`; the list honors `sortBy` (`new`=newest
+      first default, `old`, `top`=by upvotes). Integration: `comments-contract.test.ts` (6).
 
 ## P3 — hardening / prod / ops
 
