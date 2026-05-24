@@ -257,7 +257,7 @@ against the SDK's `useSearchContent`/`useAskContent`/`useSearchSpaces`/`useSearc
 | Method | Path | Status |
 |---|---|---|
 | POST | `/storage` | ✅ |
-| POST | `/storage/images` | ✅ |
+| POST | `/storage/images` (UploadImageOptions: mode exact-dimensions/aspect-ratio-width\|height/original-aspect/multi-aspect-ratio + format/quality/stripExif/fit/pathParts → `{ fileId, original, variants, metadata }`) | ✅ |
 
 ### utils
 | Method | Path | Status |

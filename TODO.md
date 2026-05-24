@@ -98,8 +98,14 @@ migration `0009`) — blocking `validate()` + fire-and-forget `broadcast()`, HMA
       scope (messages drop out under a space filter). `retrieveContent` hydrates Entity/Comment/
       ChatMessage records in similarity order, so `/content` + `/ask` now return all three. RPC tested
       deterministically (`semantic-search.test.ts`, 4) + full pipeline live-verified (`content-search-e2e.mjs`).
-- [ ] **Storage image variant modes.** We do fixed thumbnail/small/medium. SDK's `UploadImageOptions`
-      has exact-dimensions / aspect-ratio-width|height / original-aspect / multi-aspect-ratio. (`routes/storage.ts`)
+- [x] **Storage image variant modes (DONE).** `lib/image-variants.ts` parses the SDK's
+      `UploadImageOptions` multipart fields (mode + JSON params) and computes variant specs for all 5
+      modes: `exact-dimensions`, `aspect-ratio-width-based`, `aspect-ratio-height-based`,
+      `original-aspect`, `multi-aspect-ratio` (the SDK's FormData builder doesn't serialize the
+      multi-aspect fields, so that mode is forward-compat for direct clients); absent mode → legacy
+      thumbnail/small/medium. Honors `format` (webp/jpeg/png/original), `quality`, `stripExif`, `fit`,
+      `pathParts`. Unit-tested pure (`image-variants.test.ts`, 13) + opt-in real-Supabase e2e
+      (`scripts/storage-images-e2e.mjs`). (`routes/storage.ts`)
 - [ ] **Hot-score batch recompute.** `refresh_entity_score` runs per-vote only; add a cron/Edge
       Function for time-decay across the feed (`hot_score` in `0003_functions`).
 - [ ] **Mentions** — stored as jsonb but not validated/resolved/notified.
