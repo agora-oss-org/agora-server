@@ -11,6 +11,7 @@ import { readPagination, paginate } from "../http/envelope.js";
 import { shapeUser } from "../lib/shape.js";
 import { parseBody, updateProfileSchema } from "../lib/validation.js";
 import { notifyOnFollow } from "../lib/notifications.js";
+import * as webhooks from "../lib/webhooks.js";
 
 async function findUser(projectId: string, col: typeof profiles.id | typeof profiles.username | typeof profiles.foreignId, value: string) {
   const [row] = await db
@@ -62,6 +63,8 @@ export const userRoutes = new Hono<{ Variables: Variables }>()
     const id = c.req.param("id");
     if (id !== c.var.auth!.userId) throw Errors.forbidden("users/not-self", "Can only update your own profile");
     const body = parseBody(updateProfileSchema, await c.req.json().catch(() => ({})), "users");
+    const check = await webhooks.validate(c.var.projectId, "user.updated", { ...body, id });
+    if (!check.valid) throw Errors.forbidden("users/rejected", check.message ?? "Profile update rejected by validation webhook");
     const [row] = await db
       .update(profiles)
       .set({
@@ -74,7 +77,9 @@ export const userRoutes = new Hono<{ Variables: Variables }>()
       .where(and(eq(profiles.projectId, c.var.projectId), eq(profiles.id, id)))
       .returning();
     if (!row) throw Errors.notFound("users/not-found", "User not found");
-    return c.json(shapeUser(row));
+    const shaped = shapeUser(row);
+    webhooks.broadcast(c.var.projectId, "user.updated.complete", shaped);
+    return c.json(shaped);
   })
   // ── follow relationship ───────────────────────────────────────────────────
   .get("/:id/follow", requireAuth, async (c) => {

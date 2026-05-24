@@ -165,6 +165,8 @@ export const entityRoutes = new Hono<{ Variables: Variables }>()
   .patch("/:id", requireAuth, async (c) => {
     const row = await ownedEntity(c);
     const body = parseBody(updateEntitySchema, await c.req.json().catch(() => ({})), "entities");
+    const check = await webhooks.validate(c.var.projectId, "entity.updated", { ...body, id: row.id, userId: row.userId });
+    if (!check.valid) throw Errors.forbidden("entities/rejected", check.message ?? "Entity update rejected by validation webhook");
     const patch: Record<string, unknown> = {};
     if (body.title !== undefined) patch.title = body.title;
     if (body.content !== undefined) patch.content = body.content;
@@ -176,7 +178,9 @@ export const entityRoutes = new Hono<{ Variables: Variables }>()
     if (body.title !== undefined || body.content !== undefined) {
       indexEntityAsync(c.var.projectId, updated!.id, [updated!.title, updated!.content].filter(Boolean).join("\n"));
     }
-    return c.json(shapeEntity(updated!));
+    const shaped = shapeEntity(updated!);
+    webhooks.broadcast(c.var.projectId, "entity.updated.complete", shaped);
+    return c.json(shaped);
   })
   .delete("/:id", requireAuth, async (c) => {
     const row = await ownedEntity(c);

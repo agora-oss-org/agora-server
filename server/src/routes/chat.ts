@@ -18,6 +18,7 @@ import {
 } from "../lib/validation.js";
 import { emitToConversation } from "../realtime/socket.js";
 import { indexContentAsync } from "../lib/embeddings.js";
+import * as webhooks from "../lib/webhooks.js";
 
 type ConversationRow = typeof conversations.$inferSelect;
 type MemberRow = typeof conversationMembers.$inferSelect;
@@ -223,6 +224,8 @@ export const chatRoutes = new Hono<{ Variables: Variables }>()
       throw Errors.forbidden("chat/posting-restricted", "Only admins can post in this conversation");
     }
     const body = parseBody(sendMessageSchema, await c.req.json().catch(() => ({})), "chat");
+    const check = await webhooks.validate(c.var.projectId, "message.created", { ...body, conversationId: convo.id, userId: c.var.auth!.userId });
+    if (!check.valid) throw Errors.forbidden("chat/rejected", check.message ?? "Message rejected by validation webhook");
     // Trigger (0002) bumps conversation.last_message_at + parent thread_reply_count.
     const [row] = await db.insert(chatMessages).values({
       projectId: c.var.projectId, conversationId: convo.id, userId: c.var.auth!.userId,
@@ -232,6 +235,7 @@ export const chatRoutes = new Hono<{ Variables: Variables }>()
     const shaped = shapeChatMessage(row!);
     indexContentAsync(c.var.projectId, "message", row!.id, row!.content);
     emitToConversation(convo.id, "message:created", shaped);
+    webhooks.broadcast(c.var.projectId, "message.created.complete", shaped);
     if (row!.parentMessageId) {
       const [parent] = await db.select({ n: chatMessages.threadReplyCount }).from(chatMessages).where(eq(chatMessages.id, row!.parentMessageId)).limit(1);
       emitToConversation(convo.id, "thread:reply_count", { messageId: row!.parentMessageId, conversationId: convo.id, threadReplyCount: parent?.n ?? 0 });

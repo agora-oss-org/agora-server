@@ -15,6 +15,7 @@ import {
   reorderRulesSchema, memberRoleSchema, moderationSchema,
 } from "../lib/validation.js";
 import { notifyOnSpaceApproved } from "../lib/notifications.js";
+import * as webhooks from "../lib/webhooks.js";
 
 type SpaceRow = typeof spaces.$inferSelect;
 type Membership = typeof spaceMembers.$inferSelect;
@@ -75,6 +76,8 @@ export const spaceRoutes = new Hono<{ Variables: Variables }>()
   })
   .post("/", requireAuth, async (c) => {
     const body = parseBody(createSpaceSchema, await c.req.json().catch(() => ({})), "spaces");
+    const check = await webhooks.validate(c.var.projectId, "space.created", { ...body, userId: c.var.auth!.userId });
+    if (!check.valid) throw Errors.forbidden("spaces/rejected", check.message ?? "Space rejected by validation webhook");
     let depth = 0;
     if (body.parentSpaceId) {
       const [p] = await db.select({ depth: spaces.depth }).from(spaces)
@@ -93,7 +96,9 @@ export const spaceRoutes = new Hono<{ Variables: Variables }>()
     await db.insert(spaceMembers).values({
       projectId: c.var.projectId, spaceId: row!.id, userId: c.var.auth!.userId, role: "admin", status: "active",
     }).onConflictDoNothing();
-    return c.json(shapeSpace(row!), 201);
+    const shaped = shapeSpace(row!);
+    webhooks.broadcast(c.var.projectId, "space.created.complete", shaped);
+    return c.json(shaped, 201);
   })
   .get("/by-short-id", async (c) => {
     const shortId = c.req.query("shortId");
@@ -144,6 +149,8 @@ export const spaceRoutes = new Hono<{ Variables: Variables }>()
     const space = await getSpace(c);
     await requireSpaceRole(c, space, ["admin"]);
     const body = parseBody(updateSpaceSchema, await c.req.json().catch(() => ({})), "spaces");
+    const check = await webhooks.validate(c.var.projectId, "space.updated", { ...body, id: space.id });
+    if (!check.valid) throw Errors.forbidden("spaces/rejected", check.message ?? "Space update rejected by validation webhook");
     const patch: Record<string, unknown> = {};
     if (body.name !== undefined) patch.name = body.name;
     if (body.slug !== undefined) patch.slug = body.slug;
@@ -180,7 +187,9 @@ export const spaceRoutes = new Hono<{ Variables: Variables }>()
     }
 
     const [row] = await db.update(spaces).set(patch).where(eq(spaces.id, space.id)).returning();
-    return c.json(shapeSpace(row!));
+    const shaped = shapeSpace(row!);
+    webhooks.broadcast(c.var.projectId, "space.updated.complete", shaped);
+    return c.json(shaped);
   })
   .delete("/:id", requireAuth, async (c) => {
     const space = await getSpace(c);

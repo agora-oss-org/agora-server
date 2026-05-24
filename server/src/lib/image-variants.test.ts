@@ -67,7 +67,7 @@ describe("computeVariants", () => {
   });
 
   it("honors an explicit fit override", () => {
-    expect(computeVariants({ mode: "original-aspect", sizes: { md: 800 }, fit: "outside" })[0].fit).toBe("outside");
+    expect(computeVariants({ mode: "original-aspect", sizes: { md: 800 }, fit: "outside" })[0]!.fit).toBe("outside");
   });
 
   it("aspect modes with a missing ratio yield nothing", () => {

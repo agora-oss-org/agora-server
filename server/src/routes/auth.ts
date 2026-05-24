@@ -13,6 +13,7 @@ import { profiles, userSuspensions, projects } from "../db/schema/index.js";
 import { getSupabase, getSupabaseAnon } from "../lib/supabase.js";
 import { mintSession, rotateRefreshToken, revokeRefreshToken, revokeAllForProfile } from "../lib/tokens.js";
 import { shapeAuthUser } from "../lib/shape.js";
+import * as webhooks from "../lib/webhooks.js";
 import {
   parseBody, signUpSchema, signInSchema, refreshSchema, signOutSchema,
   changePasswordSchema, emailSchema, verifyEmailSchema, externalUserSchema,
@@ -49,10 +50,14 @@ export const authRoutes = new Hono<{ Variables: Variables }>()
   .post("/sign-up", async (c) => {
     const projectId = c.var.projectId;
     const body = parseBody(signUpSchema, await c.req.json().catch(() => ({})), "auth");
+    const check = await webhooks.validate(projectId, "user.created", { email: body.email, name: body.name, username: body.username });
+    if (!check.valid) throw Errors.forbidden("auth/rejected", check.message ?? "Sign-up rejected by validation webhook");
     const { data, error } = await getSupabaseAnon().auth.signUp({ email: body.email, password: body.password });
     if (error || !data.user) throw Errors.badRequest("auth/sign-up-failed", error?.message ?? "Sign up failed");
     const profile = await ensureProfile(projectId, data.user.id, { email: body.email, name: body.name, username: body.username });
-    return c.json(await sessionResponse(projectId, profile), 201);
+    const session = await sessionResponse(projectId, profile);
+    webhooks.broadcast(projectId, "user.created.complete", session.user);
+    return c.json(session, 201);
   })
   .post("/sign-in", async (c) => {
     const projectId = c.var.projectId;

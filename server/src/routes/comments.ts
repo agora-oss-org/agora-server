@@ -166,6 +166,8 @@ export const commentRoutes = new Hono<{ Variables: Variables }>()
   .patch("/:id", requireAuth, async (c) => {
     const row = await ownedComment(c);
     const body = parseBody(updateCommentSchema, await c.req.json().catch(() => ({})), "comments");
+    const check = await webhooks.validate(c.var.projectId, "comment.updated", { ...body, id: row.id, userId: row.userId });
+    if (!check.valid) throw Errors.forbidden("comments/rejected", check.message ?? "Comment update rejected by validation webhook");
     const patch: Record<string, unknown> = {};
     if (body.content !== undefined) patch.content = body.content;
     if (body.gif !== undefined) patch.gif = body.gif;
@@ -173,7 +175,9 @@ export const commentRoutes = new Hono<{ Variables: Variables }>()
     if (body.metadata !== undefined) patch.metadata = body.metadata;
     const [updated] = await db.update(comments).set(patch).where(eq(comments.id, row.id)).returning();
     if (body.content !== undefined) indexContentAsync(c.var.projectId, "comment", updated!.id, updated!.content);
-    return c.json(shapeComment(updated!));
+    const shaped = shapeComment(updated!);
+    webhooks.broadcast(c.var.projectId, "comment.updated.complete", shaped);
+    return c.json(shaped);
   })
   .delete("/:id", requireAuth, async (c) => {
     const row = await ownedComment(c);

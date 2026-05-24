@@ -27,10 +27,13 @@ migration `0009`) — blocking `validate()` + fire-and-forget `broadcast()`, HMA
 - [x] **`notification.created` broadcast** — the push-notification bridge (FCM/APNs/Expo). Emitted
       from the single `insert()` in `lib/notifications.ts`, so every fanned-out notification fires it
       (no-op unless the project subscribes). Now that fan-out exists (P1, done) this covers all types.
-- [ ] **Validation gates for the rest:** `comment.updated`, `entity.updated`, `space.created`/`space.updated`,
-      `message.created` (chat send), `user.created`/`user.updated` (sign-up / profile update). Same
-      `await validate(...)` → 403 pattern already used in `entities.ts`/`comments.ts`.
-- [ ] **`*.complete` broadcasts** for those same operations (update/space/message/user).
+- [x] **Validation gates for the rest (DONE):** `entity.updated` (entities.ts PATCH), `comment.updated`
+      (comments.ts PATCH), `space.created`/`space.updated` (spaces.ts POST/PATCH), `message.created`
+      (chat.ts send), `user.created` (auth.ts sign-up), `user.updated` (users.ts profile PATCH) — same
+      `await validate(...)` → 403 pattern.
+- [x] **`*.complete` broadcasts (DONE)** for all of those. Live-verified end-to-end with a real local
+      receiver (`scripts/webhooks-events-e2e.mjs`): validation veto→403, allow→write, and HMAC-verified
+      `entity.updated`/`space.created`/`message.created`/`user.updated` `.complete` delivery.
 - [ ] **Config surface** — an admin endpoint (or dashboard) to set `webhook_url/secret/events`;
       currently DB-only. Add subscribed-events management + a "test webhook" ping.
 - [ ] **Space digest delivery cron** — separate per-space system; `digest_config` columns exist,
@@ -127,7 +130,9 @@ migration `0009`) — blocking `validate()` + fire-and-forget `broadcast()`, HMA
 - [ ] **Refresh-token cleanup** — expired rows in `refresh_tokens` accrue; add a sweep.
 - [x] **Vitest harness up + running** (`server/test/`, `app.ts`, `vitest.integration.config.ts`).
       Ongoing coverage tracked in the **Testing** section below.
-- [ ] **🔐 Rotate exposed secrets** — Voyage key, Supabase secret/anon keys, DB password (all hit chat transcripts).
+- [x] **🔐 Rotate exposed secrets (DONE)** — Voyage key, Anthropic key, Supabase secret/anon keys,
+      DB password rotated; `.env` updated. Server restarted on fresh env + smoke-tested (DB read,
+      Voyage search, Supabase Storage upload, Anthropic /ask).
 - [ ] **Deploy** — host the server (`createApp` split is serverless-ready); set the SDK/demo
       `VITE_API_BASE_URL`; configure Supabase Auth SMTP for real emails.
 - [ ] **Push** — add a remote to the `agora` server repo + push; push SDK to `origin` (private mirror).
