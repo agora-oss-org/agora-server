@@ -3,7 +3,7 @@
 // These routes live at the /v7 ROOT (not under /:projectId); the project is derived from the
 // authenticated user's profile.
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { api, createProject, createUser, deleteProject } from "./helpers.js";
+import { api, createProject, createUser, deleteProject, base } from "./helpers.js";
 
 describe("connections state machine (integration)", () => {
   let projectId: string;
@@ -52,6 +52,12 @@ describe("connections state machine (integration)", () => {
 
     const received = await api("GET", `/v7/connections/pending/received`, { token: bob.token });
     expect(received.body.data[0].user.id).toBe(alice.id);
+
+    // the addressee receives a connection-request notification naming the initiator
+    const inbox = await api("GET", `${base(projectId)}/app-notifications`, { token: bob.token });
+    const note = inbox.body.data.find((n: any) => n.type === "connection-request");
+    expect(note).toBeTruthy();
+    expect(note.metadata.initiatorId).toBe(alice.id);
   });
 
   it("a duplicate pending request is a 409", async () => {
@@ -83,6 +89,12 @@ describe("connections state machine (integration)", () => {
 
     const aList = await api("GET", `/v7/connections`, { token: alice.token });
     expect(aList.body.data.map((r: any) => r.connectedUser.id)).toContain(bob.id);
+
+    // the original requester is notified that their request was accepted
+    const inbox = await api("GET", `${base(projectId)}/app-notifications`, { token: alice.token });
+    const note = inbox.body.data.find((n: any) => n.type === "connection-accepted");
+    expect(note).toBeTruthy();
+    expect(note.metadata.initiatorId).toBe(bob.id);
   });
 
   it("re-requesting an already-connected user is a 409", async () => {
