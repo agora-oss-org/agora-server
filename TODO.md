@@ -111,10 +111,15 @@ migration `0009`) — blocking `validate()` + fire-and-forget `broadcast()`, HMA
       thumbnail/small/medium. Honors `format` (webp/jpeg/png/original), `quality`, `stripExif`, `fit`,
       `pathParts`. Unit-tested pure (`image-variants.test.ts`, 13) + opt-in real-Supabase e2e
       (`scripts/storage-images-e2e.mjs`). (`routes/storage.ts`)
-- [ ] **Hot-score batch recompute.** `refresh_entity_score` runs per-vote only; add a cron/Edge
-      Function for time-decay across the feed (`hot_score` in `0003_functions`).
-- [ ] **Mentions** — stored as jsonb but not validated/resolved/notified.
-- [ ] **Space depth cap** — cycle guard done; no max-depth limit.
+- [x] **Hot-score batch recompute (DONE, with a caveat).** `recompute_scores(p_project)` SQL function
+      (migration `0012`) + cron-able `scripts/recompute-scores.mjs`. NOTE: `hot_score` is time-anchored
+      to `created_at` (Reddit-style), NOT time-decaying — so this is a **consistency/backfill** pass
+      (re-syncs `score` to current `reaction_counts`), not decay. If true decay is wanted, `hot_score`
+      itself would need to become time-relative (a ranking-semantics change to the tested function).
+- [ ] **Mentions** — stored as jsonb but not validated/resolved (now *notified* via fan-out).
+- [x] **Space depth cap (DONE)** — `MAX_SPACE_DEPTH=5` enforced on create + reparent in `spaces.ts`
+      (→ 400 `spaces/too-deep`); cycle guard already covered loops. Live-verified (6 levels ok, 7th rejected).
+      Note: caps a space's own depth; a reparent that would push *descendants* past the cap isn't checked.
 - [ ] **Space digest delivery** — `digest_config` columns exist; no webhook sender.
 - [x] **Comments full-tree endpoint + contract fixes (DONE).** `GET /comments/thread` exposes the
       `fetch_comment_thread` RPC as a nested `{ data: Comment[] }` (each with a `replies[]`); supports

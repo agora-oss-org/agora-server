@@ -20,6 +20,10 @@ import * as webhooks from "../lib/webhooks.js";
 type SpaceRow = typeof spaces.$inferSelect;
 type Membership = typeof spaceMembers.$inferSelect;
 
+// Max nesting depth for spaces (root = 0, so this allows MAX_SPACE_DEPTH+1 levels). The cycle
+// guard prevents loops; this caps how deep a tree can go.
+const MAX_SPACE_DEPTH = 5;
+
 async function getSpace(c: any): Promise<SpaceRow> {
   const [row] = await db.select().from(spaces)
     .where(and(eq(spaces.projectId, c.var.projectId), eq(spaces.id, c.req.param("id")), isNull(spaces.deletedAt))).limit(1);
@@ -84,6 +88,7 @@ export const spaceRoutes = new Hono<{ Variables: Variables }>()
         .where(and(eq(spaces.projectId, c.var.projectId), eq(spaces.id, body.parentSpaceId))).limit(1);
       if (!p) throw Errors.badRequest("spaces/bad-parent", "Parent space not found", "parentSpaceId");
       depth = p.depth + 1;
+      if (depth > MAX_SPACE_DEPTH) throw Errors.badRequest("spaces/too-deep", `Spaces can nest at most ${MAX_SPACE_DEPTH} levels deep`, "parentSpaceId");
     }
     const [row] = await db.insert(spaces).values({
       projectId: c.var.projectId, userId: c.var.auth!.userId, shortId: generateShortId(),
@@ -170,6 +175,9 @@ export const spaceRoutes = new Hono<{ Variables: Variables }>()
         if (!parent) throw Errors.badRequest("spaces/bad-parent", "Parent space not found", "parentSpaceId");
         if (await wouldCreateCycle(space.id, newParentId)) {
           throw Errors.badRequest("spaces/cycle", "Cannot move a space under its own descendant", "parentSpaceId");
+        }
+        if (parent.depth + 1 > MAX_SPACE_DEPTH) {
+          throw Errors.badRequest("spaces/too-deep", `Spaces can nest at most ${MAX_SPACE_DEPTH} levels deep`, "parentSpaceId");
         }
         patch.parentSpaceId = newParentId;
         patch.depth = parent.depth + 1;
