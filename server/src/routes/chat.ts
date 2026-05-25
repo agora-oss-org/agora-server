@@ -280,7 +280,7 @@ export const chatRoutes = new Hono<{ Variables: Variables }>()
       content: body.content, gif: body.gif, mentions: body.mentions, metadata: body.metadata,
       parentMessageId: body.parentMessageId, quotedMessageId: body.quotedMessageId,
     }).returning();
-    const shaped = shapeChatMessage(row!);
+    const shaped = shapeChatMessage(row!, { localId: body.localId });
     indexContentAsync(c.var.projectId, "message", row!.id, row!.content);
     emitToConversation(convo.id, "message:created", shaped);
     webhooks.broadcast(c.var.projectId, "message.created.complete", shaped);

@@ -249,6 +249,7 @@ export const sendMessageSchema = z.object({
   ...messageBody,
   parentMessageId: z.string().uuid().optional(),
   quotedMessageId: z.string().uuid().optional(),
+  localId: z.string().optional(), // client optimistic-reconciliation token, echoed back, not persisted
 }).refine((v) => v.content || v.gif, { message: "Message needs content or a gif" });
 
 export const editMessageSchema = z

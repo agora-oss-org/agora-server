@@ -482,7 +482,7 @@ export function shapeConversationMember(row: ConversationMemberRow, user?: User 
   return m;
 }
 
-export function shapeChatMessage(row: ChatMessageRow, opts: { userReactions?: string[]; user?: User | null } = {}) {
+export function shapeChatMessage(row: ChatMessageRow, opts: { userReactions?: string[]; user?: User | null; localId?: string } = {}) {
   const deleted = !!row.userDeletedAt;
   const msg: Record<string, unknown> = {
     id: row.id,
@@ -509,5 +509,8 @@ export function shapeChatMessage(row: ChatMessageRow, opts: { userReactions?: st
     updatedAt: iso(row.updatedAt)!,
   };
   if (opts.user !== undefined) msg.user = opts.user;
+  // Echo the client's optimistic-message token so the SDK can reconcile (replace) its
+  // optimistic placeholder by localId instead of rendering a duplicate. Transient — not persisted.
+  if (opts.localId !== undefined) msg.localId = opts.localId;
   return msg;
 }
