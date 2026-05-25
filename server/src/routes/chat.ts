@@ -9,7 +9,6 @@ import { db } from "../db/index.js";
 import {
   conversations, conversationMembers, chatMessages, chatMessageReactions, reports, profiles,
 } from "../db/schema/index.js";
-import { readPagination, paginate } from "../http/envelope.js";
 import { shapeConversation, shapeConversationMember, shapeChatMessage, shapeUser } from "../lib/shape.js";
 import {
   parseBody, createConversationSchema, directConversationSchema, updateConversationSchema,
@@ -57,18 +56,34 @@ async function userReactionsByMessage(messageIds: string[], userId: string | und
 export const chatRoutes = new Hono<{ Variables: Variables }>()
   // ── conversations ─────────────────────────────────────────────────────────
   .get("/conversations", requireAuth, async (c) => {
-    const { page, limit, offset } = readPagination(c);
+    // SDK contract (useConversations): cursor pagination, response `{ conversations, hasMore }`.
+    // It sends `limit`, optional `types` (csv), and a cursor as `cursor` (last item's lastMessageAt,
+    // omitted when null) + `cursorCreatedAt` (last item's createdAt). We order by recent activity
+    // — COALESCE(lastMessageAt, createdAt) DESC — and keyset on that same boundary.
     const uid = c.var.auth!.userId;
-    const where = and(eq(conversationMembers.projectId, c.var.projectId), eq(conversationMembers.userId, uid), eq(conversationMembers.isActive, true));
-    const [{ n } = { n: 0 }] = await db.select({ n: count() }).from(conversationMembers).where(where);
+    const limit = Math.min(Number(c.req.query("limit")) || 20, 100);
+    const typesParam = c.req.query("types");
+    const types = typesParam ? typesParam.split(",").map((s) => s.trim()).filter(Boolean) : null;
+    const boundary = c.req.query("cursor") || c.req.query("cursorCreatedAt"); // ISO timestamp
+
+    const conds = [
+      eq(conversationMembers.projectId, c.var.projectId),
+      eq(conversationMembers.userId, uid),
+      eq(conversationMembers.isActive, true),
+    ];
+    if (types && types.length) conds.push(inArray(conversations.type, types as any));
+    if (boundary) conds.push(sql`COALESCE(${conversations.lastMessageAt}, ${conversations.createdAt}) < ${boundary}::timestamptz`);
+
     const rows = await db.select({ convo: conversations, member: conversationMembers })
       .from(conversationMembers)
       .innerJoin(conversations, eq(conversations.id, conversationMembers.conversationId))
-      .where(where)
-      .orderBy(desc(conversations.lastMessageAt))
-      .limit(limit).offset(offset);
+      .where(and(...conds))
+      .orderBy(sql`COALESCE(${conversations.lastMessageAt}, ${conversations.createdAt}) DESC`)
+      .limit(limit + 1);
+
+    const hasMore = rows.length > limit;
     // Per-conversation lastMessage + unreadCount (page is small).
-    const data = await Promise.all(rows.map(async ({ convo, member }) => {
+    const data = await Promise.all(rows.slice(0, limit).map(async ({ convo, member }) => {
       const [last] = await db.select().from(chatMessages)
         .where(eq(chatMessages.conversationId, convo.id)).orderBy(desc(chatMessages.createdAt)).limit(1);
       const [{ u } = { u: 0 }] = await db.select({ u: count() }).from(chatMessages)
@@ -79,7 +94,7 @@ export const chatRoutes = new Hono<{ Variables: Variables }>()
         currentMember: shapeConversationMember(member),
       });
     }));
-    return c.json(paginate(data, n, page, limit));
+    return c.json({ conversations: data, hasMore });
   })
   .post("/conversations", requireAuth, async (c) => {
     const projectId = c.var.projectId;
@@ -224,15 +239,31 @@ export const chatRoutes = new Hono<{ Variables: Variables }>()
   })
   // ── messages ───────────────────────────────────────────────────────────────
   .get("/conversations/:id/messages", requireAuth, async (c) => {
+    // SDK contract (useChatMessages): cursor pagination, response `{ messages, hasMore }`.
+    // Params: `limit`, `sort` (desc main stream / asc thread), `before` (ISO timestamp — fetch
+    // messages created strictly before it), `parentId` (thread replies; absent ⇒ top-level stream).
     const convo = await getConversation(c);
     await requireMember(c, convo.id);
-    const { page, limit, offset } = readPagination(c);
-    const [{ n } = { n: 0 }] = await db.select({ n: count() }).from(chatMessages).where(eq(chatMessages.conversationId, convo.id));
+    const limit = Math.min(Number(c.req.query("limit")) || 20, 100);
+    const order = c.req.query("sort") === "asc" ? asc(chatMessages.createdAt) : desc(chatMessages.createdAt);
+    const parentId = c.req.query("parentId");
+    const before = c.req.query("before"); // ISO timestamp cursor
+
+    const conds = [eq(chatMessages.conversationId, convo.id)];
+    // Main stream = top-level messages; thread view = replies to a specific parent.
+    conds.push(parentId ? eq(chatMessages.parentMessageId, parentId) : sql`${chatMessages.parentMessageId} is null`);
+    if (before) conds.push(sql`${chatMessages.createdAt} < ${before}::timestamptz`);
+
     const rows = await db.select().from(chatMessages)
-      .where(eq(chatMessages.conversationId, convo.id))
-      .orderBy(desc(chatMessages.createdAt)).limit(limit).offset(offset);
-    const reactionMap = await userReactionsByMessage(rows.map((r) => r.id), c.var.auth!.userId);
-    return c.json(paginate(rows.map((r) => shapeChatMessage(r, { userReactions: reactionMap.get(r.id) ?? [] })), n, page, limit));
+      .where(and(...conds))
+      .orderBy(order)
+      .limit(limit + 1);
+
+    const hasMore = rows.length > limit;
+    const pageRows = rows.slice(0, limit);
+    const reactionMap = await userReactionsByMessage(pageRows.map((r) => r.id), c.var.auth!.userId);
+    const messages = pageRows.map((r) => shapeChatMessage(r, { userReactions: reactionMap.get(r.id) ?? [] }));
+    return c.json({ messages, hasMore });
   })
   .post("/conversations/:id/messages", requireAuth, async (c) => {
     const convo = await getConversation(c);
