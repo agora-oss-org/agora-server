@@ -14,7 +14,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Docker images are now published to Docker Hub (`agoraserver/agora`) in addition to
   GHCR (`ghcr.io/jenova-marie/agora`).
 
+### Added
+- **New accounts get a default username.** `ensureProfile` (the lazy profile-creation chokepoint
+  for sign-up + first sign-in) now derives a username from the email local-part (`+tag` dropped,
+  sanitized to `[a-z0-9_-]`) when none is supplied, instead of leaving it `NULL`. Collisions against
+  the `(project_id, username)` unique constraint are avoided by suffixing with the auth user's id
+  prefix (e.g. `jenova-marie` → `jenova-marie-2baf48ac`). Previously every email/password signup was
+  nameless, so SDK/UI fell back to a raw id slice. Existing profiles are not backfilled.
+
 ### Fixed
+- **Connection routes reject non-UUID path params with 400 instead of crashing.** A username (or
+  any non-UUID) in `:userId`/`:id` on the `/users/:userId/connection*` and `/connections/:id/*`
+  endpoints reached a uuid-typed query and threw `invalid input syntax for type uuid` → an unhandled
+  500. The params are now validated up front (`uuidParam`) and return
+  `400 { code: "connections/invalid-id" }`.
+- **Chat messages no longer render as duplicates.** `POST /chat/conversations/:id/messages` now
+  accepts an optional `localId` and echoes it back in both the HTTP response and the `message:created`
+  socket event. The SDK sends `localId` to reconcile its optimistic placeholder; without it echoed,
+  the confirmed message couldn't replace the placeholder and both rendered. (`sendMessageSchema` +
+  `shapeChatMessage` updated; `localId` is transient and not persisted.)
+- **Token refresh now returns the user.** `POST /auth/request-new-access-token` returned only
+  `{ accessToken, refreshToken }`, but the SDK's refresh/session-restore path calls
+  `setUser(result.user)` — so every refresh wiped the current user from the store (breaking
+  "is this my message?" checks and optimistic-message authorship). It now returns the `AuthUser`
+  alongside the rotated tokens (`rotateRefreshToken` surfaces the `profileId`).
 - **Chat list endpoints now match the SDK's cursor contract.** `GET /chat/conversations` and
   `GET /chat/conversations/:id/messages` returned the standard `{ data, pagination }` page/offset
   envelope, but the SDK's `useConversations`/`useChatMessages` expect `{ conversations, hasMore }` /
