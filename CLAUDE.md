@@ -9,6 +9,14 @@ Agora is a self-hosted, **Replyke-API-compatible** community/social backend. Goa
 server. **The contract is the constraint** — match `docs/MANIFEST.md` (REST paths, envelopes,
 socket.io events) and `docs/MODELS.md` (response shapes) exactly, or the SDK's typed hooks break.
 
+## Changelog (keep current)
+
+`CHANGELOG.md` (repo root) MUST stay current. After any change that affects behavior, the API
+contract, the schema/migrations, deployment, or tooling, add an entry under `## [Unreleased]` using
+[Keep a Changelog](https://keepachangelog.com) sections (`Added`/`Changed`/`Fixed`/`Removed`). On
+release, move the `[Unreleased]` items under the new `## [x.y.z] - DATE` heading, update the compare
+links, and tag. Pure-internal refactors with no observable effect don't need an entry.
+
 ## Architecture
 
 ```
