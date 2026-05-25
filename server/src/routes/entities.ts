@@ -194,15 +194,15 @@ export const entityRoutes = new Hono<{ Variables: Variables }>()
   })
   // ── reactions ─────────────────────────────────────────────────────────────
   .post("/:id/reactions", requireAuth, async (c) => {
-    const { type } = parseBody(reactionSchema, await c.req.json().catch(() => ({})), "entities");
-    const result = await toggleEntityReaction(c, type);
+    const { reactionType } = parseBody(reactionSchema, await c.req.json().catch(() => ({})), "entities");
+    const result = await toggleEntityReaction(c, reactionType);
     await notifyOnReaction({
       projectId: c.var.projectId,
       targetType: "entity",
       targetId: c.req.param("id"),
       reactorId: c.var.auth!.userId,
-      reactionType: type,
-      isActive: result.userReaction === type,
+      reactionType,
+      isActive: result.userReaction === reactionType,
       reactionCounts: result.reactionCounts,
     });
     return c.json(result);

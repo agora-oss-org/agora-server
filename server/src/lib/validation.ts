@@ -64,8 +64,10 @@ export const updateCommentSchema = z
   })
   .refine((v) => Object.keys(v).length > 0, { message: "No updatable fields provided" });
 
+// The SDK posts `{ reactionType }` to /entities/:id/reactions and /comments/:id/reactions
+// (see @agora-sdk useAddReaction). The field name is part of the contract — match it exactly.
 export const reactionSchema = z.object({
-  type: z.enum(REACTION_TYPES),
+  reactionType: z.enum(REACTION_TYPES),
 });
 
 // ─── users / profiles ────────────────────────────────────────────────────────

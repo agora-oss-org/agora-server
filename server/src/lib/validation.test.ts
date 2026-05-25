@@ -10,8 +10,8 @@ import { ApiError } from "../http/errors.js";
 
 describe("parseBody", () => {
   it("returns the parsed data on success", () => {
-    const out = parseBody(reactionSchema, { type: "love" }, "entities");
-    expect(out).toEqual({ type: "love" });
+    const out = parseBody(reactionSchema, { reactionType: "love" }, "entities");
+    expect(out).toEqual({ reactionType: "love" });
   });
 
   it("throws a Replyke-shaped 400 with feature-scoped code and offending field", () => {
@@ -40,13 +40,13 @@ describe("parseBody", () => {
 
 describe("reactionSchema", () => {
   it("accepts the 8 contract types", () => {
-    for (const type of ["upvote", "downvote", "like", "love", "wow", "sad", "angry", "funny"]) {
-      expect(reactionSchema.safeParse({ type }).success).toBe(true);
+    for (const reactionType of ["upvote", "downvote", "like", "love", "wow", "sad", "angry", "funny"]) {
+      expect(reactionSchema.safeParse({ reactionType }).success).toBe(true);
     }
   });
 
   it("rejects unknown reaction types", () => {
-    expect(reactionSchema.safeParse({ type: "dislike" }).success).toBe(false);
+    expect(reactionSchema.safeParse({ reactionType: "dislike" }).success).toBe(false);
   });
 });
 

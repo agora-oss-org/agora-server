@@ -187,15 +187,15 @@ export const commentRoutes = new Hono<{ Variables: Variables }>()
     return c.json({ success: true });
   })
   .post("/:id/reactions", requireAuth, async (c) => {
-    const { type } = parseBody(reactionSchema, await c.req.json().catch(() => ({})), "comments");
-    const result = await toggleCommentReaction(c, type);
+    const { reactionType } = parseBody(reactionSchema, await c.req.json().catch(() => ({})), "comments");
+    const result = await toggleCommentReaction(c, reactionType);
     await notifyOnReaction({
       projectId: c.var.projectId,
       targetType: "comment",
       targetId: c.req.param("id"),
       reactorId: c.var.auth!.userId,
-      reactionType: type,
-      isActive: result.userReaction === type,
+      reactionType,
+      isActive: result.userReaction === reactionType,
       reactionCounts: result.reactionCounts,
     });
     return c.json(result);
