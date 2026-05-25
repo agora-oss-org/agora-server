@@ -119,6 +119,23 @@ export const chatRoutes = new Hono<{ Variables: Variables }>()
     ]);
     return c.json(shapeConversation(convo!, { memberCount: 2 }), 201);
   })
+  // Total unread across the user's active conversations. MUST stay above /conversations/:id
+  // (the SDK's chat-context fetches this on load; otherwise "unread-count" is captured as an :id → 500).
+  .get("/conversations/unread-count", requireAuth, async (c) => {
+    const me = c.var.auth!.userId;
+    const rows = (await db.execute(sql`
+      select count(*)::int as total_unread,
+             count(distinct m.conversation_id)::int as unread_conversation_count
+      from conversation_members cm
+      join chat_messages m on m.conversation_id = cm.conversation_id
+      where cm.project_id = ${c.var.projectId} and cm.user_id = ${me} and cm.is_active = true
+        and m.user_deleted_at is null
+        and (m.user_id is null or m.user_id <> ${me})
+        and (cm.last_read_at is null or m.created_at > cm.last_read_at)
+    `)) as unknown as { total_unread: number; unread_conversation_count: number }[];
+    const r = rows[0] ?? { total_unread: 0, unread_conversation_count: 0 };
+    return c.json({ totalUnread: r.total_unread, unreadConversationCount: r.unread_conversation_count });
+  })
   .get("/conversations/:id", requireAuth, async (c) => {
     const convo = await getConversation(c);
     const member = await requireMember(c, convo.id);
