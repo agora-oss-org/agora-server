@@ -53,8 +53,19 @@ export const authRoutes = new Hono<{ Variables: Variables }>()
     const check = await webhooks.validate(projectId, "user.created", { email: body.email, name: body.name, username: body.username });
     if (!check.valid) throw Errors.forbidden("auth/rejected", check.message ?? "Sign-up rejected by validation webhook");
     const { data, error } = await getSupabaseAnon().auth.signUp({ email: body.email, password: body.password });
-    if (error || !data.user) throw Errors.badRequest("auth/sign-up-failed", error?.message ?? "Sign up failed");
-    const profile = await ensureProfile(projectId, data.user.id, { email: body.email, name: body.name, username: body.username });
+    if (error) throw Errors.badRequest("auth/sign-up-failed", error.message);
+    // When email confirmation is enabled, GoTrue creates the user and sends the confirmation
+    // email but returns NO session (and supabase-js's _sessionResponse nulls out `data.user`,
+    // since GoTrue serializes the new user at the top level rather than under `data.user`).
+    // That is a *success*, not a failure: the user must click the email link, then sign in.
+    // Don't mint Agora tokens here — the profile is created lazily on first sign-in. Returning
+    // the same shape for "already registered" (GoTrue obfuscates it as no-session) also avoids
+    // email enumeration.
+    if (!data.session) {
+      return c.json({ status: "confirmation_required", email: body.email }, 200);
+    }
+    // Email confirmation is disabled (auto-confirm): a full session comes back immediately.
+    const profile = await ensureProfile(projectId, data.session.user.id, { email: body.email, name: body.name, username: body.username });
     const session = await sessionResponse(projectId, profile);
     webhooks.broadcast(projectId, "user.created.complete", session.user);
     return c.json(session, 201);
