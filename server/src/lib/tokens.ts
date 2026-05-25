@@ -58,7 +58,7 @@ async function revokeFamily(familyId: string): Promise<void> {
  * Validate a refresh token and rotate it. Throws 401 on invalid/expired tokens, and on REUSE
  * (a spent/revoked token presented outside the grace window) revokes the entire family first.
  */
-export async function rotateRefreshToken(projectId: string, raw: string): Promise<SessionTokens> {
+export async function rotateRefreshToken(projectId: string, raw: string): Promise<SessionTokens & { profileId: string }> {
   const [row] = await db
     .select()
     .from(refreshTokens)
@@ -78,7 +78,7 @@ export async function rotateRefreshToken(projectId: string, raw: string): Promis
   if (row.rotatedAt) {
     if (now <= row.rotatedAt.getTime() + graceMs) {
       const role = await profileRole(row.profileId);
-      return mintSession(projectId, row.profileId, role, row.familyId);
+      return { ...(await mintSession(projectId, row.profileId, role, row.familyId)), profileId: row.profileId };
     }
     await revokeFamily(row.familyId);
     throw Errors.unauthorized("auth/refresh-reused", "Refresh token reuse detected");
@@ -88,7 +88,7 @@ export async function rotateRefreshToken(projectId: string, raw: string): Promis
   // Normal rotation: spend this token, mint a successor in the same family.
   await db.update(refreshTokens).set({ rotatedAt: new Date() }).where(eq(refreshTokens.id, row.id));
   const role = await profileRole(row.profileId);
-  return mintSession(projectId, row.profileId, role, row.familyId);
+  return { ...(await mintSession(projectId, row.profileId, role, row.familyId)), profileId: row.profileId };
 }
 
 /** Sign-out: revoke the family of the presented refresh token (this session). */

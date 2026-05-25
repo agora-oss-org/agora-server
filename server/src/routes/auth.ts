@@ -29,11 +29,28 @@ async function profileByAuthUser(projectId: string, authUserId: string): Promise
 }
 
 // Create-or-return the profile for a freshly authenticated Supabase user.
+// Derive a default username from an email local-part so new accounts aren't nameless (the SDK/UI
+// falls back to a raw id slice otherwise). Sanitized to [a-z0-9_-]; the `+tag` is dropped. The
+// `(project_id, username)` unique constraint means we must avoid collisions: if the base is taken,
+// suffix with the auth user's id prefix (unique per user) → no insert failure.
+async function defaultUsername(projectId: string, email?: string, authUserId?: string): Promise<string | undefined> {
+  if (!email) return undefined;
+  const local = (email.split("@")[0] ?? "").split("+")[0] ?? "";
+  let base = local.toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 30);
+  if (!base) base = "user";
+  const [taken] = await db.select({ id: profiles.id }).from(profiles)
+    .where(and(eq(profiles.projectId, projectId), eq(profiles.username, base))).limit(1);
+  if (!taken) return base;
+  const suffix = (authUserId ?? "").replace(/-/g, "").slice(0, 8) || Math.random().toString(36).slice(2, 10);
+  return `${base.slice(0, 27)}-${suffix}`;
+}
+
 async function ensureProfile(projectId: string, authUserId: string, attrs: { email?: string; name?: string; username?: string }): Promise<ProfileRow> {
   const existing = await profileByAuthUser(projectId, authUserId);
   if (existing) return existing;
+  const username = attrs.username ?? await defaultUsername(projectId, attrs.email, authUserId);
   const [row] = await db.insert(profiles).values({
-    projectId, authUserId, email: attrs.email, name: attrs.name, username: attrs.username,
+    projectId, authUserId, email: attrs.email, name: attrs.name, username,
     authMethods: ["password"],
   }).returning();
   return row!;
@@ -86,9 +103,18 @@ export const authRoutes = new Hono<{ Variables: Variables }>()
     return c.json({ success: true });
   })
   .post("/request-new-access-token", async (c) => {
+    const projectId = c.var.projectId;
     const body = parseBody(refreshSchema, await c.req.json().catch(() => ({})), "auth");
-    const tokens = await rotateRefreshToken(c.var.projectId, body.refreshToken);
-    return c.json(tokens);
+    const { profileId, ...tokens } = await rotateRefreshToken(projectId, body.refreshToken);
+    // Return the user with the rotated tokens. The SDK's refresh/session-restore path calls
+    // setUser(result.user), so omitting it would wipe the current user from the store on every
+    // refresh (breaking "is this my message?" checks, optimistic-message authorship, etc.).
+    const [profile] = await db.select().from(profiles)
+      .where(and(eq(profiles.projectId, projectId), eq(profiles.id, profileId))).limit(1);
+    const suspensions = profile
+      ? await db.select().from(userSuspensions).where(eq(userSuspensions.profileId, profile.id))
+      : [];
+    return c.json({ ...tokens, user: profile ? shapeAuthUser(profile, suspensions) : undefined });
   })
   .post("/change-password", requireAuth, async (c) => {
     const projectId = c.var.projectId;
