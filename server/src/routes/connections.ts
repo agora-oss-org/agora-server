@@ -16,6 +16,15 @@ import { parseBody, connectionRequestSchema } from "../lib/validation.js";
 type ConnRow = typeof connections.$inferSelect;
 type ProfileRow = typeof profiles.$inferSelect;
 
+// Path params land directly in uuid-typed queries; a non-uuid (e.g. a username) otherwise reaches
+// Postgres and throws "invalid input syntax for type uuid" → an unhandled 500. Guard → clean 400.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function uuidParam(c: any, name: string): string {
+  const v = c.req.param(name);
+  if (!UUID_RE.test(v ?? "")) throw Errors.badRequest("connections/invalid-id", `Invalid ${name}: must be a UUID`, name);
+  return v;
+}
+
 // The authenticated user's profile (also yields the project these connections belong to).
 async function me(c: any): Promise<ProfileRow> {
   const [p] = await db.select().from(profiles).where(eq(profiles.id, c.var.auth.userId)).limit(1);
@@ -48,7 +57,7 @@ export const connectionRoutes = new Hono<{ Variables: Variables }>()
   // ── request / status / remove against a specific user ──────────────────────
   .post("/users/:userId/connection", requireAuth, async (c) => {
     const self = await me(c);
-    const target = c.req.param("userId");
+    const target = uuidParam(c, "userId");
     if (target === self.id) throw Errors.badRequest("connections/self", "Cannot connect with yourself");
     const { message } = parseBody(connectionRequestSchema, await c.req.json().catch(() => ({})), "connections");
     const existing = await between(self.projectId, self.id, target);
@@ -70,7 +79,7 @@ export const connectionRoutes = new Hono<{ Variables: Variables }>()
   })
   .get("/users/:userId/connection", requireAuth, async (c) => {
     const self = await me(c);
-    const row = await between(self.projectId, self.id, c.req.param("userId"));
+    const row = await between(self.projectId, self.id, uuidParam(c, "userId"));
     if (!row) return c.json({ status: "none" });
     if (row.status === "connected") {
       return c.json({ status: "connected", connectionId: row.id, connectedAt: iso(row.respondedAt), requestedAt: iso(row.createdAt) });
@@ -81,7 +90,7 @@ export const connectionRoutes = new Hono<{ Variables: Variables }>()
   })
   .delete("/users/:userId/connection", requireAuth, async (c) => {
     const self = await me(c);
-    const row = await between(self.projectId, self.id, c.req.param("userId"));
+    const row = await between(self.projectId, self.id, uuidParam(c, "userId"));
     if (!row) throw Errors.notFound("connections/not-found", "No connection with this user");
     const action = row.status === "connected" ? "disconnect" : row.requesterId === self.id ? "withdraw" : "decline";
     await db.delete(connections).where(eq(connections.id, row.id));
@@ -89,7 +98,7 @@ export const connectionRoutes = new Hono<{ Variables: Variables }>()
   })
   .get("/users/:userId/connections-count", requireAuth, async (c) => {
     const self = await me(c);
-    return c.json({ count: await connectedCount(self.projectId, c.req.param("userId")) });
+    return c.json({ count: await connectedCount(self.projectId, uuidParam(c, "userId")) });
   })
   // ── established + counts for the current user ───────────────────────────────
   .get("/connections", requireAuth, async (c) => {
@@ -122,7 +131,7 @@ export const connectionRoutes = new Hono<{ Variables: Variables }>()
   .patch("/connections/:id/accept", requireAuth, async (c) => {
     const self = await me(c);
     const [row] = await db.select().from(connections)
-      .where(and(eq(connections.id, c.req.param("id")), eq(connections.addresseeId, self.id), eq(connections.status, "pending"))).limit(1);
+      .where(and(eq(connections.id, uuidParam(c, "id")), eq(connections.addresseeId, self.id), eq(connections.status, "pending"))).limit(1);
     if (!row) throw Errors.notFound("connections/not-pending", "No pending request to accept");
     const [updated] = await db.update(connections).set({ status: "connected", respondedAt: new Date() }).where(eq(connections.id, row.id)).returning();
     await notify(self.projectId, row.requesterId, "connection-accepted", self, row.id);
@@ -131,14 +140,14 @@ export const connectionRoutes = new Hono<{ Variables: Variables }>()
   .patch("/connections/:id/decline", requireAuth, async (c) => {
     const self = await me(c);
     const [row] = await db.update(connections).set({ status: "declined", respondedAt: new Date() })
-      .where(and(eq(connections.id, c.req.param("id")), eq(connections.addresseeId, self.id), eq(connections.status, "pending"))).returning();
+      .where(and(eq(connections.id, uuidParam(c, "id")), eq(connections.addresseeId, self.id), eq(connections.status, "pending"))).returning();
     if (!row) throw Errors.notFound("connections/not-pending", "No pending request to decline");
     return c.json({ id: row.id, status: "declined", respondedAt: iso(row.respondedAt) });
   })
   .delete("/connections/:id", requireAuth, async (c) => {
     const self = await me(c);
     const [row] = await db.select().from(connections)
-      .where(and(eq(connections.id, c.req.param("id")),
+      .where(and(eq(connections.id, uuidParam(c, "id")),
         or(eq(connections.requesterId, self.id), eq(connections.addresseeId, self.id)))).limit(1);
     if (!row) throw Errors.notFound("connections/not-found", "Connection not found");
     await db.delete(connections).where(eq(connections.id, row.id));
