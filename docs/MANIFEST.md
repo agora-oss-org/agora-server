@@ -78,7 +78,7 @@ Status codes: `400 / 401 / 403 / 404 / 409 / 429 / 500`.
 ### auth
 | Method | Path | Status |
 |---|---|---|
-| POST | `/auth/sign-up` | ✅ |
+| POST | `/auth/sign-up` (→ `201` session, or `200 { status: "confirmation_required", email }` when email confirmation is enabled) | ✅ |
 | POST | `/auth/sign-in` | ✅ |
 | POST | `/auth/sign-out` | ✅ |
 | POST | `/auth/request-new-access-token` | ✅ |

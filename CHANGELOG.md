@@ -15,6 +15,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   GHCR (`ghcr.io/jenova-marie/agora`).
 
 ### Fixed
+- **Chat list endpoints now match the SDK's cursor contract.** `GET /chat/conversations` and
+  `GET /chat/conversations/:id/messages` returned the standard `{ data, pagination }` page/offset
+  envelope, but the SDK's `useConversations`/`useChatMessages` expect `{ conversations, hasMore }` /
+  `{ messages, hasMore }` with **cursor** pagination — so `response.data.conversations`/`.messages`
+  was `undefined` and the hooks crashed at `items.length` ("Cannot read properties of undefined").
+  Both handlers now return the SDK shape and honor cursor params: conversations key on
+  `cursor`/`cursorCreatedAt` (ordered by `COALESCE(lastMessageAt, createdAt) DESC`); messages key on
+  `before` (ISO timestamp) + `sort` + `parentId` (top-level stream vs thread replies).
+- **Sign-up no longer 400s when email confirmation is enabled.** `POST /auth/sign-up` treated a
+  null `data.user` from supabase-js as failure, but with email confirmation on, GoTrue serializes
+  the new user at the top level (no session) and supabase-js's `_sessionResponse` nulls `data.user`
+  — so every sign-up returned `400 auth/sign-up-failed` even though the user was created and the
+  confirmation email sent. The handler now branches on `error` only: with no session it returns
+  `200 { status: "confirmation_required", email }` (no tokens minted; profile created lazily on
+  first sign-in); with a session (auto-confirm) it mints tokens as before. The real Supabase error
+  message is now surfaced instead of a generic "Sign up failed".
 - **Reactions now accept the SDK's field name.** `POST /entities/:id/reactions` and
   `POST /comments/:id/reactions` validated the body against `{ type }`, but the SDK
   (`useAddReaction`) sends `{ reactionType }` — every reaction request 400'd. `reactionSchema`

@@ -25,6 +25,12 @@ metadata(jsonb), secureMetadata(jsonb, never exposed in public), reputation, isV
 lastActive, createdAt, updatedAt`
 - **User** (public) = UserFull minus `email, secureMetadata, isVerified, isActive, lastActive, updatedAt`
 - **AuthUser** = UserFull minus `secureMetadata`, plus `suspensions[]{reason?, startDate, endDate?}`, `authMethods[]`
+- **Session response** (sign-in, and sign-up with auto-confirm) = `{ user: AuthUser, accessToken, refreshToken }`
+- **Sign-up with email confirmation enabled** returns `{ status: "confirmation_required", email }` (`200`,
+  no tokens): the user is created and the confirmation email sent, but no session exists until they
+  confirm via the emailed link and then sign in. The same shape is returned for an already-registered
+  email (GoTrue obfuscates it) to avoid email enumeration. The profile row is created lazily on first
+  successful sign-in.
 
 ## Reaction
 `id, projectId, targetType(entity|comment), targetId, userId, reactionType, createdAt, updatedAt, user?`
