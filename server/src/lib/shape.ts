@@ -508,7 +508,7 @@ export function shapeConversationMember(row: ConversationMemberRow, user?: User 
   return m;
 }
 
-export function shapeChatMessage(row: ChatMessageRow, opts: { userReactions?: string[]; user?: User | null; localId?: string } = {}) {
+export function shapeChatMessage(row: ChatMessageRow, opts: { userReactions?: string[]; user?: User | null; localId?: string; files?: unknown[] } = {}) {
   const deleted = !!row.userDeletedAt;
   const msg: Record<string, unknown> = {
     id: row.id,
@@ -535,8 +535,33 @@ export function shapeChatMessage(row: ChatMessageRow, opts: { userReactions?: st
     updatedAt: iso(row.updatedAt)!,
   };
   if (opts.user !== undefined) msg.user = opts.user;
+  if (opts.files !== undefined) msg.files = opts.files;
   // Echo the client's optimistic-message token so the SDK can reconcile (replace) its
   // optimistic placeholder by localId instead of rendering a duplicate. Transient — not persisted.
   if (opts.localId !== undefined) msg.localId = opts.localId;
   return msg;
+}
+
+/**
+ * Batch-load the file associations (uploaded images/files) for a set of chat messages.
+ * Returns a Map keyed by chatMessageId; messages with no files are absent from the map.
+ */
+export async function loadMessageFiles(
+  projectId: string,
+  messageIds: (string | null | undefined)[]
+): Promise<Map<string, ReturnType<typeof shapeFile>[]>> {
+  const map = new Map<string, ReturnType<typeof shapeFile>[]>();
+  const ids = [...new Set(messageIds.filter((x): x is string => !!x))];
+  if (ids.length === 0) return map;
+  const rows = await db
+    .select()
+    .from(files)
+    .where(and(eq(files.projectId, projectId), inArray(files.chatMessageId, ids)));
+  for (const r of rows.sort((a, b) => (a.position ?? 0) - (b.position ?? 0))) {
+    if (!r.chatMessageId) continue;
+    const arr = map.get(r.chatMessageId) ?? [];
+    arr.push(shapeFile(r));
+    map.set(r.chatMessageId, arr);
+  }
+  return map;
 }

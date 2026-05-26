@@ -6,7 +6,7 @@ import sharp from "sharp";
 import { db } from "../db/index.js";
 import { files } from "../db/schema/index.js";
 import { Errors } from "../http/errors.js";
-import { uploadBytes } from "./storage.js";
+import { uploadBytes, inferFileType } from "./storage.js";
 import { parseImageOptions, computeVariants, resolveOutput, variantPath } from "./image-variants.js";
 
 export interface ImageAssoc {
@@ -91,4 +91,47 @@ export async function storeImageFromUpload(args: {
     createdAt: image.createdAt,
   };
   return { fileRow: row!, imageResponse };
+}
+
+/**
+ * Store a non-image upload as-is (no processing): upload the bytes to Supabase Storage and insert
+ * a `files` row, optionally associated to an entity/comment/chat message.
+ */
+export async function storeFileFromUpload(args: {
+  projectId: string;
+  userId: string;
+  file: File;
+  assoc?: ImageAssoc;
+}) {
+  const { projectId, userId, file, assoc = {} } = args;
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const fileId = randomUUID();
+  const ext = file.name.includes(".") ? "." + file.name.split(".").pop() : "";
+  const url = await uploadBytes(`${projectId}/files/${fileId}${ext}`, bytes, file.type || "application/octet-stream");
+  const [row] = await db.insert(files).values({
+    id: fileId, projectId, userId,
+    type: inferFileType(file.type), originalPath: url, originalSize: bytes.length,
+    originalMimeType: file.type || null,
+    entityId: assoc.entityId ?? null, commentId: assoc.commentId ?? null,
+    chatMessageId: assoc.chatMessageId ?? null, spaceId: assoc.spaceId ?? null,
+  }).returning();
+  return { fileRow: row! };
+}
+
+/**
+ * Store any upload: images go through the variant pipeline, everything else is stored as-is.
+ * Returns the inserted `files` row.
+ */
+export async function storeUpload(args: {
+  projectId: string;
+  userId: string;
+  file: File;
+  optionsBody?: Record<string, unknown>;
+  assoc?: ImageAssoc;
+}) {
+  if (args.file.type.startsWith("image/")) {
+    const { fileRow } = await storeImageFromUpload(args);
+    return { fileRow };
+  }
+  return storeFileFromUpload(args);
 }

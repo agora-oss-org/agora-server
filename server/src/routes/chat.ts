@@ -9,7 +9,8 @@ import { db } from "../db/index.js";
 import {
   conversations, conversationMembers, chatMessages, chatMessageReactions, reports, profiles,
 } from "../db/schema/index.js";
-import { shapeConversation, shapeConversationMember, shapeChatMessage, shapeUser } from "../lib/shape.js";
+import { shapeConversation, shapeConversationMember, shapeChatMessage, shapeFile, shapeUser, loadMessageFiles } from "../lib/shape.js";
+import { storeUpload } from "../lib/images.js";
 import {
   parseBody, createConversationSchema, directConversationSchema, updateConversationSchema,
   sendMessageSchema, editMessageSchema, messageReactionSchema, reportMessageSchema,
@@ -262,7 +263,11 @@ export const chatRoutes = new Hono<{ Variables: Variables }>()
     const hasMore = rows.length > limit;
     const pageRows = rows.slice(0, limit);
     const reactionMap = await userReactionsByMessage(pageRows.map((r) => r.id), c.var.auth!.userId);
-    const messages = pageRows.map((r) => shapeChatMessage(r, { userReactions: reactionMap.get(r.id) ?? [] }));
+    const fileMap = await loadMessageFiles(c.var.projectId, pageRows.map((r) => r.id));
+    const messages = pageRows.map((r) => shapeChatMessage(r, {
+      userReactions: reactionMap.get(r.id) ?? [],
+      ...(fileMap.has(r.id) ? { files: fileMap.get(r.id) } : {}),
+    }));
     return c.json({ messages, hasMore });
   })
   .post("/conversations/:id/messages", requireAuth, async (c) => {
@@ -271,7 +276,28 @@ export const chatRoutes = new Hono<{ Variables: Variables }>()
     if (convo.postingPermission === "admins" && member.role !== "admin") {
       throw Errors.forbidden("chat/posting-restricted", "Only admins can post in this conversation");
     }
-    const body = parseBody(sendMessageSchema, await c.req.json().catch(() => ({})), "chat");
+    // The SDK's useSendMessage sends multipart/form-data when files are attached, JSON otherwise.
+    let body: any;
+    let attachedFiles: File[] = [];
+    if ((c.req.header("content-type") ?? "").includes("multipart/form-data")) {
+      const form = await c.req.parseBody({ all: true });
+      const str = (k: string): string | undefined => {
+        const v = form[k]; return typeof v === "string" ? v : Array.isArray(v) && typeof v[0] === "string" ? v[0] : undefined;
+      };
+      const json = (k: string): unknown => { const s = str(k); if (s === undefined) return undefined; try { return JSON.parse(s); } catch { return undefined; } };
+      body = {
+        content: str("content"), gif: json("gif"), mentions: json("mentions"), metadata: json("metadata"),
+        parentMessageId: str("parentMessageId"), quotedMessageId: str("quotedMessageId"), localId: str("localId"),
+      };
+      const f = form["files"];
+      attachedFiles = (Array.isArray(f) ? f : f ? [f] : []).filter((x): x is File => typeof x !== "string");
+      // File-only messages are valid; otherwise require content or a gif (mirrors sendMessageSchema).
+      if (!body.content && !body.gif && attachedFiles.length === 0) {
+        throw Errors.badRequest("chat/empty-message", "Message needs content, a gif, or a file");
+      }
+    } else {
+      body = parseBody(sendMessageSchema, await c.req.json().catch(() => ({})), "chat");
+    }
     const check = await webhooks.validate(c.var.projectId, "message.created", { ...body, conversationId: convo.id, userId: c.var.auth!.userId });
     if (!check.valid) throw Errors.forbidden("chat/rejected", check.message ?? "Message rejected by validation webhook");
     // Trigger (0002) bumps conversation.last_message_at + parent thread_reply_count.
@@ -280,7 +306,13 @@ export const chatRoutes = new Hono<{ Variables: Variables }>()
       content: body.content, gif: body.gif, mentions: body.mentions, metadata: body.metadata,
       parentMessageId: body.parentMessageId, quotedMessageId: body.quotedMessageId,
     }).returning();
-    const shaped = shapeChatMessage(row!, { localId: body.localId });
+    // Upload any attached files (images → variants, others as-is), linked to this message.
+    const fileRows = [];
+    for (const file of attachedFiles) {
+      const { fileRow } = await storeUpload({ projectId: c.var.projectId, userId: c.var.auth!.userId, file, assoc: { chatMessageId: row!.id } });
+      fileRows.push(fileRow);
+    }
+    const shaped = shapeChatMessage(row!, { localId: body.localId, ...(fileRows.length ? { files: fileRows.map(shapeFile) } : {}) });
     indexContentAsync(c.var.projectId, "message", row!.id, row!.content);
     emitToConversation(convo.id, "message:created", shaped);
     webhooks.broadcast(c.var.projectId, "message.created.complete", shaped);
