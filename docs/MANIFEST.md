@@ -118,7 +118,7 @@ signs an RS256 JWT (issuer=projectId, aud="replyke.com", sub=userData.id, claim 
 | Method | Path | Status |
 |---|---|---|
 | GET | `/entities` (feed/list — accepts filters, see §5) | ✅ |
-| POST | `/entities` | ✅ |
+| POST | `/entities` (JSON, or `multipart/form-data` with `images.files`/`files.files` + `images.options` → uploaded files returned in `entity.files`) | ✅ |
 | GET | `/entities/:id` | ✅ |
 | PATCH | `/entities/:id` | ✅ |
 | DELETE | `/entities/:id` | ✅ |

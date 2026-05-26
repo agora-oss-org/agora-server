@@ -15,6 +15,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   GHCR (`ghcr.io/jenova-marie/agora`).
 
 ### Added
+- **`POST /entities` accepts image uploads (multipart).** The SDK's `useCreateEntity` switches to
+  `multipart/form-data` with `images.files` when images are attached; the handler now branches on
+  Content-Type, parses the form fields, runs each image through the shared `lib/images.ts` pipeline
+  (sharp → variants → Supabase Storage → `files` row linked to the new entity), and returns the
+  entity with its `files` populated. Entities also now carry their `files` on the feed list and
+  single GET (batched via `loadEntityFiles`), so uploaded images render on reload and in the feed.
+  The image-processing core was extracted from `POST /storage/images` into `lib/images.ts`
+  (`storeImageFromUpload`) and is shared by both routes.
 - **New accounts get a default username.** `ensureProfile` (the lazy profile-creation chokepoint
   for sign-up + first sign-in) now derives a username from the email local-part (`+tag` dropped,
   sanitized to `[a-z0-9_-]`) when none is supplied, instead of leaving it `NULL`. Collisions against
