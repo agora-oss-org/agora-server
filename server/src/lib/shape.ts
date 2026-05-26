@@ -64,6 +64,7 @@ export interface Entity {
   content: string | null;
   mentions: unknown[];
   attachments: unknown[];
+  files?: unknown[]; // system-managed file associations (images/files); populated on create + fetch
   keywords: string[];
   upvotes: string[];
   downvotes: string[];
@@ -150,7 +151,7 @@ export function shapeUser(row: ProfileRow | null | undefined): User | null {
 
 export function shapeEntity(
   row: EntityRow,
-  opts: { userReaction?: ReactionType | null; isSaved?: boolean; user?: User | null } = {}
+  opts: { userReaction?: ReactionType | null; isSaved?: boolean; user?: User | null; files?: unknown[] } = {}
 ): Entity {
   const entity: Entity = {
     id: row.id,
@@ -187,7 +188,32 @@ export function shapeEntity(
   };
   if (opts.user !== undefined) entity.user = opts.user;
   if (opts.isSaved !== undefined) entity.isSaved = opts.isSaved;
+  if (opts.files !== undefined) entity.files = opts.files;
   return entity;
+}
+
+/**
+ * Batch-load the file associations (uploaded images/files) for a set of entities.
+ * Returns a Map keyed by entityId; entities with no files are absent from the map.
+ */
+export async function loadEntityFiles(
+  projectId: string,
+  entityIds: (string | null | undefined)[]
+): Promise<Map<string, ReturnType<typeof shapeFile>[]>> {
+  const map = new Map<string, ReturnType<typeof shapeFile>[]>();
+  const ids = [...new Set(entityIds.filter((x): x is string => !!x))];
+  if (ids.length === 0) return map;
+  const rows = await db
+    .select()
+    .from(files)
+    .where(and(eq(files.projectId, projectId), inArray(files.entityId, ids)));
+  for (const r of rows.sort((a, b) => (a.position ?? 0) - (b.position ?? 0))) {
+    if (!r.entityId) continue;
+    const arr = map.get(r.entityId) ?? [];
+    arr.push(shapeFile(r));
+    map.set(r.entityId, arr);
+  }
+  return map;
 }
 
 export function shapeComment(

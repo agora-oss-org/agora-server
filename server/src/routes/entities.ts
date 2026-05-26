@@ -15,11 +15,14 @@ import { entities, reactions, collections, collectionEntities } from "../db/sche
 import { readPagination, paginate } from "../http/envelope.js";
 import {
   shapeEntity,
+  shapeFile,
   parseInclude,
   generateShortId,
   attachUserReactions,
   loadUsers,
+  loadEntityFiles,
 } from "../lib/shape.js";
+import { storeImageFromUpload } from "../lib/images.js";
 import {
   parseBody,
   createEntitySchema,
@@ -67,10 +70,12 @@ export const entityRoutes = new Hono<{ Variables: Variables }>()
 
     const reactionMap = await attachUserReactions(projectId, "entity", rows.map((r) => r.id), c.var.auth?.userId);
     const userMap = include.has("user") ? await loadUsers(projectId, rows.map((r) => r.userId)) : null;
+    const fileMap = await loadEntityFiles(projectId, rows.map((r) => r.id));
     const shaped = rows.map((r) =>
       shapeEntity(r, {
         userReaction: reactionMap.get(r.id) ?? null,
         ...(userMap ? { user: r.userId ? userMap.get(r.userId) ?? null : null } : {}),
+        ...(fileMap.has(r.id) ? { files: fileMap.get(r.id) } : {}),
       })
     );
     return c.json(paginate(shaped, total, page, limit));
@@ -78,7 +83,32 @@ export const entityRoutes = new Hono<{ Variables: Variables }>()
   .post("/", requireAuth, async (c) => {
     const projectId = c.var.projectId;
     const userId = c.var.auth!.userId;
-    const body = parseBody(createEntitySchema, await c.req.json().catch(() => ({})), "entities");
+
+    // The SDK's useCreateEntity sends multipart/form-data when images/files are attached, and JSON
+    // otherwise. Branch on Content-Type: pull the entity fields + any image files out of the form,
+    // or read the JSON body directly.
+    const contentType = c.req.header("content-type") ?? "";
+    const isMultipart = contentType.includes("multipart/form-data");
+    let imageFiles: File[] = [];
+    let imageOptions: Record<string, unknown> = {};
+    let rawBody: Record<string, unknown>;
+
+    if (isMultipart) {
+      const form = await c.req.parseBody({ all: true });
+      rawBody = parseMultipartEntityFields(form);
+      const imgs = form["images.files"];
+      imageFiles = (Array.isArray(imgs) ? imgs : imgs ? [imgs] : []).filter(
+        (f): f is File => typeof f !== "string"
+      );
+      const optStr = form["images.options"];
+      if (typeof optStr === "string") {
+        try { imageOptions = JSON.parse(optStr); } catch { /* ignore malformed options */ }
+      }
+    } else {
+      rawBody = await c.req.json().catch(() => ({}));
+    }
+
+    const body = parseBody(createEntitySchema, rawBody, "entities");
     // Blocking validation webhook (host app may veto). Passes through if unconfigured/unsubscribed.
     const check = await webhooks.validate(projectId, "entity.created", { ...body, userId });
     if (!check.valid) throw Errors.forbidden("entities/rejected", check.message ?? "Entity rejected by validation webhook");
@@ -102,9 +132,19 @@ export const entityRoutes = new Hono<{ Variables: Variables }>()
       })
       .returning();
     if (!row) throw Errors.badRequest("entities/create-failed", "Insert returned no row");
+
+    // Process any attached images: each becomes a `files` row linked to the new entity.
+    const fileRows = [];
+    for (const file of imageFiles) {
+      const { fileRow } = await storeImageFromUpload({
+        projectId, userId, file, optionsBody: imageOptions, assoc: { entityId: row.id },
+      });
+      fileRows.push(fileRow);
+    }
+
     indexEntityAsync(projectId, row.id, [row.title, row.content].filter(Boolean).join("\n"));
     await notifyOnEntityMentions(projectId, row);
-    const shaped = shapeEntity(row);
+    const shaped = shapeEntity(row, fileRows.length ? { files: fileRows.map(shapeFile) } : {});
     webhooks.broadcast(projectId, "entity.created.complete", shaped);
     return c.json(shaped, 201);
   })
@@ -213,6 +253,35 @@ export const entityRoutes = new Hono<{ Variables: Variables }>()
 
 // ─── shared helpers ────────────────────────────────────────────────────────
 
+// Reduce a multipart form (string values; arrays under repeated keys) to the JSON-ish body the
+// createEntitySchema expects. Scalar fields stay strings; the array/object fields the SDK sends as
+// JSON strings are parsed back; isDraft is coerced to boolean. Absent fields are omitted (not null).
+function parseMultipartEntityFields(form: Record<string, unknown>): Record<string, unknown> {
+  const str = (k: string): string | undefined => {
+    const v = form[k];
+    if (typeof v === "string") return v;
+    if (Array.isArray(v) && typeof v[0] === "string") return v[0];
+    return undefined;
+  };
+  const json = (k: string): unknown => {
+    const s = str(k);
+    if (s === undefined) return undefined;
+    try { return JSON.parse(s); } catch { return undefined; }
+  };
+  const out: Record<string, unknown> = {};
+  for (const k of ["title", "content", "foreignId", "sourceId", "spaceId"]) {
+    const v = str(k);
+    if (v !== undefined) out[k] = v;
+  }
+  for (const k of ["keywords", "mentions", "attachments", "metadata", "location"]) {
+    const v = json(k);
+    if (v !== undefined) out[k] = v;
+  }
+  const draft = str("isDraft");
+  if (draft !== undefined) out.isDraft = draft === "true";
+  return out;
+}
+
 async function countWhere(where: SQL | undefined): Promise<number> {
   const rows = await db.select({ total: count() }).from(entities).where(where);
   return rows[0]?.total ?? 0;
@@ -234,6 +303,8 @@ async function lookupEntity(c: any, predicate: SQL) {
     const users = await loadUsers(projectId, [row.userId]);
     opts.user = row.userId ? users.get(row.userId) ?? null : null;
   }
+  const fileMap = await loadEntityFiles(projectId, [row.id]);
+  if (fileMap.has(row.id)) opts.files = fileMap.get(row.id);
   return shapeEntity(row, opts);
 }
 
