@@ -226,7 +226,7 @@ signs an RS256 JWT (issuer=projectId, aud="replyke.com", sub=userData.id, claim 
 | DELETE | `/chat/conversations/:id/members/:id` | ✅ |
 | PATCH | `/chat/conversations/:id/members/:id/role` | ✅ |
 | GET | `/chat/conversations/:id/messages` | ✅ |
-| POST | `/chat/conversations/:id/messages` | ✅ |
+| POST | `/chat/conversations/:id/messages` (JSON, or `multipart/form-data` with `files` → uploaded files returned in `message.files`) | ✅ |
 | PATCH | `/chat/conversations/:id/messages/:id` | ✅ |
 | DELETE | `/chat/conversations/:id/messages/:id` | ✅ |
 | POST | `/chat/conversations/:id/messages/:id/reactions` | ✅ |

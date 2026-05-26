@@ -15,6 +15,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   GHCR (`ghcr.io/jenova-marie/agora`).
 
 ### Added
+- **`POST /chat/conversations/:id/messages` accepts file uploads (multipart).** The SDK's
+  `useSendMessage` sends `multipart/form-data` with `files` when attachments are present; the handler
+  now branches on Content-Type, uploads each file via the shared pipeline (`storeUpload` →
+  images get sharp variants, other types stored as-is), links each `files` row to the message, and
+  returns/emits the message with `files` populated. File-only messages (no text/gif) are allowed.
+  `GET …/messages` batch-loads files (`loadMessageFiles`) so attachments render on reload. New
+  generic `storeFileFromUpload` + `storeUpload` dispatcher in `lib/images.ts`.
 - **`POST /entities` accepts image uploads (multipart).** The SDK's `useCreateEntity` switches to
   `multipart/form-data` with `images.files` when images are attached; the handler now branches on
   Content-Type, parses the form fields, runs each image through the shared `lib/images.ts` pipeline
