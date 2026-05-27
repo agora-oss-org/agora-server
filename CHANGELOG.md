@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`scripts/wipe.mjs` (`npm run db:wipe`)** — destructive dev reset that clears the backend to a
+  clean slate: TRUNCATEs all public tables (RESTART IDENTITY CASCADE; `projects` +
+  `project_integrations` preserved unless `--include-projects`), deletes all Supabase Auth users
+  (admin API), and empties the `agora` Storage bucket. Dry-run by default; requires `--yes` to
+  execute, with a typed project-ref confirmation in a TTY (`--force` for CI). Per-store toggles
+  (`--no-data`/`--no-auth`/`--no-storage`).
+- **`scripts/seed-miso-post.mjs` (`npm run seed:miso`)** — seeds a sample image post owned by the
+  demo user, uploaded through the real entity pipeline (multipart → sharp variants → Storage →
+  `files` row). Skips if the post already exists; configurable via `API_BASE_URL`/`PROJECT_ID`/
+  `MISO_IMAGE_URL`.
+
+### Fixed
+- **Semantic content search returned nothing (`200 []`).** The `content_embeddings` (and legacy
+  `entity_embeddings`) vector index was **IVFFlat** (`lists=100`), an approximate index that probes
+  only `ivfflat.probes` (default 1) of its lists per query. On a small/young dataset nearly every
+  query probed an empty list, so `match_content`'s `ORDER BY embedding <=> query LIMIT n` came back
+  empty even though relevant rows existed (the route worked; it just matched nothing). Migration
+  `0015_embeddings_hnsw` replaces both IVFFlat indexes with **HNSW** (pgvector ≥ 0.5; no training
+  step, no empty-list failure, strong recall from the first embedding). Index-only change — no data
+  touched.
+
 ## [0.2.1] - 2026-05-27
 
 Fixes OAuth social login behind a TLS-terminating reverse proxy.

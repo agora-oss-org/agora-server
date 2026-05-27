@@ -17,7 +17,9 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:migrate:run": "node scripts/migrate.mjs",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "db:wipe": "node scripts/wipe.mjs",
+    "seed:miso": "node scripts/seed-miso-post.mjs"
   },
   "dependencies": {
     "@hono/node-server": "^1.13.7",
