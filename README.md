@@ -174,6 +174,7 @@ REFRESH_TOKEN_TTL=2592000                      # 30 d
 REFRESH_TOKEN_GRACE_SECONDS=30                 # racing-tabs reuse grace window
 
 CORS_ORIGIN=*
+PUBLIC_BASE_URL=https://api.example.com        # this server's public origin; set behind a proxy (see OAuth below)
 CRON_SECRET=                                   # gates POST /internal/cron/digests (space digests)
 
 # Semantic search — Voyage AI (optional)
@@ -186,6 +187,37 @@ ANTHROPIC_API_KEY=sk-ant-...
 ANTHROPIC_MODEL=claude-haiku-4-5-20251001
 ANTHROPIC_MAX_TOKENS=64000
 ```
+
+### OAuth providers (Supabase Redirect URLs)
+
+OAuth (GitHub, Google, …) is brokered through Supabase with PKCE. The server starts the flow by
+asking Supabase to redirect back to **its own** callback —
+`<public-origin>/v7/<projectId>/oauth/callback?aid=<state>` (`routes/misc.ts`, `startOAuth`). After
+exchanging the code it mints Agora tokens and redirects the browser to the app's `redirectAfterAuth`
+with `#accessToken=…&refreshToken=…` in the fragment.
+
+**Behind a reverse proxy, set `PUBLIC_BASE_URL`.** The callback's `<public-origin>` is resolved as
+`PUBLIC_BASE_URL` → else `X-Forwarded-Proto`/`X-Forwarded-Host` → else the raw request origin. With
+TLS terminated at the proxy, the raw request origin is the internal `http://<internal-host>` (wrong
+scheme *and* host), which won't match the allowlist and silently falls back to the Site URL. Set
+`PUBLIC_BASE_URL=https://api.example.com` (the host clients reach) for a deterministic callback.
+
+For the first hop to succeed, **Supabase → Authentication → URL Configuration → Redirect URLs**
+must allow the **server's** callback — *not* the front-end app's origin:
+
+```
+https://<your-server-host>/v7/*/oauth/callback**
+http://localhost:4000/v7/*/oauth/callback**
+```
+
+- Use the **API/server** host (where this server is deployed), not the SPA/demo host. The
+  `redirect_to` is built from the server origin.
+- `*` matches the project-id segment (Supabase treats only `.` and `/` as separators, so the UUID is
+  covered). The trailing **`**` is required** — Supabase matches the *full* `redirect_to` including
+  the `?aid=<state>` query the server appends, and a bare `…/oauth/callback` will not match (it
+  silently falls back to your **Site URL** with `?code=…`, so the login dead-ends).
+- The provider's own callback in its developer console (and the Supabase provider's "Callback URL")
+  stays `https://<ref>.supabase.co/auth/v1/callback` — that's unrelated to this allowlist.
 
 ## Docker
 

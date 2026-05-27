@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`PUBLIC_BASE_URL` env var** — the server's public origin (scheme + host) used to build absolute
+  OAuth callback URLs. Resolution order in `startOAuth` (`routes/misc.ts`): `PUBLIC_BASE_URL` →
+  `X-Forwarded-Proto`/`X-Forwarded-Host` → raw request origin. Documented in `README.md` (new "OAuth
+  providers (Supabase Redirect URLs)" section) and `.env.example`.
+
+### Fixed
+- **OAuth `redirect_to` used the internal origin behind a reverse proxy.** `startOAuth` built the
+  callback from `new URL(c.req.url).origin`, which behind a TLS-terminating proxy is the internal
+  `http://<internal-host>` — wrong scheme *and* host. Supabase couldn't match it against the Redirect
+  URLs allowlist and silently fell back to the project's Site URL (browser landed on `…/?code=…` with
+  no token fragment, so social login dead-ended). The callback origin now resolves via
+  `PUBLIC_BASE_URL` → forwarded headers → request origin. Local/dev (no proxy) is unchanged.
+
+### Notes
+- Supabase's **Redirect URLs** allowlist must permit the *server's* public callback
+  (`<public-origin>/v7/*/oauth/callback**`), not the front-end app's origin. The trailing `**` is
+  **required**: Supabase matches the full `redirect_to` including the `?aid=<state>` query the server
+  appends, so a bare `…/oauth/callback` never matches.
+
 ## [0.2.0] - 2026-05-27
 
 A configurable feed-ranking system, file uploads on entities and chat, and a batch of
