@@ -6,7 +6,6 @@ name: docker-publish
 
 on:
   push:
-    branches: [root]
     tags: ["v*"]
   workflow_dispatch:
 
