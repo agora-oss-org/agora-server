@@ -84,10 +84,12 @@ export const spaceRoutes = new Hono<{ Variables: Variables }>()
     if (!check.valid) throw Errors.forbidden("spaces/rejected", check.message ?? "Space rejected by validation webhook");
     let depth = 0;
     if (body.parentSpaceId) {
-      const [p] = await db.select({ depth: spaces.depth }).from(spaces)
-        .where(and(eq(spaces.projectId, c.var.projectId), eq(spaces.id, body.parentSpaceId))).limit(1);
-      if (!p) throw Errors.badRequest("spaces/bad-parent", "Parent space not found", "parentSpaceId");
-      depth = p.depth + 1;
+      const [parent] = await db.select().from(spaces)
+        .where(and(eq(spaces.projectId, c.var.projectId), eq(spaces.id, body.parentSpaceId), isNull(spaces.deletedAt))).limit(1);
+      if (!parent) throw Errors.badRequest("spaces/bad-parent", "Parent space not found", "parentSpaceId");
+      // Only an admin (or owner) of the parent space may create a subspace under it.
+      await requireSpaceRole(c, parent, ["admin"]);
+      depth = parent.depth + 1;
       if (depth > MAX_SPACE_DEPTH) throw Errors.badRequest("spaces/too-deep", `Spaces can nest at most ${MAX_SPACE_DEPTH} levels deep`, "parentSpaceId");
     }
     const [row] = await db.insert(spaces).values({
@@ -250,14 +252,29 @@ export const spaceRoutes = new Hono<{ Variables: Variables }>()
     }
     const m = await membershipOf(c.var.projectId, space.id, uid);
     if (!m) return c.json({ isMember: false, role: null, status: null, joinedAt: null,
-      permissions: { canPost: false, canModerate: false, canRead: space.readingPermission === "anyone", isAdmin: false, isModerator: false } });
-    const isAdmin = m.role === "admin", isMod = m.role === "moderator";
-    return c.json({ isMember: m.status === "active", role: m.role, status: m.status, joinedAt: m.joinedAt,
-      permissions: { canPost: m.status === "active", canModerate: isAdmin || isMod, canRead: true, isAdmin, isModerator: isMod } });
+      permissions: { canPost: space.postingPermission === "anyone", canModerate: false, canRead: space.readingPermission === "anyone", isAdmin: false, isModerator: false } });
+    // Only an *active* member gains read/write/moderation beyond what anyone gets. A pending
+    // (awaiting approval), rejected, or banned membership row must NOT unlock members-only access.
+    const isActive = m.status === "active";
+    const isAdmin = isActive && m.role === "admin";
+    const isMod = isActive && m.role === "moderator";
+    return c.json({ isMember: isActive, role: m.role, status: m.status, joinedAt: m.joinedAt,
+      permissions: {
+        canPost: isActive && (space.postingPermission !== "admins" || isAdmin || isMod),
+        canModerate: isAdmin || isMod,
+        canRead: space.readingPermission === "anyone" || isActive,
+        isAdmin, isModerator: isMod,
+      } });
   })
   .get("/:id/members", async (c) => {
     const { page, limit, offset } = readPagination(c);
-    const where = and(eq(spaceMembers.projectId, c.var.projectId), eq(spaceMembers.spaceId, c.req.param("id")));
+    // Optional filters (SDK's useFetchSpaceMembers sends these; e.g. status=pending for join requests).
+    const statusQ = c.req.query("status");
+    const roleQ = c.req.query("role");
+    const conds = [eq(spaceMembers.projectId, c.var.projectId), eq(spaceMembers.spaceId, c.req.param("id"))];
+    if (statusQ) conds.push(eq(spaceMembers.status, statusQ as any));
+    if (roleQ) conds.push(eq(spaceMembers.role, roleQ as any));
+    const where = and(...conds);
     const [{ n } = { n: 0 }] = await db.select({ n: count() }).from(spaceMembers).where(where);
     const rows = await db.select({ m: spaceMembers, p: profiles })
       .from(spaceMembers).innerJoin(profiles, eq(profiles.id, spaceMembers.userId))
