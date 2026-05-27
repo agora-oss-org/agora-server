@@ -10,6 +10,7 @@ import { requireAuth } from "../middleware/auth.js";
 import { db } from "../db/index.js";
 import { oauthIdentities, oauthStates, profiles, projects, projectIntegrations } from "../db/schema/index.js";
 import { pkceClient, oauthConfigured } from "../lib/oauth.js";
+import { env } from "../lib/env.js";
 import { mintSession } from "../lib/tokens.js";
 import * as webhooks from "../lib/webhooks.js";
 import { getFeedConfig, invalidateFeedConfig, feedConfigView } from "../lib/feed-config.js";
@@ -216,6 +217,18 @@ async function webhookConfigView(projectId: string) {
 }
 
 // ── oauth helpers ───────────────────────────────────────────────────────────
+// The server's PUBLIC origin (scheme + host), used to build absolute callback URLs that the
+// browser (and Supabase's redirect-URL allowlist) must agree on. Behind a TLS-terminating reverse
+// proxy the raw request origin is the internal `http://<internal-host>` — wrong scheme AND host —
+// so prefer an explicit PUBLIC_BASE_URL, then the proxy's X-Forwarded-Proto/Host, then the request.
+function publicOrigin(c: any): string {
+  if (env.PUBLIC_BASE_URL) return new URL(env.PUBLIC_BASE_URL).origin;
+  const reqUrl = new URL(c.req.url);
+  const proto = (c.req.header("x-forwarded-proto") ?? "").split(",")[0]?.trim() || reqUrl.protocol.replace(":", "");
+  const host = (c.req.header("x-forwarded-host") ?? "").split(",")[0]?.trim() || reqUrl.host;
+  return `${proto}://${host}`;
+}
+
 // Ask Supabase for the provider authorization URL, persist the PKCE verifier + flow, return the URL.
 async function startOAuth(
   c: any,
@@ -226,8 +239,7 @@ async function startOAuth(
   if (!oauthConfigured()) throw Errors.badRequest("oauth/not-configured", "OAuth is not configured (Supabase keys unset)");
   const projectId = c.var.projectId;
   const stateId = randomUUID();
-  const origin = new URL(c.req.url).origin;
-  const callbackUrl = `${origin}/v7/${projectId}/oauth/callback?aid=${stateId}`;
+  const callbackUrl = `${publicOrigin(c)}/v7/${projectId}/oauth/callback?aid=${stateId}`;
   const { client, dump } = pkceClient();
   const { data, error } = await client.auth.signInWithOAuth({
     provider: body.provider as Provider,

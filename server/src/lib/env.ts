@@ -16,6 +16,11 @@ const schema = z.object({
   ACCESS_TOKEN_SECRET: z.string().min(1),
   REFRESH_TOKEN_GRACE_SECONDS: z.coerce.number().default(30),
   CORS_ORIGIN: z.string().default("*"),
+  // The server's own public origin (scheme + host), e.g. https://api.example.com. Used to build
+  // absolute callback URLs (OAuth) when the server runs behind a TLS-terminating reverse proxy,
+  // where the raw request origin is the internal http://<internal-host>. When unset the server
+  // falls back to X-Forwarded-Proto/Host, then the raw request origin. Set this in production.
+  PUBLIC_BASE_URL: z.preprocess((v) => (v === "" ? undefined : v), z.string().url().optional()),
   // Shared secret gating POST /internal/cron/digests (external schedulers). Optional: when unset
   // the endpoint is disabled (503) and digests run only via scripts/send-digests.mjs.
   CRON_SECRET: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
