@@ -84,7 +84,7 @@ complete** — no stubbed endpoints remain.
 
 | Domain | Highlights |
 |---|---|
-| **entities** | feed with full filter grammar (`hot`/`new`/`top`/`controversial`, time frame, keywords, metadata, geo via PostGIS), CRUD, drafts, foreign/short-id lookup, reactions, saved state |
+| **entities** | feed with full filter grammar + **pluggable ranking** (`hot`/`top`/`new`/`controversial`/`decay`/`gravity`/`wilson`/`bayesian`, per-project + per-request tunable — see [Feed ranking](#feed-ranking)), CRUD, drafts, foreign/short-id lookup, reactions, saved state |
 | **comments** | threaded (adjacency list + recursive CTE full-tree endpoint), reactions, Reddit-style soft delete, `sortBy` |
 | **users / follows** | profiles, follow graph + counts, suggestions |
 | **connections** | bidirectional friend-request state machine (none → pending → connected/declined) with directional status |
@@ -112,14 +112,14 @@ agora/
 │   └── MODELS.md        # field-level response shapes (drive both the API and the schema)
 ├── db/README.md         # database overview (schema lives in server/src/db/schema)
 └── server/              # @agora/server
-    ├── drizzle/         # generated + hand-written SQL migrations (0000–0012)
+    ├── drizzle/         # generated + hand-written SQL migrations (0000–0014)
     ├── scripts/         # seed.sql, send-digests.mjs, recompute-scores.mjs, *-e2e.mjs
     ├── test/            # vitest integration suites (real cloud Postgres)
     └── src/
         ├── index.ts     # entrypoint: serves the app + attaches socket.io
         ├── app.ts       # createApp() — side-effect-free Hono app (drives in-process tests)
         ├── db/          # Drizzle client + schema/*.ts (source of truth)
-        ├── lib/         # env, supabase, tokens, embeddings, llm, storage, shape, validation, webhooks, digests
+        ├── lib/         # env, supabase, tokens, embeddings, llm, storage, shape, validation, webhooks, digests, ranking, feed-config, recompute, rerank
         ├── http/        # error + pagination envelopes, context types
         ├── middleware/  # project resolution, JWT auth
         ├── routes/      # one router per domain
@@ -248,6 +248,44 @@ npm run test:integration  # integration (set TEST_DATABASE_URL first)
   entities is POSTed to the space's own webhook on its scheduled hour. The trigger is decoupled from
   the work: run `scripts/send-digests.mjs` standalone (cron / launchd), or have an external scheduler
   (e.g. Supabase `pg_cron` + `pg_net`) hit the secret-gated `POST /internal/cron/digests`.
+
+## Feed ranking
+
+The feed is **pluggable and tunable** without putting any host code (or arbitrary SQL) in the
+database. Ranking lives in a closed registry (`lib/ranking.ts`); algorithm names are a fixed enum and
+every tunable is a validated, range-clamped *number*.
+
+**Algorithms** (`GET /entities?sortBy=…`):
+
+| `sortBy` | Ranks by | Storage |
+|---|---|---|
+| `hot` | time-anchored Reddit score (`hot_score`, denormalized `entities.score`) — recency + votes | stored, index-served, refreshed on vote |
+| `top` | pure weighted-net votes, no time term (pair with `timeFrame` for "top this week") | live |
+| `new` | recency | live |
+| `controversial` | balanced disagreement (`least(up,down)`, then volume) | live |
+| `decay` | **true exponential half-life** — `quality · 0.5^(age/halfLife)` | live (or stored via cron) |
+| `gravity` | Hacker News — `(net−1)/(ageₕ+2)^G` | live |
+| `wilson` | Wilson lower-bound confidence on up/(up+down) | live |
+| `bayesian` | shrunk mean `(C·m+up)/(C+up+down)` | live |
+
+**Layered configuration** (precedence: request → project → built-in defaults):
+
+- **Per request** — `sortBy` plus optional `rankParams` (JSON scalar of numeric tunables, e.g.
+  `?rankParams={"halfLifeHours":12}`), `rankAnchor` (pins the decay clock across paginated requests;
+  the server echoes the resolved anchor back), and `rerank=true`.
+- **Per project** — `projects.feed_config` jsonb (`lib/feed-config.ts`, 30s-cached), set via
+  project-admin **`GET`/`PATCH /settings/feed`**: `{ defaultAlgorithm, decayMode, halfLifeHours,
+  gravity, reactionWeights, diversity, rerankWebhook }`.
+
+**Two decay models coexist.** `hot`/`top` use the stored, index-served score. True `decay` defaults
+to **query-time** (accurate against `now()`); set `decayMode:"stored"` to have the cron snapshot the
+evaluated half-life into `entities.score` (index-served, minutes-stale). The recompute job
+(`recompute_decay_scores`/`recompute_scores`, orchestrated by `lib/recompute.ts`) runs standalone via
+`scripts/recompute-scores.mjs` or the secret-gated `POST /internal/cron/recompute-scores`.
+
+**Re-rank webhook (escape hatch).** With `feed_config.rerankWebhook` set and `?rerank=true`, the
+server over-fetches a candidate pool, POSTs it HMAC-signed to the host app, and applies the returned
+ordering — **fail-open** to the algorithm order on timeout/error (`lib/rerank.ts`).
 
 ## Client SDK
 

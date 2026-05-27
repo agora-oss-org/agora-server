@@ -117,7 +117,7 @@ signs an RS256 JWT (issuer=projectId, aud="replyke.com", sub=userData.id, claim 
 ### entities
 | Method | Path | Status |
 |---|---|---|
-| GET | `/entities` (feed/list — accepts filters, see §5) | ✅ |
+| GET | `/entities` (feed/list — accepts filters §5; `sortBy` also takes `decay`/`gravity`/`wilson`/`bayesian`, plus optional `rankParams` JSON scalar, `rankAnchor` (echoed back), `rerank`) | ✅ |
 | POST | `/entities` (JSON, or `multipart/form-data` with `images.files`/`files.files` + `images.options` → uploaded files returned in `entity.files`) | ✅ |
 | GET | `/entities/:id` | ✅ |
 | PATCH | `/entities/:id` | ✅ |
@@ -287,6 +287,8 @@ on validate replies). Covered events: entity/comment/space/message/user `.create
 |---|---|---|
 | GET | `/webhooks/config` (→ `{ url, events, hasSecret }`; secret never returned) | ✅ |
 | PATCH | `/webhooks/config` (set `url`/`secret`/`events`; cache-invalidated) | ✅ |
+| GET | `/settings/feed` (project-admin; resolved feed ranking config, re-rank secret redacted) | ✅ |
+| PATCH | `/settings/feed` (project-admin; deep-merge `feed_config`; cache-invalidated) | ✅ |
 | POST | `/webhooks/test` (signed test ping → `{ configured, ok, status? }`) | ✅ |
 
 ---

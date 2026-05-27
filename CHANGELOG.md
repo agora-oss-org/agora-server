@@ -15,6 +15,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   GHCR (`ghcr.io/jenova-marie/agora`).
 
 ### Added
+- **Flexible, configurable feed ranking.** A closed algorithm registry (`lib/ranking.ts`) adds
+  `decay` (true exponential half-life), `gravity` (HN), `wilson` (confidence lower bound), and
+  `bayesian` (shrunk mean) alongside the existing `hot`/`top`/`new`/`controversial`. `GET /entities`
+  takes optional `rankParams` (JSON scalar of numeric tunables — half-life/gravity/z/C/m, validated +
+  clamped), `rankAnchor` (pins the decay clock for stable pagination; echoed back in the response),
+  and `rerank` (opt-in webhook). Precedence: request `rankParams` > per-project `feed_config` >
+  built-in defaults. All ORDER BY lists are tie-broken `(createdAt, id)`. No algorithm name/weight is
+  ever injected as SQL — names are a fixed enum, tunables are numeric.
+- **Per-project `feed_config` + admin settings endpoint.** New `projects.feed_config` jsonb
+  (migration `0013`) holding `{ defaultAlgorithm, decayMode, halfLifeHours, gravity, reactionWeights,
+  diversity, rerankWebhook }`. Admin-gated `GET`/`PATCH /settings/feed` (project-admin only; PATCH
+  deep-merges, re-rank secret redacted on read) backs the "Feed" settings UI. Resolved with a 30s
+  cache (`lib/feed-config.ts`).
+- **Stored-mode decay recompute + cron.** `recompute_decay_scores()` (migration `0014`) snapshots the
+  evaluated half-life score into `entities.score` so `decay` projects with `decayMode:"stored"` stay
+  index-served; `lib/recompute.ts` orchestrates per-project (decay-stored → decay fn, else hot_score).
+  Secret-gated `POST /internal/cron/recompute-scores` (mirrors the digests cron) +
+  `scripts/recompute-scores.mjs` (now feed_config-aware).
+- **Feed re-rank webhook (escape hatch).** When `feed_config.rerankWebhook` is set and `?rerank=true`,
+  the server over-fetches a candidate pool, POSTs it (HMAC-signed) to the host app, and applies the
+  returned ordering — **fail-open** to the algorithm order on timeout/non-2xx/bad-signature
+  (`lib/rerank.ts`).
 - **`POST /chat/conversations/:id/messages` accepts file uploads (multipart).** The SDK's
   `useSendMessage` sends `multipart/form-data` with `files` when attachments are present; the handler
   now branches on Content-Type, uploads each file via the shared pipeline (`storeUpload` →
@@ -38,12 +60,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   nameless, so SDK/UI fell back to a raw id slice. Existing profiles are not backfilled.
 
 ### Changed
+- **Feed `top` now ranks by pure weighted-net votes (no time term)**, distinct from `hot` (which
+  combines recency + votes). Previously `top` aliased the time-anchored `hot_score`, so `hot` and
+  `top` were identical. Pair `top` with a `timeFrame` filter for "top this week/month".
 - **Creating a subspace requires admin/owner of the parent.** `POST /spaces` with a `parentSpaceId`
   now runs `requireSpaceRole(parent, ["admin"])` (owner counts as admin); regular members get
   `403 spaces/insufficient-role`. Previously any authenticated user could nest a space under any
   parent.
 
 ### Fixed
+- **Feed `sortBy` is no longer overridden by the SDK's default `sortByReaction`.** `buildFeedOrder`
+  treated any `sortByReaction` as a sort override, but the SDK tags every feed request with a default
+  `sortByReaction=upvote` — so every `sortBy` algorithm collapsed to "order by upvote count" (made all
+  algorithms appear identical). A recognized algorithm (or `metadata.*`) in `sortBy` now wins;
+  `sortByReaction` applies only as a fallback when no algorithm is chosen.
 - **`GET /spaces/:id/membership/me` permissions respect membership status.** Any existing
   membership row (including a `pending` join request) returned `canRead: true`, so a not-yet-approved
   requester to a members-only space appeared able to read/act. Now `canRead`/`canPost`/`canModerate`
