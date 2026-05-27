@@ -8,6 +8,10 @@
 import { and, asc, desc, ilike, sql, type SQL } from "drizzle-orm";
 import { entities } from "../db/schema/index.js";
 import { REACTION_TYPES } from "./shape.js";
+import {
+  RANKING_ALGORITHMS, DEFAULT_RANK_PARAMS, DEFAULT_WEIGHTS,
+  type RankParams,
+} from "./ranking.js";
 
 const TIME_FRAMES: Record<string, string> = {
   hour: "1 hour", day: "1 day", week: "7 days", month: "30 days", year: "365 days",
@@ -119,15 +123,29 @@ export function buildFeedConditions(parsed: Record<string, any>, authUserId?: st
   return c;
 }
 
-/** Build the ORDER BY expressions for the feed (always tie-broken by createdAt). */
-export function buildFeedOrder(parsed: Record<string, any>): SQL[] {
+export interface FeedOrderOpts {
+  params?: RankParams;                  // resolved rank params (rankParams > feed_config > defaults)
+  weights?: Record<string, number>;     // reaction weights (feed_config > defaults)
+  anchor?: SQL;                         // ranking clock for query-time algos (now() or pinned ts)
+}
+
+/**
+ * Build the feed ORDER BY. Routes a known `sortBy` algorithm through the closed RANKING_ALGORITHMS
+ * registry (ranking.ts); reaction-sort and metadata.* sorts keep their dedicated handling. Every
+ * list is deterministically tie-broken (createdAt, id) so pagination doesn't drift/duplicate.
+ */
+export function buildFeedOrder(parsed: Record<string, any>, opts: FeedOrderOpts = {}): SQL[] {
   const dir = parsed.sortDir === "asc" ? asc : desc;
   const sortBy = parsed.sortBy as string | undefined;
 
-  // Explicit reaction sort takes precedence.
+  // Reaction-count sort is a *fallback*, not an override: the SDK always tags requests with a default
+  // `sortByReaction=upvote`, so honoring it unconditionally would make every `sortBy` algorithm
+  // collapse to "order by upvote count". Only use it when no known algorithm (or metadata.* sort) was
+  // chosen — i.e. the caller genuinely wants pure reaction-count ordering.
   const reaction = parsed.sortByReaction as string | undefined;
-  if (reaction && (REACTION_TYPES as readonly string[]).includes(reaction)) {
-    return [dir(sql`coalesce((${entities.reactionCounts}->>${reaction})::int, 0)`), desc(entities.createdAt)];
+  const algoChosen = !!sortBy && (sortBy in RANKING_ALGORITHMS || sortBy.startsWith("metadata."));
+  if (!algoChosen && reaction && (REACTION_TYPES as readonly string[]).includes(reaction)) {
+    return [dir(sql`coalesce((${entities.reactionCounts}->>${reaction})::int, 0)`), desc(entities.createdAt), desc(entities.id)];
   }
 
   if (sortBy?.startsWith("metadata.")) {
@@ -139,24 +157,17 @@ export function buildFeedOrder(parsed: Record<string, any>): SQL[] {
         : st === "timestamp" ? sql`(${entities.metadata}->>${key})::timestamptz`
         : st === "boolean" ? sql`(${entities.metadata}->>${key})::boolean`
         : sql`${entities.metadata}->>${key}`;
-      return [dir(expr), desc(entities.createdAt)];
+      return [dir(expr), desc(entities.createdAt), desc(entities.id)];
     }
   }
 
-  switch (sortBy) {
-    case "hot":
-    case "top":
-      return [dir(entities.score), desc(entities.createdAt)];
-    case "controversial":
-      // High when both sides are large and balanced: least(up,down) first, then total.
-      return [
-        dir(sql`least(coalesce((${entities.reactionCounts}->>'upvote')::int, 0), coalesce((${entities.reactionCounts}->>'downvote')::int, 0))`),
-        desc(sql`coalesce((${entities.reactionCounts}->>'upvote')::int, 0) + coalesce((${entities.reactionCounts}->>'downvote')::int, 0)`),
-      ];
-    case "new":
-    default:
-      return [dir(entities.createdAt)];
-  }
+  const algo = RANKING_ALGORITHMS[sortBy ?? "new"] ?? RANKING_ALGORITHMS["new"]!;
+  return algo.order({
+    params: opts.params ?? DEFAULT_RANK_PARAMS,
+    weights: opts.weights ?? DEFAULT_WEIGHTS,
+    anchor: opts.anchor ?? sql`now()`,
+    dir,
+  });
 }
 
 /** Convenience: combine base conditions + filter conditions into one WHERE. */

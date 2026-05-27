@@ -12,7 +12,8 @@ import { oauthIdentities, oauthStates, profiles, projects, projectIntegrations }
 import { pkceClient, oauthConfigured } from "../lib/oauth.js";
 import { mintSession } from "../lib/tokens.js";
 import * as webhooks from "../lib/webhooks.js";
-import { parseBody, oauthAuthorizeSchema, signTestingJwtSchema, webhookConfigSchema } from "../lib/validation.js";
+import { getFeedConfig, invalidateFeedConfig, feedConfigView } from "../lib/feed-config.js";
+import { parseBody, oauthAuthorizeSchema, signTestingJwtSchema, webhookConfigSchema, feedConfigSchema } from "../lib/validation.js";
 
 type ProfileRow = typeof profiles.$inferSelect;
 
@@ -117,6 +118,29 @@ export const miscRoutes = new Hono<{ Variables: Variables }>()
     const result = await webhooks.sendTest(c.var.projectId);
     if (!result.configured) throw Errors.badRequest("webhooks/not-configured", "No webhook URL configured for this project");
     return c.json(result);
+  })
+  // ── feed ranking config (project-admin only; backs the Feed settings UI) ─────
+  // GET returns the resolved config (re-rank webhook secret redacted to hasSecret).
+  .get("/settings/feed", requireAuth, async (c) => {
+    await requireProjectAdmin(c);
+    return c.json(feedConfigView(await getFeedConfig(c.var.projectId)));
+  })
+  // PATCH deep-merges the provided keys into projects.feed_config (top-level + reactionWeights merge).
+  .patch("/settings/feed", requireAuth, async (c) => {
+    await requireProjectAdmin(c);
+    const body = parseBody(feedConfigSchema, await c.req.json().catch(() => ({})), "feed");
+    const [row] = await db.select({ feedConfig: projects.feedConfig }).from(projects).where(eq(projects.id, c.var.projectId)).limit(1);
+    const current = (row?.feedConfig && typeof row.feedConfig === "object" ? row.feedConfig : {}) as Record<string, any>;
+    const next: Record<string, any> = { ...current };
+    for (const [k, v] of Object.entries(body)) {
+      if (v === undefined) continue;
+      if (v === null) { delete next[k]; continue; } // null clears a key
+      if (k === "reactionWeights" && typeof v === "object") next.reactionWeights = { ...(current.reactionWeights ?? {}), ...v };
+      else next[k] = v;
+    }
+    await db.update(projects).set({ feedConfig: next }).where(eq(projects.id, c.var.projectId));
+    invalidateFeedConfig(c.var.projectId); // cached 30s — drop it now
+    return c.json(feedConfigView(await getFeedConfig(c.var.projectId)));
   })
   // ── lean project info ───────────────────────────────────────────────────────
   .get("/projects/lean", async (c) => {

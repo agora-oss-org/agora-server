@@ -70,6 +70,43 @@ export const reactionSchema = z.object({
   reactionType: z.enum(REACTION_TYPES),
 });
 
+// ─── feed ranking ─────────────────────────────────────────────────────────────
+// Per-request numeric overrides for the ranking algorithm (the `rankParams` query scalar). Every
+// field is finite + range-clamped so only safe numbers ever reach a `sql` template (see ranking.ts).
+export const rankParamsSchema = z
+  .object({
+    halfLifeHours: z.number().finite().min(0.1).max(8760),
+    gravity: z.number().finite().min(0.1).max(5),
+    z: z.number().finite().min(0).max(10),
+    C: z.number().finite().min(0).max(1_000_000),
+    m: z.number().finite().min(0).max(1),
+  })
+  .partial();
+
+// PATCH body for /settings/feed (admin). defaultAlgorithm is a free string here (membership is
+// enforced in feed-config.ts, which falls back to "hot") to avoid a validation↔ranking import cycle.
+export const feedConfigSchema = z
+  .object({
+    defaultAlgorithm: z.string().max(40).nullish(),
+    decayMode: z.enum(["stored", "query-time"]).nullish(),
+    halfLifeHours: z.number().finite().min(0.1).max(8760).nullish(),
+    gravity: z.number().finite().min(0.1).max(5).nullish(),
+    z: z.number().finite().min(0).max(10).nullish(),
+    C: z.number().finite().min(0).max(1_000_000).nullish(),
+    m: z.number().finite().min(0).max(1).nullish(),
+    reactionWeights: z.record(z.enum(REACTION_TYPES), z.number().finite().min(0).max(100)).nullish(),
+    diversity: z.object({ perAuthorCap: z.number().int().min(1).max(50) }).nullish(),
+    rerankWebhook: z
+      .object({
+        url: z.string().url().nullish(),
+        secret: z.string().min(1).max(512).nullish(),
+        timeoutMs: z.number().int().min(100).max(30_000).nullish(),
+        overFetch: z.number().int().min(1).max(50).nullish(),
+      })
+      .nullish(),
+  })
+  .partial();
+
 // ─── users / profiles ────────────────────────────────────────────────────────
 export const updateProfileSchema = z
   .object({

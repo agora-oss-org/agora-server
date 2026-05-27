@@ -23,6 +23,9 @@ import {
   loadEntityFiles,
 } from "../lib/shape.js";
 import { storeImageFromUpload } from "../lib/images.js";
+import { parseRankParams } from "../lib/ranking.js";
+import { getFeedConfig } from "../lib/feed-config.js";
+import { rerankCandidates } from "../lib/rerank.js";
 import {
   parseBody,
   createEntitySchema,
@@ -59,13 +62,34 @@ export const entityRoutes = new Hono<{ Variables: Variables }>()
     conds.push(...buildFeedConditions(parsed, c.var.auth?.userId));
     const where = and(...conds);
 
-    const rows = await db
-      .select()
-      .from(entities)
-      .where(where)
-      .orderBy(...buildFeedOrder(parsed))
-      .limit(limit)
-      .offset(offset);
+    // Ranking precedence: request rankParams > project feed_config > built-in defaults. The project
+    // config also supplies the default algorithm (when sortBy is absent) + reaction weights.
+    const feedCfg = await getFeedConfig(projectId);
+    if (!clean(c.req.query("sortBy"))) parsed.sortBy = feedCfg.defaultAlgorithm;
+    // Pin the clock (rankAnchor) so query-time algos (decay/gravity) page consistently.
+    const rankAnchorRaw = clean(c.req.query("rankAnchor"));
+    const rankAnchor = rankAnchorRaw && !Number.isNaN(Date.parse(rankAnchorRaw))
+      ? new Date(rankAnchorRaw).toISOString() : new Date().toISOString();
+    const rankParams = parseRankParams(clean(c.req.query("rankParams")) ?? null, feedCfg.params);
+    const orderBy = buildFeedOrder(parsed, { params: rankParams, weights: feedCfg.weights, anchor: sql`${rankAnchor}::timestamptz` });
+
+    // Re-rank webhook (opt-in via ?rerank=true when one is configured): over-fetch a candidate pool,
+    // let the host app reorder it, then slice the requested page. Fails open to the algorithm order.
+    const rerankOn = !!feedCfg.rerankWebhook && clean(c.req.query("rerank")) === "true";
+    let rows;
+    if (rerankOn) {
+      const poolSize = Math.min(limit * Math.max(1, feedCfg.rerankWebhook!.overFetch), 200);
+      const pool = await db.select().from(entities).where(where).orderBy(...orderBy).limit(poolSize);
+      const candidates = pool.map((r) => ({
+        id: r.id,
+        signals: { score: r.score, createdAt: r.createdAt, reactionCounts: r.reactionCounts, repliesCount: r.repliesCount, views: r.views },
+      }));
+      const order = await rerankCandidates(projectId, feedCfg.rerankWebhook!, candidates);
+      const ordered = order ? order.map((id) => pool.find((r) => r.id === id)).filter((r): r is typeof pool[number] => !!r) : pool;
+      rows = ordered.slice(offset, offset + limit);
+    } else {
+      rows = await db.select().from(entities).where(where).orderBy(...orderBy).limit(limit).offset(offset);
+    }
     const total = await countWhere(where);
 
     const reactionMap = await attachUserReactions(projectId, "entity", rows.map((r) => r.id), c.var.auth?.userId);
@@ -78,7 +102,8 @@ export const entityRoutes = new Hono<{ Variables: Variables }>()
         ...(fileMap.has(r.id) ? { files: fileMap.get(r.id) } : {}),
       })
     );
-    return c.json(paginate(shaped, total, page, limit));
+    // Echo the resolved ranking clock so clients can pin it across paginated requests.
+    return c.json({ ...paginate(shaped, total, page, limit), rankAnchor });
   })
   .post("/", requireAuth, async (c) => {
     const projectId = c.var.projectId;
