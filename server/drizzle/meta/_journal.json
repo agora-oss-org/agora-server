@@ -92,6 +92,20 @@
       "when": 1779572027335,
       "tag": "0012_recompute_scores",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1779848553584,
+      "tag": "0013_feed_config",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1779849097696,
+      "tag": "0014_recompute_decay",
+      "breakpoints": true
     }
   ]
 }

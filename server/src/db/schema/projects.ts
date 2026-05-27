@@ -15,6 +15,9 @@ export const projects = pgTable("projects", {
   webhookUrl: text("webhook_url"),
   webhookSecret: text("webhook_secret"),
   webhookEvents: text("webhook_events").array().notNull().default(sql`'{}'`),
+  // Per-project feed ranking config (algorithm + tunables + optional re-rank webhook). See
+  // lib/feed-config.ts for the resolved shape + defaults; backs the admin Feed settings UI.
+  feedConfig: jsonb("feed_config").notNull().default(sql`'{}'::jsonb`),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
