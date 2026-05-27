@@ -10,6 +10,7 @@ import { ApiError } from "./http/errors.js";
 import { env } from "./lib/env.js";
 import { mountRoutes } from "./routes/index.js";
 import { sendDueDigests } from "./lib/digests.js";
+import { recomputeDueScores } from "./lib/recompute.js";
 
 function safeEqual(a: string, b: string): boolean {
   const ab = Buffer.from(a);
@@ -34,6 +35,17 @@ export function createApp() {
     const provided = c.req.header("x-cron-secret") ?? "";
     if (!safeEqual(provided, secret)) return c.json({ error: "Unauthorized", code: "cron/unauthorized" }, 401);
     return c.json(await sendDueDigests());
+  });
+
+  // Secret-gated cron trigger for feed score recompute (external scheduler / Supabase pg_cron+pg_net,
+  // e.g. every 5 min). Stored-mode `decay` projects get their score snapshotted to the half-life value;
+  // others re-sync hot_score. Also runnable standalone via scripts/recompute-scores.mjs.
+  app.post("/internal/cron/recompute-scores", async (c) => {
+    const secret = env.CRON_SECRET;
+    if (!secret) return c.json({ error: "Cron not configured", code: "cron/disabled" }, 503);
+    const provided = c.req.header("x-cron-secret") ?? "";
+    if (!safeEqual(provided, secret)) return c.json({ error: "Unauthorized", code: "cron/unauthorized" }, 401);
+    return c.json(await recomputeDueScores());
   });
 
   // Replyke contract: everything lives under /v7/:projectId
