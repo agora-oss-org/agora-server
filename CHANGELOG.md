@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-05-27
+
+Fixes OAuth social login behind a TLS-terminating reverse proxy.
+
 ### Added
 - **`PUBLIC_BASE_URL` env var** — the server's public origin (scheme + host) used to build absolute
   OAuth callback URLs. Resolution order in `startOAuth` (`routes/misc.ts`): `PUBLIC_BASE_URL` →
@@ -171,6 +175,7 @@ cloud Supabase — no stubbed endpoints remain.
   (`@agora/*`), a repointed fork of `@replyke/core`.
 - Backlog: rate limiting, refresh-token cleanup sweep, RLS write policies, turnkey deploy guide.
 
-[Unreleased]: https://github.com/jenova-marie/agora/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/jenova-marie/agora/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/jenova-marie/agora/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/jenova-marie/agora/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/jenova-marie/agora/releases/tag/v0.1.1
