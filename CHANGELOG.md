@@ -7,12 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-- This changelog.
+## [0.2.0] - 2026-05-27
 
-### Changed
-- Docker images are now published to Docker Hub (`agoraserver/agora`) in addition to
-  GHCR (`ghcr.io/jenova-marie/agora`).
+A configurable feed-ranking system, file uploads on entities and chat, and a batch of
+SDK-contract fixes found while building the demo client.
 
 ### Added
 - **Flexible, configurable feed ranking.** A closed algorithm registry (`lib/ranking.ts`) adds
@@ -58,8 +56,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the `(project_id, username)` unique constraint are avoided by suffixing with the auth user's id
   prefix (e.g. `jenova-marie` → `jenova-marie-2baf48ac`). Previously every email/password signup was
   nameless, so SDK/UI fell back to a raw id slice. Existing profiles are not backfilled.
+- **`CHANGELOG.md`** (Keep a Changelog) + a keep-current rule in `CLAUDE.md`.
 
 ### Changed
+- Docker images are now published to Docker Hub (`agoraserver/agora`) in addition to
+  GHCR (`ghcr.io/jenova-marie/agora`).
 - **Feed `top` now ranks by pure weighted-net votes (no time term)**, distinct from `hot` (which
   combines recency + votes). Previously `top` aliased the time-anchored `hot_score`, so `hot` and
   `top` were identical. Pair `top` with a `timeFrame` filter for "top this week/month".
@@ -150,5 +151,6 @@ cloud Supabase — no stubbed endpoints remain.
   (`@agora/*`), a repointed fork of `@replyke/core`.
 - Backlog: rate limiting, refresh-token cleanup sweep, RLS write policies, turnkey deploy guide.
 
-[Unreleased]: https://github.com/jenova-marie/agora/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/jenova-marie/agora/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/jenova-marie/agora/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/jenova-marie/agora/releases/tag/v0.1.1
