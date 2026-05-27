@@ -37,7 +37,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   prefix (e.g. `jenova-marie` → `jenova-marie-2baf48ac`). Previously every email/password signup was
   nameless, so SDK/UI fell back to a raw id slice. Existing profiles are not backfilled.
 
+### Changed
+- **Creating a subspace requires admin/owner of the parent.** `POST /spaces` with a `parentSpaceId`
+  now runs `requireSpaceRole(parent, ["admin"])` (owner counts as admin); regular members get
+  `403 spaces/insufficient-role`. Previously any authenticated user could nest a space under any
+  parent.
+
 ### Fixed
+- **`GET /spaces/:id/membership/me` permissions respect membership status.** Any existing
+  membership row (including a `pending` join request) returned `canRead: true`, so a not-yet-approved
+  requester to a members-only space appeared able to read/act. Now `canRead`/`canPost`/`canModerate`
+  require an **active** membership (pending/rejected/banned get only what `readingPermission`/
+  `postingPermission` grant the public), and `canPost` honors `postingPermission: "admins"`.
+- **`GET /spaces/:id/members` now honors the `status` and `role` query filters.** The handler
+  ignored them and always returned every member, so the SDK's `useFetchSpaceMembers({ status:
+  "pending" })` (join-request queue for private spaces) surfaced active members too. Both filters are
+  now applied when present.
 - **Connection routes reject non-UUID path params with 400 instead of crashing.** A username (or
   any non-UUID) in `:userId`/`:id` on the `/users/:userId/connection*` and `/connections/:id/*`
   endpoints reached a uuid-typed query and threw `invalid input syntax for type uuid` → an unhandled
