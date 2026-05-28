@@ -1,0 +1,28 @@
+{
+  "name": "agora-monorepo",
+  "version": "0.2.3",
+  "private": true,
+  "type": "module",
+  "description": "Agora monorepo — Replyke-compatible backend API, shared contract, and admin frontend.",
+  "license": "Apache-2.0",
+  "packageManager": "pnpm@10.14.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "dev:api": "pnpm --filter @agora/api dev",
+    "dev:admin": "pnpm --filter @agora/admin dev",
+    "contract:build": "pnpm --filter @agora/contract build",
+    "db:migrate": "pnpm --filter @agora/api db:migrate:run",
+    "db:generate": "pnpm --filter @agora/api db:generate"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "sharp",
+      "esbuild"
+    ]
+  }
+}
