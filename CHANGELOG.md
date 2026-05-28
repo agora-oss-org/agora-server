@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-05-27
+
+Fixes semantic search returning no results, plus destructive-reset and sample-post dev tooling.
+
 ### Added
 - **`scripts/wipe.mjs` (`npm run db:wipe`)** — destructive dev reset that clears the backend to a
   clean slate: TRUNCATEs all public tables (RESTART IDENTITY CASCADE; `projects` +
@@ -198,7 +202,8 @@ cloud Supabase — no stubbed endpoints remain.
   (`@agora/*`), a repointed fork of `@replyke/core`.
 - Backlog: rate limiting, refresh-token cleanup sweep, RLS write policies, turnkey deploy guide.
 
-[Unreleased]: https://github.com/jenova-marie/agora/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/jenova-marie/agora/compare/v0.2.2...HEAD
+[0.2.2]: https://github.com/jenova-marie/agora/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/jenova-marie/agora/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/jenova-marie/agora/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/jenova-marie/agora/releases/tag/v0.1.1
