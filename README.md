@@ -1,10 +1,25 @@
-# 🏛️ Agora
+<p align="center">
+  <img src="assets/agora.png" alt="Agora logo" width="200" height="200" />
+</p>
 
-> The open social layer. Own your community.
+<h1 align="center">Agora</h1>
 
-[![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![Built on Supabase](https://img.shields.io/badge/built%20on-Supabase-3ECF8E.svg)](https://supabase.com)
-[![Status: feature-complete](https://img.shields.io/badge/backend-feature--complete-success.svg)](#status)
+<p align="center"><em>The open social layer. Own your community.</em></p>
+
+<p align="center">
+  <a href="https://demo.agora-oss.org"><img src="https://img.shields.io/badge/▶_live_demo-demo.agora--oss.org-7C3AED.svg" alt="Live demo" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg" alt="License: Apache-2.0" /></a>
+  <a href="https://supabase.com"><img src="https://img.shields.io/badge/built%20on-Supabase-3ECF8E.svg" alt="Built on Supabase" /></a>
+  <a href="#status"><img src="https://img.shields.io/badge/backend-feature--complete-success.svg" alt="Status: feature-complete" /></a>
+</p>
+
+<p align="center">
+  ▶️ <strong>Try it live: <a href="https://demo.agora-oss.org">demo.agora-oss.org</a></strong>
+</p>
+
+A working social app — sign in, browse the feed, comment, react, semantic-search, and chat in
+realtime — all driven by the [`agora-sdk`](https://github.com/jenova-marie/agora-sdk) against a live
+Agora backend.
 
 **Agora is an open-source, self-hosted, 1:1-compatible replacement for the [Replyke](https://github.com/replyke/monorepo) backend, built on Supabase.**
 
@@ -213,7 +228,7 @@ http://localhost:4000/v7/*/oauth/callback**
 - Use the **API/server** host (where this server is deployed), not the SPA/demo host. The
   `redirect_to` is built from the server origin.
 - `*` matches the project-id segment (Supabase treats only `.` and `/` as separators, so the UUID is
-  covered). The trailing **`**` is required** — Supabase matches the *full* `redirect_to` including
+  covered). A trailing `**` is **required** — Supabase matches the *full* `redirect_to` including
   the `?aid=<state>` query the server appends, and a bare `…/oauth/callback` will not match (it
   silently falls back to your **Site URL** with `?code=…`, so the login dead-ends).
 - The provider's own callback in its developer console (and the Supabase provider's "Callback URL")
@@ -244,10 +259,10 @@ won't race migrations against each other.
 
 ## Database
 
-The schema lives in `server/src/db/schema/*.ts` and is the single source of truth. `drizzle-kit
-generate` emits table DDL; anything Drizzle can't express (triggers, RPC, RLS, PostGIS) is a
-hand-written custom migration, applied in journal order and written **idempotently** so re-runs are
-safe. Migrations `0000`–`0012` cover extensions + enums + tables, PostGIS columns/indexes,
+The schema lives in `server/src/db/schema/*.ts` and is the single source of truth.
+`drizzle-kit generate` emits table DDL; anything Drizzle can't express (triggers, RPC, RLS,
+PostGIS) is a hand-written custom migration, applied in journal order and written **idempotently**
+so re-runs are safe. Migrations `0000`–`0012` cover extensions + enums + tables, PostGIS columns/indexes,
 denormalization triggers, RPC functions (`toggle_reaction`, `hot_score`, `fetch_comment_thread`,
 `match_content`, …), RLS (deny-all backstop + public-read), refresh tokens, project webhooks, OAuth
 state, content embeddings, and the score-recompute function.
@@ -306,8 +321,8 @@ every tunable is a validated, range-clamped *number*.
   `?rankParams={"halfLifeHours":12}`), `rankAnchor` (pins the decay clock across paginated requests;
   the server echoes the resolved anchor back), and `rerank=true`.
 - **Per project** — `projects.feed_config` jsonb (`lib/feed-config.ts`, 30s-cached), set via
-  project-admin **`GET`/`PATCH /settings/feed`**: `{ defaultAlgorithm, decayMode, halfLifeHours,
-  gravity, reactionWeights, diversity, rerankWebhook }`.
+  project-admin **`GET`/`PATCH /settings/feed`**:
+  `{ defaultAlgorithm, decayMode, halfLifeHours, gravity, reactionWeights, diversity, rerankWebhook }`.
 
 **Two decay models coexist.** `hot`/`top` use the stored, index-served score. True `decay` defaults
 to **query-time** (accurate against `now()`); set `decayMode:"stored"` to have the cron snapshot the

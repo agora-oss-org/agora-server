@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **README launch polish** — centered `assets/agora.png` logo + title, status/license/Supabase
+  badges, and a prominent "Try it live" callout + badge linking the public demo at
+  [demo.agora-oss.org](https://demo.agora-oss.org).
+
 ## [0.2.2] - 2026-05-27
 
 Fixes semantic search returning no results, plus destructive-reset and sample-post dev tooling.
