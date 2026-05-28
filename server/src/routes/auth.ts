@@ -7,7 +7,7 @@ import { and, eq } from "drizzle-orm";
 import { importSPKI, jwtVerify } from "jose";
 import type { Variables } from "../http/context.js";
 import { Errors } from "../http/errors.js";
-import { requireAuth } from "../middleware/auth.js";
+import { requireAuth, optionalAuth } from "../middleware/auth.js";
 import { db } from "../db/index.js";
 import { profiles, userSuspensions, projects } from "../db/schema/index.js";
 import { getSupabase, getSupabaseAnon } from "../lib/supabase.js";
@@ -96,11 +96,15 @@ export const authRoutes = new Hono<{ Variables: Variables }>()
     await db.update(profiles).set({ lastActive: new Date() }).where(eq(profiles.id, profile.id));
     return c.json(await sessionResponse(projectId, profile));
   })
-  .post("/sign-out", requireAuth, async (c) => {
+  // Sign-out is idempotent and must NOT require a valid access token: a stale/expired access token
+  // (the common case when signing out a long-idle tab) shouldn't block revoking the refresh token.
+  // The SDK sends the refresh token in the body, which we can revoke without an authenticated user;
+  // fall back to revoking all of the authed user's tokens when only a valid access token is present.
+  .post("/sign-out", optionalAuth, async (c) => {
     const body = parseBody(signOutSchema, await c.req.json().catch(() => ({})), "auth");
     if (body.refreshToken) await revokeRefreshToken(c.var.projectId, body.refreshToken);
-    else await revokeAllForProfile(c.var.auth!.userId);
-    return c.json({ success: true });
+    else if (c.var.auth?.userId) await revokeAllForProfile(c.var.auth.userId);
+    return c.json({ success: true }); // always 200 — nothing to revoke is still a successful sign-out
   })
   .post("/request-new-access-token", async (c) => {
     const projectId = c.var.projectId;

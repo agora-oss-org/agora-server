@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **`POST /auth/sign-out` no longer 401s on a stale session.** It was `requireAuth`, so an expired
+  access token (the common case when signing out a long-idle tab) returned `401` before it could
+  revoke anything — surfacing as a red "Server sign-out failed" error even though the SDK then
+  cleared the local session anyway. Sign-out is now `optionalAuth` and **idempotent**: it revokes the
+  refresh token the SDK sends in the body (works with no/expired access token), falls back to
+  revoking all of the authed user's tokens when only a valid access token is present, and always
+  returns `200` (nothing to revoke is still a successful sign-out).
+
 ## [0.2.3] - 2026-05-27
 
 Makes space chat usable for all space members, plus README launch polish.
