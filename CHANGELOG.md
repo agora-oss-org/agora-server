@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Supercronic scheduler sidecar** (`Dockerfile.cron` + `crontab` + a `cron` service in
+  `docker-compose.yml`) — fires the secret-gated `/internal/cron/{digests,recompute-scores}`
+  endpoints over the internal network (hourly digests; 15-min score recompute). Kept separate from
+  the app image so scheduling never double-fires across API replicas. Requires `CRON_SECRET` in
+  `.env`. supercronic `v0.2.46`, pinned by SHA256 (amd64 + arm64).
+
 ### Fixed
 - **`POST /auth/sign-out` no longer 401s on a stale session.** It was `requireAuth`, so an expired
   access token (the common case when signing out a long-idle tab) returned `401` before it could

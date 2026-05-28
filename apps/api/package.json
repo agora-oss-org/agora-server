@@ -1,5 +1,5 @@
 {
-  "name": "@agora/server",
+  "name": "@agora/api",
   "version": "0.2.3",
   "private": true,
   "type": "module",

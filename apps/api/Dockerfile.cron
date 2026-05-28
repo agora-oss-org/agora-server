@@ -1,0 +1,27 @@
+# syntax=docker/dockerfile:1
+# Supercronic scheduler sidecar — fires Agora's secret-gated internal cron endpoints on a schedule.
+# Kept SEPARATE from the app image on purpose: scheduling lives in exactly one place, so it never
+# double-fires the way in-app cron would across multiple API replicas.
+FROM alpine:3.20
+
+ARG TARGETARCH
+ARG SUPERCRONIC_VERSION=v0.2.46
+# SHA256 of supercronic-linux-<arch> for the version above (computed from the GitHub release assets).
+ARG SUPERCRONIC_SHA256_amd64=5adff01c5a797663948e656d2b61d10932369ee437eb5cb54fa872b2960f222b
+ARG SUPERCRONIC_SHA256_arm64=c0576a8eb092e3f79108ed0a2155a25c7766af78456e5a6070e54757ef513bfe
+
+RUN apk add --no-cache curl ca-certificates \
+  && arch="${TARGETARCH:-amd64}" \
+  && case "$arch" in \
+       amd64) sha="$SUPERCRONIC_SHA256_amd64" ;; \
+       arm64) sha="$SUPERCRONIC_SHA256_arm64" ;; \
+       *) echo "unsupported TARGETARCH: $arch" >&2; exit 1 ;; \
+     esac \
+  && curl -fsSL -o /usr/local/bin/supercronic \
+       "https://github.com/aptible/supercronic/releases/download/${SUPERCRONIC_VERSION}/supercronic-linux-${arch}" \
+  && echo "${sha}  /usr/local/bin/supercronic" | sha256sum -c - \
+  && chmod +x /usr/local/bin/supercronic
+
+COPY crontab /app/crontab
+USER nobody
+CMD ["supercronic", "/app/crontab"]

@@ -1,0 +1,11 @@
+# Agora scheduled maintenance — supercronic fires the secret-gated internal cron endpoints.
+# AGORA_URL (internal app origin) + CRON_SECRET come from the container env (see docker-compose.yml).
+# Each job is wrapped in `sh -c` so $VARS expand — supercronic runs commands directly, not via a shell.
+
+# Hourly, on the hour: deliver any space digests due this hour (the endpoint applies the per-space
+# schedule-hour gate, so most hours are a cheap no-op).
+0 * * * * sh -c 'curl -fsS -m 30 -X POST -H "X-Cron-Secret: $CRON_SECRET" "$AGORA_URL/internal/cron/digests"'
+
+# Every 15 minutes: recompute feed scores. Only meaningful for projects on stored-mode `decay`;
+# for hot/top/query-time it is a cheap consistency pass (scores already refresh on vote).
+*/15 * * * * sh -c 'curl -fsS -m 60 -X POST -H "X-Cron-Secret: $CRON_SECRET" "$AGORA_URL/internal/cron/recompute-scores"'
