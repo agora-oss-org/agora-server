@@ -8,6 +8,7 @@ import { requireAuth } from "../middleware/auth.js";
 import { db } from "../db/index.js";
 import {
   conversations, conversationMembers, chatMessages, chatMessageReactions, reports, profiles,
+  spaces, spaceMembers,
 } from "../db/schema/index.js";
 import { shapeConversation, shapeConversationMember, shapeChatMessage, shapeFile, shapeUser, loadMessageFiles } from "../lib/shape.js";
 import { storeUpload } from "../lib/images.js";
@@ -387,14 +388,49 @@ export const chatRoutes = new Hono<{ Variables: Variables }>()
     });
     return c.json({ success: true }, 201);
   })
-  // ── space conversation (get-or-create) ──────────────────────────────────────
+  // ── space conversation (get-or-create, space-member gated) ──────────────────
+  // One persistent group chat bound to a space (a community channel). The caller must be the space
+  // owner or an active space member; on fetch they're auto-joined to the conversation so EVERY space
+  // member can read/post (not just whoever created it first). Posting is gated by the conversation's
+  // postingPermission, seeded from the space (admins-only spaces ⇒ admins-only chat).
   .get("/spaces/:spaceId/conversation", requireAuth, async (c) => {
     const projectId = c.var.projectId;
     const spaceId = c.req.param("spaceId");
-    const [existing] = await db.select().from(conversations)
+    const uid = c.var.auth!.userId;
+
+    const [space] = await db.select().from(spaces)
+      .where(and(eq(spaces.projectId, projectId), eq(spaces.id, spaceId))).limit(1);
+    if (!space) throw Errors.notFound("spaces/not-found", "Space not found");
+
+    // Effective space role: owner ⇒ admin, else the active membership row's role.
+    let spaceRole: "admin" | "moderator" | "member" | null = null;
+    if (space.userId === uid) spaceRole = "admin";
+    else {
+      const [sm] = await db.select().from(spaceMembers)
+        .where(and(eq(spaceMembers.projectId, projectId), eq(spaceMembers.spaceId, spaceId), eq(spaceMembers.userId, uid))).limit(1);
+      if (sm && sm.status === "active") spaceRole = sm.role;
+    }
+    if (!spaceRole) throw Errors.forbidden("chat/space-not-member", "Join the space to access its chat");
+    const convRole = spaceRole === "admin" ? "admin" : "member";
+
+    // Get-or-create the single space conversation (seed posting permission from the space).
+    let [convo] = await db.select().from(conversations)
       .where(and(eq(conversations.projectId, projectId), eq(conversations.spaceId, spaceId), eq(conversations.type, "space"))).limit(1);
-    if (existing) return c.json(shapeConversation(existing));
-    const [convo] = await db.insert(conversations).values({ projectId, type: "space", spaceId, createdById: c.var.auth!.userId }).returning();
-    await db.insert(conversationMembers).values({ projectId, conversationId: convo!.id, userId: c.var.auth!.userId, role: "admin" }).onConflictDoNothing();
-    return c.json(shapeConversation(convo!), 201);
+    const created = !convo;
+    if (!convo) {
+      const seedPosting = space.postingPermission === "admins" ? "admins" : "members";
+      [convo] = await db.insert(conversations)
+        .values({ projectId, type: "space", spaceId, createdById: uid, postingPermission: seedPosting }).returning();
+    }
+
+    // Auto-join the caller (re)activating their membership; don't clobber an existing role.
+    await db.insert(conversationMembers)
+      .values({ projectId, conversationId: convo!.id, userId: uid, role: convRole })
+      .onConflictDoUpdate({ target: [conversationMembers.conversationId, conversationMembers.userId], set: { isActive: true, leftAt: null } });
+
+    const [me] = await db.select().from(conversationMembers)
+      .where(and(eq(conversationMembers.conversationId, convo!.id), eq(conversationMembers.userId, uid))).limit(1);
+    const [{ n } = { n: 0 }] = await db.select({ n: count() }).from(conversationMembers)
+      .where(and(eq(conversationMembers.conversationId, convo!.id), eq(conversationMembers.isActive, true)));
+    return c.json(shapeConversation(convo!, { currentMember: me ? shapeConversationMember(me) : undefined, memberCount: n }), created ? 201 : 200);
   });
