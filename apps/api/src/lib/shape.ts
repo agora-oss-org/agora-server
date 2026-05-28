@@ -10,112 +10,20 @@ import {
   reactions, profiles, spaces, spaceRules, collections, appNotifications, reports,
   conversations, conversationMembers, chatMessages, files,
 } from "../db/schema/index.js";
+import { REACTION_TYPES } from "@agora/contract";
+import type { ReactionType, ReactionCounts, User, Entity, Comment, AuthUser } from "@agora/contract";
 
-// ─── Reaction taxonomy (must match db enum + SDK exactly) ────────────────────
-export const REACTION_TYPES = [
-  "upvote",
-  "downvote",
-  "like",
-  "love",
-  "wow",
-  "sad",
-  "angry",
-  "funny",
-] as const;
-export type ReactionType = (typeof REACTION_TYPES)[number];
-export type ReactionCounts = Record<ReactionType, number>;
+// ─── Shared contract surface (re-exported from @agora/contract) ──────────────
+// The reaction taxonomy + API model interfaces now live in @agora/contract (shared with the
+// admin frontend). Re-exported here so existing `./shape.js` importers keep working unchanged.
+export { REACTION_TYPES };
+export type { ReactionType, ReactionCounts, User, Entity, Comment, AuthUser };
 
 // Drizzle inferred row types.
 type ProfileRow = typeof profiles.$inferSelect;
 // entities/comments rows are passed structurally to avoid a hard import cycle here.
 type EntityRow = Record<string, any>;
 type CommentRow = Record<string, any>;
-
-// ─── Model interfaces (return shapes; see docs/MODELS.md) ────────────────────
-export interface User {
-  id: string;
-  projectId: string;
-  foreignId: string | null;
-  role: "admin" | "moderator" | "visitor";
-  name: string | null;
-  username: string | null;
-  avatar: string | null;
-  avatarFileId: string | null;
-  bannerFileId: string | null;
-  bio: string | null;
-  birthdate: string | null;
-  location: unknown | null;
-  metadata: Record<string, unknown>;
-  reputation: number;
-  createdAt: string;
-}
-
-export interface Entity {
-  id: string;
-  foreignId: string | null;
-  shortId: string;
-  projectId: string;
-  sourceId: string | null;
-  spaceId: string | null;
-  space?: unknown;
-  userId: string | null;
-  user?: User | null;
-  title: string | null;
-  content: string | null;
-  mentions: unknown[];
-  attachments: unknown[];
-  files?: unknown[]; // system-managed file associations (images/files); populated on create + fetch
-  keywords: string[];
-  upvotes: string[];
-  downvotes: string[];
-  reactionCounts: ReactionCounts;
-  userReaction: ReactionType | null;
-  repliesCount: number;
-  views: number;
-  score: number;
-  scoreUpdatedAt: string;
-  location: unknown | null;
-  metadata: Record<string, unknown>;
-  isSaved?: boolean;
-  createdAt: string;
-  updatedAt: string;
-  deletedAt: string | null;
-  isDraft: boolean;
-  moderationStatus: string | null;
-  moderatedAt: string | null;
-  moderatedById: string | null;
-  moderatedByType: string | null;
-  moderationReason: string | null;
-}
-
-export interface Comment {
-  id: string;
-  projectId: string;
-  foreignId: string | null;
-  entityId: string;
-  userId: string | null;
-  user?: User | null;
-  parentId: string | null;
-  parentComment?: Comment | null;
-  content: string | null;
-  gif: unknown | null;
-  mentions: unknown[];
-  upvotes: string[];
-  downvotes: string[];
-  reactionCounts: ReactionCounts;
-  userReaction: ReactionType | null;
-  repliesCount: number;
-  metadata: Record<string, unknown>;
-  createdAt: string;
-  updatedAt: string;
-  deletedAt: string | null;
-  userDeletedAt: string | null;
-  moderationStatus: string | null;
-  moderatedAt: string | null;
-  moderatedById: string | null;
-  moderatedByType: string | null;
-  moderationReason: string | null;
-}
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -389,16 +297,7 @@ export function shapeNotification(row: NotificationRow) {
 
 // AuthUser = UserFull minus secureMetadata, plus suspensions[] + authMethods[] (MODELS.md).
 // Returned only to the authenticated user themselves (includes email/isVerified/lastActive).
-export interface AuthUser extends User {
-  email: string | null;
-  isVerified: boolean;
-  isActive: boolean;
-  lastActive: string;
-  updatedAt: string;
-  suspensions: { reason: string | null; startDate: string; endDate: string | null }[];
-  authMethods: string[];
-}
-
+// (interface imported + re-exported from @agora/contract at the top of this file)
 export function shapeAuthUser(
   row: ProfileRow,
   suspensions: { reason: string | null; startDate: Date; endDate: Date | null }[] = []

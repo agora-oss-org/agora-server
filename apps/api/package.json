@@ -24,6 +24,7 @@
     "seed:ribs": "node scripts/seed-ribs-post.mjs"
   },
   "dependencies": {
+    "@agora/contract": "workspace:*",
     "@hono/node-server": "^1.13.7",
     "@supabase/supabase-js": "^2.47.10",
     "dotenv": "^17.4.2",

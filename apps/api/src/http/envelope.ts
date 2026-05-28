@@ -1,18 +1,9 @@
-// Response envelope helpers matching @replyke/core's PaginatedResponse + pagination meta.
+// Pagination: the { data, pagination } envelope shape + paginate() now live in @agora/contract
+// (shared with the admin frontend) and are re-exported here so existing `./envelope.js` importers
+// keep working. readPagination stays server-side — it parses a Hono request.
 import type { Context } from "hono";
-
-export interface PaginationMeta {
-  page: number;
-  pageSize: number;
-  totalPages: number;
-  totalItems: number;
-  hasMore: boolean;
-}
-
-export interface PaginatedResponse<T> {
-  data: T[];
-  pagination: PaginationMeta;
-}
+export type { PaginationMeta, PaginatedResponse } from "@agora/contract";
+export { paginate } from "@agora/contract";
 
 /** Parse ?page= & ?limit= into safe offset pagination. */
 export function readPagination(c: Context, defaults = { page: 1, limit: 20 }) {
@@ -20,13 +11,4 @@ export function readPagination(c: Context, defaults = { page: 1, limit: 20 }) {
   const limit = Math.min(100, Math.max(1, Number(c.req.query("limit") ?? defaults.limit) || defaults.limit));
   const offset = (page - 1) * limit;
   return { page, limit, offset };
-}
-
-/** Build the standard { data, pagination } envelope. */
-export function paginate<T>(data: T[], totalItems: number, page: number, pageSize: number): PaginatedResponse<T> {
-  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
-  return {
-    data,
-    pagination: { page, pageSize, totalPages, totalItems, hasMore: page < totalPages },
-  };
 }
