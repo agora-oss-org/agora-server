@@ -7,10 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-05-27
+
+Makes space chat usable for all space members, plus README launch polish.
+
 ### Added
 - **README launch polish** — centered `assets/agora.png` logo + title, status/license/Supabase
   badges, and a prominent "Try it live" callout + badge linking the public demo at
   [demo.agora-oss.org](https://demo.agora-oss.org).
+
+### Changed
+- **Space chat is now a usable community channel.** `GET /chat/spaces/:spaceId/conversation`
+  (get-or-create) now requires the caller to be the space **owner or an active space member**, and
+  **auto-joins them** to the conversation on fetch. Previously only the conversation's creator was a
+  member, so every other space member received the conversation object but then `403`'d on
+  reading/posting (membership-gated) — making space chat effectively creator-only. New space
+  conversations also seed `postingPermission` from the space (admins-only spaces ⇒ admins-only chat;
+  already enforced on send), and the response now includes `currentMember` + `memberCount`. The demo
+  surfaces it as a "💬 Space chat" panel in `SpaceView` (`useFetchSpaceConversation` +
+  `ConversationProvider`).
 
 ## [0.2.2] - 2026-05-27
 
@@ -207,7 +222,8 @@ cloud Supabase — no stubbed endpoints remain.
   (`@agora/*`), a repointed fork of `@replyke/core`.
 - Backlog: rate limiting, refresh-token cleanup sweep, RLS write policies, turnkey deploy guide.
 
-[Unreleased]: https://github.com/jenova-marie/agora/compare/v0.2.2...HEAD
+[Unreleased]: https://github.com/jenova-marie/agora/compare/v0.2.3...HEAD
+[0.2.3]: https://github.com/jenova-marie/agora/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/jenova-marie/agora/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/jenova-marie/agora/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/jenova-marie/agora/compare/v0.1.1...v0.2.0
