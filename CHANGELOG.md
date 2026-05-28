@@ -14,10 +14,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (admin API), and empties the `agora` Storage bucket. Dry-run by default; requires `--yes` to
   execute, with a typed project-ref confirmation in a TTY (`--force` for CI). Per-store toggles
   (`--no-data`/`--no-auth`/`--no-storage`).
-- **`scripts/seed-miso-post.mjs` (`npm run seed:miso`)** — seeds a sample image post owned by the
-  demo user, uploaded through the real entity pipeline (multipart → sharp variants → Storage →
-  `files` row). Skips if the post already exists; configurable via `API_BASE_URL`/`PROJECT_ID`/
-  `MISO_IMAGE_URL`.
+- **Sample image-post seeders** — `scripts/seed-{miso,lasagna,ribs}-post.mjs`
+  (`npm run seed:miso` / `seed:lasagna` / `seed:ribs`) seed sample posts owned by the demo user,
+  uploaded through the real entity pipeline (multipart → sharp variants → Storage → `files` row).
+  Each skips if its post already exists; configurable via `API_BASE_URL`/`PROJECT_ID` and a per-post
+  image-URL env (`MISO_IMAGE_URL` / `LASAGNA_IMAGE_URL` / `RIBS_IMAGE_URL`).
 
 ### Fixed
 - **Semantic content search returned nothing (`200 []`).** The `content_embeddings` (and legacy
