@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-05-28
+
 ### Added
 - **`@agora/contract`** — a shared workspace package holding the API contract: response-model TS
   types (`User`/`Entity`/`Comment`/`AuthUser`/`AuthContext`), the reaction taxonomy, the pagination
@@ -255,7 +257,8 @@ cloud Supabase — no stubbed endpoints remain.
   (`@agora/*`), a repointed fork of `@replyke/core`.
 - Backlog: rate limiting, refresh-token cleanup sweep, RLS write policies, turnkey deploy guide.
 
-[Unreleased]: https://github.com/jenova-marie/agora/compare/v0.2.3...HEAD
+[Unreleased]: https://github.com/jenova-marie/agora/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/jenova-marie/agora/compare/v0.2.3...v0.3.0
 [0.2.3]: https://github.com/jenova-marie/agora/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/jenova-marie/agora/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/jenova-marie/agora/compare/v0.2.0...v0.2.1
