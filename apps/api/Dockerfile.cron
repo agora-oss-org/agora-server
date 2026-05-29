@@ -22,6 +22,7 @@ RUN apk add --no-cache curl ca-certificates \
   && echo "${sha}  /usr/local/bin/supercronic" | sha256sum -c - \
   && chmod +x /usr/local/bin/supercronic
 
-COPY crontab /app/crontab
+# Built from the repo root as context: docker build -f apps/api/Dockerfile.cron .
+COPY apps/api/crontab /app/crontab
 USER nobody
 CMD ["supercronic", "/app/crontab"]

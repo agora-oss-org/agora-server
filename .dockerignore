@@ -1,0 +1,25 @@
+# Build context is the repo root. Keep it lean — the api Dockerfile only COPYs
+# the root manifests, packages/contract, and apps/api.
+**/node_modules
+**/dist
+**/*.tsbuildinfo
+**/coverage
+**/test
+**/*.test.ts
+**/vitest.config.ts
+**/vitest.integration.config.ts
+.env
+.env.*
+!**/.env.example
+**/*.log
+.git
+.gitignore
+.DS_Store
+
+# Other workspaces / docs not needed to build the api image.
+apps/admin
+docs
+assets
+db
+*.md
+.github

@@ -1,30 +1,36 @@
 # syntax=docker/dockerfile:1
+# Built from the REPO ROOT as context (the api depends on the @agora/contract workspace package):
+#   docker build -f apps/api/Dockerfile -t agora-api .
 
-# ── Builder: install all deps + compile TypeScript -> dist/ ───────────────────
+# ── Builder: install workspace deps, build @agora/contract then @agora/api ─────
 FROM node:22-slim AS builder
-WORKDIR /app
-COPY package.json package-lock.json ./
-RUN npm ci
-COPY tsconfig.json tsconfig.build.json ./
-COPY src ./src
-RUN npm run build
+RUN corepack enable
+WORKDIR /repo
 
-# ── Runtime: production deps + compiled output only ───────────────────────────
+# Root manifests + lockfile, then full source for the api + its @agora/contract workspace dep.
+# Source is copied BEFORE install so pnpm links @agora/contract into apps/api/node_modules.
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json .npmrc ./
+COPY packages/contract ./packages/contract
+COPY apps/api ./apps/api
+RUN pnpm install --frozen-lockfile --filter @agora/api...
+
+# Build contract before the api (topological).
+RUN pnpm --filter @agora/contract build && pnpm --filter @agora/api build
+
+# Self-contained, prod-only deployment for the api (flattens the workspace:* @agora/contract
+# dependency into real files — no pnpm store / symlinks at runtime).
+# --legacy: pnpm v10 gates non-injected deploys behind this flag (flattens the workspace
+# @agora/contract dep into /out/node_modules as real files — exactly what a standalone image needs).
+RUN pnpm deploy --filter=@agora/api --legacy --prod /out
+
+# ── Runtime: the pruned standalone only ────────────────────────────────────────
 FROM node:22-slim AS runtime
 ENV NODE_ENV=production
 ENV PORT=4000
 WORKDIR /app
 
-# Prod deps only. sharp resolves the correct prebuilt binary for this platform here
-# (so we install fresh rather than copying the builder's node_modules).
-COPY package.json package-lock.json ./
-RUN npm ci --omit=dev && npm cache clean --force
-
-# Compiled server + migration assets (drizzle journal + the drizzle-kit-free migrate script,
-# runnable as a one-off via `npm run db:migrate:run`).
-COPY --from=builder /app/dist ./dist
-COPY drizzle ./drizzle
-COPY scripts/migrate.mjs ./scripts/migrate.mjs
+# /out carries package.json, dist/, node_modules/ (incl. @agora/contract), drizzle/ + scripts/.
+COPY --from=builder /out ./
 
 USER node
 EXPOSE 4000

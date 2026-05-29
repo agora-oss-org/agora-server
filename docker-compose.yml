@@ -1,13 +1,15 @@
-# Runs the Agora server container + a supercronic scheduler sidecar. Postgres/Auth/Storage are
+# Runs the Agora API container + a supercronic scheduler sidecar. Postgres/Auth/Storage are
 # hosted on Supabase, so there is no local DB service — the containers just need the env
-# (DATABASE_URL etc.) from your .env file.
+# (DATABASE_URL etc.) from your root .env file.
 #   docker compose up --build
 # Apply migrations once (one-off, drizzle-kit-free):
-#   docker compose run --rm agora npm run db:migrate:run
+#   docker compose run --rm agora node scripts/migrate.mjs
 services:
   agora:
-    build: .
-    image: agora-server
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    image: agora-api
     env_file: .env
     ports:
       - "${PORT:-4000}:4000"
@@ -15,11 +17,11 @@ services:
     restart: unless-stopped
 
   # Scheduler: fires the secret-gated /internal/cron/* endpoints over the internal network on the
-  # schedule in ./crontab. Requires CRON_SECRET in .env (without it the endpoints return 503).
+  # schedule in apps/api/crontab. Requires CRON_SECRET in .env (without it the endpoints return 503).
   cron:
     build:
       context: .
-      dockerfile: Dockerfile.cron
+      dockerfile: apps/api/Dockerfile.cron
     image: agora-cron
     env_file: .env # CRON_SECRET
     environment:
