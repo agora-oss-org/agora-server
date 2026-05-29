@@ -78,7 +78,7 @@ Match these exactly or the SDK's hooks break — that discipline is what makes t
 client + forked Replyke SDK
    │  HTTPS  /v7/:projectId/<domain>/...        (+ socket.io for chat realtime)
    ▼
-@agora/server  (Hono)   endpoints · business logic · permission checks
+@agora/api  (Hono)   endpoints · business logic · permission checks
    │  Drizzle ORM (postgres.js, Supabase transaction pooler :6543, prepare:false)   ← owner role, bypasses RLS
    ▼
 Supabase Postgres   schema · triggers · RPC · pgvector · PostGIS · RLS
@@ -119,26 +119,36 @@ maintained atomically by Postgres **triggers** — never recomputed per request.
 
 ## Layout
 
+pnpm workspaces — `apps/*` + `packages/*`:
+
 ```
 agora/
 ├── LICENSE              # Apache-2.0
+├── package.json         # workspace root (pnpm@10.14.0 via corepack)
+├── pnpm-workspace.yaml  # apps/*, packages/*
+├── tsconfig.base.json   # shared compiler options
+├── docker-compose.yml   # api + supercronic cron sidecar (builds from the repo root)
 ├── docs/
 │   ├── MANIFEST.md      # the exact REST + socket.io contract (SDK-confirmed vs inferred)
 │   └── MODELS.md        # field-level response shapes (drive both the API and the schema)
-├── db/README.md         # database overview (schema lives in server/src/db/schema)
-└── server/              # @agora/server
-    ├── drizzle/         # generated + hand-written SQL migrations (0000–0014)
-    ├── scripts/         # seed.sql, send-digests.mjs, recompute-scores.mjs, *-e2e.mjs
-    ├── test/            # vitest integration suites (real cloud Postgres)
-    └── src/
-        ├── index.ts     # entrypoint: serves the app + attaches socket.io
-        ├── app.ts       # createApp() — side-effect-free Hono app (drives in-process tests)
-        ├── db/          # Drizzle client + schema/*.ts (source of truth)
-        ├── lib/         # env, supabase, tokens, embeddings, llm, storage, shape, validation, webhooks, digests, ranking, feed-config, recompute, rerank
-        ├── http/        # error + pagination envelopes, context types
-        ├── middleware/  # project resolution, JWT auth
-        ├── routes/      # one router per domain
-        └── realtime/    # socket.io server, typed to the SDK's event contract
+├── db/README.md         # database overview (schema lives in apps/api/src/db/schema)
+├── packages/
+│   └── contract/        # @agora/contract — shared API types + zod schemas (no hono/drizzle)
+└── apps/
+    ├── admin/           # @agora/admin — Vite + React + TS admin frontend (consumes @agora/contract)
+    └── api/             # @agora/api — the backend
+        ├── drizzle/     # generated + hand-written SQL migrations (0000–0014)
+        ├── scripts/     # seed.sql, send-digests.mjs, recompute-scores.mjs, *-e2e.mjs
+        ├── test/        # vitest integration suites (real cloud Postgres)
+        └── src/
+            ├── index.ts     # entrypoint: serves the app + attaches socket.io
+            ├── app.ts       # createApp() — side-effect-free Hono app (drives in-process tests)
+            ├── db/          # Drizzle client + schema/*.ts (source of truth)
+            ├── lib/         # env, supabase, tokens, embeddings, llm, storage, shape, validation, webhooks, digests, ranking, feed-config, recompute, rerank
+            ├── http/        # error + pagination envelopes, context types
+            ├── middleware/  # project resolution, JWT auth
+            ├── routes/      # one router per domain
+            └── realtime/    # socket.io server, typed to the SDK's event contract
 ```
 
 This repository is the backend. The client SDK lives in a companion repository,
@@ -147,25 +157,29 @@ This repository is the backend. The client SDK lives in a companion repository,
 ## Getting started
 
 ```bash
-cd server
-cp .env.example .env      # fill in DATABASE_URL (required) — see Configuration below
-npm install
+corepack enable          # activate the pinned pnpm
+pnpm install             # install all workspaces (from the repo root)
+pnpm -r build            # build every package (contract first, topologically)
 
-npm run db:migrate        # apply migrations to your Supabase DB (idempotent; safe to re-run)
-npm run dev               # http://localhost:4000/v7   (GET /health to verify)
+cd apps/api
+cp .env.example .env      # fill in DATABASE_URL (required) — see Configuration below
+pnpm db:migrate           # apply migrations to your Supabase DB (idempotent; safe to re-run)
+pnpm dev                  # http://localhost:4000/v7   (GET /health to verify)
 
 # optional: seed dev data + validate triggers/RPC (asserts loudly on failure)
 url=$(grep '^DATABASE_URL=' .env | cut -d= -f2-); psql "$url" -v ON_ERROR_STOP=1 -f scripts/seed.sql
 ```
 
-Other commands:
+The admin frontend: `cd apps/admin && pnpm dev` (http://localhost:5173) — set `VITE_API_BASE_URL`.
+
+Other commands (from `apps/api`, or `pnpm --filter @agora/api <script>` from the repo root):
 
 ```bash
-npm run typecheck         # tsc --noEmit  — run before considering work done
-npm run build             # tsc -> dist/
-npm run db:generate       # after editing src/db/schema/*.ts -> a new migration in drizzle/
-npm test                  # unit tests (no DB)
-npm run test:integration  # integration tests (needs TEST_DATABASE_URL — a dedicated cloud DB)
+pnpm typecheck            # tsc --noEmit  — run before considering work done
+pnpm build                # tsc -> dist/
+pnpm db:generate          # after editing src/db/schema/*.ts -> a new migration in drizzle/
+pnpm test                 # unit tests (no DB)
+pnpm test:integration     # integration tests (needs TEST_DATABASE_URL — a dedicated cloud DB)
 ```
 
 ### Configuration (`.env`)
@@ -236,21 +250,21 @@ http://localhost:4000/v7/*/oauth/callback**
 
 ## Docker
 
-The server ships a multi-stage `Dockerfile` (`node:22-slim`; builds TypeScript, then runs a
-prod-only image as a non-root user with a `/health` healthcheck). Postgres/Auth/Storage are on
-Supabase, so there's no local DB to run — the container just needs your `.env`.
+The api ships a multi-stage `Dockerfile` (`node:22-slim`; **built from the repo root** since it
+depends on the `@agora/contract` workspace package — `pnpm deploy` bundles a prod-only standalone,
+run as a non-root user with a `/health` healthcheck). Postgres/Auth/Storage are on Supabase, so
+there's no local DB to run — the container just needs your `.env`.
 
 ```bash
-cd server
-docker compose up --build                          # build + run on :4000
-docker compose run --rm agora npm run db:migrate:run   # apply migrations (one-off, drizzle-kit-free)
+docker compose up --build                               # from the repo root; build + run on :4000
+docker compose run --rm agora node scripts/migrate.mjs  # apply migrations (one-off, drizzle-kit-free)
 ```
 
-Or without compose:
+Or without compose (build context = repo root):
 
 ```bash
-docker build -t agora-server .
-docker run --rm --init --env-file .env -p 4000:4000 agora-server
+docker build -f apps/api/Dockerfile -t agora-api .
+docker run --rm --init --env-file .env -p 4000:4000 agora-api
 ```
 
 Migrations are applied via `scripts/migrate.mjs` (uses only runtime deps), so they run as a
@@ -259,7 +273,7 @@ won't race migrations against each other.
 
 ## Database
 
-The schema lives in `server/src/db/schema/*.ts` and is the single source of truth.
+The schema lives in `apps/api/src/db/schema/*.ts` and is the single source of truth.
 `drizzle-kit generate` emits table DDL; anything Drizzle can't express (triggers, RPC, RLS,
 PostGIS) is a hand-written custom migration, applied in journal order and written **idempotently**
 so re-runs are safe. Migrations `0000`–`0012` cover extensions + enums + tables, PostGIS columns/indexes,
@@ -267,7 +281,7 @@ denormalization triggers, RPC functions (`toggle_reaction`, `hot_score`, `fetch_
 `match_content`, …), RLS (deny-all backstop + public-read), refresh tokens, project webhooks, OAuth
 state, content embeddings, and the score-recompute function.
 
-To change the schema: edit `src/db/schema/*.ts` → `npm run db:generate` → `npm run db:migrate`.
+To change the schema: edit `apps/api/src/db/schema/*.ts` → `pnpm db:generate` → `pnpm db:migrate`.
 Edit triggers/functions/RLS/PostGIS by hand in their custom migration files.
 
 ## Testing
@@ -281,8 +295,8 @@ Edit triggers/functions/RLS/PostGIS by hand in their custom migration files.
   project + users and cascade-cleans on teardown.
 
 ```bash
-npm test                  # unit
-npm run test:integration  # integration (set TEST_DATABASE_URL first)
+pnpm test                 # unit
+pnpm test:integration     # integration (set TEST_DATABASE_URL first)
 ```
 
 ## Webhooks & digests

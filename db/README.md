@@ -1,8 +1,8 @@
 # Agora — Database
 
 > **The schema now lives in code.** Drizzle ORM is the single source of truth:
-> TypeScript schema in [`server/src/db/schema/`](../server/src/db/schema) →
-> generated + custom SQL in [`server/drizzle/`](../server/drizzle). The old hand-written
+> TypeScript schema in [`apps/api/src/db/schema/`](../apps/api/src/db/schema) →
+> generated + custom SQL in [`apps/api/drizzle/`](../apps/api/drizzle). The old hand-written
 > `db/migrations/*.sql` have been removed (fully ported into the Drizzle flow).
 
 Designed for **Supabase** (uses `auth.users`, `vector`, `postgis`).
@@ -22,15 +22,15 @@ migrations are skipped, and the custom SQL is itself re-runnable
 | `0004_rls` | enable RLS on all tables (deny-all to non-privileged callers) |
 
 ```bash
-cd server
+cd apps/api
 cp .env.example .env          # set DATABASE_URL (+ Supabase URL/keys)
-npm run db:generate           # regenerate after editing src/db/schema/*.ts
-npm run db:migrate            # apply (safe to re-run)
+pnpm db:generate              # regenerate after editing src/db/schema/*.ts
+pnpm db:migrate               # apply (safe to re-run)
 ```
 
-To change the schema: edit `server/src/db/schema/*.ts`, run `db:generate`, then `db:migrate`.
+To change the schema: edit `apps/api/src/db/schema/*.ts`, run `db:generate`, then `db:migrate`.
 Triggers / functions / RLS / PostGIS bits are hand-written custom migrations in
-`server/drizzle/` (Drizzle can't express them) — edit those SQL files directly.
+`apps/api/drizzle/` (Drizzle can't express them) — edit those SQL files directly.
 
 ## Key design decisions
 
@@ -52,6 +52,6 @@ Triggers / functions / RLS / PostGIS bits are hand-written custom migrations in
 
 ## Not yet covered (intentional gaps)
 
-- Refresh-token family/rotation tables (lives in the auth service — see server scaffold).
+- Refresh-token family/rotation tables (lives in the auth service — see the apps/api scaffold).
 - RLS *policies* (only enablement is done — deny-all backstop).
 - Digest webhook delivery log; partitioning for high-volume `chat_messages` / `app_notifications`.

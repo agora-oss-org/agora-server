@@ -23,53 +23,84 @@ links, and tag. Pure-internal refactors with no observable effect don't need an 
 client + forked Replyke SDK
    │  HTTPS  /v7/:projectId/<domain>/...        (+ socket.io for chat realtime)
    ▼
-@agora/server  (Hono)   endpoints + business logic + permission checks
+@agora/api  (Hono)   endpoints + business logic + permission checks
    │  Drizzle ORM (postgres.js, Supabase transaction pooler :6543, prepare:false)
    ▼
 Supabase Postgres   schema + triggers + RPC + pgvector + PostGIS
         └── @supabase/supabase-js is reserved for Auth + Storage ONLY (lazy getSupabase())
 ```
 
-- **Drizzle owns all DB access** via a direct `postgres.js` connection (`server/src/db/index.ts`).
+- **Drizzle owns all DB access** via a direct `postgres.js` connection (`apps/api/src/db/index.ts`).
   The Supabase JS client is *only* for Auth/Storage and is lazily constructed.
 - **`auth.users` is NOT modeled in Drizzle** — `profiles.auth_user_id` is a plain uuid the app
   links, so Drizzle never tries to own the Supabase-managed `auth` schema.
 - Multi-tenant by `project_id` (every table has it; the SDK addresses `/v7/:projectId/...`).
   A single-project deployment just has one `projects` row.
 
+## Monorepo
+
+pnpm workspaces (corepack-pinned `pnpm@10.14.0`). Three packages:
+
+- `apps/api` — `@agora/api`, the Hono backend (everything below; the reference package).
+- `apps/admin` — `@agora/admin`, a Vite + React + TS admin frontend that consumes the API.
+- `packages/contract` — `@agora/contract`, the **shared API contract**: response-model TS types
+  (`User`/`Entity`/`Comment`/`AuthUser`/`AuthContext`), the reaction taxonomy, the pagination
+  envelope + `paginate()`, the error-envelope shape, and the 39 zod request schemas. Pure types +
+  zod, **no hono/drizzle**. Built to `dist/` and consumed via its `exports` map by both api + admin.
+
+**Rule:** any API request/response type or zod schema shared between server and admin lives in
+`packages/contract` (built first; `pnpm -r build` orders it). `apps/api`'s `shape.ts` /
+`validation.ts` / `envelope.ts` / `context.ts` re-export the contract symbols so existing call sites
+are unchanged — never redefine a contract type locally (that reintroduces drift).
+
+Root `.env` is the single source (direnv `dotenv`), symlinked from `apps/api/.env -> ../../.env`.
+`docker-compose.yml` lives at the repo root; the api image builds from the repo root context.
+
 ## Layout
 
 - `docs/MANIFEST.md` — **the contract**: every REST endpoint (method+path, ✅SDK-confirmed vs
   🔶inferred), socket.io event names, auth/pagination/error envelopes, SDK fork points.
 - `docs/MODELS.md` — field-level response shapes (source of truth for API output + schema).
-- `server/src/db/schema/*.ts` — Drizzle schema, the **single source of truth** for the DB.
-- `server/drizzle/` — generated + custom SQL migrations (see DB section).
-- `server/src/lib/shape.ts` — row → camelCase API model shapers + batchers (`attachUserReactions`,
-  `loadUsers`); `lib/validation.ts` — zod schemas + `parseBody()`.
-- `server/src/http/` — `envelope.ts` (`paginate`/`readPagination`), `errors.ts` (`ApiError`/`Errors`), `context.ts`.
-- `server/src/middleware/` — `project.ts` (resolves `:projectId`), `auth.ts` (verifies JWT).
-- `server/src/routes/` — one router per domain; `realtime/socket.ts` — socket.io server
+- `packages/contract/src/*.ts` — shared types + zod schemas (`@agora/contract`); 1:1 with the docs above.
+- `apps/api/src/db/schema/*.ts` — Drizzle schema, the **single source of truth** for the DB.
+- `apps/api/drizzle/` — generated + custom SQL migrations (see DB section).
+- `apps/api/src/lib/shape.ts` — row → camelCase API model shapers + batchers (`attachUserReactions`,
+  `loadUsers`); `lib/validation.ts` — `parseBody()` + the zod schemas (re-exported from contract).
+- `apps/api/src/http/` — `envelope.ts` (`paginate`/`readPagination`), `errors.ts` (`ApiError`/`Errors`), `context.ts`.
+- `apps/api/src/middleware/` — `project.ts` (resolves `:projectId`), `auth.ts` (verifies JWT).
+- `apps/api/src/routes/` — one router per domain; `realtime/socket.ts` — socket.io server
   (module singleton; REST handlers fan out via `emitToConversation()`).
-- `server/src/lib/` — also `tokens.ts` (mint/rotate Agora tokens), `embeddings.ts` (Voyage),
+- `apps/api/src/lib/` — also `tokens.ts` (mint/rotate Agora tokens), `embeddings.ts` (Voyage),
   `storage.ts` (Supabase Storage uploads), `supabase.ts` (lazy `getSupabase()`).
 
 ## Commands
 
 ```bash
-cd server
-npm run dev          # tsx watch -> http://localhost:4000/v7  (loads .env via dotenv)
-npm run typecheck    # tsc --noEmit — ALWAYS run before considering work done
-npm run build        # tsc -> dist/
+# pnpm workspaces via corepack — `corepack enable` once. From the repo root:
+pnpm install                 # install all workspaces
+pnpm -r build                # build every package (contract first, topologically)
+pnpm -r typecheck            # ALWAYS run before considering work done
+pnpm --filter @agora/contract build   # rebuild the shared contract after editing it
 
-npm run db:generate  # after editing src/db/schema/*.ts -> new migration in drizzle/
-npm run db:migrate   # apply migrations (idempotent: journal skips applied; safe to re-run)
+cd apps/api                  # the backend lives here
+pnpm dev             # tsx watch -> http://localhost:4000/v7  (loads .env via dotenv)
+pnpm typecheck       # tsc --noEmit — ALWAYS run before considering work done
+pnpm build           # tsc -> dist/
 
-# Validate triggers/RPC + (re)seed dev data; asserts loudly on failure:
+pnpm db:generate     # after editing src/db/schema/*.ts -> new migration in drizzle/
+pnpm db:migrate      # apply migrations (idempotent: journal skips applied; safe to re-run)
+
+# Validate triggers/RPC + (re)seed dev data; asserts loudly on failure (run from apps/api):
 url=$(grep '^DATABASE_URL=' .env | cut -d= -f2-); psql "$url" -v ON_ERROR_STOP=1 -f scripts/seed.sql
 ```
 
-**Env:** the root `.env` is the single source (direnv `dotenv`), symlinked to `server/.env` so
-dotenv resolves from `server/`. `DATABASE_URL` is the Supabase **transaction pooler (:6543)** and
+> ⚠️ `@agora/api` depends on `@agora/contract`'s built `dist/` (consumed via its `exports` map), so
+> run `pnpm --filter @agora/contract build` (or `pnpm -r build`) before typechecking the api from a
+> clean checkout.
+
+**Env:** the root `.env` is the single source (direnv `dotenv`), symlinked from
+`apps/api/.env -> ../../.env` so dotenv resolves from `apps/api/`. `DATABASE_URL` is the Supabase
+**transaction pooler (:6543)** and
 is the only hard requirement. The rest gate specific features and are validated as optional:
 `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` + `SUPABASE_ANON_KEY` (Auth + Storage),
 `VOYAGE_API_KEY` (semantic search). Empty strings are treated as unset.
@@ -86,7 +117,7 @@ non-ASCII) corrupts the value and yields an invalid HTTP header (400 before Hono
 
 ## Database migrations (Drizzle)
 
-Schema lives in `server/src/db/schema/*.ts`. `drizzle-kit generate` produces table DDL; anything
+Schema lives in `apps/api/src/db/schema/*.ts`. `drizzle-kit generate` produces table DDL; anything
 Drizzle can't express is a **hand-written custom migration** in `server/drizzle/`, applied in
 journal order and written **idempotently** (`create extension if not exists`, `create or replace`,
 `drop trigger if exists` before create):
@@ -149,6 +180,6 @@ RLS/PostGIS by hand in their custom migration files.
 - **REST surface is complete.** Remaining: RLS policies, then fork + repoint the Replyke SDK.
 - ⬜ RLS policies (only enablement done); fork + repoint `@replyke/core` base URL (MANIFEST §0).
 
-`server/src/routes/entities.ts` is the reference for a fully-built domain router.
+`apps/api/src/routes/entities.ts` is the reference for a fully-built domain router.
 
 License: Apache-2.0 (matching Replyke).

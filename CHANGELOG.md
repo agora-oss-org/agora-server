@@ -8,11 +8,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`@agora/contract`** — a shared workspace package holding the API contract: response-model TS
+  types (`User`/`Entity`/`Comment`/`AuthUser`/`AuthContext`), the reaction taxonomy, the pagination
+  envelope + `paginate()`, the error-envelope shape, and the 39 zod request schemas. Pure types +
+  zod (no hono/drizzle), consumed 1:1 by the backend and the new admin frontend.
+- **`@agora/admin`** — a Vite + React + TS admin frontend skeleton that consumes `@agora/contract`.
 - **Supercronic scheduler sidecar** (`Dockerfile.cron` + `crontab` + a `cron` service in
   `docker-compose.yml`) — fires the secret-gated `/internal/cron/{digests,recompute-scores}`
   endpoints over the internal network (hourly digests; 15-min score recompute). Kept separate from
   the app image so scheduling never double-fires across API replicas. Requires `CRON_SECRET` in
   `.env`. supercronic `v0.2.46`, pinned by SHA256 (amd64 + arm64).
+
+### Changed
+- **Monorepo restructure (pnpm workspaces).** The backend moved from `server/` to `apps/api/` and
+  the package was renamed `@agora/server` → **`@agora/api`**. Tooling switched from npm to pnpm
+  (corepack-pinned `pnpm@10.14.0`); the repo root now hosts `package.json`, `pnpm-workspace.yaml`,
+  and a shared `tsconfig.base.json`. The backend's `shape.ts` / `validation.ts` / `envelope.ts` /
+  `context.ts` now re-export their shared symbols from `@agora/contract` (no behavior change).
+- **Docker/CI.** The api image now builds from the **repo root** context (it depends on the
+  `@agora/contract` workspace package) via `pnpm deploy`; `docker-compose.yml` moved to the repo
+  root; the publish workflow targets `apps/api/Dockerfile`. The root `.env` symlink is now
+  `apps/api/.env -> ../../.env`.
 
 ### Fixed
 - **`POST /auth/sign-out` no longer 401s on a stale session.** It was `requireAuth`, so an expired
