@@ -1,6 +1,6 @@
-# Build the Agora server image and publish multi-arch (amd64 + arm64) to GHCR + Docker Hub.
+# Build the Agora API image (@agora/api) and publish multi-arch (amd64 + arm64) to GHCR + Docker Hub.
 # Fires on a version tag (e.g. `v0.1.1`) or manual dispatch. Public images at:
-#   ghcr.io/jenova-marie/agora   and   docker.io/agoraserver/agora
+#   ghcr.io/jenova-marie/agora-api   and   docker.io/agoraserver/agora-api
 # Docker Hub needs DOCKERHUB_USERNAME + DOCKERHUB_TOKEN repo secrets (a Read/Write access token).
 name: docker-publish
 
@@ -11,7 +11,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }} # -> ghcr.io/jenova-marie/agora
+  IMAGE_NAME: ${{ github.repository_owner }}/agora-api # -> ghcr.io/jenova-marie/agora-api
 
 jobs:
   build-and-push:
@@ -48,7 +48,7 @@ jobs:
         with:
           images: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-            docker.io/agoraserver/agora
+            docker.io/agoraserver/agora-api
           flavor: latest=auto # tag `latest` on the highest non-prerelease semver
           tags: |
             type=semver,pattern={{version}}

@@ -28,7 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Docker/CI.** The api image now builds from the **repo root** context (it depends on the
   `@agora/contract` workspace package) via `pnpm deploy`; `docker-compose.yml` moved to the repo
   root; the publish workflow targets `apps/api/Dockerfile`. The root `.env` symlink is now
-  `apps/api/.env -> ../../.env`.
+  `apps/api/.env -> ../../.env`. The published image was renamed `agora` → **`agora-api`**
+  (`ghcr.io/<owner>/agora-api`, `docker.io/agoraserver/agora-api`).
 
 ### Fixed
 - **`POST /auth/sign-out` no longer 401s on a stale session.** It was `requireAuth`, so an expired
