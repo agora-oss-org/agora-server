@@ -256,15 +256,21 @@ run as a non-root user with a `/health` healthcheck). Postgres/Auth/Storage are 
 there's no local DB to run — the container just needs your `.env`.
 
 ```bash
-docker compose up --build                               # from the repo root; build + run on :4000
+docker compose up --build                               # from the repo root; api :4000 + admin :8080
 docker compose run --rm agora node scripts/migrate.mjs  # apply migrations (one-off, drizzle-kit-free)
 ```
+
+`compose` also builds the **admin** service — the Vite SPA on nginx (`agora-admin`), served on
+`:8080`, which reverse-proxies `/v7` + `/socket.io` to the api container (same origin, no CORS).
 
 Or without compose (build context = repo root):
 
 ```bash
-docker build -f apps/api/Dockerfile -t agora-api .
-docker run --rm --init --env-file .env -p 4000:4000 agora-api
+docker build -f apps/api/Dockerfile   -t agora-api   .
+docker run  --rm --init --env-file .env -p 4000:4000 agora-api
+
+docker build -f apps/admin/Dockerfile -t agora-admin .
+docker run  --rm -e API_UPSTREAM=http://<api-host>:4000 -p 8080:80 agora-admin
 ```
 
 Migrations are applied via `scripts/migrate.mjs` (uses only runtime deps), so they run as a

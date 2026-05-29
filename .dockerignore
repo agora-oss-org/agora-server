@@ -2,6 +2,7 @@
 # the root manifests, packages/contract, and apps/api.
 **/node_modules
 **/dist
+**/.vite
 **/*.tsbuildinfo
 **/coverage
 **/test
@@ -16,8 +17,8 @@
 .gitignore
 .DS_Store
 
-# Other workspaces / docs not needed to build the api image.
-apps/admin
+# Docs / assets not needed to build either app image (each Dockerfile copies only its own
+# workspace + packages/contract, so the other app's source in-context is just unused).
 docs
 assets
 db

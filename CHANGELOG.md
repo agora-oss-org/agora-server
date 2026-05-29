@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`agora-admin` Docker image** — `apps/admin/Dockerfile` builds the admin SPA and serves it on
+  nginx, reverse-proxying `/v7` + `/socket.io` to the API (same origin → no CORS; upstream set via
+  `API_UPSTREAM`, default `http://agora:4000`, lazily DNS-resolved so it boots before the API does).
+  Added an `admin` service to `docker-compose.yml` (`${ADMIN_PORT:-8080}:80`), and the publish
+  workflow is now a matrix that builds both `agora-api` and `agora-admin` (GHCR + Docker Hub).
+
 ## [0.3.0] - 2026-05-28
 
 ### Added

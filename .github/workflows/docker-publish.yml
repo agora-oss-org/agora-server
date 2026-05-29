@@ -1,6 +1,6 @@
-# Build the Agora API image (@agora/api) and publish multi-arch (amd64 + arm64) to GHCR + Docker Hub.
-# Fires on a version tag (e.g. `v0.1.1`) or manual dispatch. Public images at:
-#   ghcr.io/jenova-marie/agora-api   and   docker.io/agoraserver/agora-api
+# Build the Agora images (@agora/api + @agora/admin) and publish multi-arch (amd64 + arm64) to
+# GHCR + Docker Hub. Fires on a version tag (e.g. `v0.1.1`) or manual dispatch. Public images at:
+#   ghcr.io/jenova-marie/{agora-api,agora-admin}  and  docker.io/agoraserver/{agora-api,agora-admin}
 # Docker Hub needs DOCKERHUB_USERNAME + DOCKERHUB_TOKEN repo secrets (a Read/Write access token).
 name: docker-publish
 
@@ -11,7 +11,6 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository_owner }}/agora-api # -> ghcr.io/jenova-marie/agora-api
 
 jobs:
   build-and-push:
@@ -19,6 +18,14 @@ jobs:
     permissions:
       contents: read
       packages: write # push to GHCR with the built-in GITHUB_TOKEN
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: agora-api
+            dockerfile: ./apps/api/Dockerfile
+          - image: agora-admin
+            dockerfile: ./apps/admin/Dockerfile
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -47,8 +54,8 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-            docker.io/agoraserver/agora-api
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.image }}
+            docker.io/agoraserver/${{ matrix.image }}
           flavor: latest=auto # tag `latest` on the highest non-prerelease semver
           tags: |
             type=semver,pattern={{version}}
@@ -60,10 +67,10 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: ./apps/api/Dockerfile
+          file: ${{ matrix.dockerfile }}
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}

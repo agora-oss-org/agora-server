@@ -16,6 +16,22 @@ services:
     init: true
     restart: unless-stopped
 
+  # Admin frontend (Vite SPA on nginx). Serves the static build and reverse-proxies /v7 + /socket.io
+  # to the api over the internal network (same origin → no CORS, no build-time API URL).
+  admin:
+    build:
+      context: .
+      dockerfile: apps/admin/Dockerfile
+    image: agora-admin
+    environment:
+      API_UPSTREAM: http://agora:4000
+    ports:
+      - "${ADMIN_PORT:-8080}:80"
+    depends_on:
+      - agora
+    init: true
+    restart: unless-stopped
+
   # Scheduler: fires the secret-gated /internal/cron/* endpoints over the internal network on the
   # schedule in apps/api/crontab. Requires CRON_SECRET in .env (without it the endpoints return 503).
   cron:
