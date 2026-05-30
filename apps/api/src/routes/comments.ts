@@ -21,6 +21,7 @@ import * as webhooks from "../lib/webhooks.js";
 import { notifyOnComment, notifyOnReaction } from "../lib/notifications.js";
 import { indexContentAsync } from "../lib/embeddings.js";
 import { assertCanReadEntity, assertCanReadComment } from "../lib/space-access.js";
+import { removedPolicy, excludeRemovedSql, shouldHide, shouldRedact, redactComment, redactRemovedList } from "../lib/moderation-visibility.js";
 
 export const commentRoutes = new Hono<{ Variables: Variables }>()
   .get("/", async (c) => {
@@ -40,6 +41,11 @@ export const commentRoutes = new Hono<{ Variables: Variables }>()
       isNull(comments.deletedAt),
       parentId ? eq(comments.parentId, parentId) : isNull(comments.parentId),
     ];
+    // Moderation-removed comments: hidden from the list for non-moderators (hide mode); blanked
+    // after shaping in placeholder mode.
+    const removed = await removedPolicy(c);
+    const excludeRemoved = excludeRemovedSql(removed, comments);
+    if (excludeRemoved) conds.push(excludeRemoved);
     const where = and(...conds);
 
     // SDK CommentsSortByOptions: "top" | "new" | "old" (new = newest first, old = oldest first).
@@ -67,6 +73,7 @@ export const commentRoutes = new Hono<{ Variables: Variables }>()
         ...(userMap ? { user: r.userId ? userMap.get(r.userId) ?? null : null } : {}),
       })
     );
+    redactRemovedList(removed, shaped, "comment");
     return c.json(paginate(shaped, total, page, limit));
   })
   .post("/", requireAuth, async (c) => {
@@ -111,8 +118,12 @@ export const commentRoutes = new Hono<{ Variables: Variables }>()
       .limit(1);
     if (!row) throw Errors.notFound("comments/not-found", "Comment not found");
     await assertCanReadEntity(c, row.entityId); // private-space leak guard
+    const removed = await removedPolicy(c);
+    if (shouldHide(removed, row.moderationStatus)) throw Errors.notFound("comments/not-found", "Comment not found");
+    const shaped = await hydrateOne(c, row);
+    if (shouldRedact(removed, row.moderationStatus)) redactComment(shaped);
     // SDK's useFetchCommentByForeignId expects { comment }.
-    return c.json({ comment: await hydrateOne(c, row) });
+    return c.json({ comment: shaped });
   })
   // Full nested subtree for an entity (or under a root comment) via the fetch_comment_thread RPC.
   // Server-only convenience: returns { data: Comment[] } where each comment carries a `replies` array.
@@ -125,8 +136,12 @@ export const commentRoutes = new Hono<{ Variables: Variables }>()
     const { limit, offset } = readPagination(c, { page: 1, limit: 50 });
     const include = parseInclude(c);
 
+    // Moderation visibility is pushed into the RPC: in hide mode (non-privileged) it prunes removed
+    // comments AND their descendant subtrees (a JS post-filter would orphan the children).
+    const removed = await removedPolicy(c);
+    const hideRemoved = removed.behavior === "hide" && !removed.privileged;
     const res = (await db.execute(sql`
-      select id, parent_id, depth from fetch_comment_thread(${entityId}::uuid, ${rootId}::uuid, ${limit}, ${offset})
+      select id, parent_id, depth from fetch_comment_thread(${entityId}::uuid, ${rootId}::uuid, ${limit}, ${offset}, ${hideRemoved})
     `)) as unknown as { id: string; parent_id: string | null; depth: number }[];
     if (res.length === 0) return c.json({ data: [] });
 
@@ -140,10 +155,12 @@ export const commentRoutes = new Hono<{ Variables: Variables }>()
     type Node = ReturnType<typeof shapeComment> & { replies: Node[] };
     const nodeById = new Map<string, Node>();
     for (const r of rows) {
+      // Hide mode already pruned removed rows in the RPC; here we only blank for placeholder mode.
       const shaped = shapeComment(r, {
         userReaction: reactionMap.get(r.id) ?? null,
         ...(userMap ? { user: r.userId ? userMap.get(r.userId) ?? null : null } : {}),
       });
+      if (shouldRedact(removed, r.moderationStatus)) redactComment(shaped);
       nodeById.set(r.id, { ...shaped, replies: [] });
     }
     // RPC rows are ordered by depth then created_at, so a parent is always seen before its children.
@@ -166,8 +183,12 @@ export const commentRoutes = new Hono<{ Variables: Variables }>()
       .limit(1);
     if (!row) throw Errors.notFound("comments/not-found", "Comment not found");
     await assertCanReadEntity(c, row.entityId); // private-space leak guard
+    const removed = await removedPolicy(c);
+    if (shouldHide(removed, row.moderationStatus)) throw Errors.notFound("comments/not-found", "Comment not found");
+    const shaped = await hydrateOne(c, row);
+    if (shouldRedact(removed, row.moderationStatus)) redactComment(shaped);
     // SDK's useFetchComment expects { comment }.
-    return c.json({ comment: await hydrateOne(c, row) });
+    return c.json({ comment: shaped });
   })
   .patch("/:id", requireAuth, async (c) => {
     const row = await ownedComment(c);

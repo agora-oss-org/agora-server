@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Moderation removal now takes effect on reads, with a per-project behavior setting.** Previously
+  moderating content as "removed" only stamped `moderationStatus` — no read path honored it, so a
+  removed entity/comment kept serving its full content. New `moderation_config.removedContentBehavior`
+  (migration `0018`, admin **Settings → Moderation** panel, `GET`/`PATCH /settings/moderation`)
+  controls how removed content is served to non-moderators: **hide** (default — filtered out of
+  feeds/lists/threads and `404` on single reads) or **placeholder** (the row stays but text/media are
+  blanked so clients can show a "[removed]" stub, preserving reply chains). Operators/moderators
+  always see removed content for review. Enforced server-side in `lib/moderation-config.ts` +
+  `lib/moderation-visibility.ts`, wired into the entity feed/reads and comment list/thread/reads.
 - **Admin Settings — Feed ranking panel.** The admin `Settings` section (previously a stub) now hosts
   a live feed-ranking config form wired to `GET`/`PATCH /settings/feed`: default algorithm, decay
   mode, the numeric tunables (half-life / gravity / z / C / m), per-reaction vote weights, the
@@ -92,6 +101,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   visible, others' hidden, `profiles` never exposed, anon limited to public content.
 
 ### Changed
+- **Read-visibility filtering pushed into the set-returning RPCs (was JS post-filtering).** A new
+  `space_readable(space, viewer)` SQL predicate, plus visibility params on `fetch_comment_thread`
+  (`p_hide_removed`) and `match_content` (`p_viewer`/`p_privileged`/`p_hide_removed`), migration
+  `0019`. Two correctness wins: (1) in **hide** mode the comment-thread RPC now prunes a removed
+  comment **and its descendant subtree** in the recursive CTE — a JS post-filter only dropped the
+  parent and orphaned the replies; (2) semantic search filters private-space/membership/removed
+  visibility **inside** `match_content`, so `LIMIT` counts only rows the caller may see (no more
+  short result pages from dropping rows after the limit). Removed the now-redundant JS post-filters
+  (`readableSpaceIds`, `chat-access.ts`'s `readableMessageIds`). Removed content is always excluded
+  from search for non-operators.
+- **Moderation review dialog shows the full reported item (media + scroll).** The review modal only
+  rendered title + text, so image-only posts (e.g. an uploaded picture) showed "(no text content)"
+  and couldn't actually be reviewed. It now renders the entity's images, a comment's gif, and any
+  non-image file attachments (as openable links), in a height-capped scrollable body with the
+  Dismiss/Keep/Remove actions pinned. (`apps/admin` — `routes/moderation/ReviewDialog.tsx`.)
 - **Project-config endpoints accept operators.** `requireProjectAdmin` (gating `/settings/feed` and
   `/webhooks/config`) now passes deployment **operators** (`isOperator`), not only users with
   `profiles.role = 'admin'` — aligning these endpoints with the admin app's operator persona. Error

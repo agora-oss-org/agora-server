@@ -26,6 +26,7 @@ import { storeImageFromUpload } from "../lib/images.js";
 import { parseRankParams } from "../lib/ranking.js";
 import { getFeedConfig } from "../lib/feed-config.js";
 import { assertCanReadSpace, assertCanReadEntity, assertCanPostInSpace, readableEntitiesFilter } from "../lib/space-access.js";
+import { removedPolicy, excludeRemovedSql, shouldHide, shouldRedact, redactEntity, redactRemovedList } from "../lib/moderation-visibility.js";
 import { rerankCandidates } from "../lib/rerank.js";
 import {
   parseBody,
@@ -64,6 +65,11 @@ export const entityRoutes = new Hono<{ Variables: Variables }>()
     // Exclude entities in members-only spaces the caller can't read (private-space leak guard).
     const readable = readableEntitiesFilter(c);
     if (readable) conds.push(readable);
+    // Moderation-removed entities: hidden from the feed for non-moderators (hide mode); in
+    // placeholder mode they stay but are blanked after shaping (see below).
+    const removed = await removedPolicy(c);
+    const excludeRemoved = excludeRemovedSql(removed, entities);
+    if (excludeRemoved) conds.push(excludeRemoved);
     const where = and(...conds);
 
     // Ranking precedence: request rankParams > project feed_config > built-in defaults. The project
@@ -106,6 +112,9 @@ export const entityRoutes = new Hono<{ Variables: Variables }>()
         ...(fileMap.has(r.id) ? { files: fileMap.get(r.id) } : {}),
       })
     );
+    // Placeholder mode: blank any moderation-removed rows that survived the query (hide mode already
+    // excluded them; operators keep full content).
+    redactRemovedList(removed, shaped, "entity");
     // Echo the resolved ranking clock so clients can pin it across paginated requests.
     return c.json({ ...paginate(shaped, total, page, limit), rankAnchor });
   })
@@ -329,6 +338,9 @@ async function lookupEntity(c: any, predicate: SQL) {
   if (!row) throw Errors.notFound("entities/not-found", "Entity not found");
   // Private-space leak guard: a single entity in a members-only space is owner/member-only.
   await assertCanReadSpace(c, row.spaceId);
+  // Moderation-removed: hide mode 404s for non-moderators; placeholder mode blanks below.
+  const removed = await removedPolicy(c);
+  if (shouldHide(removed, row.moderationStatus)) throw Errors.notFound("entities/not-found", "Entity not found");
 
   const reactionMap = await attachUserReactions(projectId, "entity", [row.id], c.var.auth?.userId);
   const opts: any = { userReaction: reactionMap.get(row.id) ?? null };
@@ -338,7 +350,8 @@ async function lookupEntity(c: any, predicate: SQL) {
   }
   const fileMap = await loadEntityFiles(projectId, [row.id]);
   if (fileMap.has(row.id)) opts.files = fileMap.get(row.id);
-  return shapeEntity(row, opts);
+  const shaped = shapeEntity(row, opts);
+  return shouldRedact(removed, row.moderationStatus) ? redactEntity(shaped) : shaped;
 }
 
 /** Fetch an entity and assert the auth user owns it; throws 404/403 otherwise. */

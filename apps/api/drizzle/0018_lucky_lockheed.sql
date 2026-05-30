@@ -1,0 +1,1 @@
+ALTER TABLE "projects" ADD COLUMN "moderation_config" jsonb DEFAULT '{}'::jsonb NOT NULL;

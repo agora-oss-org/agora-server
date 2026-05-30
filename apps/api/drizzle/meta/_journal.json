@@ -127,6 +127,20 @@
       "when": 1779890002000,
       "tag": "0017_rls_self_access",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1780180350008,
+      "tag": "0018_lucky_lockheed",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1780181519636,
+      "tag": "0019_rpc_visibility",
+      "breakpoints": true
     }
   ]
 }

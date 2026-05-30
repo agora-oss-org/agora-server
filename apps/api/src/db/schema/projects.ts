@@ -18,6 +18,10 @@ export const projects = pgTable("projects", {
   // Per-project feed ranking config (algorithm + tunables + optional re-rank webhook). See
   // lib/feed-config.ts for the resolved shape + defaults; backs the admin Feed settings UI.
   feedConfig: jsonb("feed_config").notNull().default(sql`'{}'::jsonb`),
+  // Per-project moderation config. `removedContentBehavior` controls how content moderated as
+  // "removed" is served to non-moderators: "hide" (filtered out / 404) or "placeholder" (blanked
+  // [removed] row). See lib/moderation-config.ts; backs the admin Moderation settings UI.
+  moderationConfig: jsonb("moderation_config").notNull().default(sql`'{}'::jsonb`),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });

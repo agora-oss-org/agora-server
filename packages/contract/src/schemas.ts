@@ -236,6 +236,12 @@ export const webhookConfigSchema = z.object({
   events: z.array(z.string()).nullish(), // null/absent → unchanged; [] disables all
 });
 
+// Per-project moderation config (PATCH /settings/moderation). Controls how "removed" content is
+// served to non-moderators: "hide" (filtered/404) or "placeholder" (blanked [removed] row).
+export const moderationConfigSchema = z.object({
+  removedContentBehavior: z.enum(["hide", "placeholder"]).optional(),
+});
+
 export const oauthAuthorizeSchema = z.object({
   provider: z.string().min(1), // e.g. "google", "github", "apple" — passed through to Supabase
   // Where to send the browser after auth completes (default: the SDK sends window.location.href).

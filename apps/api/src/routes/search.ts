@@ -12,8 +12,6 @@ import { entities, comments, chatMessages, spaces, profiles } from "../db/schema
 import { shapeEntity, shapeComment, shapeChatMessage, shapeSpace, shapeUser } from "../lib/shape.js";
 import { embedText, embeddingsEnabled, type SourceType } from "../lib/embeddings.js";
 import { streamText, llmEnabled } from "../lib/llm.js";
-import { readableSpaceIds } from "../lib/space-access.js";
-import { readableMessageIds } from "../lib/chat-access.js";
 
 // Mirrors the SDK's ContentSearchResult (interfaces/models): a shaped Entity | Comment | ChatMessage.
 type ContentSearchResult = { sourceType: SourceType; similarity: number; record: unknown };
@@ -66,53 +64,40 @@ async function retrieveContent(
   const typesArg = requested
     ? sql`array[${sql.join(requested.map((t) => sql`${t}`), sql`, `)}]::text[]`
     : sql`null::text[]`;
+  // Visibility (private-space readability, conversation membership, moderation-removed) is enforced
+  // INSIDE match_content, so the LIMIT applies to rows the caller may actually see (no short pages).
+  // Operators bypass; removed content is always excluded from search for non-operators.
+  const viewer = c.var.auth?.userId ?? null;
+  const privileged = c.var.auth?.isOperator === true;
   const matches = (await db.execute(sql`
     select source_type, source_id, similarity
-    from match_content(${projectId}::uuid, ${lit}::vector, ${limit}, ${typesArg}, ${space}::uuid)
+    from match_content(${projectId}::uuid, ${lit}::vector, ${limit}, ${typesArg}, ${space}::uuid,
+                       ${viewer}::uuid, ${privileged}, ${!privileged})
   `)) as unknown as { source_type: SourceType; source_id: string; similarity: number }[];
   if (matches.length === 0) return [];
 
-  // Hydrate records per type in bulk, then re-emit in match (similarity) order.
+  // Hydrate records per type in bulk, then re-emit in match (similarity) order. match_content has
+  // already filtered to the visible set, so no post-filtering is needed here.
   const idsByType = (t: SourceType) => matches.filter((m) => m.source_type === t).map((m) => m.source_id);
   const record = new Map<string, unknown>();
 
-  // Private-space leak guard: entities (and the entities their comments hang off) in members-only
-  // spaces are dropped from results the caller can't read. Compute the readable space set once.
   const entIds = idsByType("entity");
-  const cmtIds = idsByType("comment");
-  const entRows = entIds.length
-    ? await db.select().from(entities)
-        .where(and(eq(entities.projectId, projectId), inArray(entities.id, entIds), isNull(entities.deletedAt)))
-    : [];
-  const cmtRows = cmtIds.length
-    ? await db.select().from(comments)
-        .where(and(eq(comments.projectId, projectId), inArray(comments.id, cmtIds), isNull(comments.deletedAt)))
-    : [];
-  // Comments inherit their entity's space — resolve those entities' spaceIds (incl. ones not in the
-  // entity result set) so a comment can't leak a private entity it belongs to.
-  const cmtEntityIds = [...new Set(cmtRows.map((r) => r.entityId))];
-  const spaceByEntity = new Map<string, string | null>(entRows.map((r) => [r.id, r.spaceId]));
-  const missingEntityIds = cmtEntityIds.filter((id) => !spaceByEntity.has(id));
-  if (missingEntityIds.length) {
-    for (const r of await db.select({ id: entities.id, spaceId: entities.spaceId }).from(entities)
-      .where(and(eq(entities.projectId, projectId), inArray(entities.id, missingEntityIds))))
-      spaceByEntity.set(r.id, r.spaceId);
+  if (entIds.length) {
+    for (const r of await db.select().from(entities)
+      .where(and(eq(entities.projectId, projectId), inArray(entities.id, entIds), isNull(entities.deletedAt))))
+      record.set(r.id, shapeEntity(r));
   }
-  const readable = await readableSpaceIds(c, [
-    ...entRows.map((r) => r.spaceId),
-    ...cmtEntityIds.map((id) => spaceByEntity.get(id) ?? null),
-  ]);
-  const canRead = (spaceId: string | null | undefined) => !spaceId || readable.has(spaceId);
-
-  for (const r of entRows) if (canRead(r.spaceId)) record.set(r.id, shapeEntity(r));
-  for (const r of cmtRows) if (canRead(spaceByEntity.get(r.entityId))) record.set(r.id, shapeComment(r));
+  const cmtIds = idsByType("comment");
+  if (cmtIds.length) {
+    for (const r of await db.select().from(comments)
+      .where(and(eq(comments.projectId, projectId), inArray(comments.id, cmtIds), isNull(comments.deletedAt))))
+      record.set(r.id, shapeComment(r));
+  }
   const msgIds = idsByType("message");
   if (msgIds.length) {
-    // Private-chat leak guard: a message is readable only by an active member of its conversation.
-    const msgRows = await db.select().from(chatMessages)
-      .where(and(eq(chatMessages.projectId, projectId), inArray(chatMessages.id, msgIds), isNull(chatMessages.userDeletedAt)));
-    const okMsg = await readableMessageIds(c, msgRows.map((r) => r.id));
-    for (const r of msgRows) if (okMsg.has(r.id)) record.set(r.id, shapeChatMessage(r));
+    for (const r of await db.select().from(chatMessages)
+      .where(and(eq(chatMessages.projectId, projectId), inArray(chatMessages.id, msgIds), isNull(chatMessages.userDeletedAt))))
+      record.set(r.id, shapeChatMessage(r));
   }
 
   return matches

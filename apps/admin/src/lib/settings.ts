@@ -98,3 +98,23 @@ export function updateWebhookConfig(patch: WebhookConfigPatch): Promise<WebhookC
 export function testWebhook(): Promise<WebhookTestResult> {
   return api<WebhookTestResult>("/webhooks/test", { method: "POST" });
 }
+
+// ── Moderation config (GET/PATCH /settings/moderation) ───────────────────────────────────────────
+// removedContentBehavior controls how content moderated as "removed" is served to normal users.
+export type RemovedContentBehavior = "hide" | "placeholder";
+
+export interface ModerationConfigView {
+  removedContentBehavior: RemovedContentBehavior;
+}
+
+export interface ModerationConfigPatch {
+  removedContentBehavior?: RemovedContentBehavior;
+}
+
+export function getModerationConfig(signal?: AbortSignal): Promise<ModerationConfigView> {
+  return api<ModerationConfigView>("/settings/moderation", { signal });
+}
+
+export function updateModerationConfig(patch: ModerationConfigPatch): Promise<ModerationConfigView> {
+  return api<ModerationConfigView>("/settings/moderation", { method: "PATCH", body: patch });
+}

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Ban, Check, Flag } from "lucide-react";
+import { AlertTriangle, Ban, Check, Flag, Paperclip } from "lucide-react";
 import type { Comment, Entity, Report } from "@agora/contract";
 import { actOnReport, getReportTarget, type ModerationDecision } from "../../lib/moderation";
 import { ApiError } from "../../lib/api";
@@ -54,6 +54,8 @@ export function ReviewDialog({ report, onClose }: { report: Report | null; onClo
   const target = targetQuery.data ?? null;
   const content = report && (report.targetType === "entity" ? (target as Entity | null)?.content : (target as Comment | null)?.content);
   const author = (target as Entity | Comment | null)?.user;
+  const media = collectMedia(target);
+  const hasMedia = media.images.length > 0 || media.files.length > 0 || !!media.gif;
   const { isOperator } = useAuth();
   const scoped = !!report?.spaceId;
   // Space reports are actioned via the space flow; project-level reports (no space) only by operators.
@@ -62,8 +64,8 @@ export function ReviewDialog({ report, onClose }: { report: Report | null; onClo
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent>
-        <DialogHeader>
+      <DialogContent className="flex max-h-[85vh] flex-col">
+        <DialogHeader className="shrink-0">
           <DialogTitle className="flex items-center gap-2">
             <Flag className="size-4 text-warning" />
             Review {report?.targetType}
@@ -71,7 +73,7 @@ export function ReviewDialog({ report, onClose }: { report: Report | null; onClo
           <DialogDescription>Reported {report ? `for "${report.reason}"` : ""}</DialogDescription>
         </DialogHeader>
 
-        <DialogBody>
+        <DialogBody className="min-h-0 flex-1 overflow-y-auto">
           {targetQuery.isLoading ? (
             <LoadingPanel label="Loading content…" />
           ) : (
@@ -85,9 +87,31 @@ export function ReviewDialog({ report, onClose }: { report: Report | null; onClo
                     </Badge>
                   ) : null}
                 </div>
-                <p className="whitespace-pre-wrap break-words text-sm text-muted">
-                  {content || (targetQuery.isError ? "Couldn't load the content (it may have been deleted)." : "(no text content)")}
-                </p>
+                {content ? (
+                  <p className="whitespace-pre-wrap break-words text-sm text-muted">{content}</p>
+                ) : targetQuery.isError ? (
+                  <p className="text-sm text-muted">Couldn't load the content (it may have been deleted).</p>
+                ) : !hasMedia ? (
+                  <p className="text-sm text-muted">(no text content)</p>
+                ) : null}
+                {hasMedia ? (
+                  <div className="space-y-2">
+                    {media.images.map((src, i) => (
+                      <img key={`img-${i}`} src={src} alt="" loading="lazy"
+                        className="max-h-80 w-auto max-w-full rounded-lg border border-border" />
+                    ))}
+                    {media.gif ? (
+                      <img src={media.gif} alt="" loading="lazy"
+                        className="max-h-80 w-auto max-w-full rounded-lg border border-border" />
+                    ) : null}
+                    {media.files.map((f, i) => (
+                      <a key={`file-${i}`} href={f.url} target="_blank" rel="noreferrer"
+                        className="flex items-center gap-1.5 text-sm text-primary hover:underline">
+                        <Paperclip className="size-3.5 shrink-0" /> {f.name}
+                      </a>
+                    ))}
+                  </div>
+                ) : null}
                 {author ? <p className="text-xs text-faint">by @{author.username ?? shortId(author.id)}</p> : null}
               </div>
 
@@ -120,7 +144,7 @@ export function ReviewDialog({ report, onClose }: { report: Report | null; onClo
           )}
         </DialogBody>
 
-        <DialogFooter>
+        <DialogFooter className="shrink-0">
           <Button variant="ghost" onClick={() => mutation.mutate("dismiss")} disabled={!canAct || busy}>
             Dismiss
           </Button>
@@ -134,6 +158,35 @@ export function ReviewDialog({ report, onClose }: { report: Report | null; onClo
       </DialogContent>
     </Dialog>
   );
+}
+
+// Resolve a renderable image URL from an uploaded file record (medium variant → original).
+// Mirrors agora-demo's fileImageSrc so the admin shows exactly what users see.
+function fileImageSrc(file: any): string | null {
+  if (!file || file.type !== "image") return null;
+  const v = file.image?.variants ?? {};
+  return v.medium?.publicPath || v.small?.publicPath || v.thumbnail?.publicPath || file.originalPath || null;
+}
+
+function gifSrc(gif: any): string | null {
+  if (!gif) return null;
+  if (typeof gif === "string") return gif;
+  return gif.url || gif.gifUrl || gif.images?.original?.url || gif.media?.[0]?.gif?.url || null;
+}
+
+// Pull every reviewable attachment off the target: inline images, a gif (comments), and any
+// non-image files (shown as openable links). Entities carry `files`; comments carry `gif`.
+function collectMedia(target: Entity | Comment | null): {
+  images: string[];
+  gif: string | null;
+  files: { name: string; url: string }[];
+} {
+  const files = ((target as Entity | null)?.files ?? []) as any[];
+  const images = files.map(fileImageSrc).filter((s): s is string => !!s);
+  const other = files
+    .filter((f) => f && f.type !== "image" && typeof f.originalPath === "string")
+    .map((f) => ({ name: (f.originalPath as string).split("/").pop() || "attachment", url: f.originalPath as string }));
+  return { images, gif: gifSrc((target as Comment | null)?.gif), files: other };
 }
 
 function Meta({ label, value, mono }: { label: string; value?: string | null; mono?: boolean }) {
