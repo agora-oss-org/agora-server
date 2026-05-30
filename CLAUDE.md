@@ -191,6 +191,10 @@ RLS/PostGIS by hand in their custom migration files.
   Identity is backed by Supabase Auth via the lazy anon client.
 - **Realtime is socket.io** — event names in `realtime/socket.ts` must stay byte-identical to
   `@replyke/core/types/socket.ts`; REST handlers fan out via `emitToConversation()` after writing.
+- **Logging:** use the shared `logger` (`lib/logger.ts`, Pino via `@jenova-marie/wonder-logger`),
+  never `console.*`. **Pino arg order is data-object-FIRST:** `logger.error({ err }, "msg")` — a
+  message-first call silently drops the data. Request logging is the `requestLog` middleware. Config
+  is `wonder-logger.yaml` (OTel off this phase); `LOG_LEVEL`/`LOG_CONSOLE` (`aligned`|`json`) tune it.
 
 ## Status
 

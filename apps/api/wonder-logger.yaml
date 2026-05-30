@@ -1,0 +1,29 @@
+# Wonder Logger config for @agora/api. Phase 1 = structured logging only (OTel/metrics off — that's
+# the next phase). Loaded by src/lib/logger.ts via createLoggerFromConfig().
+#
+# ⚠️ Env interpolation ${VAR:-default} works for STRINGS ONLY. Booleans/numbers MUST be literals
+#    (e.g. `enabled: true`, not `${LOGGER_ENABLED:-true}`) or zod validation fails. `console.variant`
+#    is a string enum, so it CAN be env-switched (dev=aligned TTY, prod=json).
+service:
+  name: ${SERVICE_NAME:-agora-api}
+  version: ${SERVICE_VERSION:-0.3.0}
+  environment: ${NODE_ENV:-development}
+
+logger:
+  enabled: true
+  level: ${LOG_LEVEL:-info}
+  # Pino redact paths — keep secrets/tokens out of logs.
+  redact:
+    - password
+    - token
+    - refreshToken
+    - accessToken
+    - authorization
+    - secret
+    - webhookSecret
+  transports:
+    - type: console
+      variant: ${LOG_CONSOLE:-aligned} # dev: aligned (colorized, single-line). Set LOG_CONSOLE=json in prod.
+
+otel:
+  enabled: false # logging-only phase; tracing + metrics come in Phase 2

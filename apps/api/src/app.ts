@@ -4,12 +4,13 @@
 import crypto from "node:crypto";
 import { Hono, type Context } from "hono";
 import { cors } from "hono/cors";
-import { logger } from "hono/logger";
 import type { Variables } from "./http/context.js";
 import { ApiError } from "./http/errors.js";
 import { env } from "./lib/env.js";
+import { logger } from "./lib/logger.js";
 import { mountRoutes } from "./routes/index.js";
 import { rateLimit } from "./middleware/rate-limit.js";
+import { requestLog } from "./middleware/request-log.js";
 import { sendDueDigests } from "./lib/digests.js";
 import { recomputeDueScores } from "./lib/recompute.js";
 import { purgeExpiredRefreshTokens } from "./lib/token-cleanup.js";
@@ -23,7 +24,7 @@ function safeEqual(a: string, b: string): boolean {
 export function createApp() {
   const app = new Hono<{ Variables: Variables }>();
 
-  app.use("*", logger());
+  app.use("*", requestLog);
   app.use("*", cors({ origin: env.CORS_ORIGIN }));
   // Edge rate limiting on the public API surface only (health + /internal/cron stay unlimited; cron
   // is secret-gated). No-op unless RATE_LIMIT_MAX / RATE_LIMIT_AUTH_MAX is configured.
@@ -57,7 +58,7 @@ export function createApp() {
     if (err instanceof ApiError) {
       return c.json({ error: err.message, code: err.code, ...(err.field ? { field: err.field } : {}) }, err.status);
     }
-    console.error("Unhandled error:", err);
+    logger.error({ err }, "unhandled error");
     return c.json({ error: "Internal server error", code: "common/internal" }, 500);
   });
 

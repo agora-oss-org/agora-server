@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Structured logging via `@jenova-marie/wonder-logger`.** A shared Pino logger (`lib/logger.ts`,
+  configured by `wonder-logger.yaml`) replaces every `console.*` and the `hono/logger` request
+  logger. A `requestLog` middleware emits one structured line per response
+  (`method`/`path`/`status`/`durationMs`; `info` <400, `warn` ≥400, `error` ≥500). Console format is
+  env-switchable: `LOG_CONSOLE=aligned` (dev default, colorized) / `json` (prod — the Docker image
+  sets it). Tunables: `LOG_LEVEL` (default `info`), `SERVICE_NAME`/`SERVICE_VERSION`; secrets are
+  redacted. OpenTelemetry tracing + metrics stay **off** for now (next phase).
 - **Edge rate limiting (env-configured).** An in-memory fixed-window limiter on `/v7/*`
   (`middleware/rate-limit.ts`): `RATE_LIMIT_MAX` caps general per-IP requests per
   `RATE_LIMIT_WINDOW_SECONDS` (default 60); `RATE_LIMIT_AUTH_MAX` applies a stricter cap to `/auth/*`

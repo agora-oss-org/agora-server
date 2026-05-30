@@ -18,6 +18,7 @@ import { db } from "../db/index.js";
 import { appNotifications, profiles, entities, comments, reactions } from "../db/schema/index.js";
 import { shapeNotification } from "./shape.js";
 import * as webhooks from "./webhooks.js";
+import { logger } from "./logger.js";
 
 // Reaction-count thresholds that trigger a milestone notification. Tune to taste.
 const MILESTONES = [10, 25, 50, 100, 250, 500, 1000];
@@ -171,7 +172,7 @@ export async function notifyOnComment(
       notified.add(uid);
     }
   } catch (err) {
-    console.error("[notifications] notifyOnComment failed:", err);
+    logger.error({ err }, "[notifications] notifyOnComment failed");
   }
 }
 
@@ -195,7 +196,7 @@ export async function notifyOnEntityMentions(
       });
     }
   } catch (err) {
-    console.error("[notifications] notifyOnEntityMentions failed:", err);
+    logger.error({ err }, "[notifications] notifyOnEntityMentions failed");
   }
 }
 
@@ -289,7 +290,7 @@ export async function notifyOnReaction(args: {
       });
     }
   } catch (err) {
-    console.error("[notifications] notifyOnReaction failed:", err);
+    logger.error({ err }, "[notifications] notifyOnReaction failed");
   }
 }
 
@@ -300,7 +301,7 @@ export async function notifyOnFollow(projectId: string, followerId: string, foll
     if (!actor) return;
     await insert(projectId, followedId, followerId, "new-follow", "open-profile", { ...actor });
   } catch (err) {
-    console.error("[notifications] notifyOnFollow failed:", err);
+    logger.error({ err }, "[notifications] notifyOnFollow failed");
   }
 }
 
@@ -320,6 +321,6 @@ export async function notifyOnSpaceApproved(
       spaceAvatar: space.avatar,
     });
   } catch (err) {
-    console.error("[notifications] notifyOnSpaceApproved failed:", err);
+    logger.error({ err }, "[notifications] notifyOnSpaceApproved failed");
   }
 }

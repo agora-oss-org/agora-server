@@ -204,6 +204,11 @@ REFRESH_TOKEN_GRACE_SECONDS=30                 # racing-tabs reuse grace window
 
 CORS_ORIGIN=*
 PUBLIC_BASE_URL=https://api.example.com        # this server's public origin; set behind a proxy (see OAuth below)
+
+# Logging (wonder-logger; configured in apps/api/wonder-logger.yaml)
+LOG_LEVEL=info                                 # trace|debug|info|warn|error|fatal|silent
+LOG_CONSOLE=aligned                            # aligned (dev, colorized) | json (prod; the Docker image sets json)
+SERVICE_NAME=agora-api                         # service label in structured logs
 CRON_SECRET=                                   # gates the POST /internal/cron/* triggers (digests, recompute, token purge)
 
 # Edge rate limiting (optional; off unless a max is set). Behind a proxy — client IP from X-Forwarded-For.

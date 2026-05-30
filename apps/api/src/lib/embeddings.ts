@@ -3,6 +3,7 @@
 import { db } from "../db/index.js";
 import { contentEmbeddings } from "../db/schema/index.js";
 import { env } from "./env.js";
+import { logger } from "./logger.js";
 
 export type SourceType = "entity" | "comment" | "message";
 
@@ -43,7 +44,7 @@ export async function indexContent(projectId: string, sourceType: SourceType, so
 
 /** Fire-and-forget indexing for write paths — never let embedding failures break the request. */
 export function indexContentAsync(projectId: string, sourceType: SourceType, sourceId: string, text: string | null | undefined): void {
-  indexContent(projectId, sourceType, sourceId, text).catch((e) => console.error(`indexContent(${sourceType}) failed:`, e?.message ?? e));
+  indexContent(projectId, sourceType, sourceId, text).catch((e) => logger.error({ err: e, sourceType }, "indexContent failed"));
 }
 
 /** Back-compat convenience for entity write paths. */

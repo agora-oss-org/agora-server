@@ -7,6 +7,7 @@
 // usage metrics. On flush failure the snapshot is merged back so nothing is dropped on transient errors.
 import { sql } from "drizzle-orm";
 import { db } from "../db/index.js";
+import { logger } from "./logger.js";
 
 interface Bucket {
   requests: number;
@@ -75,7 +76,7 @@ export async function flushMetrics(): Promise<void> {
     }
   } catch (e) {
     mergeBack(snapshot); // don't lose counts on a transient DB error
-    console.error("[metrics] flush failed:", e);
+    logger.error({ err: e }, "[metrics] flush failed");
   } finally {
     flushing = false;
   }

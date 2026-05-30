@@ -26,6 +26,7 @@
   "dependencies": {
     "@agora/contract": "workspace:*",
     "@hono/node-server": "^1.13.7",
+    "@jenova-marie/wonder-logger": "^2.0.18",
     "@supabase/supabase-js": "^2.47.10",
     "dotenv": "^17.4.2",
     "drizzle-orm": "^0.45.2",

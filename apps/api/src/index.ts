@@ -5,6 +5,7 @@ import { serve } from "@hono/node-server";
 import { env } from "./lib/env.js";
 import { createApp } from "./app.js";
 import { attachRealtime } from "./realtime/socket.js";
+import { logger } from "./lib/logger.js";
 import { startMetricsFlush } from "./lib/metrics.js";
 import { startRateLimitSweep } from "./lib/rate-limit.js";
 
@@ -13,7 +14,7 @@ startMetricsFlush(); // periodic flush of request-metering deltas → api_usage
 startRateLimitSweep(); // evict elapsed rate-limit windows so the map stays bounded
 
 const server = serve({ fetch: app.fetch, port: env.PORT }, (info) => {
-  console.log(`🏛️  Agora API listening on http://localhost:${info.port}/v7`);
+  logger.info({ port: info.port, url: `http://localhost:${info.port}/v7` }, "🏛️  Agora API listening");
 });
 
 // socket.io shares the underlying Node HTTP server

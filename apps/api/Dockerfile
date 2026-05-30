@@ -27,10 +27,14 @@ RUN pnpm deploy --filter=@agora/api --legacy --prod /out
 FROM node:22-slim AS runtime
 ENV NODE_ENV=production
 ENV PORT=4000
+ENV LOG_CONSOLE=json
 WORKDIR /app
 
 # /out carries package.json, dist/, node_modules/ (incl. @agora/contract), drizzle/ + scripts/.
 COPY --from=builder /out ./
+# Guarantee the logging config is present (lives at the app root, outside dist/). lib/logger.ts
+# resolves it module-relative → /app/wonder-logger.yaml.
+COPY --from=builder /repo/apps/api/wonder-logger.yaml ./wonder-logger.yaml
 
 USER node
 EXPOSE 4000
