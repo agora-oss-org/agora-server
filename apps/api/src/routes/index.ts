@@ -19,6 +19,7 @@ import { notificationRoutes } from "./notifications.js";
 import { reportRoutes } from "./reports.js";
 import { searchRoutes } from "./search.js";
 import { storageRoutes } from "./storage.js";
+import { adminRoutes } from "./admin.js";
 import { miscRoutes } from "./misc.js";
 
 export function mountRoutes() {
@@ -39,6 +40,7 @@ export function mountRoutes() {
   project.route("/reports", reportRoutes);
   project.route("/search", searchRoutes);
   project.route("/storage", storageRoutes);
+  project.route("/admin", adminRoutes);
   // oauth, projects, crypto, utils — small, grouped in misc
   project.route("/", miscRoutes);
 
