@@ -50,6 +50,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   hit `invalid input syntax for type bigint`. The total is now `Math.round()`-ed at the DB boundary
   (the in-memory accumulator keeps full precision); negligible for avg-latency. Without this the
   App-metering cards stayed at zero because no window ever committed.
+- **Repaired the Drizzle migration snapshot chain so `db:generate` works again.** Snapshots `0011`
+  and `0012` shared an identical `id`/`prevId` (a byte-copy collision) and `0013`–`0016` had no
+  snapshot files at all, so `drizzle-kit generate`/`check` errored out — which is why migrations
+  `0009`–`0016` had to be hand-written. Rebuilt `0012`–`0016` from the live schema with a properly
+  chained `id`/`prevId` sequence; all migration SQL is untouched. `check` passes and `generate` now
+  reports no drift and emits correct incremental diffs.
 
 ## [0.3.0] - 2026-05-28
 
