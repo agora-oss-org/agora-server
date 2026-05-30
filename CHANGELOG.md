@@ -8,6 +8,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Request-metering middleware (`api_usage` table, migration `0016`).** A Hono middleware on the
+  `/v7` group times every project-scoped request and accumulates per-(project, month) counters in
+  memory — requests, client-egress bytes (response `Content-Length`), total duration, errors —
+  flushed every 10s to `api_usage` via an additive upsert (concurrent replicas sum safely; ≤10s of
+  counts lost on crash). Powers the dashboard "App metering" cards (API Calls / Client Egress / Avg
+  Response Time). Migration is **hand-written** (idempotent) because `db:generate` is currently
+  blocked by a meta snapshot collision (0011/0012) — run `pnpm db:migrate` to apply.
+- **Admin app — shell + Moderation.** `@agora/admin` grew from a skeleton into a real role-aware SPA:
+  Tailwind v4 dark theme + Radix primitives, react-router routing, TanStack Query data layer, an
+  authed API client (token storage + single-flight refresh-on-401), email/password login, and a
+  sidebar/topbar layout. The first live section is **Moderation** — an Open/Resolved reports inbox
+  (`/reports/pending` + `/reports/moderated`) with a review dialog that fetches the reported content
+  and lets a moderator **remove / keep / dismiss** (space-scoped moderation + report resolution).
+  The UI adapts to `isOperator` (project-wide vs space-scoped). Dashboard + Settings are stubbed next.
+- **Deployment-operator gate for the admin app.** Env allowlist `OPERATOR_USER_IDS` (profile UUIDs)
+  and/or `OPERATOR_EMAILS` (comma-separated) marks an identity as a deployment operator. On sign-in
+  the API stamps an `operator` claim into the access JWT and exposes `AuthUser.isOperator`; handlers
+  read `c.var.auth.isOperator` with no extra DB hit (re-derived on refresh-token rotation).
+- **`GET /reports/pending`** — the moderation inbox: open (unresolved) reports, newest first,
+  paginated. **Role-scoped:** operators see every report in the project; everyone else sees only
+  reports filed against spaces they own or moderate. The same scoping is now applied to
+  `GET /reports/moderated` (previously project-wide regardless of role — a leak for non-operators).
 - **`agora-admin` Docker image** — `apps/admin/Dockerfile` builds the admin SPA and serves it on
   nginx, reverse-proxying `/v7` + `/socket.io` to the API (same origin → no CORS; upstream set via
   `API_UPSTREAM`, default `http://agora:4000`, lazily DNS-resolved so it boots before the API does).

@@ -1,7 +1,7 @@
 // collections, collection_entities, files, app_notifications, reports, entity_embeddings (ex-0005)
 import { sql } from "drizzle-orm";
 import {
-  pgTable, uuid, text, integer, bigint, jsonb, timestamp, boolean, index, primaryKey, vector,
+  pgTable, uuid, text, integer, bigint, jsonb, timestamp, boolean, date, index, primaryKey, vector,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { reactionTarget } from "./_shared.js";
@@ -104,4 +104,21 @@ export const contentEmbeddings = pgTable("content_embeddings", {
 }, (t) => [
   primaryKey({ columns: [t.sourceType, t.sourceId] }),
   index("content_embeddings_project_idx").on(t.projectId),
+]);
+
+// Per-project, per-month request metering for the admin dashboard "App metering" cards. Written by
+// middleware/metrics.ts via an additive upsert (in-memory aggregation flushed periodically), so it
+// stays one row per project per month and concurrent API replicas increment safely.
+// Avg latency = duration_ms_total / requests. Egress is uncompressed response-body bytes
+// (Content-Length) — a "logical" client-egress figure (pre-gzip at the proxy).
+export const apiUsage = pgTable("api_usage", {
+  projectId: uuid("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  month: date("month").notNull(), // first day of the month (UTC)
+  requests: bigint("requests", { mode: "number" }).notNull().default(0),
+  egressBytes: bigint("egress_bytes", { mode: "number" }).notNull().default(0),
+  durationMsTotal: bigint("duration_ms_total", { mode: "number" }).notNull().default(0),
+  errors: bigint("errors", { mode: "number" }).notNull().default(0),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  primaryKey({ columns: [t.projectId, t.month] }),
 ]);

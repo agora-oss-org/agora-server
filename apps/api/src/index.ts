@@ -5,8 +5,10 @@ import { serve } from "@hono/node-server";
 import { env } from "./lib/env.js";
 import { createApp } from "./app.js";
 import { attachRealtime } from "./realtime/socket.js";
+import { startMetricsFlush } from "./lib/metrics.js";
 
 const app = createApp();
+startMetricsFlush(); // periodic flush of request-metering deltas → api_usage
 
 const server = serve({ fetch: app.fetch, port: env.PORT }, (info) => {
   console.log(`🏛️  Agora API listening on http://localhost:${info.port}/v7`);

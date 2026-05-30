@@ -4,6 +4,7 @@ import { Hono } from "hono";
 import type { Variables } from "../http/context.js";
 import { resolveProject } from "../middleware/project.js";
 import { optionalAuth } from "../middleware/auth.js";
+import { meterUsage } from "../middleware/metrics.js";
 
 import { authRoutes } from "./auth.js";
 import { entityRoutes } from "./entities.js";
@@ -23,6 +24,7 @@ import { miscRoutes } from "./misc.js";
 export function mountRoutes() {
   // Project-scoped app: every request resolves :projectId, then attaches optional auth.
   const project = new Hono<{ Variables: Variables }>();
+  project.use("*", meterUsage);                  // time + count every request (reads projectId after next())
   project.use("*", resolveProject, optionalAuth);
 
   project.route("/auth", authRoutes);
