@@ -137,7 +137,7 @@ agora/
 └── apps/
     ├── admin/           # @agora/admin — Vite + React + TS admin frontend (consumes @agora/contract)
     └── api/             # @agora/api — the backend
-        ├── drizzle/     # generated + hand-written SQL migrations (0000–0014)
+        ├── drizzle/     # generated + hand-written SQL migrations (0000–0017)
         ├── scripts/     # seed.sql, send-digests.mjs, recompute-scores.mjs, *-e2e.mjs
         ├── test/        # vitest integration suites (real cloud Postgres)
         └── src/
@@ -282,10 +282,10 @@ won't race migrations against each other.
 The schema lives in `apps/api/src/db/schema/*.ts` and is the single source of truth.
 `drizzle-kit generate` emits table DDL; anything Drizzle can't express (triggers, RPC, RLS,
 PostGIS) is a hand-written custom migration, applied in journal order and written **idempotently**
-so re-runs are safe. Migrations `0000`–`0012` cover extensions + enums + tables, PostGIS columns/indexes,
+so re-runs are safe. Migrations `0000`–`0017` cover extensions + enums + tables, PostGIS columns/indexes,
 denormalization triggers, RPC functions (`toggle_reaction`, `hot_score`, `fetch_comment_thread`,
-`match_content`, …), RLS (deny-all backstop + public-read), refresh tokens, project webhooks, OAuth
-state, content embeddings, and the score-recompute function.
+`match_content`, …), RLS (deny-all backstop + public-read + authenticated self-access), refresh tokens,
+project webhooks, OAuth state, content embeddings, feed config, and the score-recompute function.
 
 To change the schema: edit `apps/api/src/db/schema/*.ts` → `pnpm db:generate` → `pnpm db:migrate`.
 Edit triggers/functions/RLS/PostGIS by hand in their custom migration files.
@@ -383,15 +383,24 @@ semantics, `{ data, pagination }` / `{ error, code }` envelopes, response object
 socket.io event names all line up 1:1 — that's the entire point. `docs/MANIFEST.md` + `docs/MODELS.md`
 are the contract both sides verify against.
 
+**Compatibility harness.** The [`agora-demo`](https://github.com/jenova-marie/agora-demo) repo — a
+standalone Vite + React app, also what powers the [live demo](https://demo.agora-oss.org) — is the
+**1:1 proof**: eight tabs, each driving one SDK surface (feed, entity, spaces, search, chat,
+connections, inbox, profile) against a running server. It installs the **published** `@agora-sdk/*`
+(not a workspace link), so it catches any server↔SDK contract drift exactly as a third-party app
+would. Point it at a local server with `VITE_API_BASE_URL=http://localhost:4000/v7` and sign in as
+the seeded demo user.
+
 ## Status
 
 - ✅ **Backend feature-complete** — every domain implemented and validated against live cloud
   Supabase; the REST surface has no remaining stubs.
 - ✅ Realtime chat, semantic + RAG search, auth (token rotation + external RS256 + OAuth), storage,
-  project webhooks, space digests, and RLS public-read all verified end-to-end.
-- ✅ Idempotent Drizzle migrations `0000`–`0012`; unit + integration test suites green.
-- ✅ Client SDK published — [`agora-sdk`](https://github.com/jenova-marie/agora-sdk) (`@agora-sdk/*`),
-  repointed at Agora (the 1:1 proof).
+  project webhooks, space digests, and RLS (public-read + authenticated self-access) verified end-to-end.
+- ✅ Idempotent Drizzle migrations `0000`–`0017`; unit + integration test suites green.
+- ✅ Client SDK published + repointed — [`agora-sdk`](https://github.com/jenova-marie/agora-sdk)
+  (`@agora-sdk/*`); validated 1:1 by the [`agora-demo`](https://github.com/jenova-marie/agora-demo)
+  compatibility harness (the live proof at [demo.agora-oss.org](https://demo.agora-oss.org)).
 - ⬜ Hardening / ops backlog: rate limiting, refresh-token cleanup sweep, RLS write policies (only
   needed if the Supabase Data API is opened for writes), and deployment.
 

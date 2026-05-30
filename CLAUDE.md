@@ -56,6 +56,30 @@ are unchanged — never redefine a contract type locally (that reintroduces drif
 Root `.env` is the single source (direnv `dotenv`), symlinked from `apps/api/.env -> ../../.env`.
 `docker-compose.yml` lives at the repo root; the api image builds from the repo root context.
 
+## Ecosystem (sibling repos)
+
+Agora is **three separate repos** under `../` — kept separate on purpose, *not* one monorepo:
+
+- **`agora-server`** (this repo) — the backend + admin. The contract's server side.
+- **`../agora-sdk`** — the forked, repointed Replyke SDK, published as `@agora-sdk/*`
+  (`core`/`react-js`/`react-native`/`expo`). Its own pnpm monorepo; base URL flows in via the
+  `<ReplykeProvider baseUrl=… projectId=…>` prop (`setApiBaseUrl()`), no `api.replyke.com` left.
+  **Don't edit it from here** — it's its own repo with its own release cycle.
+- **`../agora-demo`** — a standalone **Vite + React** app: the **1:1 compatibility harness**. Eight
+  tabs, each exercising one SDK surface (Feed/entity/Spaces/Search/Chat/Connections/Inbox/Me) against
+  a running server. Manual/visual verification (no automated tests). npm, not pnpm.
+
+**Why the demo stays separate:** a compatibility harness must be an *arms-length* consumer — it
+installs the **published** `@agora-sdk/*` and catches server↔SDK contract drift exactly as a third
+party would. Folding it in (and workspace-linking the SDK) would test local source you control, not
+the published contract — defeating the point. Its `vite.config.ts` auto-aliases the local
+`../agora-sdk/packages/*/dist` build when present, so SDK-fork dev still works without publishing.
+
+**Run all three locally:** start the server (`cd apps/api && pnpm dev` → `:4000`), seed a confirmed
+demo user (`node scripts/seed-demo-user.mjs` → `agora-demo@gmail.com` / `DemoPass123!`), then run the
+demo (`cd ../agora-demo && npm run dev` → `:5173`, points at the server via `VITE_API_BASE_URL`).
+Project id is the seed UUID `11111111-1111-1111-1111-111111111111`.
+
 ## Layout
 
 - `docs/MANIFEST.md` — **the contract**: every REST endpoint (method+path, ✅SDK-confirmed vs
@@ -182,10 +206,11 @@ RLS/PostGIS by hand in their custom migration files.
   POST `/storage/images` (sharp → webp original + thumbnail/small/medium variants). `lib/storage.ts`.
 - ✅ **Misc**: `misc.ts` — `/oauth/identities` (list/delete), `/projects/lean`, `/utils/get-metadata`
   (OG/link preview, SSRF-guarded). Only `crypto/sign-testing-jwt` remains a stub (dev convenience).
-- **REST surface is complete.** Remaining: fork + repoint the Replyke SDK.
+- **REST surface is complete** and the backend is feature-complete.
 - ✅ **RLS**: deny-all backstop on all tables + public-read (`0008`) + `authenticated` self-access
   reads + enablement guard (`0017`). Server bypasses RLS (the trust boundary); RLS is defense-in-depth.
-- ⬜ Fork + repoint `@replyke/core` base URL (MANIFEST §0).
+- ✅ **Client SDK forked + repointed** — `../agora-sdk` (`@agora-sdk/*`), base URL repointed off
+  `api.replyke.com` (MANIFEST §0), exercised 1:1 by the `../agora-demo` harness (see **Ecosystem**).
 
 `apps/api/src/routes/entities.ts` is the reference for a fully-built domain router.
 
