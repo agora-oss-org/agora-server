@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Admin Settings — Feed ranking panel.** The admin `Settings` section (previously a stub) now hosts
+  a live feed-ranking config form wired to `GET`/`PATCH /settings/feed`: default algorithm, decay
+  mode, the numeric tunables (half-life / gravity / z / C / m), per-reaction vote weights, the
+  per-author diversity cap, and the re-rank webhook. Handles the asymmetric contract (GET nests
+  tunables under `params`, PATCH takes them flat; `null` resets a key) and never wipes the write-only
+  re-rank secret on save. (`apps/admin` — `lib/settings.ts`, `routes/settings/FeedRankingPanel.tsx`.)
 - **Structured logging via `@jenova-marie/wonder-logger`.** A shared Pino logger (`lib/logger.ts`,
   configured by `wonder-logger.yaml`) replaces every `console.*` and the `hono/logger` request
   logger. A `requestLog` middleware emits one structured line per response

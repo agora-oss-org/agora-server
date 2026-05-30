@@ -1,13 +1,16 @@
 import { PageHeader } from "../components/ui/PageHeader";
-import { EmptyState } from "../components/ui/EmptyState";
-import { Settings } from "lucide-react";
+import { FeedRankingPanel } from "./settings/FeedRankingPanel";
 
-// Placeholder — spaces/rules/members config lands here in a later slice.
+// Settings sections. Feed ranking is the first live slice; project webhooks, spaces/rules, and
+// member roles land here next.
 export function SettingsPage() {
   return (
     <>
-      <PageHeader title="Settings" description="Project, spaces, rules, and member roles." />
-      <EmptyState icon={Settings} title="Settings coming soon" description="This section will configure spaces, moderation rules, and member roles." />
+      <PageHeader title="Settings" description="Configure how your project ranks and runs." />
+      <section className="space-y-3">
+        <h2 className="text-sm font-semibold text-fg">Feed ranking</h2>
+        <FeedRankingPanel />
+      </section>
     </>
   );
 }
