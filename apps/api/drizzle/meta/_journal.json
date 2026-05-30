@@ -120,6 +120,13 @@
       "when": 1779890001000,
       "tag": "0016_api_usage",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1779890002000,
+      "tag": "0017_rls_self_access",
+      "breakpoints": true
     }
   ]
 }

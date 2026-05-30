@@ -131,6 +131,11 @@ journal order and written **idempotently** (`create extension if not exists`, `c
 - `0006_message_report_enum` — extend `reaction_target` with `message` (chat-message reports)
 - `0007_embeddings_1024` — `entity_embeddings.embedding` → `vector(1024)` (Voyage voyage-3.5)
 - `0008_rls_public_read` — public SELECT policies (entities/comments/spaces/rules/follows/reactions); writes + private tables stay deny-all; `profiles` not exposed (column leak)
+- `0017_rls_self_access` — (1) enablement backstop: dynamic guard enables RLS on every public base
+  table (future tables deny-all by default); (2) `authenticated` self-read policies — a signed-in
+  user reads only their own private rows (inbox/collections/connections/oauth/reports/uploads/space
+  memberships + member-scoped conversations/messages/reactions). Maps `auth.uid()`→profiles via two
+  `SECURITY DEFINER` helpers in a non-exposed `private` schema. No write policies (server-only).
 
 To change schema: edit `src/db/schema/*.ts` → `db:generate` → `db:migrate`. Edit triggers/functions/
 RLS/PostGIS by hand in their custom migration files.
@@ -177,8 +182,10 @@ RLS/PostGIS by hand in their custom migration files.
   POST `/storage/images` (sharp → webp original + thumbnail/small/medium variants). `lib/storage.ts`.
 - ✅ **Misc**: `misc.ts` — `/oauth/identities` (list/delete), `/projects/lean`, `/utils/get-metadata`
   (OG/link preview, SSRF-guarded). Only `crypto/sign-testing-jwt` remains a stub (dev convenience).
-- **REST surface is complete.** Remaining: RLS policies, then fork + repoint the Replyke SDK.
-- ⬜ RLS policies (only enablement done); fork + repoint `@replyke/core` base URL (MANIFEST §0).
+- **REST surface is complete.** Remaining: fork + repoint the Replyke SDK.
+- ✅ **RLS**: deny-all backstop on all tables + public-read (`0008`) + `authenticated` self-access
+  reads + enablement guard (`0017`). Server bypasses RLS (the trust boundary); RLS is defense-in-depth.
+- ⬜ Fork + repoint `@replyke/core` base URL (MANIFEST §0).
 
 `apps/api/src/routes/entities.ts` is the reference for a fully-built domain router.
 

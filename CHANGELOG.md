@@ -43,6 +43,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `API_UPSTREAM`, default `http://agora:4000`, lazily DNS-resolved so it boots before the API does).
   Added an `admin` service to `docker-compose.yml` (`${ADMIN_PORT:-8080}:80`), and the publish
   workflow is now a matrix that builds both `agora-api` and `agora-admin` (GHCR + Docker Hub).
+- **RLS self-access read policies + enablement backstop (migration `0017`).** RLS is defense-in-depth
+  (the server connects RLS-bypassing; it remains the trust boundary). Part 1 enables RLS on *every*
+  public base table via a dynamic guard, so any future table is deny-all by default. Part 2 adds
+  `authenticated`-only SELECT policies that let a signed-in user read only their **own** private
+  rows — inbox, collections, connections, linked OAuth identities, filed reports, uploads, space
+  memberships, and the conversations/messages/reactions they're a member of. Identity maps Supabase
+  `auth.uid()` → Agora profiles through two `SECURITY DEFINER` helpers in a non-exposed `private`
+  schema (avoids leaking `profiles`, and dodges self-referential-policy recursion on
+  `conversation_members`). No write policies — writes stay server-only. Verified live: own rows
+  visible, others' hidden, `profiles` never exposed, anon limited to public content.
 
 ### Fixed
 - **Request-metering flush no longer errors on fractional durations.** `duration_ms_total` is a
