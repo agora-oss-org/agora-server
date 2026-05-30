@@ -37,10 +37,14 @@ function resolveReports(spaceId: string, report: Report) {
  * Apply a moderation decision to a reported item and resolve the report in one go.
  * - "removed"/"approved" → moderate the content, then mark the report resolved.
  * - "dismiss"            → resolve the report without touching the content.
- * Requires `report.spaceId` (the endpoints are space-scoped).
+ * Space-scoped reports go through the space endpoints (role-checked). Project-level reports (no
+ * space) use the operator-only /reports/:id/resolve endpoint (operators have the god-view).
  */
 export async function actOnReport(report: Report, action: ModerationDecision | "dismiss", reason?: string) {
-  if (!report.spaceId) throw new Error("This report isn't scoped to a space, so it can't be actioned here.");
-  if (action !== "dismiss") await moderateContent(report.spaceId, report, action, reason);
-  await resolveReports(report.spaceId, report);
+  if (report.spaceId) {
+    if (action !== "dismiss") await moderateContent(report.spaceId, report, action, reason);
+    await resolveReports(report.spaceId, report);
+    return;
+  }
+  await api(`/reports/${report.id}/resolve`, { method: "PATCH", body: { action, ...(reason ? { reason } : {}) } });
 }

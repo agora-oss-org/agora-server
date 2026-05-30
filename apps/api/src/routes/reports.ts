@@ -4,10 +4,11 @@ import { and, eq, isNull, isNotNull, desc, count, inArray } from "drizzle-orm";
 import type { Variables } from "../http/context.js";
 import { requireAuth } from "../middleware/auth.js";
 import { db } from "../db/index.js";
-import { reports, spaces, spaceMembers } from "../db/schema/index.js";
+import { reports, spaces, spaceMembers, entities, comments } from "../db/schema/index.js";
 import { readPagination, paginate } from "../http/envelope.js";
 import { shapeReport } from "../lib/shape.js";
 import { parseBody, createReportSchema } from "../lib/validation.js";
+import { Errors } from "../http/errors.js";
 
 // The set of space ids a user may moderate: spaces they own (space.userId) + memberships with an
 // active admin/moderator role. Used to scope the pending-reports queue for non-operators.
@@ -69,4 +70,37 @@ export const reportRoutes = new Hono<{ Variables: Variables }>()
     const rows = await db.select().from(reports).where(where)
       .orderBy(desc(reports.resolvedAt)).limit(limit).offset(offset);
     return c.json(paginate(rows.map(shapeReport), n, page, limit));
+  })
+  // Operator-only: action a report by id, regardless of space. The space-scoped flow
+  // (PATCH /spaces/:id/.../moderation + /spaces/:id/reports/...) needs a spaceId, so PROJECT-LEVEL
+  // reports (no space) can't be resolved there. Operators have the project-wide god-view, so they
+  // moderate the target + resolve the report here in one call. action: removed | approved | dismiss
+  // (dismiss resolves without touching the content). Mirrors the space moderation fields exactly.
+  .patch("/:id/resolve", requireAuth, async (c) => {
+    if (!c.var.auth!.isOperator) throw Errors.forbidden("reports/operator-only", "Operator role required to action this report");
+    const body = (await c.req.json().catch(() => ({}))) as { action?: string; reason?: string };
+    if (body.action !== "removed" && body.action !== "approved" && body.action !== "dismiss") {
+      throw Errors.badRequest("reports/invalid-action", "action must be removed, approved, or dismiss", "action");
+    }
+    const action = body.action as "removed" | "approved" | "dismiss"; // validated above
+    const reason = typeof body.reason === "string" && body.reason.trim() ? body.reason : undefined;
+
+    const [report] = await db.select().from(reports)
+      .where(and(eq(reports.projectId, c.var.projectId), eq(reports.id, c.req.param("id")))).limit(1);
+    if (!report) throw Errors.notFound("reports/not-found", "Report not found");
+
+    if (action !== "dismiss") {
+      const mod = {
+        moderationStatus: action, moderationReason: reason, moderatedAt: new Date(),
+        moderatedById: c.var.auth!.userId, moderatedByType: "user" as const,
+      };
+      if (report.targetType === "entity") {
+        await db.update(entities).set(mod).where(and(eq(entities.projectId, c.var.projectId), eq(entities.id, report.targetId)));
+      } else if (report.targetType === "comment") {
+        await db.update(comments).set(mod).where(and(eq(comments.projectId, c.var.projectId), eq(comments.id, report.targetId)));
+      }
+    }
+    await db.update(reports).set({ resolvedAt: new Date(), resolvedById: c.var.auth!.userId })
+      .where(and(eq(reports.projectId, c.var.projectId), eq(reports.id, report.id)));
+    return c.json({ success: true });
   });

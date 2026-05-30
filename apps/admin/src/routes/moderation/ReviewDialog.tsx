@@ -10,6 +10,7 @@ import { Badge } from "../../components/ui/Badge";
 import { Input } from "../../components/ui/Input";
 import { LoadingPanel } from "../../components/ui/Spinner";
 import { useToast } from "../../components/ui/Toast";
+import { useAuth } from "../../auth/AuthContext";
 import { shortId } from "../../lib/time";
 
 type Action = ModerationDecision | "dismiss";
@@ -53,7 +54,10 @@ export function ReviewDialog({ report, onClose }: { report: Report | null; onClo
   const target = targetQuery.data ?? null;
   const content = report && (report.targetType === "entity" ? (target as Entity | null)?.content : (target as Comment | null)?.content);
   const author = (target as Entity | Comment | null)?.user;
+  const { isOperator } = useAuth();
   const scoped = !!report?.spaceId;
+  // Space reports are actioned via the space flow; project-level reports (no space) only by operators.
+  const canAct = scoped || isOperator;
   const busy = mutation.isPending;
 
   return (
@@ -98,15 +102,18 @@ export function ReviewDialog({ report, onClose }: { report: Report | null; onClo
                 <div className="rounded-lg border border-border bg-bg p-3 text-sm text-muted">{report.details}</div>
               ) : null}
 
-              {scoped ? (
+              {canAct ? (
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-muted">Moderation reason (optional)</label>
                   <Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Why is this being removed/kept?" />
+                  {!scoped ? (
+                    <p className="text-xs text-faint">Project-level report — actioning it uses your operator god-view.</p>
+                  ) : null}
                 </div>
               ) : (
                 <div className="flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/10 p-3 text-sm text-warning">
                   <AlertTriangle className="mt-0.5 size-4 shrink-0" />
-                  This report isn't scoped to a space, so it can't be actioned here. Resolve it from the space it belongs to.
+                  This report isn't tied to a space, and your role can't action it — only a deployment operator can resolve project-level reports.
                 </div>
               )}
             </>
@@ -114,13 +121,13 @@ export function ReviewDialog({ report, onClose }: { report: Report | null; onClo
         </DialogBody>
 
         <DialogFooter>
-          <Button variant="ghost" onClick={() => mutation.mutate("dismiss")} disabled={!scoped || busy}>
+          <Button variant="ghost" onClick={() => mutation.mutate("dismiss")} disabled={!canAct || busy}>
             Dismiss
           </Button>
-          <Button variant="secondary" onClick={() => mutation.mutate("approved")} disabled={!scoped || busy}>
+          <Button variant="secondary" onClick={() => mutation.mutate("approved")} disabled={!canAct || busy}>
             <Check /> Keep
           </Button>
-          <Button variant="danger" onClick={() => mutation.mutate("removed")} disabled={!scoped || busy}>
+          <Button variant="danger" onClick={() => mutation.mutate("removed")} disabled={!canAct || busy}>
             <Ban /> Remove
           </Button>
         </DialogFooter>

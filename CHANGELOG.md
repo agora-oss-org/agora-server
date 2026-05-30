@@ -114,6 +114,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   conversation-membership post-filter (`lib/chat-access.ts`, mirroring the chat REST routes'
   `requireMember`): a message surfaces in search only for an active member of its conversation
   (operators bypass; anonymous callers get no messages, since all chat is membership-gated).
+- **Project-level reports are no longer a dead end.** Reports on project-level content (no space)
+  showed up in the operator inbox but couldn't be actioned — moderation + resolution run through
+  space-scoped endpoints. Added an operator-only `PATCH /reports/:id/resolve` that moderates the
+  target (entity/comment) and resolves the report project-wide in one call (`removed`/`approved`/
+  `dismiss`). The admin review dialog now enables the actions for operators on project-level reports
+  and drops the misleading "resolve it from the space it belongs to" warning.
 - **Request-metering flush no longer errors on fractional durations.** `duration_ms_total` is a
   `bigint`, but the accumulator carries sub-millisecond `performance.now()` deltas, so every flush
   hit `invalid input syntax for type bigint`. The total is now `Math.round()`-ed at the DB boundary
