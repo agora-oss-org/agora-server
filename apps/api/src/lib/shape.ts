@@ -11,13 +11,13 @@ import {
   conversations, conversationMembers, chatMessages, files,
 } from "../db/schema/index.js";
 import { REACTION_TYPES } from "@agora/contract";
-import type { ReactionType, ReactionCounts, User, Entity, Comment, AuthUser } from "@agora/contract";
+import type { ReactionType, ReactionCounts, User, Entity, Comment, AuthUser, Report } from "@agora/contract";
 
 // ─── Shared contract surface (re-exported from @agora/contract) ──────────────
 // The reaction taxonomy + API model interfaces now live in @agora/contract (shared with the
 // admin frontend). Re-exported here so existing `./shape.js` importers keep working unchanged.
 export { REACTION_TYPES };
-export type { ReactionType, ReactionCounts, User, Entity, Comment, AuthUser };
+export type { ReactionType, ReactionCounts, User, Entity, Comment, AuthUser, Report };
 
 // Drizzle inferred row types.
 type ProfileRow = typeof profiles.$inferSelect;
@@ -300,7 +300,8 @@ export function shapeNotification(row: NotificationRow) {
 // (interface imported + re-exported from @agora/contract at the top of this file)
 export function shapeAuthUser(
   row: ProfileRow,
-  suspensions: { reason: string | null; startDate: Date; endDate: Date | null }[] = []
+  suspensions: { reason: string | null; startDate: Date; endDate: Date | null }[] = [],
+  isOperator = false
 ): AuthUser {
   return {
     ...(shapeUser(row) as User),
@@ -315,10 +316,11 @@ export function shapeAuthUser(
       endDate: iso(s.endDate),
     })),
     authMethods: row.authMethods ?? [],
+    isOperator,
   };
 }
 
-export function shapeReport(row: ReportRow) {
+export function shapeReport(row: ReportRow): Report {
   return {
     id: row.id,
     projectId: row.projectId,
