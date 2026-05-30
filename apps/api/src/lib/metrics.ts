@@ -60,9 +60,11 @@ export async function flushMetrics(): Promise<void> {
   try {
     for (const [key, b] of snapshot) {
       const [projectId, month] = key.split("|") as [string, string];
+      // duration_ms_total is bigint; the accumulator carries fractional ms (performance.now()), so
+      // round at the DB boundary. Sub-ms loss on a summed total is irrelevant to avg-latency.
       await db.execute(sql`
         insert into api_usage (project_id, month, requests, egress_bytes, duration_ms_total, errors)
-        values (${projectId}::uuid, ${month}::date, ${b.requests}, ${b.egressBytes}, ${b.durationMs}, ${b.errors})
+        values (${projectId}::uuid, ${month}::date, ${b.requests}, ${b.egressBytes}, ${Math.round(b.durationMs)}, ${b.errors})
         on conflict (project_id, month) do update set
           requests          = api_usage.requests + excluded.requests,
           egress_bytes      = api_usage.egress_bytes + excluded.egress_bytes,

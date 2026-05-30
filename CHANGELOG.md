@@ -42,6 +42,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Added an `admin` service to `docker-compose.yml` (`${ADMIN_PORT:-8080}:80`), and the publish
   workflow is now a matrix that builds both `agora-api` and `agora-admin` (GHCR + Docker Hub).
 
+### Fixed
+- **Request-metering flush no longer errors on fractional durations.** `duration_ms_total` is a
+  `bigint`, but the accumulator carries sub-millisecond `performance.now()` deltas, so every flush
+  hit `invalid input syntax for type bigint`. The total is now `Math.round()`-ed at the DB boundary
+  (the in-memory accumulator keeps full precision); negligible for avg-latency. Without this the
+  App-metering cards stayed at zero because no window ever committed.
+
 ## [0.3.0] - 2026-05-28
 
 ### Added
