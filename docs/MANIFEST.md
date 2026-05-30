@@ -254,7 +254,13 @@ signs an RS256 JWT (issuer=projectId, aud="replyke.com", sub=userData.id, claim 
 | Method | Path | Status |
 |---|---|---|
 | POST | `/reports` | ✅ |
+| GET | `/reports/pending` | 🔶 |
 | GET | `/reports/moderated` | ✅ |
+
+> `GET /reports/pending` + `GET /reports/moderated` are **role-scoped** (Agora admin extension, not
+> in the SDK): a deployment **operator** (env `OPERATOR_USER_IDS`/`OPERATOR_EMAILS`, surfaced as
+> `AuthUser.isOperator` / the JWT `operator` claim) sees every report in the project; any other user
+> sees only reports filed against spaces they own or moderate. Both paginate `{ data, pagination }`.
 
 ### search
 All search endpoints are **POST** with a JSON body `{ query, limit?, ... }` and return a **bare

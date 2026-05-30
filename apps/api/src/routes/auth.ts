@@ -12,6 +12,7 @@ import { db } from "../db/index.js";
 import { profiles, userSuspensions, projects } from "../db/schema/index.js";
 import { getSupabase, getSupabaseAnon } from "../lib/supabase.js";
 import { mintSession, rotateRefreshToken, revokeRefreshToken, revokeAllForProfile } from "../lib/tokens.js";
+import { isOperator } from "../lib/operators.js";
 import { shapeAuthUser } from "../lib/shape.js";
 import * as webhooks from "../lib/webhooks.js";
 import {
@@ -59,8 +60,9 @@ async function ensureProfile(projectId: string, authUserId: string, attrs: { ema
 // Build the auth response: AuthUser + a fresh token pair.
 async function sessionResponse(projectId: string, profile: ProfileRow) {
   const suspensions = await db.select().from(userSuspensions).where(eq(userSuspensions.profileId, profile.id));
-  const { accessToken, refreshToken } = await mintSession(projectId, profile.id, profile.role);
-  return { user: shapeAuthUser(profile, suspensions), accessToken, refreshToken };
+  const operator = isOperator(profile);
+  const { accessToken, refreshToken } = await mintSession(projectId, profile.id, profile.role, operator);
+  return { user: shapeAuthUser(profile, suspensions, operator), accessToken, refreshToken };
 }
 
 export const authRoutes = new Hono<{ Variables: Variables }>()
@@ -118,7 +120,7 @@ export const authRoutes = new Hono<{ Variables: Variables }>()
     const suspensions = profile
       ? await db.select().from(userSuspensions).where(eq(userSuspensions.profileId, profile.id))
       : [];
-    return c.json({ ...tokens, user: profile ? shapeAuthUser(profile, suspensions) : undefined });
+    return c.json({ ...tokens, user: profile ? shapeAuthUser(profile, suspensions, isOperator(profile)) : undefined });
   })
   .post("/change-password", requireAuth, async (c) => {
     const projectId = c.var.projectId;
@@ -133,7 +135,7 @@ export const authRoutes = new Hono<{ Variables: Variables }>()
     if (error) throw Errors.badRequest("auth/change-password-failed", error.message);
     // Invalidate all existing sessions, then hand back a fresh one.
     await revokeAllForProfile(profile.id);
-    return c.json({ success: true, ...(await mintSession(projectId, profile.id, profile.role)) });
+    return c.json({ success: true, ...(await mintSession(projectId, profile.id, profile.role, isOperator(profile))) });
   })
   .post("/request-password-reset", async (c) => {
     const body = parseBody(emailSchema, await c.req.json().catch(() => ({})), "auth");

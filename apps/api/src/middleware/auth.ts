@@ -17,7 +17,11 @@ async function verify(token: string): Promise<AuthContext | null> {
   try {
     const { payload } = await jwtVerify(token, secret);
     if (!payload.sub) return null;
-    return { userId: payload.sub, role: (payload.role as AuthContext["role"]) ?? "visitor" };
+    return {
+      userId: payload.sub,
+      role: (payload.role as AuthContext["role"]) ?? "visitor",
+      isOperator: payload.operator === true,
+    };
   } catch {
     return null;
   }

@@ -7,6 +7,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { refreshTokens, profiles } from "../db/schema/index.js";
 import { env } from "./env.js";
+import { isOperator } from "./operators.js";
 import { Errors } from "../http/errors.js";
 
 const accessSecret = new TextEncoder().encode(env.ACCESS_TOKEN_SECRET);
@@ -17,9 +18,10 @@ export interface SessionTokens {
   refreshToken: string;
 }
 
-/** Sign a 30-minute access JWT (HS256). sub=profileId; verified by middleware/auth.ts. */
-export async function signAccessToken(profileId: string, role: string): Promise<string> {
-  return new SignJWT({ role })
+/** Sign a 30-minute access JWT (HS256). sub=profileId; verified by middleware/auth.ts.
+ *  `operator` claim carries the deployment-operator flag so handlers read it without a DB hit. */
+export async function signAccessToken(profileId: string, role: string, operator = false): Promise<string> {
+  return new SignJWT({ role, operator })
     .setProtectedHeader({ alg: "HS256" })
     .setSubject(profileId)
     .setIssuedAt()
@@ -40,11 +42,12 @@ async function issueRefreshToken(projectId: string, profileId: string, familyId:
   return raw;
 }
 
-/** Mint a full session (access + refresh). Starts a new family unless one is supplied (rotation). */
-export async function mintSession(projectId: string, profileId: string, role: string, familyId?: string): Promise<SessionTokens> {
+/** Mint a full session (access + refresh). Starts a new family unless one is supplied (rotation).
+ *  `operator` flows into the access-token claim (caller computes it from the profile). */
+export async function mintSession(projectId: string, profileId: string, role: string, operator = false, familyId?: string): Promise<SessionTokens> {
   const family = familyId ?? randomUUID();
   const [accessToken, refreshToken] = await Promise.all([
-    signAccessToken(profileId, role),
+    signAccessToken(profileId, role, operator),
     issueRefreshToken(projectId, profileId, family),
   ]);
   return { accessToken, refreshToken };
@@ -77,8 +80,8 @@ export async function rotateRefreshToken(projectId: string, raw: string): Promis
   // Already rotated: allow once inside the grace window (racing tabs); else it's reuse.
   if (row.rotatedAt) {
     if (now <= row.rotatedAt.getTime() + graceMs) {
-      const role = await profileRole(row.profileId);
-      return { ...(await mintSession(projectId, row.profileId, role, row.familyId)), profileId: row.profileId };
+      const { role, operator } = await profileAuthBits(row.profileId);
+      return { ...(await mintSession(projectId, row.profileId, role, operator, row.familyId)), profileId: row.profileId };
     }
     await revokeFamily(row.familyId);
     throw Errors.unauthorized("auth/refresh-reused", "Refresh token reuse detected");
@@ -87,8 +90,8 @@ export async function rotateRefreshToken(projectId: string, raw: string): Promis
 
   // Normal rotation: spend this token, mint a successor in the same family.
   await db.update(refreshTokens).set({ rotatedAt: new Date() }).where(eq(refreshTokens.id, row.id));
-  const role = await profileRole(row.profileId);
-  return { ...(await mintSession(projectId, row.profileId, role, row.familyId)), profileId: row.profileId };
+  const { role, operator } = await profileAuthBits(row.profileId);
+  return { ...(await mintSession(projectId, row.profileId, role, operator, row.familyId)), profileId: row.profileId };
 }
 
 /** Sign-out: revoke the family of the presented refresh token (this session). */
@@ -106,7 +109,10 @@ export async function revokeAllForProfile(profileId: string): Promise<void> {
   await db.update(refreshTokens).set({ revoked: true }).where(eq(refreshTokens.profileId, profileId));
 }
 
-async function profileRole(profileId: string): Promise<string> {
-  const [p] = await db.select({ role: profiles.role }).from(profiles).where(eq(profiles.id, profileId)).limit(1);
-  return p?.role ?? "visitor";
+// Re-derive role + operator status for a profile (used on refresh, where we only hold the profile id).
+async function profileAuthBits(profileId: string): Promise<{ role: string; operator: boolean }> {
+  const [p] = await db.select({ id: profiles.id, role: profiles.role, email: profiles.email })
+    .from(profiles).where(eq(profiles.id, profileId)).limit(1);
+  if (!p) return { role: "visitor", operator: false };
+  return { role: p.role, operator: isOperator(p) };
 }

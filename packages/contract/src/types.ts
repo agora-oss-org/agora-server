@@ -95,10 +95,33 @@ export interface AuthUser extends User {
   updatedAt: string;
   suspensions: { reason: string | null; startDate: string; endDate: string | null }[];
   authMethods: string[];
+  // Agora extension: true when this identity is a deployment operator (env allowlist). Grants the
+  // admin app a project-wide god-view (all spaces/content/reports) instead of space-scoped authority.
+  isOperator: boolean;
+}
+
+// ─── reports / moderation ──────────────────────────────────────────────────
+export type ReportTargetType = "entity" | "comment" | "message";
+
+// A user-filed report (shapeReport). Resolved when `resolvedAt` is set. `spaceId` scopes it to a
+// space (the moderation + resolution endpoints are space-scoped); null = project-level report.
+export interface Report {
+  id: string;
+  projectId: string;
+  reporterId: string | null;
+  targetType: ReportTargetType;
+  targetId: string;
+  spaceId: string | null;
+  reason: string;
+  details: string | null;
+  resolvedAt: string | null;
+  resolvedById: string | null;
+  createdAt: string;
 }
 
 // Auth identity attached to a request (set by middleware, returned in some payloads).
 export interface AuthContext {
   userId: string; // Agora profile id
   role: "admin" | "moderator" | "visitor";
+  isOperator: boolean; // deployment operator (env allowlist) — project-wide moderation/admin
 }

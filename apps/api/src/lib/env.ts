@@ -16,6 +16,11 @@ const schema = z.object({
   ACCESS_TOKEN_SECRET: z.string().min(1),
   REFRESH_TOKEN_GRACE_SECONDS: z.coerce.number().default(30),
   CORS_ORIGIN: z.string().default("*"),
+  // Deployment-operator allowlist for the admin app. Comma-separated profile UUIDs and/or emails;
+  // a signed-in identity matching either set is stamped `isOperator` (project-wide god-view in the
+  // admin: all spaces/content/reports). Unset → no operators (everyone is space-scoped). Empty=unset.
+  OPERATOR_USER_IDS: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
+  OPERATOR_EMAILS: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
   // The server's own public origin (scheme + host), e.g. https://api.example.com. Used to build
   // absolute callback URLs (OAuth) when the server runs behind a TLS-terminating reverse proxy,
   // where the raw request origin is the internal http://<internal-host>. When unset the server
