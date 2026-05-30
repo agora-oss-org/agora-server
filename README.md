@@ -92,6 +92,36 @@ it) and enforces every ownership / role check in the handlers. RLS is enabled as
 with public-read policies — a client *could* read public content directly with the publishable key —
 but in normal operation everything flows through the Agora API.
 
+## Security & access control
+
+The trust boundary is the server: it talks to Postgres as the RLS-bypassing owner role and enforces
+every read/write rule in the handlers, with RLS underneath as a verified backstop.
+
+- **Tokens.** Agora mints its own short-lived access tokens (30 m) + refresh tokens (30 d) with
+  **rotation, reuse-detection, and a 30 s racing-tabs grace window** — replaying a spent refresh
+  token revokes the whole token family. Identity is backed by Supabase Auth (passwords / OAuth) or an
+  external RS256 JWT verified against a per-project public key.
+- **Anonymous reads, authenticated writes.** Public content (feed, entities, comments, search) is
+  readable **without a token** — matching Replyke's contract so the SDK's hooks work for logged-out
+  visitors. Every mutation (`POST`/`PATCH`/`DELETE`, reactions, reports, chat) is `requireAuth`.
+- **Space privacy** (`lib/space-access.ts`). A members-only space (`readingPermission: "members"`)
+  is invisible to non-members on **every** path — excluded from the feed, `403` on single
+  entity/comment reads, on reactions, and on comment creation, and filtered out of semantic search.
+  Creation obeys `postingPermission` (`anyone` / `members` / `admins`) via `assertCanPostInSpace`.
+- **Private chat.** Conversation messages are readable only by **active members** — enforced on the
+  chat REST routes (`requireMember`) and *inside* the `match_content` search RPC, so private DM /
+  group / space-channel content can't surface via embeddings.
+- **Moderation visibility** (`lib/moderation-config.ts` / `-visibility.ts`). Content moderated as
+  "removed" is enforced on reads, configurable per project (admin **Settings → Moderation**):
+  **hide** (filtered out / `404`) or **placeholder** (a blanked "[removed]" stub that preserves reply
+  chains). Moderators and operators still see it for review.
+- **Operators.** A deployment-operator allowlist (`OPERATOR_USER_IDS` / `OPERATOR_EMAILS`) grants a
+  project-wide moderation/admin god-view, carried as an `operator` JWT claim (no per-request DB hit).
+- **RLS backstop.** RLS denies `anon`/`authenticated` any private-space, removed, or draft row
+  directly (migrations `0008`/`0017`) — defense-in-depth that holds even if a handler regresses.
+- **Plus.** HMAC-signed webhooks, SSRF-guarded link-preview fetches, optional edge rate limiting
+  (stricter on `/auth/*`), and a refresh-token cleanup sweep.
+
 ## Features
 
 Every domain below is implemented and validated against live cloud Supabase. The **REST surface is
@@ -137,14 +167,14 @@ agora/
 └── apps/
     ├── admin/           # @agora/admin — Vite + React + TS admin frontend (consumes @agora/contract)
     └── api/             # @agora/api — the backend
-        ├── drizzle/     # generated + hand-written SQL migrations (0000–0017)
+        ├── drizzle/     # generated + hand-written SQL migrations (0000–0019)
         ├── scripts/     # seed.sql, send-digests.mjs, recompute-scores.mjs, *-e2e.mjs
         ├── test/        # vitest integration suites (real cloud Postgres)
         └── src/
             ├── index.ts     # entrypoint: serves the app + attaches socket.io
             ├── app.ts       # createApp() — side-effect-free Hono app (drives in-process tests)
             ├── db/          # Drizzle client + schema/*.ts (source of truth)
-            ├── lib/         # env, supabase, tokens, embeddings, llm, storage, shape, validation, webhooks, digests, ranking, feed-config, recompute, rerank
+            ├── lib/         # env, supabase, tokens, embeddings, llm, storage, shape, validation, webhooks, digests, ranking, feed-config, recompute, rerank, space-access, moderation-config, moderation-visibility
             ├── http/        # error + pagination envelopes, context types
             ├── middleware/  # project resolution, JWT auth
             ├── routes/      # one router per domain
@@ -297,10 +327,11 @@ won't race migrations against each other.
 The schema lives in `apps/api/src/db/schema/*.ts` and is the single source of truth.
 `drizzle-kit generate` emits table DDL; anything Drizzle can't express (triggers, RPC, RLS,
 PostGIS) is a hand-written custom migration, applied in journal order and written **idempotently**
-so re-runs are safe. Migrations `0000`–`0017` cover extensions + enums + tables, PostGIS columns/indexes,
+so re-runs are safe. Migrations `0000`–`0019` cover extensions + enums + tables, PostGIS columns/indexes,
 denormalization triggers, RPC functions (`toggle_reaction`, `hot_score`, `fetch_comment_thread`,
-`match_content`, …), RLS (deny-all backstop + public-read + authenticated self-access), refresh tokens,
-project webhooks, OAuth state, content embeddings, feed config, and the score-recompute function.
+`match_content`, `space_readable`, …), RLS (deny-all backstop + public-read + authenticated self-access),
+refresh tokens, project webhooks, OAuth state, content embeddings, feed + moderation config, and the
+score-recompute function.
 
 To change the schema: edit `apps/api/src/db/schema/*.ts` → `pnpm db:generate` → `pnpm db:migrate`.
 Edit triggers/functions/RLS/PostGIS by hand in their custom migration files.
@@ -412,7 +443,10 @@ the seeded demo user.
   Supabase; the REST surface has no remaining stubs.
 - ✅ Realtime chat, semantic + RAG search, auth (token rotation + external RS256 + OAuth), storage,
   project webhooks, space digests, and RLS (public-read + authenticated self-access) verified end-to-end.
-- ✅ Idempotent Drizzle migrations `0000`–`0017`; unit + integration test suites green.
+- ✅ **Access control** (see [Security](#security--access-control)) — space read/post privacy,
+  private-chat membership gating (incl. search), configurable moderation-removal visibility, and the
+  operator god-view, all enforced server-side and verified live against the RLS backstop.
+- ✅ Idempotent Drizzle migrations `0000`–`0019`; unit + integration test suites green.
 - ✅ Client SDK published + repointed — [`agora-sdk`](https://github.com/jenova-marie/agora-sdk)
   (`@agora-sdk/*`); validated 1:1 by the [`agora-demo`](https://github.com/jenova-marie/agora-demo)
   compatibility harness (the live proof at [demo.agora-oss.org](https://demo.agora-oss.org)).
