@@ -93,6 +93,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   code is now the generic `project/not-admin`.
 
 ### Fixed
+- **Private spaces no longer leak to non-members (authorization hole).** A space's
+  `readingPermission: "members"` was stored and surfaced (`permissions.canRead`) but never enforced —
+  any signed-in (or anonymous) caller could list a private space's entities, read one by id, react to
+  it, and comment on it. Added a server-side trust boundary (`lib/space-access.ts`): the feed list
+  excludes entities in members-only spaces the caller can't read, single entity/comment reads + the
+  comment list/thread + entity/comment reactions throw `403 spaces/members-only`, and comment creation
+  is gated on the parent entity's space. The same guard post-filters semantic search (`/content`,
+  `/ask`) so private content can't surface via embeddings. Space owners, active members, and
+  deployment operators are unaffected; `postingPermission` is enforced separately (next entry).
+- **Space `postingPermission` is now enforced on entity creation.** `POST /entities` inserted into
+  any `spaceId` without checking the space's posting rule, so a non-member could create entities in a
+  `members`- or `admins`-only space. `assertCanPostInSpace` (`lib/space-access.ts`) now gates create:
+  `anyone` → any authenticated caller, `members` → active members + owner, `admins` → owner/admin/
+  moderator only (operators bypass; project-level/space-less posts are ungated). Mirrors the existing
+  chat message-posting gate (`requireMember` + admins-only) and the advisory `permissions.canPost`.
+- **Private chat messages no longer leak through semantic search.** Chat messages are indexed for
+  search but were hydrated into `/content` + `/ask` results with no membership check — a non-member
+  could retrieve private DM/group/space-channel message content by embedding query. Added a
+  conversation-membership post-filter (`lib/chat-access.ts`, mirroring the chat REST routes'
+  `requireMember`): a message surfaces in search only for an active member of its conversation
+  (operators bypass; anonymous callers get no messages, since all chat is membership-gated).
 - **Request-metering flush no longer errors on fractional durations.** `duration_ms_total` is a
   `bigint`, but the accumulator carries sub-millisecond `performance.now()` deltas, so every flush
   hit `invalid input syntax for type bigint`. The total is now `Math.round()`-ed at the DB boundary

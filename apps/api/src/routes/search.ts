@@ -12,6 +12,8 @@ import { entities, comments, chatMessages, spaces, profiles } from "../db/schema
 import { shapeEntity, shapeComment, shapeChatMessage, shapeSpace, shapeUser } from "../lib/shape.js";
 import { embedText, embeddingsEnabled, type SourceType } from "../lib/embeddings.js";
 import { streamText, llmEnabled } from "../lib/llm.js";
+import { readableSpaceIds } from "../lib/space-access.js";
+import { readableMessageIds } from "../lib/chat-access.js";
 
 // Mirrors the SDK's ContentSearchResult (interfaces/models): a shaped Entity | Comment | ChatMessage.
 type ContentSearchResult = { sourceType: SourceType; similarity: number; record: unknown };
@@ -45,10 +47,11 @@ const VALID_SOURCE_TYPES: SourceType[] = ["entity", "comment", "message"];
 
 /** Semantic retrieval across source types, shared by /content and /ask. Similarity order preserved. */
 async function retrieveContent(
-  projectId: string,
+  c: any,
   q: string,
   opts: { sourceTypes?: string[]; spaceId?: string | null; limit?: number }
 ): Promise<ContentSearchResult[]> {
+  const projectId = c.var.projectId as string;
   const limit = Math.min(50, Math.max(1, Number(opts.limit) || 20));
   const space = opts.spaceId ?? null;
   // null = all types; otherwise restrict to the (validated) requested set.
@@ -73,23 +76,43 @@ async function retrieveContent(
   const idsByType = (t: SourceType) => matches.filter((m) => m.source_type === t).map((m) => m.source_id);
   const record = new Map<string, unknown>();
 
+  // Private-space leak guard: entities (and the entities their comments hang off) in members-only
+  // spaces are dropped from results the caller can't read. Compute the readable space set once.
   const entIds = idsByType("entity");
-  if (entIds.length) {
-    for (const r of await db.select().from(entities)
-      .where(and(eq(entities.projectId, projectId), inArray(entities.id, entIds), isNull(entities.deletedAt))))
-      record.set(r.id, shapeEntity(r));
-  }
   const cmtIds = idsByType("comment");
-  if (cmtIds.length) {
-    for (const r of await db.select().from(comments)
-      .where(and(eq(comments.projectId, projectId), inArray(comments.id, cmtIds), isNull(comments.deletedAt))))
-      record.set(r.id, shapeComment(r));
+  const entRows = entIds.length
+    ? await db.select().from(entities)
+        .where(and(eq(entities.projectId, projectId), inArray(entities.id, entIds), isNull(entities.deletedAt)))
+    : [];
+  const cmtRows = cmtIds.length
+    ? await db.select().from(comments)
+        .where(and(eq(comments.projectId, projectId), inArray(comments.id, cmtIds), isNull(comments.deletedAt)))
+    : [];
+  // Comments inherit their entity's space — resolve those entities' spaceIds (incl. ones not in the
+  // entity result set) so a comment can't leak a private entity it belongs to.
+  const cmtEntityIds = [...new Set(cmtRows.map((r) => r.entityId))];
+  const spaceByEntity = new Map<string, string | null>(entRows.map((r) => [r.id, r.spaceId]));
+  const missingEntityIds = cmtEntityIds.filter((id) => !spaceByEntity.has(id));
+  if (missingEntityIds.length) {
+    for (const r of await db.select({ id: entities.id, spaceId: entities.spaceId }).from(entities)
+      .where(and(eq(entities.projectId, projectId), inArray(entities.id, missingEntityIds))))
+      spaceByEntity.set(r.id, r.spaceId);
   }
+  const readable = await readableSpaceIds(c, [
+    ...entRows.map((r) => r.spaceId),
+    ...cmtEntityIds.map((id) => spaceByEntity.get(id) ?? null),
+  ]);
+  const canRead = (spaceId: string | null | undefined) => !spaceId || readable.has(spaceId);
+
+  for (const r of entRows) if (canRead(r.spaceId)) record.set(r.id, shapeEntity(r));
+  for (const r of cmtRows) if (canRead(spaceByEntity.get(r.entityId))) record.set(r.id, shapeComment(r));
   const msgIds = idsByType("message");
   if (msgIds.length) {
-    for (const r of await db.select().from(chatMessages)
-      .where(and(eq(chatMessages.projectId, projectId), inArray(chatMessages.id, msgIds), isNull(chatMessages.userDeletedAt))))
-      record.set(r.id, shapeChatMessage(r));
+    // Private-chat leak guard: a message is readable only by an active member of its conversation.
+    const msgRows = await db.select().from(chatMessages)
+      .where(and(eq(chatMessages.projectId, projectId), inArray(chatMessages.id, msgIds), isNull(chatMessages.userDeletedAt)));
+    const okMsg = await readableMessageIds(c, msgRows.map((r) => r.id));
+    for (const r of msgRows) if (okMsg.has(r.id)) record.set(r.id, shapeChatMessage(r));
   }
 
   return matches
@@ -123,7 +146,7 @@ export const searchRoutes = new Hono<{ Variables: Variables }>()
     const body = (await c.req.json().catch(() => ({}))) as AskBody;
     const q = (body.query ?? "").trim();
     if (!q) throw Errors.badRequest("search/missing-query", "query is required", "query");
-    const results = await retrieveContent(c.var.projectId, q, body);
+    const results = await retrieveContent(c, q, body);
     return c.json(results);
   })
   // POST per the SDK's useAskContent: body { query, sourceTypes?, spaceId?, conversationId?, limit? }.
@@ -136,7 +159,7 @@ export const searchRoutes = new Hono<{ Variables: Variables }>()
     if (!q) throw Errors.badRequest("search/missing-query", "query is required", "query");
 
     // Retrieve before opening the stream so retrieval failures surface as a normal JSON error.
-    const sources = await retrieveContent(c.var.projectId, q, body);
+    const sources = await retrieveContent(c, q, body);
     const prompt = buildPrompt(q, sources);
 
     return streamSSE(c, async (stream) => {

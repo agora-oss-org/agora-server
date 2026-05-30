@@ -20,6 +20,7 @@ import {
 import * as webhooks from "../lib/webhooks.js";
 import { notifyOnComment, notifyOnReaction } from "../lib/notifications.js";
 import { indexContentAsync } from "../lib/embeddings.js";
+import { assertCanReadEntity, assertCanReadComment } from "../lib/space-access.js";
 
 export const commentRoutes = new Hono<{ Variables: Variables }>()
   .get("/", async (c) => {
@@ -28,6 +29,7 @@ export const commentRoutes = new Hono<{ Variables: Variables }>()
     const clean = (v: string | undefined) => (v && v !== "null" && v !== "undefined" ? v : undefined);
     const entityId = clean(c.req.query("entityId"));
     if (!entityId) throw Errors.badRequest("comments/missing-entity-id", "entityId is required", "entityId");
+    await assertCanReadEntity(c, entityId); // comments inherit the entity's space read gate
     const parentId = clean(c.req.query("parentId")) ?? null;
     const { page, limit, offset } = readPagination(c);
     const include = parseInclude(c);
@@ -71,6 +73,7 @@ export const commentRoutes = new Hono<{ Variables: Variables }>()
     const projectId = c.var.projectId;
     const userId = c.var.auth!.userId;
     const body = parseBody(createCommentSchema, await c.req.json().catch(() => ({})), "comments");
+    await assertCanReadEntity(c, body.entityId); // can't comment on content you can't read
     // Blocking validation webhook (host app may veto). Passes through if unconfigured/unsubscribed.
     const check = await webhooks.validate(projectId, "comment.created", { ...body, userId });
     if (!check.valid) throw Errors.forbidden("comments/rejected", check.message ?? "Comment rejected by validation webhook");
@@ -107,6 +110,7 @@ export const commentRoutes = new Hono<{ Variables: Variables }>()
       .where(and(eq(comments.projectId, projectId), eq(comments.foreignId, foreignId), isNull(comments.deletedAt)))
       .limit(1);
     if (!row) throw Errors.notFound("comments/not-found", "Comment not found");
+    await assertCanReadEntity(c, row.entityId); // private-space leak guard
     // SDK's useFetchCommentByForeignId expects { comment }.
     return c.json({ comment: await hydrateOne(c, row) });
   })
@@ -116,6 +120,7 @@ export const commentRoutes = new Hono<{ Variables: Variables }>()
     const projectId = c.var.projectId;
     const entityId = c.req.query("entityId");
     if (!entityId) throw Errors.badRequest("comments/missing-entity-id", "entityId is required", "entityId");
+    await assertCanReadEntity(c, entityId); // thread inherits the entity's space read gate
     const rootId = c.req.query("rootId") ?? c.req.query("parentId") ?? null;
     const { limit, offset } = readPagination(c, { page: 1, limit: 50 });
     const include = parseInclude(c);
@@ -160,6 +165,7 @@ export const commentRoutes = new Hono<{ Variables: Variables }>()
       .where(and(eq(comments.projectId, projectId), eq(comments.id, id), isNull(comments.deletedAt)))
       .limit(1);
     if (!row) throw Errors.notFound("comments/not-found", "Comment not found");
+    await assertCanReadEntity(c, row.entityId); // private-space leak guard
     // SDK's useFetchComment expects { comment }.
     return c.json({ comment: await hydrateOne(c, row) });
   })
@@ -187,6 +193,7 @@ export const commentRoutes = new Hono<{ Variables: Variables }>()
     return c.json({ success: true });
   })
   .post("/:id/reactions", requireAuth, async (c) => {
+    await assertCanReadComment(c, c.req.param("id")); // can't react to content you can't read
     const { reactionType } = parseBody(reactionSchema, await c.req.json().catch(() => ({})), "comments");
     const result = await toggleCommentReaction(c, reactionType);
     await notifyOnReaction({

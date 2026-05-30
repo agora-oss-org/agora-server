@@ -25,6 +25,7 @@ import {
 import { storeImageFromUpload } from "../lib/images.js";
 import { parseRankParams } from "../lib/ranking.js";
 import { getFeedConfig } from "../lib/feed-config.js";
+import { assertCanReadSpace, assertCanReadEntity, assertCanPostInSpace, readableEntitiesFilter } from "../lib/space-access.js";
 import { rerankCandidates } from "../lib/rerank.js";
 import {
   parseBody,
@@ -60,6 +61,9 @@ export const entityRoutes = new Hono<{ Variables: Variables }>()
     // location filters, sortBy hot/top/new/controversial/metadata.x, sortDir, sortType, sortByReaction).
     const parsed = parseBracketQuery(c.req.url);
     conds.push(...buildFeedConditions(parsed, c.var.auth?.userId));
+    // Exclude entities in members-only spaces the caller can't read (private-space leak guard).
+    const readable = readableEntitiesFilter(c);
+    if (readable) conds.push(readable);
     const where = and(...conds);
 
     // Ranking precedence: request rankParams > project feed_config > built-in defaults. The project
@@ -134,6 +138,7 @@ export const entityRoutes = new Hono<{ Variables: Variables }>()
     }
 
     const body = parseBody(createEntitySchema, rawBody, "entities");
+    await assertCanPostInSpace(c, body.spaceId); // enforce the space's postingPermission
     // Blocking validation webhook (host app may veto). Passes through if unconfigured/unsubscribed.
     const check = await webhooks.validate(projectId, "entity.created", { ...body, userId });
     if (!check.valid) throw Errors.forbidden("entities/rejected", check.message ?? "Entity rejected by validation webhook");
@@ -259,6 +264,7 @@ export const entityRoutes = new Hono<{ Variables: Variables }>()
   })
   // ── reactions ─────────────────────────────────────────────────────────────
   .post("/:id/reactions", requireAuth, async (c) => {
+    await assertCanReadEntity(c, c.req.param("id")); // can't react to content you can't read
     const { reactionType } = parseBody(reactionSchema, await c.req.json().catch(() => ({})), "entities");
     const result = await toggleEntityReaction(c, reactionType);
     await notifyOnReaction({
@@ -321,6 +327,8 @@ async function lookupEntity(c: any, predicate: SQL) {
     .where(and(eq(entities.projectId, projectId), predicate, isNull(entities.deletedAt)))
     .limit(1);
   if (!row) throw Errors.notFound("entities/not-found", "Entity not found");
+  // Private-space leak guard: a single entity in a members-only space is owner/member-only.
+  await assertCanReadSpace(c, row.spaceId);
 
   const reactionMap = await attachUserReactions(projectId, "entity", [row.id], c.var.auth?.userId);
   const opts: any = { userReaction: reactionMap.get(row.id) ?? null };
