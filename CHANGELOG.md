@@ -86,6 +86,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `conversation_members`). No write policies — writes stay server-only. Verified live: own rows
   visible, others' hidden, `profiles` never exposed, anon limited to public content.
 
+### Changed
+- **Project-config endpoints accept operators.** `requireProjectAdmin` (gating `/settings/feed` and
+  `/webhooks/config`) now passes deployment **operators** (`isOperator`), not only users with
+  `profiles.role = 'admin'` — aligning these endpoints with the admin app's operator persona. Error
+  code is now the generic `project/not-admin`.
+
 ### Fixed
 - **Request-metering flush no longer errors on fractional durations.** `duration_ms_total` is a
   `bigint`, but the accumulator carries sub-millisecond `performance.now()` deltas, so every flush
