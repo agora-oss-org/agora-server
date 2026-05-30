@@ -14,6 +14,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   per-author diversity cap, and the re-rank webhook. Handles the asymmetric contract (GET nests
   tunables under `params`, PATCH takes them flat; `null` resets a key) and never wipes the write-only
   re-rank secret on save. (`apps/admin` — `lib/settings.ts`, `routes/settings/FeedRankingPanel.tsx`.)
+- **Admin Settings — Project webhooks panel.** Second Settings slice, wired to
+  `GET`/`PATCH /webhooks/config` + `POST /webhooks/test`: endpoint URL, write-only signing secret
+  (kept when left blank), and grouped event subscriptions (validation/blocking vs broadcast/
+  fire-and-forget, mirroring the events the server emits) — plus a "Send test ping" button that
+  reports the delivery result. (`apps/admin` — `lib/settings.ts`, `routes/settings/WebhooksPanel.tsx`.)
 - **Structured logging via `@jenova-marie/wonder-logger`.** A shared Pino logger (`lib/logger.ts`,
   configured by `wonder-logger.yaml`) replaces every `console.*` and the `hono/logger` request
   logger. A `requestLog` middleware emits one structured line per response
