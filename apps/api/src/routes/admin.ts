@@ -73,6 +73,16 @@ export const adminRoutes = new Hono<{ Variables: Variables }>()
       ))
       .catch(() => [] as { requests: string | null; egress: string | null; durationTotal: string | null }[]);
 
+    // Supabase usage: the Management API doesn't expose billing figures (storage/egress/MAU), so the
+    // one authoritative number we can pull is the whole-instance Postgres size. It's instance-wide
+    // (all tenants share one DB), not project-scoped, so it's operator-only. Fail-soft like usage.
+    const dbSize = isOperator
+      ? await db
+          .execute(sql`select pg_database_size(current_database()) as bytes`)
+          .then((rows) => Number((rows as any)[0]?.bytes ?? 0))
+          .catch(() => null)
+      : null;
+
     const storageBytes = Number(storage[0]?.total ?? 0);
     const apiCalls = Number(usage[0]?.requests ?? 0);
     const egressBytes = Number(usage[0]?.egress ?? 0);
@@ -93,6 +103,11 @@ export const adminRoutes = new Hono<{ Variables: Variables }>()
         apiCalls,
         clientEgressBytes: egressBytes,
         avgLatencyMs: apiCalls > 0 ? durationTotal / apiCalls : 0,
+      },
+      // Supabase/infra figures. databaseSizeBytes is null for non-operators and on query failure;
+      // egress + Auth MAU are intentionally absent — not exposed by the Supabase Management API.
+      supabaseMetrics: {
+        databaseSizeBytes: dbSize,
       },
     });
   });

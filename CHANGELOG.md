@@ -11,9 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Dashboard metrics endpoint (`GET /v7/:projectId/admin/dashboard/metrics`).** Role-scoped
   aggregate in one round trip: `projectMetrics` (open reports, members, spaces, entities, comments,
   monthly active users, storage-used bytes — live SQL counts) + `appMetrics` (API calls, client
-  egress, avg latency — from `api_usage`). Operators see project-wide; moderators see reports scoped
-  to spaces they admin/moderate. The admin dashboard now renders these live (Project metrics +
-  App-metering cards); Supabase billing figures stay placeholder.
+  egress, avg latency — from `api_usage`) + `supabaseMetrics` (whole-instance Postgres size via
+  `pg_database_size`, operator-only). Operators see project-wide; moderators see reports scoped to
+  spaces they admin/moderate. The admin dashboard renders all three sections live. Supabase egress +
+  Auth MAU are intentionally omitted — the Supabase Management API doesn't expose them, so the
+  "Supabase usage" section shows only the database-size figure rather than faked placeholders.
 - **Request-metering middleware (`api_usage` table, migration `0016`).** A Hono middleware on the
   `/v7` group times every project-scoped request and accumulates per-(project, month) counters in
   memory — requests, client-egress bytes (response `Content-Length`), total duration, errors —
