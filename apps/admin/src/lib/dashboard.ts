@@ -1,6 +1,6 @@
-// Dashboard metrics: one role-scoped aggregate (project counts + app metering) from GET
-// /admin/dashboard/metrics. Supabase billing figures are NOT here — they come from the
-// Management API and stay placeholders for now.
+// Dashboard metrics: one role-scoped aggregate (project counts + app metering + the one Supabase
+// figure we can authoritatively read) from GET /admin/dashboard/metrics. Egress + Auth MAU are NOT
+// here — the Supabase Management API doesn't expose them, so those cards are gone, not faked.
 import { api } from "./api";
 
 export interface DashboardMetrics {
@@ -18,6 +18,11 @@ export interface DashboardMetrics {
     apiCalls: number;
     clientEgressBytes: number;
     avgLatencyMs: number;
+  };
+  supabaseMetrics: {
+    // Whole-instance Postgres size. null for non-operators (instance-wide infra figure) or if the
+    // query failed. Egress + Auth MAU are deliberately omitted — not exposed by the Management API.
+    databaseSizeBytes: number | null;
   };
 }
 

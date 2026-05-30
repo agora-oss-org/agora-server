@@ -52,12 +52,19 @@ function appStats(m: DashboardMetrics["appMetrics"]): Stat[] {
   ];
 }
 
-// ── Supabase counters: account/project billing usage (Management API; not our request traffic). ──
-const SUPABASE_STATS: Stat[] = [
-  { label: "Storage", value: "—", description: "Database + object storage", icon: HardDrive },
-  { label: "Egress", value: "—", description: "Outbound data transfer this month", icon: Download },
-  { label: "Monthly Active Users", value: "—", description: "Supabase Auth monthly active users", icon: Users },
-];
+// ── Supabase/infra: the one billing-ish figure the Management API actually exposes is nil, so we
+// read whole-instance Postgres size directly. Operator-only (instance-wide, not per-project). Egress
+// + Auth MAU are deliberately absent — the Management API doesn't expose them, so we don't fake them.
+function supabaseStats(m: DashboardMetrics["supabaseMetrics"]): Stat[] {
+  return [
+    {
+      label: "Database size",
+      value: m.databaseSizeBytes == null ? "—" : fmtBytes(m.databaseSizeBytes),
+      description: "Total Postgres size across the instance",
+      icon: HardDrive,
+    },
+  ];
+}
 
 export function DashboardPage() {
   const { user, isOperator } = useAuth();
@@ -109,17 +116,19 @@ export function DashboardPage() {
             </div>
           </Section>
 
-          <Section
-            title="Supabase usage"
-            hint="Account / project billing usage"
-            badge={<Badge variant="muted">Management API</Badge>}
-          >
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {SUPABASE_STATS.map((s) => (
-                <StatCard key={s.label} {...s} />
-              ))}
-            </div>
-          </Section>
+          {isOperator ? (
+            <Section
+              title="Supabase usage"
+              hint="Read directly from Postgres"
+              badge={<Badge variant="success">Live</Badge>}
+            >
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {supabaseStats(data!.supabaseMetrics).map((s) => (
+                  <StatCard key={s.label} {...s} />
+                ))}
+              </div>
+            </Section>
+          ) : null}
 
           <Card className="p-5">
             <div className="space-y-0.5">
