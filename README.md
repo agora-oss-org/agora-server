@@ -205,10 +205,15 @@ REFRESH_TOKEN_GRACE_SECONDS=30                 # racing-tabs reuse grace window
 CORS_ORIGIN=*
 PUBLIC_BASE_URL=https://api.example.com        # this server's public origin; set behind a proxy (see OAuth below)
 
-# Logging (wonder-logger; configured in apps/api/wonder-logger.yaml)
+# Observability (wonder-logger; configured in apps/api/wonder-logger.yaml)
 LOG_LEVEL=info                                 # trace|debug|info|warn|error|fatal|silent
 LOG_CONSOLE=aligned                            # aligned (dev, colorized) | json (prod; the Docker image sets json)
-SERVICE_NAME=agora-api                         # service label in structured logs
+SERVICE_NAME=agora-api                         # service label in logs/traces/metrics
+# OpenTelemetry (traces + metrics + OTLP log export). Point these at your collector; metrics also on :9464.
+OTEL_TRACES_ENDPOINT=http://localhost:4318/v1/traces
+OTEL_METRICS_ENDPOINT=http://localhost:4318/v1/metrics
+OTEL_LOGS_ENDPOINT=http://localhost:4318/v1/logs
+# OTEL_SDK_DISABLED=true                        # turn OpenTelemetry off entirely (no collector needed)
 CRON_SECRET=                                   # gates the POST /internal/cron/* triggers (digests, recompute, token purge)
 
 # Edge rate limiting (optional; off unless a max is set). Behind a proxy — client IP from X-Forwarded-For.

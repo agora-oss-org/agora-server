@@ -13,8 +13,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   logger. A `requestLog` middleware emits one structured line per response
   (`method`/`path`/`status`/`durationMs`; `info` <400, `warn` ≥400, `error` ≥500). Console format is
   env-switchable: `LOG_CONSOLE=aligned` (dev default, colorized) / `json` (prod — the Docker image
-  sets it). Tunables: `LOG_LEVEL` (default `info`), `SERVICE_NAME`/`SERVICE_VERSION`; secrets are
-  redacted. OpenTelemetry tracing + metrics stay **off** for now (next phase).
+  sets it). Tunables: `LOG_LEVEL`, `SERVICE_NAME`/`SERVICE_VERSION`; secrets are redacted.
+- **OpenTelemetry observability (traces + metrics + log correlation).** `src/instrument.ts` starts
+  the OTel SDK (`createTelemetryFromConfig`) as the first import in `index.ts` so auto-instrumentation
+  patches HTTP + DB before they load. Configured in `wonder-logger.yaml`: distributed **traces** (OTLP),
+  service-level RED **metrics** (Prometheus pull on `:9464` + OTLP push), an OTLP **log** transport,
+  and `traceContext` so logs carry `trace_id`/`span_id`. This is the **ops** layer and is deliberately
+  separate from `lib/metrics.ts`/`api_usage` (the per-project **product** metering behind the admin
+  dashboard, unchanged) — metrics carry no `project_id` label (avoids tenant cardinality). Exporters
+  default to a local collector (`OTEL_*_ENDPOINT`); set `OTEL_SDK_DISABLED=true` to turn it all off.
 - **Edge rate limiting (env-configured).** An in-memory fixed-window limiter on `/v7/*`
   (`middleware/rate-limit.ts`): `RATE_LIMIT_MAX` caps general per-IP requests per
   `RATE_LIMIT_WINDOW_SECONDS` (default 60); `RATE_LIMIT_AUTH_MAX` applies a stricter cap to `/auth/*`

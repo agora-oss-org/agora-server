@@ -194,7 +194,12 @@ RLS/PostGIS by hand in their custom migration files.
 - **Logging:** use the shared `logger` (`lib/logger.ts`, Pino via `@jenova-marie/wonder-logger`),
   never `console.*`. **Pino arg order is data-object-FIRST:** `logger.error({ err }, "msg")` — a
   message-first call silently drops the data. Request logging is the `requestLog` middleware. Config
-  is `wonder-logger.yaml` (OTel off this phase); `LOG_LEVEL`/`LOG_CONSOLE` (`aligned`|`json`) tune it.
+  is `wonder-logger.yaml`; `LOG_LEVEL`/`LOG_CONSOLE` (`aligned`|`json`) tune it.
+- **Observability (OTel):** `src/instrument.ts` (the **first** import in `index.ts`, before
+  http/db load) starts traces + metrics from `wonder-logger.yaml`. Two metrics worlds, kept separate:
+  `lib/metrics.ts`/`api_usage` is per-project **product** metering (admin dashboard); OTel is the
+  **ops** layer (service-level RED, Prometheus `:9464` + OTLP, no `project_id` label). `OTEL_*_ENDPOINT`
+  point at a collector; `OTEL_SDK_DISABLED=true` disables it.
 
 ## Status
 

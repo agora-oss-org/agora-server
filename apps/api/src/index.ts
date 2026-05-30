@@ -1,6 +1,7 @@
 // Agora API server entrypoint.
 // Mounts /v7/:projectId/* (Replyke-compatible) + a socket.io realtime server.
 import "dotenv/config"; // load .env before env.ts validates process.env
+import "./instrument.js"; // start OpenTelemetry BEFORE http/db imports below (auto-instrumentation)
 import { serve } from "@hono/node-server";
 import { env } from "./lib/env.js";
 import { createApp } from "./app.js";

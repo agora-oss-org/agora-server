@@ -28,6 +28,9 @@ FROM node:22-slim AS runtime
 ENV NODE_ENV=production
 ENV PORT=4000
 ENV LOG_CONSOLE=json
+ENV LOG_LEVEL=info
+# OpenTelemetry exporters default to a local collector. Set OTEL_*_ENDPOINT to your collector in
+# deployment, or OTEL_SDK_DISABLED=true to turn telemetry off. Prometheus metrics are on :9464.
 WORKDIR /app
 
 # /out carries package.json, dist/, node_modules/ (incl. @agora/contract), drizzle/ + scripts/.
@@ -38,6 +41,7 @@ COPY --from=builder /repo/apps/api/wonder-logger.yaml ./wonder-logger.yaml
 
 USER node
 EXPOSE 4000
+EXPOSE 9464
 
 # Liveness probe against the app's /health endpoint (uses Node's built-in fetch).
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
