@@ -204,7 +204,12 @@ REFRESH_TOKEN_GRACE_SECONDS=30                 # racing-tabs reuse grace window
 
 CORS_ORIGIN=*
 PUBLIC_BASE_URL=https://api.example.com        # this server's public origin; set behind a proxy (see OAuth below)
-CRON_SECRET=                                   # gates POST /internal/cron/digests (space digests)
+CRON_SECRET=                                   # gates the POST /internal/cron/* triggers (digests, recompute, token purge)
+
+# Edge rate limiting (optional; off unless a max is set). Behind a proxy — client IP from X-Forwarded-For.
+RATE_LIMIT_WINDOW_SECONDS=60                    # window length
+RATE_LIMIT_MAX=                                # general per-IP cap per window (unset = no general limit)
+RATE_LIMIT_AUTH_MAX=                           # stricter cap for /auth/* (unset = falls back to RATE_LIMIT_MAX)
 
 # Semantic search — Voyage AI (optional)
 VOYAGE_API_KEY=pa-...
@@ -401,8 +406,10 @@ the seeded demo user.
 - ✅ Client SDK published + repointed — [`agora-sdk`](https://github.com/jenova-marie/agora-sdk)
   (`@agora-sdk/*`); validated 1:1 by the [`agora-demo`](https://github.com/jenova-marie/agora-demo)
   compatibility harness (the live proof at [demo.agora-oss.org](https://demo.agora-oss.org)).
-- ⬜ Hardening / ops backlog: rate limiting, refresh-token cleanup sweep, RLS write policies (only
-  needed if the Supabase Data API is opened for writes), and deployment.
+- ✅ Hardening: env-configured edge rate limiting + a refresh-token cleanup sweep
+  (`POST /internal/cron/purge-tokens` or `scripts/purge-tokens.mjs`).
+- ⬜ Ops backlog: deployment, and RLS write policies (only needed if the Supabase Data API is opened
+  for writes).
 
 ## License
 

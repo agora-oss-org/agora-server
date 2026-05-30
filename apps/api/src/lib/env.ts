@@ -26,9 +26,17 @@ const schema = z.object({
   // where the raw request origin is the internal http://<internal-host>. When unset the server
   // falls back to X-Forwarded-Proto/Host, then the raw request origin. Set this in production.
   PUBLIC_BASE_URL: z.preprocess((v) => (v === "" ? undefined : v), z.string().url().optional()),
-  // Shared secret gating POST /internal/cron/digests (external schedulers). Optional: when unset
-  // the endpoint is disabled (503) and digests run only via scripts/send-digests.mjs.
+  // Shared secret gating the POST /internal/cron/* triggers (digests, score recompute, token purge)
+  // for external schedulers. Optional: when unset those endpoints are disabled (503) and the work
+  // runs only via the standalone scripts/*.mjs.
   CRON_SECRET: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
+  // Edge rate limiting (in-memory fixed window, per-process; see middleware/rate-limit.ts). OFF
+  // unless a max is set. RATE_LIMIT_MAX caps general per-IP traffic per window; RATE_LIMIT_AUTH_MAX
+  // is a stricter cap for /auth/* (brute-force target), falling back to the general cap when unset.
+  // Behind a proxy the client IP comes from X-Forwarded-For / X-Real-IP. Empty string = unset.
+  RATE_LIMIT_WINDOW_SECONDS: z.coerce.number().int().positive().default(60),
+  RATE_LIMIT_MAX: z.preprocess((v) => (v === "" ? undefined : v), z.coerce.number().int().positive().optional()),
+  RATE_LIMIT_AUTH_MAX: z.preprocess((v) => (v === "" ? undefined : v), z.coerce.number().int().positive().optional()),
   // Embeddings (Voyage AI). Optional until semantic search is used.
   VOYAGE_API_KEY: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
   VOYAGE_MODEL: z.string().default("voyage-3.5"),

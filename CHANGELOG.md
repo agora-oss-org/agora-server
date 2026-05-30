@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Edge rate limiting (env-configured).** An in-memory fixed-window limiter on `/v7/*`
+  (`middleware/rate-limit.ts`): `RATE_LIMIT_MAX` caps general per-IP requests per
+  `RATE_LIMIT_WINDOW_SECONDS` (default 60); `RATE_LIMIT_AUTH_MAX` applies a stricter cap to `/auth/*`
+  (the brute-force target). **Off unless a max is set.** Over-limit → `429 { error,
+  code:"common/rate-limited" }` with `Retry-After` + `X-RateLimit-Limit/-Remaining` headers. Client
+  IP from `X-Forwarded-For`/`X-Real-IP`; per-process (multi-replica = per-replica). `/health` and the
+  `/internal/cron/*` triggers are exempt.
+- **Refresh-token cleanup sweep.** `purgeExpiredRefreshTokens()` deletes refresh tokens past their
+  TTL so the table doesn't grow unbounded — via the new `POST /internal/cron/purge-tokens`
+  (`CRON_SECRET`-gated, like the digest/recompute triggers) or standalone `scripts/purge-tokens.mjs`.
+  Keys on `expires_at`, **not** `revoked`: reuse-detection (`lib/tokens.ts`) acts on *unexpired*
+  rotated/revoked tokens, so expiry alone bounds growth while preserving that defense.
 - **Dashboard metrics endpoint (`GET /v7/:projectId/admin/dashboard/metrics`).** Role-scoped
   aggregate in one round trip: `projectMetrics` (open reports, members, spaces, entities, comments,
   monthly active users, storage-used bytes — live SQL counts) + `appMetrics` (API calls, client

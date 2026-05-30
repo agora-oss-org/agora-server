@@ -127,7 +127,13 @@ url=$(grep '^DATABASE_URL=' .env | cut -d= -f2-); psql "$url" -v ON_ERROR_STOP=1
 **transaction pooler (:6543)** and
 is the only hard requirement. The rest gate specific features and are validated as optional:
 `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` + `SUPABASE_ANON_KEY` (Auth + Storage),
-`VOYAGE_API_KEY` (semantic search). Empty strings are treated as unset.
+`VOYAGE_API_KEY` (semantic search), `RATE_LIMIT_MAX`/`RATE_LIMIT_AUTH_MAX` (edge rate limiting, off
+unless set). Empty strings are treated as unset.
+
+**Cron triggers** (`app.ts`, `CRON_SECRET`-gated, 503 until set): `/internal/cron/digests`,
+`/internal/cron/recompute-scores`, `/internal/cron/purge-tokens` (delete expired refresh tokens).
+Each also runs standalone via `scripts/*.mjs`. **Rate limiting** is in-memory + per-process
+(`lib/rate-limit.ts` + `middleware/rate-limit.ts`), mounted on `/v7/*`; stricter cap on `/auth/*`.
 
 **Mint a test JWT** (for authed routes; HS256 over `ACCESS_TOKEN_SECRET`, `sub`=userId):
 ```bash
