@@ -8,6 +8,42 @@ import { MODERATOR_BASE } from "../config";
 export const aiQueueKey = (page: number) => ["ai-queue", page] as const;
 export const aiAnalysisKey = (targetType: string, targetId: string) => ["ai-analysis", targetType, targetId] as const;
 
+// The moderator's running configuration (GET /moderation/config, operator-only). The `defaults` block
+// is the service's env config — what a project inherits unless it overrides it (projects.moderator_
+// config). The admin uses these to show the *effective* value behind each Moderator setting.
+export interface ModeratorRunningConfig {
+  service: string;
+  node: string;
+  pid: number;
+  uptimeSeconds: number;
+  startedAt: string;
+  config: {
+    port: number;
+    corsOrigin: string;
+    database: { host: string; database: string | null } | null;
+    accessTokenSecretSet: boolean;
+    writeBack: { apiBaseUrl: string | null; serviceSecretSet: boolean; enabled: boolean };
+    defaults: {
+      autoActionThreshold: number;
+      llm: {
+        provider: "openai" | "anthropic";
+        baseUrl: string | null;
+        model: string;
+        maxTokens: number;
+        apiKeySet: boolean;
+        enabled: boolean;
+      };
+    };
+  };
+}
+
+export const moderatorRunningConfigKey = ["moderator", "running-config"] as const;
+
+/** The moderator service's running config (env defaults + write-back wiring). Operator-only. */
+export function getModeratorRunningConfig() {
+  return api<ModeratorRunningConfig>(`/moderation/config`, { base: MODERATOR_BASE });
+}
+
 /** The AI-flag queue: unresolved block/review verdicts awaiting human disposition. */
 export function listAiQueue(page: number) {
   return api<PaginatedResponse<ModerationAnalysis>>(`/moderation/queue`, { base: MODERATOR_BASE, query: { page } });
@@ -37,9 +73,14 @@ export function dismissAnalysis(id: string) {
   return api<ModerationAnalysis>(`/moderation/${id}/resolve`, { base: MODERATOR_BASE, method: "POST" });
 }
 
-/** Confirm an AI flag: remove the content (write-back to the API) and clear it from the queue. */
-export function removeFlagged(id: string) {
-  return api<ModerationAnalysis>(`/moderation/${id}/remove`, { base: MODERATOR_BASE, method: "POST" });
+/** Confirm an AI flag: remove the content (write-back to the API) and clear it from the queue.
+ *  An optional human `reason` overrides the AI's stored reason on the removal. */
+export function removeFlagged(id: string, reason?: string) {
+  return api<ModerationAnalysis>(`/moderation/${id}/remove`, {
+    base: MODERATOR_BASE,
+    method: "POST",
+    ...(reason ? { body: { reason } } : {}),
+  });
 }
 
 // Extract the moderatable text from a loaded target, mirroring the moderator's webhook extractor so

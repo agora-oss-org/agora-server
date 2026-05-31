@@ -5,6 +5,11 @@
 // GET/PATCH /settings/moderator + POST …/test. Project-admin / operator only on the server. The two
 // secrets (notifier secret + LLM API key) are write-only — blank keeps the stored value unchanged.
 // Tuning fields left blank are sent as null = "use the moderator's own server default".
+//
+// The .env-vs-admin model: the moderator ships env DEFAULTS; the admin writes per-project OVERRIDES.
+// We fetch the moderator's running config (GET /moderation/config) to show the effective value behind
+// each field (override ?? default) and surface the real default in every placeholder — so an operator
+// sees what's running and only overrides what differs.
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Save, Send, ShieldCheck, Sparkles } from "lucide-react";
@@ -20,6 +25,11 @@ import {
   getModeratorConfig, updateModeratorConfig, testModeratorWebhook,
   type ModeratorConfigView, type ModeratorConfigPatch, type LlmProvider,
 } from "../../lib/settings";
+import {
+  getModeratorRunningConfig, moderatorRunningConfigKey, type ModeratorRunningConfig,
+} from "../../lib/moderation-ai";
+
+type Defaults = ModeratorRunningConfig["config"]["defaults"];
 
 const selectCls =
   "h-10 w-full rounded-lg border border-border bg-bg px-3 text-sm text-fg outline-none transition-colors " +
@@ -31,6 +41,14 @@ export function ModeratorPanel() {
     queryFn: ({ signal }) => getModeratorConfig(signal),
     staleTime: 30_000,
   });
+  // The moderator's env defaults (effective behind blank fields). Operator-only + needs the moderator
+  // service reachable — so tolerate failure (no retry) and degrade to generic placeholders.
+  const running = useQuery({
+    queryKey: moderatorRunningConfigKey,
+    queryFn: () => getModeratorRunningConfig(),
+    staleTime: 30_000,
+    retry: false,
+  });
 
   if (isLoading) return <LoadingPanel label="Loading moderator settings…" />;
   if (isError) {
@@ -41,14 +59,21 @@ export function ModeratorPanel() {
       </Card>
     );
   }
-  return <ModeratorForm initial={data!} />;
+  return <ModeratorForm initial={data!} running={running.data ?? null} runningFailed={running.isError} />;
 }
 
 // "" ⇄ null helpers — a blank tuning field means "use the moderator's env default" (sent as null).
 const str = (v: string | number | null) => (v === null ? "" : String(v));
 const orNull = (s: string) => (s.trim() ? s.trim() : null);
 
-function ModeratorForm({ initial }: { initial: ModeratorConfigView }) {
+function ModeratorForm({
+  initial, running, runningFailed,
+}: {
+  initial: ModeratorConfigView;
+  running: ModeratorRunningConfig | null;
+  runningFailed: boolean;
+}) {
+  const defaults: Defaults | null = running?.config.defaults ?? null;
   const qc = useQueryClient();
   const toast = useToast();
   const [url, setUrl] = useState(initial.url ?? "");
@@ -105,6 +130,33 @@ function ModeratorForm({ initial }: { initial: ModeratorConfigView }) {
 
   const enabled = !!url.trim();
 
+  // Effective value (override ?? server default) + its source, computed live from the form state so
+  // the summary updates as you type. `null` default means the moderator's running config is
+  // unavailable (operator-only / service down) — we then can't show what blank would resolve to.
+  const dv = (override: string, fallback: string | number | null): Effective => {
+    const o = override.trim();
+    if (o !== "") return { value: o, source: "override" };
+    if (fallback !== null && fallback !== undefined && fallback !== "") return { value: String(fallback), source: "default" };
+    return { value: "—", source: "unset" };
+  };
+  const eff = {
+    threshold: dv(threshold, defaults?.autoActionThreshold ?? null),
+    provider: dv(provider, defaults?.llm.provider ?? null),
+    baseUrl: dv(baseUrl, defaults?.llm.baseUrl ?? (defaults ? "provider default" : null)),
+    model: dv(model, defaults?.llm.model ?? null),
+    maxTokens: dv(maxTokens, defaults?.llm.maxTokens ?? null),
+  };
+  const apiKeyEff: Effective =
+    apiKey.trim() !== "" || hasLlmApiKey
+      ? { value: "set", source: "override" }
+      : defaults?.llm.apiKeySet
+        ? { value: "set", source: "default" }
+        : { value: "not set", source: "unset" };
+
+  // Placeholder text that surfaces the real default ("0.85 — server default") instead of a guess.
+  const ph = (fallback: string | number | null | undefined, generic: string) =>
+    fallback !== null && fallback !== undefined && fallback !== "" ? `${fallback} — server default` : generic;
+
   return (
     <form onSubmit={onSubmit} className="space-y-5">
       <Card>
@@ -146,35 +198,45 @@ function ModeratorForm({ initial }: { initial: ModeratorConfigView }) {
             single shared config from the server and only override what a given project needs.
           </CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-4 sm:grid-cols-2">
-          <Field
-            label="Auto-action threshold"
-            hint="0–1 confidence to auto-remove a “block” verdict. 0 disables auto-removal (everything queues for a human). Blank = server default."
-          >
-            <Input type="number" min={0} max={1} step={0.01} placeholder="0.85 (default)" value={threshold} onChange={(e) => setThreshold(e.target.value)} />
-          </Field>
-          <Field label="Provider" hint="Blank = server default.">
-            <select className={selectCls} value={provider} onChange={(e) => setProvider(e.target.value as "" | LlmProvider)}>
-              <option value="">Server default</option>
-              <option value="openai">openai (OpenAI-compatible)</option>
-              <option value="anthropic">anthropic</option>
-            </select>
-          </Field>
-          <Field label="API base URL" hint="OpenAI-compatible host (Groq, Together, Ollama, …). Blank = provider default.">
-            <Input type="url" placeholder="https://api.openai.com/v1" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} />
-          </Field>
-          <Field
-            label="API key"
-            hint={hasLlmApiKey ? "Leave blank to keep the current key." : "Blank = server default key (if the moderator has one)."}
-          >
-            <Input type="password" placeholder={hasLlmApiKey ? "•••••••• (unchanged)" : "provider API key"} value={apiKey} onChange={(e) => setApiKey(e.target.value)} />
-          </Field>
-          <Field label="Model" hint="Blank = server default.">
-            <Input type="text" placeholder="gpt-4o-mini" value={model} onChange={(e) => setModel(e.target.value)} />
-          </Field>
-          <Field label="Max tokens" hint="Blank = server default.">
-            <Input type="number" min={1} step={1} placeholder="512" value={maxTokens} onChange={(e) => setMaxTokens(e.target.value)} />
-          </Field>
+        <CardContent className="grid gap-4">
+          <EffectiveSummary running={running} runningFailed={runningFailed} eff={eff} apiKeyEff={apiKeyEff} />
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field
+              label="Auto-action threshold"
+              hint="0–1 confidence to auto-remove a “block” verdict. 0 disables auto-removal (everything queues for a human). Blank = server default."
+            >
+              <Input type="number" min={0} max={1} step={0.01} placeholder={ph(defaults?.autoActionThreshold, "0.85 (default)")} value={threshold} onChange={(e) => setThreshold(e.target.value)} />
+            </Field>
+            <Field label="Provider" hint="Blank = server default.">
+              <select className={selectCls} value={provider} onChange={(e) => setProvider(e.target.value as "" | LlmProvider)}>
+                <option value="">{defaults ? `Server default (${defaults.llm.provider})` : "Server default"}</option>
+                <option value="openai">openai (OpenAI-compatible)</option>
+                <option value="anthropic">anthropic</option>
+              </select>
+            </Field>
+            <Field label="API base URL" hint="OpenAI-compatible host (Groq, Together, Ollama, …). Blank = provider default.">
+              <Input type="url" placeholder={ph(defaults?.llm.baseUrl, "https://api.openai.com/v1")} value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} />
+            </Field>
+            <Field
+              label="API key"
+              hint={
+                hasLlmApiKey
+                  ? "Leave blank to keep this project’s key."
+                  : defaults?.llm.apiKeySet
+                    ? "Blank = the server’s default key."
+                    : "No server default key set — provide one here (or in the moderator’s env)."
+              }
+            >
+              <Input type="password" placeholder={hasLlmApiKey ? "•••••••• (unchanged)" : "provider API key"} value={apiKey} onChange={(e) => setApiKey(e.target.value)} />
+            </Field>
+            <Field label="Model" hint="Blank = server default.">
+              <Input type="text" placeholder={ph(defaults?.llm.model, "gpt-4o-mini")} value={model} onChange={(e) => setModel(e.target.value)} />
+            </Field>
+            <Field label="Max tokens" hint="Blank = server default.">
+              <Input type="number" min={1} step={1} placeholder={ph(defaults?.llm.maxTokens, "512")} value={maxTokens} onChange={(e) => setMaxTokens(e.target.value)} />
+            </Field>
+          </div>
         </CardContent>
       </Card>
 
@@ -204,6 +266,67 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
       <Label>{label}</Label>
       {children}
       {hint ? <p className="text-xs text-faint">{hint}</p> : null}
+    </div>
+  );
+}
+
+// One resolved field: the effective value + where it came from (this project's override, the server
+// env default, or neither — nothing configured).
+type Effective = { value: string; source: "override" | "default" | "unset" };
+
+function SourceTag({ source }: { source: Effective["source"] }) {
+  const map = {
+    override: { label: "override", cls: "bg-primary/10 text-primary" },
+    default: { label: "default", cls: "bg-surface-2 text-muted" },
+    unset: { label: "not set", cls: "bg-surface-2 text-faint" },
+  } as const;
+  const s = map[source];
+  return <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide ${s.cls}`}>{s.label}</span>;
+}
+
+function EffRow({ label, eff }: { label: string; eff: Effective }) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <span className="text-xs text-muted">{label}</span>
+      <span className="flex items-center gap-2">
+        <span className="font-mono text-xs text-fg">{eff.value}</span>
+        <SourceTag source={eff.source} />
+      </span>
+    </div>
+  );
+}
+
+// Read-only "what's actually running for this project" box: override ?? the moderator's env default,
+// computed live from the form. Degrades gracefully when the moderator's running config is unavailable.
+function EffectiveSummary({
+  running, runningFailed, eff, apiKeyEff,
+}: {
+  running: ModeratorRunningConfig | null;
+  runningFailed: boolean;
+  eff: Record<"threshold" | "provider" | "baseUrl" | "model" | "maxTokens", Effective>;
+  apiKeyEff: Effective;
+}) {
+  const writeBack = running?.config.writeBack;
+  return (
+    <div className="rounded-lg border border-border bg-bg/60 p-4">
+      <div className="mb-2 flex items-center justify-between">
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted">Effective for this project</p>
+        {running ? (
+          <span className="text-[11px] text-faint">
+            moderator up · write-back {writeBack?.enabled ? "on" : "off"}
+          </span>
+        ) : runningFailed ? (
+          <span className="text-[11px] text-warning">moderator unreachable — defaults hidden</span>
+        ) : null}
+      </div>
+      <div className="grid gap-1.5 sm:grid-cols-2">
+        <EffRow label="Provider" eff={eff.provider} />
+        <EffRow label="Model" eff={eff.model} />
+        <EffRow label="Auto-action threshold" eff={eff.threshold} />
+        <EffRow label="Max tokens" eff={eff.maxTokens} />
+        <EffRow label="API base URL" eff={eff.baseUrl} />
+        <EffRow label="API key" eff={apiKeyEff} />
+      </div>
     </div>
   );
 }
