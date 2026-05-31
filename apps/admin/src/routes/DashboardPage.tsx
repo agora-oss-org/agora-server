@@ -69,7 +69,6 @@ function supabaseStats(m: DashboardMetrics["supabaseMetrics"]): Stat[] {
 export function DashboardPage() {
   const { user, isOperator } = useAuth();
   const name = user?.name || user?.username || "there";
-  const period = new Date().toLocaleString(undefined, { month: "long", year: "numeric" });
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ["dashboard", "metrics"],
@@ -129,23 +128,6 @@ export function DashboardPage() {
               </div>
             </Section>
           ) : null}
-
-          <Card className="p-5">
-            <div className="space-y-0.5">
-              <h2 className="text-base font-semibold text-fg">Usage summary</h2>
-              <p className="text-sm text-muted">Key insights for {period}</p>
-            </div>
-            <div className="mt-4 grid gap-4 lg:grid-cols-2">
-              <SummaryPanel
-                label="Activity Level"
-                text={`${fmtNum(data!.projectMetrics.monthlyActiveUsers)} monthly active users across ${fmtNum(data!.projectMetrics.spaces)} spaces.`}
-              />
-              <SummaryPanel
-                label="Resource Usage"
-                text={`${fmtBytes(data!.projectMetrics.storageUsedBytes)} of app storage; Supabase egress reported separately.`}
-              />
-            </div>
-          </Card>
         </>
       )}
     </>
@@ -165,11 +147,3 @@ function Section({ title, hint, badge, children }: { title: string; hint?: strin
   );
 }
 
-function SummaryPanel({ label, text }: { label: string; text: string }) {
-  return (
-    <div className="rounded-lg border border-border bg-bg p-4">
-      <p className="text-xs font-medium uppercase tracking-wide text-muted">{label}</p>
-      <p className="mt-1.5 text-sm text-faint">{text}</p>
-    </div>
-  );
-}
