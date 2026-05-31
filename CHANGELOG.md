@@ -20,7 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     a `verdict: "block"` writes the removal back to the API as `moderatedByType="client"`. Below the
     threshold, items route to a human queue.
   - **Persists every verdict** in a new `moderation_analyses` table (audit trail + AI-flag queue).
-  - **Exposes operator-gated review aids** at `/v7/:projectId/moderation/*` — `GET /queue` (AI-flag
+  - **Exposes operator-gated review aids** at `/v1/:projectId/moderation/*` — `GET /queue` (AI-flag
     queue), `GET /analysis` (stored verdict for an item), `POST /analyze` (on-demand re-assessment),
     `POST /:id/resolve` (dismiss), `POST /:id/remove` (confirm → remove + clear).
 - **API: `POST /internal/moderation/apply`** — a `MODERATION_SERVICE_SECRET`-gated write-back (503

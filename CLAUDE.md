@@ -47,7 +47,7 @@ pnpm workspaces (corepack-pinned `pnpm@10.14.0`). Four packages:
   moderation**: receives the API's signed broadcast webhooks (`POST /webhooks/agora`), assesses
   content via a generic LLM provider (OpenAI-compatible *or* Anthropic — `lib/llm-provider.ts`),
   auto-acts above a confidence threshold by writing the removal back to the API (`moderatedByType=
-  "client"`), and serves operator-gated review aids at `/v7/:projectId/moderation/*` (the admin's AI
+  "client"`), and serves operator-gated review aids at `/v1/:projectId/moderation/*` (the admin's AI
   queue). Shares the API's Postgres (reads `projects.webhook_secret`, R/W `moderation_analyses`) +
   `ACCESS_TOKEN_SECRET`; **all content mutations go through the API over HTTP** (the API stays the
   trust boundary). See its `apps/moderator/src` and the moderation note in Handler conventions.

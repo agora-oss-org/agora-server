@@ -1,5 +1,5 @@
-// Admin-facing review aids (operator-gated). URL shape mirrors the API: /v7/:projectId/moderation/*
-// so the admin app reaches it with the same Bearer token it already holds.
+// Admin-facing review aids (operator-gated). The moderator carries its own version: the admin
+// reaches these at /v1/:projectId/moderation/* with the same Bearer token it already holds.
 //   GET  /queue                              → the AI-flag queue (unresolved block/review analyses)
 //   GET  /analysis?targetType=&targetId=     → the latest stored analysis for one item
 //   POST /analyze                            → on-demand (re)assessment (admin "Re-analyze")

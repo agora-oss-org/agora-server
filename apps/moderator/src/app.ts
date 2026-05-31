@@ -23,8 +23,9 @@ export function createApp() {
 
   // Inbound webhook receiver (the API's signed broadcast events land here).
   app.route("/webhooks", webhookRoutes);
-  // Admin-facing review aids, operator-gated. URL shape mirrors the API: /v7/:projectId/moderation/*
-  app.route("/v7/:projectId/moderation", moderationRoutes);
+  // Admin-facing review aids, operator-gated. The moderator is its own service (not the Replyke /v7
+  // contract surface), so it carries its own API version: /v1/:projectId/moderation/*
+  app.route("/v1/:projectId/moderation", moderationRoutes);
 
   app.onError((err, c) => {
     if (err instanceof ApiError) {

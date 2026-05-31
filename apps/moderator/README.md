@@ -34,7 +34,7 @@ lives outside the API. The moderator plugs into the seams the API already expose
                                                       │                 moderatedByType="client")
                                                       └──no──▶  wait in the human AI-flag queue
 
-@agora/admin ──(operator JWT)──▶  GET /v7/:projectId/moderation/*    (review aids: queue + re-analyze)
+@agora/admin ──(operator JWT)──▶  GET /v1/:projectId/moderation/*    (review aids: queue + re-analyze)
 ```
 
 - **Real-time monitoring** — point a project's webhook at `POST /webhooks/agora` and subscribe the
@@ -50,7 +50,7 @@ lives outside the API. The moderator plugs into the seams the API already expose
   immediately via the moderation-visibility layer. Below the threshold, items wait in the human
   queue. Set the threshold to `0` for advisory-only.
 - **Aids for human moderators** — the admin's Moderation page gains an **AI-flag** queue
-  (`GET /v7/:projectId/moderation/queue`) with per-item Remove/Dismiss, and the report ReviewDialog
+  (`GET /v1/:projectId/moderation/queue`) with per-item Remove/Dismiss, and the report ReviewDialog
   shows an **AI assessment** panel with a Re-analyze action. Every verdict is persisted in
   `moderation_analyses` (audit trail). These endpoints are operator-gated (shared `ACCESS_TOKEN_SECRET`).
 
@@ -62,7 +62,7 @@ apps/moderator/src/
 ├── app.ts                   # createApp() — side-effect-free Hono app (drives in-process tests)
 ├── routes/
 │   ├── webhooks.ts          # POST /webhooks/agora — inbound signed broadcast receiver
-│   └── moderation.ts        # /v7/:projectId/moderation/* — operator-gated review aids
+│   └── moderation.ts        # /v1/:projectId/moderation/* — operator-gated review aids
 ├── lib/
 │   ├── llm-provider.ts      # generic OpenAI-compatible | Anthropic client + verdict parsing
 │   ├── assess-and-record.ts # orchestrates assess → persist → maybe write-back

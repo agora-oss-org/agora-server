@@ -12,12 +12,13 @@ export default defineConfig({
     proxy: {
       "/v7": { target: "http://localhost:4000", changeOrigin: true },
       "/socket.io": { target: "http://localhost:4000", ws: true, changeOrigin: true },
-      // The @agora/moderator service (default :4001). Strip the /moderator prefix so it lands on the
-      // moderator's own /v7/:projectId/moderation/* routes. In prod, point this at the moderator host.
+      // The @agora/moderator service (default :4001). Rewrite the /moderator prefix to /v1 so it
+      // lands on the moderator's own /v1/:projectId/moderation/* routes (the admin client builds
+      // /moderator/:projectId/...). In prod, point this at the moderator host.
       "/moderator": {
         target: "http://localhost:4001",
         changeOrigin: true,
-        rewrite: (p) => p.replace(/^\/moderator/, ""),
+        rewrite: (p) => p.replace(/^\/moderator/, "/v1"),
       },
     },
   },
