@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-05-31
+
+A security & moderation release: server-enforced **space privacy** (members-only reads) + **posting
+permissions**, closed private-content leaks (single reads, reactions, comments, semantic search),
+**configurable moderation-removal** visibility (hide / `[removed]`) with read-path enforcement pushed
+into the RPCs, and an admin pass — Settings (feed / webhooks / moderation), a richer moderation
+review dialog (media + "Open in app" deep links), wonder-logger + OpenTelemetry observability, and a
+contributor guide.
+
 ### Added
 - **Admin moderation — "Open in app" deep link.** The report review dialog now links a moderator
   straight to the reported content in the consumer app: `<VITE_DEMO_URL>?entity=<id>` for an entity,
@@ -423,7 +432,8 @@ cloud Supabase — no stubbed endpoints remain.
   (`@agora/*`), a repointed fork of `@replyke/core`.
 - Backlog: rate limiting, refresh-token cleanup sweep, RLS write policies, turnkey deploy guide.
 
-[Unreleased]: https://github.com/jenova-marie/agora/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/jenova-marie/agora/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/jenova-marie/agora/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/jenova-marie/agora/compare/v0.2.3...v0.3.0
 [0.2.3]: https://github.com/jenova-marie/agora/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/jenova-marie/agora/compare/v0.2.1...v0.2.2
