@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Ban, Check, Flag, Paperclip } from "lucide-react";
+import { AlertTriangle, Ban, Check, ExternalLink, Flag, Paperclip } from "lucide-react";
 import type { Comment, Entity, Report } from "@agora/contract";
-import { actOnReport, getReportTarget, type ModerationDecision } from "../../lib/moderation";
+import { actOnReport, getReportTarget, reportDeepLink, type ModerationDecision } from "../../lib/moderation";
 import { ApiError } from "../../lib/api";
 import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogDescription } from "../../components/ui/Dialog";
 import { Button } from "../../components/ui/Button";
@@ -56,6 +56,9 @@ export function ReviewDialog({ report, onClose }: { report: Report | null; onClo
   const author = (target as Entity | Comment | null)?.user;
   const media = collectMedia(target);
   const hasMedia = media.images.length > 0 || media.files.length > 0 || !!media.gif;
+  // Deep link to the reported content in the consumer app (null for a comment until its parent
+  // entity id loads with the target).
+  const deepLink = report ? reportDeepLink(report, target) : null;
   const { isOperator } = useAuth();
   const scoped = !!report?.spaceId;
   // Space reports are actioned via the space flow; project-level reports (no space) only by operators.
@@ -113,6 +116,16 @@ export function ReviewDialog({ report, onClose }: { report: Report | null; onClo
                   </div>
                 ) : null}
                 {author ? <p className="text-xs text-faint">by @{author.username ?? shortId(author.id)}</p> : null}
+                {deepLink ? (
+                  <a
+                    href={deepLink}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1.5 pt-1 text-sm font-medium text-primary hover:underline"
+                  >
+                    <ExternalLink className="size-3.5 shrink-0" /> Open in app
+                  </a>
+                ) : null}
               </div>
 
               <dl className="grid grid-cols-2 gap-3 text-sm">

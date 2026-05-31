@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Admin moderation — "Open in app" deep link.** The report review dialog now links a moderator
+  straight to the reported content in the consumer app: `<VITE_DEMO_URL>?entity=<id>` for an entity,
+  `…?entity=<parentEntityId>&comment=<id>` for a comment (the demo reads those params off its URL and
+  opens/highlights the target). Defaults to the local demo dev server; set `VITE_DEMO_URL` for prod.
 - **Contributor guide + "Contributing" invitation.** A new root `CONTRIBUTING.md` (dev setup, the
   contract rules, coding/security conventions, the migration workflow, testing tiers, changelog
   rule, and Conventional-Commits + PR process) and a `README.md` **Contributing** section that
@@ -126,6 +130,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   code is now the generic `project/not-admin`.
 
 ### Fixed
+- **Moderation review dialog showed "(no text content)" for comment reports.** `GET /comments/:id`
+  wraps its result as `{ comment }` (the SDK contract), but `GET /entities/:id` returns the entity
+  bare — and the admin's `getReportTarget` treated both the same, so a reported comment's fields were
+  read off the wrapper and came back undefined. It now unwraps the comment response.
 - **Private spaces no longer leak to non-members (authorization hole).** A space's
   `readingPermission: "members"` was stored and surfaced (`permissions.canRead`) but never enforced —
   any signed-in (or anonymous) caller could list a private space's entities, read one by id, react to

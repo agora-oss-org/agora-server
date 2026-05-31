@@ -10,3 +10,8 @@ export const ENV_PROJECT_ID = import.meta.env.VITE_PROJECT_ID || undefined;
 // (apps/api/scripts/seed-demo-user.mjs). Leave unset in any real deployment.
 export const DEMO_EMAIL = import.meta.env.VITE_DEMO_EMAIL || "";
 export const DEMO_PASSWORD = import.meta.env.VITE_DEMO_PASSWORD || "";
+
+// Origin of the consumer/demo app, used to deep-link a moderator from a report straight to the
+// reported entity/comment (the demo reads ?entity=&comment= off its URL). Defaults to the local demo
+// dev server; set to your deployed app origin in prod.
+export const DEMO_URL = import.meta.env.VITE_DEMO_URL || "http://localhost:5174/";
