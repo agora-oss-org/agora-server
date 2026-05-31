@@ -30,6 +30,10 @@ const schema = z.object({
   // for external schedulers. Optional: when unset those endpoints are disabled (503) and the work
   // runs only via the standalone scripts/*.mjs.
   CRON_SECRET: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
+  // Shared secret gating POST /internal/moderation/apply — the write-back the @agora/moderator
+  // service calls to apply an automated decision (moderationStatus, moderatedByType="client").
+  // Optional: when unset the endpoint is disabled (503) and no service can auto-moderate.
+  MODERATION_SERVICE_SECRET: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
   // Edge rate limiting (in-memory fixed window, per-process; see middleware/rate-limit.ts). OFF
   // unless a max is set. RATE_LIMIT_MAX caps general per-IP traffic per window; RATE_LIMIT_AUTH_MAX
   // is a stricter cap for /auth/* (brute-force target), falling back to the general cap when unset.

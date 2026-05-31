@@ -1,10 +1,10 @@
 // collections, collection_entities, files, app_notifications, reports, entity_embeddings (ex-0005)
 import { sql } from "drizzle-orm";
 import {
-  pgTable, uuid, text, integer, bigint, jsonb, timestamp, boolean, date, index, primaryKey, vector,
+  pgTable, uuid, text, integer, bigint, doublePrecision, jsonb, timestamp, boolean, date, index, primaryKey, vector,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
-import { reactionTarget } from "./_shared.js";
+import { reactionTarget, moderationVerdict } from "./_shared.js";
 import { projects, profiles } from "./projects.js";
 import { entities, comments } from "./content.js";
 import { spaces } from "./spaces.js";
@@ -82,6 +82,32 @@ export const reports = pgTable("reports", {
 }, (t) => [
   index("reports_queue_idx").on(t.projectId, t.spaceId, t.resolvedAt),
   index("reports_target_idx").on(t.targetType, t.targetId),
+]);
+
+// Automated-moderation audit trail (@agora/moderator). One row per LLM assessment: the verdict, the
+// reason, and whether the moderator auto-acted (wrote a removal back to the API). The DDL lives here
+// because apps/api owns the schema (single source of truth); the moderator service binds a thin copy
+// for its reads/writes. `humanResolvedAt` clears an item from the admin AI-flag queue once a human
+// dispositions it. targetType reuses reaction_target (entity|comment|message).
+export const moderationAnalyses = pgTable("moderation_analyses", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  projectId: uuid("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  targetType: reactionTarget("target_type").notNull(),
+  targetId: uuid("target_id").notNull(),
+  spaceId: uuid("space_id").references(() => spaces.id, { onDelete: "cascade" }),
+  verdict: moderationVerdict("verdict").notNull(),
+  categories: text("categories").array().notNull().default(sql`'{}'`),
+  confidence: doublePrecision("confidence").notNull().default(0),
+  reason: text("reason").notNull().default(""),
+  model: text("model").notNull().default(""),
+  autoActioned: boolean("auto_actioned").notNull().default(false),
+  humanResolvedAt: timestamp("human_resolved_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  // The admin AI-flag queue: unresolved analyses for a project, optionally scoped to a space.
+  index("moderation_analyses_queue_idx").on(t.projectId, t.spaceId, t.humanResolvedAt),
+  // Look up the latest analysis for a specific piece of content.
+  index("moderation_analyses_target_idx").on(t.targetType, t.targetId),
 ]);
 
 export const entityEmbeddings = pgTable("entity_embeddings", {

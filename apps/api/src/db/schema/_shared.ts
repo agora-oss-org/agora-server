@@ -13,6 +13,9 @@ export const reactionType = pgEnum("reaction_type", ["upvote", "downvote", "like
 export const reactionTarget = pgEnum("reaction_target", ["entity", "comment", "message"]);
 export const moderationStatus = pgEnum("moderation_status", ["approved", "removed"]);
 export const moderatedByType = pgEnum("moderated_by_type", ["client", "user"]);
+// Automated-moderation verdict (@agora/moderator's LLM assessment). "allow"=clean, "block"=violates,
+// "review"=uncertain → human queue. Stored on moderation_analyses (the AI-flag audit trail).
+export const moderationVerdict = pgEnum("moderation_verdict", ["allow", "block", "review"]);
 export const readingPermission = pgEnum("reading_permission", ["anyone", "members"]);
 export const postingPermission = pgEnum("posting_permission", ["anyone", "members", "admins"]);
 export const spaceMemberRole = pgEnum("space_member_role", ["admin", "moderator", "member"]);

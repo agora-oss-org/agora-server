@@ -14,6 +14,7 @@ import { requestLog } from "./middleware/request-log.js";
 import { sendDueDigests } from "./lib/digests.js";
 import { recomputeDueScores } from "./lib/recompute.js";
 import { purgeExpiredRefreshTokens } from "./lib/token-cleanup.js";
+import { applyClientModeration } from "./lib/client-moderation.js";
 
 function safeEqual(a: string, b: string): boolean {
   const ab = Buffer.from(a);
@@ -49,6 +50,24 @@ export function createApp() {
   app.post("/internal/cron/recompute-scores", async (c) => cronGuard(c) ?? c.json(await recomputeDueScores()));
   // Purge expired refresh tokens so the table doesn't grow unbounded (scripts/purge-tokens.mjs).
   app.post("/internal/cron/purge-tokens", async (c) => cronGuard(c) ?? c.json(await purgeExpiredRefreshTokens()));
+
+  // Automated-moderation write-back: the @agora/moderator service applies a "client" decision
+  // (moderationStatus + moderatedByType="client"). Secret-gated like cron; 503 until configured.
+  app.post("/internal/moderation/apply", async (c) => {
+    const secret = env.MODERATION_SERVICE_SECRET;
+    if (!secret) return c.json({ error: "Moderation service not configured", code: "moderation/disabled" }, 503);
+    if (!safeEqual(c.req.header("x-moderation-secret") ?? "", secret))
+      return c.json({ error: "Unauthorized", code: "moderation/unauthorized" }, 401);
+    const body = (await c.req.json().catch(() => null)) as
+      | { projectId?: string; targetType?: string; targetId?: string; status?: string; reason?: string }
+      | null;
+    if (!body?.projectId || (body.targetType !== "entity" && body.targetType !== "comment") || !body.targetId)
+      return c.json({ error: "projectId, targetType (entity|comment) and targetId are required", code: "moderation/bad-request" }, 400);
+    const status = body.status === "approved" ? "approved" : "removed";
+    const ok = await applyClientModeration({ projectId: body.projectId, targetType: body.targetType, targetId: body.targetId, status, reason: body.reason });
+    if (!ok) return c.json({ error: "Target not found", code: "moderation/not-found" }, 404);
+    return c.json({ success: true });
+  });
 
   // Replyke contract: everything lives under /v7/:projectId
   app.route("/v7", mountRoutes());
