@@ -236,12 +236,6 @@ export const webhookConfigSchema = z.object({
   events: z.array(z.string()).nullish(), // null/absent → unchanged; [] disables all
 });
 
-// Per-project moderation config (PATCH /settings/moderation). Controls how "removed" content is
-// served to non-moderators: "hide" (filtered/404) or "placeholder" (blanked [removed] row).
-export const moderationConfigSchema = z.object({
-  removedContentBehavior: z.enum(["hide", "placeholder"]).optional(),
-});
-
 // The @agora/moderator integration (PATCH /settings/moderator). Groups everything about automated
 // moderation for one project:
 //   - the internal notifier the API fans content `*.complete` events to (url + write-only secret) —

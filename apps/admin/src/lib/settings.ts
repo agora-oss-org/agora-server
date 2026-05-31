@@ -99,26 +99,6 @@ export function testWebhook(): Promise<WebhookTestResult> {
   return api<WebhookTestResult>("/webhooks/test", { method: "POST" });
 }
 
-// ── Moderation config (GET/PATCH /settings/moderation) ───────────────────────────────────────────
-// removedContentBehavior controls how content moderated as "removed" is served to normal users.
-export type RemovedContentBehavior = "hide" | "placeholder";
-
-export interface ModerationConfigView {
-  removedContentBehavior: RemovedContentBehavior;
-}
-
-export interface ModerationConfigPatch {
-  removedContentBehavior?: RemovedContentBehavior;
-}
-
-export function getModerationConfig(signal?: AbortSignal): Promise<ModerationConfigView> {
-  return api<ModerationConfigView>("/settings/moderation", { signal });
-}
-
-export function updateModerationConfig(patch: ModerationConfigPatch): Promise<ModerationConfigView> {
-  return api<ModerationConfigView>("/settings/moderation", { method: "PATCH", body: patch });
-}
-
 // ── Moderator integration (GET/PATCH /settings/moderator, POST …/test) ────────────────────────────
 // Everything about the @agora/moderator service for this project: the INTERNAL notifier the API fans
 // content `*.complete` events to (distinct from the external project webhook above) + the auto-action

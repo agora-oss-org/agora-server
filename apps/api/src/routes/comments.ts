@@ -22,7 +22,7 @@ import * as webhooks from "../lib/webhooks.js";
 import { notifyOnComment, notifyOnReaction } from "../lib/notifications.js";
 import { indexContentAsync } from "../lib/embeddings.js";
 import { assertCanReadEntity, assertCanReadComment } from "../lib/space-access.js";
-import { removedPolicy, excludeRemovedSql, shouldHide, shouldRedact, redactComment, redactRemovedList } from "../lib/moderation-visibility.js";
+import { removedPolicy, excludeRemovedSql, shouldHide } from "../lib/moderation-visibility.js";
 
 export const commentRoutes = new Hono<{ Variables: Variables }>()
   .get("/", async (c) => {
@@ -42,8 +42,7 @@ export const commentRoutes = new Hono<{ Variables: Variables }>()
       isNull(comments.deletedAt),
       parentId ? eq(comments.parentId, parentId) : isNull(comments.parentId),
     ];
-    // Moderation-removed comments: hidden from the list for non-moderators (hide mode); blanked
-    // after shaping in placeholder mode.
+    // Moderation-removed comments are hidden from the list for non-moderators (operators bypass).
     const removed = await removedPolicy(c);
     const excludeRemoved = excludeRemovedSql(removed, comments);
     if (excludeRemoved) conds.push(excludeRemoved);
@@ -74,7 +73,6 @@ export const commentRoutes = new Hono<{ Variables: Variables }>()
         ...(userMap ? { user: r.userId ? userMap.get(r.userId) ?? null : null } : {}),
       })
     );
-    redactRemovedList(removed, shaped, "comment");
     return c.json(paginate(shaped, total, page, limit));
   })
   .post("/", requireAuth, async (c) => {
@@ -123,7 +121,6 @@ export const commentRoutes = new Hono<{ Variables: Variables }>()
     const removed = await removedPolicy(c);
     if (shouldHide(removed, row.moderationStatus)) throw Errors.notFound("comments/not-found", "Comment not found");
     const shaped = await hydrateOne(c, row);
-    if (shouldRedact(removed, row.moderationStatus)) redactComment(shaped);
     // SDK's useFetchCommentByForeignId expects { comment }.
     return c.json({ comment: shaped });
   })
@@ -138,10 +135,10 @@ export const commentRoutes = new Hono<{ Variables: Variables }>()
     const { limit, offset } = readPagination(c, { page: 1, limit: 50 });
     const include = parseInclude(c);
 
-    // Moderation visibility is pushed into the RPC: in hide mode (non-privileged) it prunes removed
+    // Moderation visibility is pushed into the RPC: for non-privileged viewers it prunes removed
     // comments AND their descendant subtrees (a JS post-filter would orphan the children).
     const removed = await removedPolicy(c);
-    const hideRemoved = removed.behavior === "hide" && !removed.privileged;
+    const hideRemoved = !removed.privileged;
     const res = (await db.execute(sql`
       select id, parent_id, depth from fetch_comment_thread(${entityId}::uuid, ${rootId}::uuid, ${limit}, ${offset}, ${hideRemoved})
     `)) as unknown as { id: string; parent_id: string | null; depth: number }[];
@@ -157,12 +154,11 @@ export const commentRoutes = new Hono<{ Variables: Variables }>()
     type Node = ReturnType<typeof shapeComment> & { replies: Node[] };
     const nodeById = new Map<string, Node>();
     for (const r of rows) {
-      // Hide mode already pruned removed rows in the RPC; here we only blank for placeholder mode.
+      // Removed rows were already pruned in the RPC for non-privileged viewers.
       const shaped = shapeComment(r, {
         userReaction: reactionMap.get(r.id) ?? null,
         ...(userMap ? { user: r.userId ? userMap.get(r.userId) ?? null : null } : {}),
       });
-      if (shouldRedact(removed, r.moderationStatus)) redactComment(shaped);
       nodeById.set(r.id, { ...shaped, replies: [] });
     }
     // RPC rows are ordered by depth then created_at, so a parent is always seen before its children.
@@ -188,7 +184,6 @@ export const commentRoutes = new Hono<{ Variables: Variables }>()
     const removed = await removedPolicy(c);
     if (shouldHide(removed, row.moderationStatus)) throw Errors.notFound("comments/not-found", "Comment not found");
     const shaped = await hydrateOne(c, row);
-    if (shouldRedact(removed, row.moderationStatus)) redactComment(shaped);
     // SDK's useFetchComment expects { comment }.
     return c.json({ comment: shaped });
   })

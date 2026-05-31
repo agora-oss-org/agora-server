@@ -14,8 +14,7 @@ import { env } from "../lib/env.js";
 import { mintSession } from "../lib/tokens.js";
 import * as webhooks from "../lib/webhooks.js";
 import { getFeedConfig, invalidateFeedConfig, feedConfigView } from "../lib/feed-config.js";
-import { getModerationConfig, invalidateModerationConfig, moderationConfigView } from "../lib/moderation-config.js";
-import { parseBody, oauthAuthorizeSchema, signTestingJwtSchema, webhookConfigSchema, feedConfigSchema, moderationConfigSchema, moderatorConfigSchema } from "../lib/validation.js";
+import { parseBody, oauthAuthorizeSchema, signTestingJwtSchema, webhookConfigSchema, feedConfigSchema, moderatorConfigSchema } from "../lib/validation.js";
 
 type ProfileRow = typeof profiles.$inferSelect;
 
@@ -143,22 +142,6 @@ export const miscRoutes = new Hono<{ Variables: Variables }>()
     await db.update(projects).set({ feedConfig: next }).where(eq(projects.id, c.var.projectId));
     invalidateFeedConfig(c.var.projectId); // cached 30s — drop it now
     return c.json(feedConfigView(await getFeedConfig(c.var.projectId)));
-  })
-  // ── moderation config (project-admin only; backs the Moderation settings UI) ─
-  .get("/settings/moderation", requireAuth, async (c) => {
-    await requireProjectAdmin(c);
-    return c.json(moderationConfigView(await getModerationConfig(c.var.projectId)));
-  })
-  .patch("/settings/moderation", requireAuth, async (c) => {
-    await requireProjectAdmin(c);
-    const body = parseBody(moderationConfigSchema, await c.req.json().catch(() => ({})), "moderation");
-    const [row] = await db.select({ moderationConfig: projects.moderationConfig }).from(projects).where(eq(projects.id, c.var.projectId)).limit(1);
-    const current = (row?.moderationConfig && typeof row.moderationConfig === "object" ? row.moderationConfig : {}) as Record<string, any>;
-    const next: Record<string, any> = { ...current };
-    if (body.removedContentBehavior !== undefined) next.removedContentBehavior = body.removedContentBehavior;
-    await db.update(projects).set({ moderationConfig: next }).where(eq(projects.id, c.var.projectId));
-    invalidateModerationConfig(c.var.projectId); // cached 30s — drop it now
-    return c.json(moderationConfigView(await getModerationConfig(c.var.projectId)));
   })
   // ── moderator integration (internal @agora/moderator service; project-admin only) ─
   // Everything about automated moderation for the project: the internal notifier (url + secret, the

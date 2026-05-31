@@ -27,7 +27,7 @@ import { storeImageFromUpload } from "../lib/images.js";
 import { parseRankParams } from "../lib/ranking.js";
 import { getFeedConfig } from "../lib/feed-config.js";
 import { assertCanReadSpace, assertCanReadEntity, assertCanPostInSpace, readableEntitiesFilter } from "../lib/space-access.js";
-import { removedPolicy, excludeRemovedSql, shouldHide, shouldRedact, redactEntity, redactRemovedList } from "../lib/moderation-visibility.js";
+import { removedPolicy, excludeRemovedSql, shouldHide } from "../lib/moderation-visibility.js";
 import { rerankCandidates } from "../lib/rerank.js";
 import {
   parseBody,
@@ -113,9 +113,6 @@ export const entityRoutes = new Hono<{ Variables: Variables }>()
         ...(fileMap.has(r.id) ? { files: fileMap.get(r.id) } : {}),
       })
     );
-    // Placeholder mode: blank any moderation-removed rows that survived the query (hide mode already
-    // excluded them; operators keep full content).
-    redactRemovedList(removed, shaped, "entity");
     // Echo the resolved ranking clock so clients can pin it across paginated requests.
     return c.json({ ...paginate(shaped, total, page, limit), rankAnchor });
   })
@@ -343,7 +340,7 @@ async function lookupEntity(c: any, predicate: SQL) {
   if (!row) throw Errors.notFound("entities/not-found", "Entity not found");
   // Private-space leak guard: a single entity in a members-only space is owner/member-only.
   await assertCanReadSpace(c, row.spaceId);
-  // Moderation-removed: hide mode 404s for non-moderators; placeholder mode blanks below.
+  // Moderation-removed entities 404 for non-moderators (operators bypass for review).
   const removed = await removedPolicy(c);
   if (shouldHide(removed, row.moderationStatus)) throw Errors.notFound("entities/not-found", "Entity not found");
 
@@ -355,8 +352,7 @@ async function lookupEntity(c: any, predicate: SQL) {
   }
   const fileMap = await loadEntityFiles(projectId, [row.id]);
   if (fileMap.has(row.id)) opts.files = fileMap.get(row.id);
-  const shaped = shapeEntity(row, opts);
-  return shouldRedact(removed, row.moderationStatus) ? redactEntity(shaped) : shaped;
+  return shapeEntity(row, opts);
 }
 
 /** Fetch an entity and assert the auth user owns it; throws 404/403 otherwise. */
