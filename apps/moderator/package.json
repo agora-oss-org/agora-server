@@ -1,0 +1,33 @@
+{
+  "name": "@agora/moderator",
+  "version": "0.4.0",
+  "private": true,
+  "type": "module",
+  "description": "LLM-backed content moderation service for Agora (webhook receiver + admin-facing review aids)",
+  "license": "Apache-2.0",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@agora/contract": "workspace:*",
+    "@hono/node-server": "^1.13.7",
+    "@jenova-marie/wonder-logger": "^2.0.18",
+    "dotenv": "^17.4.2",
+    "drizzle-orm": "^0.45.2",
+    "hono": "^4.6.14",
+    "jose": "^5.9.6",
+    "postgres": "^3.4.9",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^4.1.7"
+  }
+}

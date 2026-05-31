@@ -148,6 +148,49 @@ importers:
         specifier: ^4.1.7
         version: 4.1.7(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(@vitest/coverage-v8@4.1.7)(vite@8.0.14(@types/node@22.19.19)(esbuild@0.28.0)(jiti@2.7.0)(tsx@4.22.3)(yaml@2.9.0))
 
+  apps/moderator:
+    dependencies:
+      '@agora/contract':
+        specifier: workspace:*
+        version: link:../../packages/contract
+      '@hono/node-server':
+        specifier: ^1.13.7
+        version: 1.19.14(hono@4.12.23)
+      '@jenova-marie/wonder-logger':
+        specifier: ^2.0.18
+        version: 2.0.18(@opentelemetry/core@2.7.1(@opentelemetry/api@1.9.1))
+      dotenv:
+        specifier: ^17.4.2
+        version: 17.4.2
+      drizzle-orm:
+        specifier: ^0.45.2
+        version: 0.45.2(@opentelemetry/api@1.9.1)(@types/pg@8.15.5)(postgres@3.4.9)
+      hono:
+        specifier: ^4.6.14
+        version: 4.12.23
+      jose:
+        specifier: ^5.9.6
+        version: 5.10.0
+      postgres:
+        specifier: ^3.4.9
+        version: 3.4.9
+      zod:
+        specifier: ^3.24.1
+        version: 3.25.76
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.19.19
+      tsx:
+        specifier: ^4.19.2
+        version: 4.22.3
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+      vitest:
+        specifier: ^4.1.7
+        version: 4.1.7(@opentelemetry/api@1.9.1)(@types/node@22.19.19)(@vitest/coverage-v8@4.1.7)(vite@8.0.14(@types/node@22.19.19)(esbuild@0.28.0)(jiti@2.7.0)(tsx@4.22.3)(yaml@2.9.0))
+
   packages/contract:
     dependencies:
       zod:
@@ -880,8 +923,12 @@ packages:
 
   '@jenova-marie/ts-rust-result@2.2.18':
     resolution: {integrity: sha512-aQeKWUjBcQRnfuQbuAfqiyafUdZVPfUNAGV31Zm11dlAD4CPwgS5xgIZzpoe96bGxWjBFRdKLUbXbVDhjJ662Q==, tarball: http://git.rso/api/packages/jenova-marie/npm/%40jenova-marie%2Fts-rust-result/-/2.2.18/ts-rust-result-2.2.18.tgz}
+    engines: {node: '>=18'}
     peerDependencies:
       zod: ^4.1.13
+    peerDependenciesMeta:
+      zod:
+        optional: true
 
   '@jenova-marie/wonder-logger@2.0.18':
     resolution: {integrity: sha512-PdvzubGam7cOixzu1ViK8awJ9CHN6uwI3CGJRdOMPgodB5LXPCOGvp69bDO9bYOnodfY764CIYfTQDqLkajRLw==, tarball: http://git.rso/api/packages/jenova-marie/npm/%40jenova-marie%2Fwonder-logger/-/2.0.18/wonder-logger-2.0.18.tgz}
@@ -3933,7 +3980,7 @@ snapshots:
     optional: true
 
   '@jenova-marie/ts-rust-result@2.2.18(zod@4.4.3)':
-    dependencies:
+    optionalDependencies:
       zod: 4.4.3
 
   '@jenova-marie/wonder-logger@2.0.18(@opentelemetry/core@2.7.1(@opentelemetry/api@1.9.1))':

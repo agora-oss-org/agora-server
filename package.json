@@ -15,6 +15,7 @@
     "test": "pnpm -r test",
     "dev:contract": "pnpm --filter @agora/contract dev",
     "dev:api": "pnpm --filter @agora/api dev",
+    "dev:moderator": "pnpm --filter @agora/moderator dev",
     "dev:admin": "pnpm --filter @agora/admin dev",
     "contract:build": "pnpm --filter @agora/contract build",
     "db:migrate": "pnpm --filter @agora/api db:migrate:run",
