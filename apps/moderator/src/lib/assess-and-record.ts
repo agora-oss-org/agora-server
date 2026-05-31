@@ -10,6 +10,7 @@ import { logger } from "./logger.js";
 import { assess } from "./llm-provider.js";
 import { getModeratorConfig } from "./project-config.js";
 import { applyModeration, writeBackEnabled } from "./api-client.js";
+import { moderationReasonText } from "./reason.js";
 import { shapeAnalysis } from "./shape.js";
 
 export interface AssessTarget {
@@ -39,7 +40,7 @@ export async function assessAndRecord(t: AssessTarget): Promise<ModerationAnalys
       targetType: t.targetType as "entity" | "comment",
       targetId: t.targetId,
       status: "removed",
-      reason: verdict.reason || "Automated moderation",
+      reason: moderationReasonText(verdict), // carries the LLM verdict + score into the stored reason
     });
     if (autoActioned) logger.warn({ targetType: t.targetType, targetId: t.targetId, confidence: verdict.confidence }, "auto-removed content");
   }

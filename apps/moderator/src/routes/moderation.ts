@@ -18,6 +18,7 @@ import { moderationAnalyses } from "../db/schema.js";
 import { shapeAnalysis } from "../lib/shape.js";
 import { assessAndRecord } from "../lib/assess-and-record.js";
 import { applyModeration, writeBackEnabled } from "../lib/api-client.js";
+import { moderationReasonText } from "../lib/reason.js";
 
 function readPagination(c: { req: { query: (k: string) => string | undefined } }) {
   const page = Math.max(1, Number(c.req.query("page") ?? 1) || 1);
@@ -108,9 +109,12 @@ export const moderationRoutes = new Hono<{ Variables: Variables }>()
   })
 
   // Confirm an AI flag: remove the content (write-back to the API) and clear it from the queue.
+  // Accepts an optional { reason } — the human's note overrides the AI's stored reason on the removal.
   .post("/:id/remove", async (c) => {
     const projectId = c.req.param("projectId")!;
     const id = c.req.param("id");
+    const body = (await c.req.json().catch(() => ({}))) as { reason?: unknown };
+    const humanReason = typeof body.reason === "string" && body.reason.trim() ? body.reason.trim() : null;
     const [analysis] = await db
       .select()
       .from(moderationAnalyses)
@@ -126,7 +130,8 @@ export const moderationRoutes = new Hono<{ Variables: Variables }>()
       targetType: analysis.targetType,
       targetId: analysis.targetId,
       status: "removed",
-      reason: analysis.reason || "Confirmed by moderator",
+      // Human note wins as-is; otherwise carry the AI verdict + score into the stored reason.
+      reason: humanReason || moderationReasonText(analysis),
     });
     if (!ok) throw Errors.unavailable("moderation/writeback-failed", "Failed to apply removal");
     const [row] = await db
