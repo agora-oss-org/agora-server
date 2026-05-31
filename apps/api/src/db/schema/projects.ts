@@ -22,8 +22,8 @@ export const projects = pgTable("projects", {
   moderationWebhookUrl: text("moderation_webhook_url"),
   moderationWebhookSecret: text("moderation_webhook_secret"),
   // Per-project moderator tuning the @agora/moderator service overlays on its own env defaults:
-  // `autoActionThreshold` (0..1 auto-remove cutoff) + LLM provider config (`llmProvider`,
-  // `llmBaseUrl`, `llmApiKey`, `llmModel`, `llmMaxTokens`). Any unset key falls back to the
+  // `blockAutoActionThreshold` + `reviewAutoActionThreshold` (0..1 auto-remove cutoffs) + LLM
+  // provider config (`llmProvider`, `llmBaseUrl`, `llmApiKey`, `llmModel`, `llmMaxTokens`). Any unset key falls back to the
   // moderator's env. Edited via admin Settings → Moderator; `llmApiKey` is write-only in the view.
   moderatorConfig: jsonb("moderator_config").notNull().default(sql`'{}'::jsonb`),
   // Per-project feed ranking config (algorithm + tunables + optional re-rank webhook). See

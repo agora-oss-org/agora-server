@@ -24,7 +24,8 @@ export interface ModeratorRunningConfig {
     accessTokenSecretSet: boolean;
     writeBack: { apiBaseUrl: string | null; serviceSecretSet: boolean; enabled: boolean };
     defaults: {
-      autoActionThreshold: number;
+      blockAutoActionThreshold: number;
+      reviewAutoActionThreshold: number;
       llm: {
         provider: "openai" | "anthropic";
         baseUrl: string | null;

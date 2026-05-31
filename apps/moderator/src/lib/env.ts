@@ -24,9 +24,12 @@ const schema = z.object({
   // MODERATION_SERVICE_SECRET. When unset, auto-action write-backs are disabled (verdicts still
   // persist + queue for humans).
   MODERATION_SERVICE_SECRET: optionalStr,
-  // Auto-act when verdict==="block" AND confidence >= this threshold (0..1). 0 (or unset) disables
-  // automatic removal entirely — everything routes to the human AI-flag queue.
-  MODERATION_AUTO_ACTION_THRESHOLD: z.coerce.number().min(0).max(1).default(0.85),
+  // Auto-remove a "block" verdict when confidence >= this threshold (0..1). 0 (or unset) disables
+  // block auto-removal — those verdicts route to the human AI-flag queue.
+  MODERATION_BLOCK_AUTO_ACTION_THRESHOLD: z.coerce.number().min(0).max(1).default(0.85),
+  // Auto-remove a "review" verdict when confidence >= this threshold (0..1). Defaults to 0 (off):
+  // "review" means "route to a human", so auto-acting on it is an explicit, opt-in operator choice.
+  MODERATION_REVIEW_AUTO_ACTION_THRESHOLD: z.coerce.number().min(0).max(1).default(0),
 
   // ─── Generic LLM provider ────────────────────────────────────────────────
   // "openai"   → OpenAI-compatible /chat/completions (OpenAI, Groq, Together, OpenRouter, Ollama,

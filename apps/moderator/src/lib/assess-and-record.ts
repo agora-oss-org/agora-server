@@ -1,6 +1,7 @@
 // The moderation pipeline shared by the webhook receiver and the admin on-demand /analyze endpoint:
 //   1. run the LLM classifier (assess)
-//   2. auto-act when confident: verdict==="block" && confidence >= threshold && write-back is wired
+//   2. auto-act when confident: a "block" verdict clears the block threshold, or a "review" verdict
+//      clears the (opt-in) review threshold (decideAutoAction), and write-back is wired
 //      → POST the removal back to the API (moderatedByType="client")
 //   3. persist one moderation_analyses row (the audit trail + AI-flag queue)
 import type { ModerationAnalysis, ReportTargetType } from "@agora/contract";
@@ -8,6 +9,7 @@ import { db } from "../db/index.js";
 import { moderationAnalyses } from "../db/schema.js";
 import { logger } from "./logger.js";
 import { assess } from "./llm-provider.js";
+import { decideAutoAction } from "./auto-action.js";
 import { getModeratorConfig } from "./project-config.js";
 import { applyModeration, writeBackEnabled } from "./api-client.js";
 import { moderationReasonText } from "./reason.js";
@@ -28,7 +30,8 @@ export async function assessAndRecord(t: AssessTarget): Promise<ModerationAnalys
     {
       projectId: t.projectId, targetType: t.targetType, targetId: t.targetId, spaceId: t.spaceId ?? null,
       textLength: t.text.length, hasContext: !!t.context,
-      provider: config.llm.provider, model: config.llm.model, threshold: config.autoActionThreshold,
+      provider: config.llm.provider, model: config.llm.model,
+      blockThreshold: config.blockAutoActionThreshold, reviewThreshold: config.reviewAutoActionThreshold,
     },
     "moderation: assessing content",
   );
@@ -37,21 +40,21 @@ export async function assessAndRecord(t: AssessTarget): Promise<ModerationAnalys
   const verdict = await assess({ text: t.text, context: t.context }, config.llm);
   const latencyMs = Date.now() - startedAt;
 
-  // Auto-action: only entity/comment are writable back through the API, and only above the
-  // configured confidence threshold (0 disables it entirely → everything queues for a human).
+  // Auto-action: only entity/comment are writable back through the API, and only when a verdict
+  // clears its confidence floor (block or the opt-in review threshold; 0 disables a path → queue).
   let autoActioned = false;
-  const removable = t.targetType === "entity" || t.targetType === "comment";
-  const eligible =
-    verdict.verdict === "block" && config.autoActionThreshold > 0 && verdict.confidence >= config.autoActionThreshold && removable;
+  const autoActionVerdict = decideAutoAction(verdict.verdict, verdict.confidence, t.targetType, config);
+  const eligible = autoActionVerdict !== null;
 
   // The headline log: the LLM's decision + score for this exact item, plus everything an operator
-  // needs to trace it (project, target id/type, space, categories, model, threshold, latency).
+  // needs to trace it (project, target id/type, space, categories, model, thresholds, latency).
   logger.info(
     {
       projectId: t.projectId, targetType: t.targetType, targetId: t.targetId, spaceId: t.spaceId ?? null,
       verdict: verdict.verdict, confidence: verdict.confidence, scorePct: Math.round(verdict.confidence * 100),
       categories: verdict.categories, model: verdict.model,
-      threshold: config.autoActionThreshold, eligibleForAutoRemoval: eligible, llmLatencyMs: latencyMs,
+      blockThreshold: config.blockAutoActionThreshold, reviewThreshold: config.reviewAutoActionThreshold,
+      eligibleForAutoRemoval: eligible, autoActionVerdict, llmLatencyMs: latencyMs,
     },
     "moderation: verdict",
   );

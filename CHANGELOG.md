@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Moderator: review auto-action threshold** — a second, independent confidence floor that
+  auto-removes a `"review"` verdict (env `MODERATION_REVIEW_AUTO_ACTION_THRESHOLD`, per-project
+  `moderator_config.reviewAutoActionThreshold`, default **`0` = off**). `"review"` still means "route
+  to a human" by default; raising this opts a project into auto-acting on high-confidence reviews. The
+  decision is a pure, unit-tested function (`lib/auto-action.ts`). Editable in admin Settings →
+  Moderator alongside the block threshold, with its effective (override ?? env default) value shown.
+
+### Changed
+- **Moderator: renamed the block auto-action threshold** for symmetry with the new review threshold —
+  env `MODERATION_AUTO_ACTION_THRESHOLD` → **`MODERATION_BLOCK_AUTO_ACTION_THRESHOLD`** (default
+  `0.85`, behavior unchanged), and the `projects.moderator_config` jsonb key `autoActionThreshold` →
+  **`blockAutoActionThreshold`** (contract `moderatorConfigSchema` + `GET/PATCH /settings/moderator`).
+  **Breaking config rename, no data migration:** update the env var name, and any project that saved a
+  per-project `autoActionThreshold` override must re-save it under the new field (old key is ignored →
+  falls back to the env default).
+
 ## [0.5.0] - 2026-05-31
 
 ### Added

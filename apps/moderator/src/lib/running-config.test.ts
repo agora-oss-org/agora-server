@@ -12,7 +12,8 @@ const fullEnv = {
   CORS_ORIGIN: "*",
   API_BASE_URL: "http://localhost:4000",
   MODERATION_SERVICE_SECRET: SECRET,
-  MODERATION_AUTO_ACTION_THRESHOLD: 0.85,
+  MODERATION_BLOCK_AUTO_ACTION_THRESHOLD: 0.85,
+  MODERATION_REVIEW_AUTO_ACTION_THRESHOLD: 0.5,
   MODERATOR_LLM_PROVIDER: "anthropic",
   MODERATOR_LLM_BASE_URL: "https://api.anthropic.com",
   MODERATOR_LLM_API_KEY: SECRET,
@@ -26,7 +27,8 @@ const minimalEnv = {
   DATABASE_URL: "postgres://u:p@localhost:5432/agora",
   ACCESS_TOKEN_SECRET: "x",
   CORS_ORIGIN: "*",
-  MODERATION_AUTO_ACTION_THRESHOLD: 0.85,
+  MODERATION_BLOCK_AUTO_ACTION_THRESHOLD: 0.85,
+  MODERATION_REVIEW_AUTO_ACTION_THRESHOLD: 0,
   MODERATOR_LLM_PROVIDER: "openai",
   MODERATOR_LLM_MODEL: "gpt-4o-mini",
   MODERATOR_LLM_MAX_TOKENS: 512,
@@ -46,7 +48,8 @@ describe("buildRunningConfig (moderator)", () => {
     const cfg = buildRunningConfig(fullEnv);
     expect(cfg.accessTokenSecretSet).toBe(true);
     expect(cfg.writeBack).toEqual({ apiBaseUrl: "http://localhost:4000", serviceSecretSet: true, enabled: true });
-    expect(cfg.defaults.autoActionThreshold).toBe(0.85);
+    expect(cfg.defaults.blockAutoActionThreshold).toBe(0.85);
+    expect(cfg.defaults.reviewAutoActionThreshold).toBe(0.5);
     expect(cfg.defaults.llm.provider).toBe("anthropic");
     expect(cfg.defaults.llm.model).toBe("claude-haiku-4-5-20251001");
     expect(cfg.defaults.llm.apiKeySet).toBe(true);

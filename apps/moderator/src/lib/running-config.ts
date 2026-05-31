@@ -32,7 +32,8 @@ export function buildRunningConfig(e: Env) {
     },
     // Service-level DEFAULTS — overridable per project (projects.moderator_config).
     defaults: {
-      autoActionThreshold: e.MODERATION_AUTO_ACTION_THRESHOLD,
+      blockAutoActionThreshold: e.MODERATION_BLOCK_AUTO_ACTION_THRESHOLD,
+      reviewAutoActionThreshold: e.MODERATION_REVIEW_AUTO_ACTION_THRESHOLD,
       llm: {
         provider: e.MODERATOR_LLM_PROVIDER,
         baseUrl: e.MODERATOR_LLM_BASE_URL ?? null, // null → the provider's default host

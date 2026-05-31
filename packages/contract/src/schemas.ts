@@ -246,13 +246,14 @@ export const moderationConfigSchema = z.object({
 // moderation for one project:
 //   - the internal notifier the API fans content `*.complete` events to (url + write-only secret) —
 //     separate from the project's (external) webhook notifier;
-//   - the auto-action threshold + LLM-provider tuning the moderator overlays on its env defaults.
+//   - the block/review auto-action thresholds + LLM-provider tuning the moderator overlays on its env defaults.
 // Every field is nullish: omit to leave unchanged, null to clear (→ the moderator's env default).
 // `secret` and `llmApiKey` are write-only (GET exposes only hasSecret / hasLlmApiKey).
 export const moderatorConfigSchema = z.object({
   url: z.string().url().nullish(),
   secret: z.string().min(1).nullish(),
-  autoActionThreshold: z.number().min(0).max(1).nullish(),
+  blockAutoActionThreshold: z.number().min(0).max(1).nullish(),
+  reviewAutoActionThreshold: z.number().min(0).max(1).nullish(),
   llmProvider: z.enum(["openai", "anthropic"]).nullish(),
   llmBaseUrl: z.string().url().nullish(),
   llmApiKey: z.string().min(1).nullish(),

@@ -79,7 +79,8 @@ function ModeratorForm({
   const [url, setUrl] = useState(initial.url ?? "");
   const [secret, setSecret] = useState(""); // write-only; blank = unchanged
   const [hasSecret, setHasSecret] = useState(initial.hasSecret);
-  const [threshold, setThreshold] = useState(str(initial.autoActionThreshold));
+  const [blockThreshold, setBlockThreshold] = useState(str(initial.blockAutoActionThreshold));
+  const [reviewThreshold, setReviewThreshold] = useState(str(initial.reviewAutoActionThreshold));
   const [provider, setProvider] = useState<"" | LlmProvider>(initial.llmProvider ?? "");
   const [baseUrl, setBaseUrl] = useState(initial.llmBaseUrl ?? "");
   const [apiKey, setApiKey] = useState(""); // write-only; blank = unchanged
@@ -113,11 +114,13 @@ function ModeratorForm({
 
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const t = threshold.trim();
+    const bt = blockThreshold.trim();
+    const rt = reviewThreshold.trim();
     const mt = maxTokens.trim();
     const patch: ModeratorConfigPatch = {
       url: url.trim() ? url.trim() : null,          // empty → disable the notifier
-      autoActionThreshold: t === "" ? null : Number(t),
+      blockAutoActionThreshold: bt === "" ? null : Number(bt),
+      reviewAutoActionThreshold: rt === "" ? null : Number(rt),
       llmProvider: provider || null,                // "" → use env default
       llmBaseUrl: orNull(baseUrl),
       llmModel: orNull(model),
@@ -140,7 +143,8 @@ function ModeratorForm({
     return { value: "—", source: "unset" };
   };
   const eff = {
-    threshold: dv(threshold, defaults?.autoActionThreshold ?? null),
+    blockThreshold: dv(blockThreshold, defaults?.blockAutoActionThreshold ?? null),
+    reviewThreshold: dv(reviewThreshold, defaults?.reviewAutoActionThreshold ?? null),
     provider: dv(provider, defaults?.llm.provider ?? null),
     baseUrl: dv(baseUrl, defaults?.llm.baseUrl ?? (defaults ? "provider default" : null)),
     model: dv(model, defaults?.llm.model ?? null),
@@ -203,10 +207,16 @@ function ModeratorForm({
 
           <div className="grid gap-4 sm:grid-cols-2">
             <Field
-              label="Auto-action threshold"
-              hint="0–1 confidence to auto-remove a “block” verdict. 0 disables auto-removal (everything queues for a human). Blank = server default."
+              label="Block auto-action threshold"
+              hint="0–1 confidence to auto-remove a “block” verdict. 0 disables it (blocks queue for a human). Blank = server default."
             >
-              <Input type="number" min={0} max={1} step={0.01} placeholder={ph(defaults?.autoActionThreshold, "0.85 (default)")} value={threshold} onChange={(e) => setThreshold(e.target.value)} />
+              <Input type="number" min={0} max={1} step={0.01} placeholder={ph(defaults?.blockAutoActionThreshold, "0.85 (default)")} value={blockThreshold} onChange={(e) => setBlockThreshold(e.target.value)} />
+            </Field>
+            <Field
+              label="Review auto-action threshold"
+              hint="0–1 confidence to auto-remove a “review” verdict. 0 (default) keeps reviews queuing for a human — raise it to auto-act on high-confidence reviews. Blank = server default."
+            >
+              <Input type="number" min={0} max={1} step={0.01} placeholder={ph(defaults?.reviewAutoActionThreshold, "0 (default)")} value={reviewThreshold} onChange={(e) => setReviewThreshold(e.target.value)} />
             </Field>
             <Field label="Provider" hint="Blank = server default.">
               <select className={selectCls} value={provider} onChange={(e) => setProvider(e.target.value as "" | LlmProvider)}>
@@ -303,7 +313,7 @@ function EffectiveSummary({
 }: {
   running: ModeratorRunningConfig | null;
   runningFailed: boolean;
-  eff: Record<"threshold" | "provider" | "baseUrl" | "model" | "maxTokens", Effective>;
+  eff: Record<"blockThreshold" | "reviewThreshold" | "provider" | "baseUrl" | "model" | "maxTokens", Effective>;
   apiKeyEff: Effective;
 }) {
   const writeBack = running?.config.writeBack;
@@ -322,7 +332,8 @@ function EffectiveSummary({
       <div className="grid gap-1.5 sm:grid-cols-2">
         <EffRow label="Provider" eff={eff.provider} />
         <EffRow label="Model" eff={eff.model} />
-        <EffRow label="Auto-action threshold" eff={eff.threshold} />
+        <EffRow label="Block auto-action" eff={eff.blockThreshold} />
+        <EffRow label="Review auto-action" eff={eff.reviewThreshold} />
         <EffRow label="Max tokens" eff={eff.maxTokens} />
         <EffRow label="API base URL" eff={eff.baseUrl} />
         <EffRow label="API key" eff={apiKeyEff} />

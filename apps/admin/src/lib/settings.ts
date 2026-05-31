@@ -130,7 +130,8 @@ export type LlmProvider = "openai" | "anthropic";
 export interface ModeratorConfigView {
   url: string | null;
   hasSecret: boolean;
-  autoActionThreshold: number | null;
+  blockAutoActionThreshold: number | null;
+  reviewAutoActionThreshold: number | null;
   llmProvider: LlmProvider | null;
   llmBaseUrl: string | null;
   llmModel: string | null;
@@ -143,7 +144,8 @@ export interface ModeratorConfigView {
 export interface ModeratorConfigPatch {
   url?: string | null;
   secret?: string | null;
-  autoActionThreshold?: number | null;
+  blockAutoActionThreshold?: number | null;
+  reviewAutoActionThreshold?: number | null;
   llmProvider?: LlmProvider | null;
   llmBaseUrl?: string | null;
   llmApiKey?: string | null;

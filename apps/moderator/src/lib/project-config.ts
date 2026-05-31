@@ -11,7 +11,8 @@ import { logger } from "./logger.js";
 import { type LlmConfig, envLlm } from "./llm-provider.js";
 
 export interface ResolvedModeratorConfig {
-  autoActionThreshold: number; // 0..1; 0 disables auto-removal (everything queues for a human)
+  blockAutoActionThreshold: number; // 0..1; 0 disables block auto-removal (queues for a human)
+  reviewAutoActionThreshold: number; // 0..1; 0 disables review auto-removal (the default)
   llm: LlmConfig;
 }
 
@@ -22,11 +23,12 @@ function resolve(raw: unknown): ResolvedModeratorConfig {
   const r = (raw && typeof raw === "object" ? raw : {}) as Record<string, any>;
   const base = envLlm();
   const num = (v: unknown, fallback: number) => (typeof v === "number" && Number.isFinite(v) ? v : fallback);
+  // A threshold override is used only when it's a finite number, clamped to 0..1; else the env default.
+  const threshold = (v: unknown, fallback: number) =>
+    typeof v === "number" && Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : fallback;
   return {
-    autoActionThreshold:
-      typeof r.autoActionThreshold === "number" && Number.isFinite(r.autoActionThreshold)
-        ? Math.min(1, Math.max(0, r.autoActionThreshold))
-        : env.MODERATION_AUTO_ACTION_THRESHOLD,
+    blockAutoActionThreshold: threshold(r.blockAutoActionThreshold, env.MODERATION_BLOCK_AUTO_ACTION_THRESHOLD),
+    reviewAutoActionThreshold: threshold(r.reviewAutoActionThreshold, env.MODERATION_REVIEW_AUTO_ACTION_THRESHOLD),
     llm: {
       provider: r.llmProvider === "anthropic" || r.llmProvider === "openai" ? r.llmProvider : base.provider,
       baseUrl: typeof r.llmBaseUrl === "string" && r.llmBaseUrl ? r.llmBaseUrl : base.baseUrl,
@@ -52,7 +54,9 @@ export async function getModeratorConfig(projectId: string): Promise<ResolvedMod
     {
       projectId,
       provider: cfg.llm.provider, model: cfg.llm.model, baseUrl: cfg.llm.baseUrl ?? null,
-      maxTokens: cfg.llm.maxTokens, threshold: cfg.autoActionThreshold, llmKeyResolved: !!cfg.llm.apiKey,
+      maxTokens: cfg.llm.maxTokens,
+      blockThreshold: cfg.blockAutoActionThreshold, reviewThreshold: cfg.reviewAutoActionThreshold,
+      llmKeyResolved: !!cfg.llm.apiKey,
     },
     "moderation: resolved project config",
   );

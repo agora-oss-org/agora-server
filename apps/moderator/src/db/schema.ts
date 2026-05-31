@@ -16,7 +16,7 @@ export const projects = pgTable("projects", {
   id: uuid("id").primaryKey(),
   webhookSecret: text("webhook_secret"),
   moderationWebhookSecret: text("moderation_webhook_secret"),
-  // Per-project tuning the moderator overlays on its env defaults (autoActionThreshold + LLM config).
+  // Per-project tuning the moderator overlays on its env defaults (block/review auto-action thresholds + LLM config).
   // Authored by the API (admin Settings → Moderator); read here via lib/project-config.ts.
   moderatorConfig: jsonb("moderator_config").notNull().default(sql`'{}'::jsonb`),
 });

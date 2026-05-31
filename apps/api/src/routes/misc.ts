@@ -179,7 +179,7 @@ export const miscRoutes = new Hono<{ Variables: Variables }>()
     const [row] = await db.select({ moderatorConfig: projects.moderatorConfig }).from(projects).where(eq(projects.id, c.var.projectId)).limit(1);
     const current = (row?.moderatorConfig && typeof row.moderatorConfig === "object" ? row.moderatorConfig : {}) as Record<string, any>;
     const next: Record<string, any> = { ...current };
-    for (const k of ["autoActionThreshold", "llmProvider", "llmBaseUrl", "llmApiKey", "llmModel", "llmMaxTokens"] as const) {
+    for (const k of ["blockAutoActionThreshold", "reviewAutoActionThreshold", "llmProvider", "llmBaseUrl", "llmApiKey", "llmModel", "llmMaxTokens"] as const) {
       const v = (body as Record<string, unknown>)[k];
       if (v === undefined) continue;
       if (v === null) delete next[k]; // clear → moderator env default
@@ -283,7 +283,8 @@ async function moderatorView(projectId: string) {
   return {
     url: p?.url ?? null,
     hasSecret: !!p?.secret,
-    autoActionThreshold: typeof cfg.autoActionThreshold === "number" ? cfg.autoActionThreshold : null,
+    blockAutoActionThreshold: typeof cfg.blockAutoActionThreshold === "number" ? cfg.blockAutoActionThreshold : null,
+    reviewAutoActionThreshold: typeof cfg.reviewAutoActionThreshold === "number" ? cfg.reviewAutoActionThreshold : null,
     llmProvider: cfg.llmProvider ?? null,
     llmBaseUrl: cfg.llmBaseUrl ?? null,
     llmModel: cfg.llmModel ?? null,
