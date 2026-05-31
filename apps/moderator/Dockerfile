@@ -24,7 +24,7 @@ RUN pnpm deploy --filter=@agora/moderator --legacy --prod /out
 # ── Runtime: the pruned standalone only ────────────────────────────────────────
 FROM node:22-slim AS runtime
 ENV NODE_ENV=production
-ENV PORT=4001
+ENV MODERATOR_PORT=4001
 ENV LOG_CONSOLE=json
 ENV LOG_LEVEL=info
 # OpenTelemetry exporters default to a local collector. Set OTEL_*_ENDPOINT to your collector in
@@ -43,6 +43,6 @@ EXPOSE 9465
 
 # Liveness probe against the app's /health endpoint (uses Node's built-in fetch).
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
-  CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||4001)+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+  CMD node -e "fetch('http://127.0.0.1:'+(process.env.MODERATOR_PORT||4001)+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
 CMD ["node", "dist/index.js"]

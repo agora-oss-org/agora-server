@@ -11,7 +11,7 @@ import { moderationEnabled } from "./lib/llm-provider.js";
 
 const app = createApp();
 
-serve({ fetch: app.fetch, port: env.PORT }, (info) => {
+serve({ fetch: app.fetch, port: env.MODERATOR_PORT }, (info) => {
   logger.info(
     { port: info.port, provider: env.MODERATOR_LLM_PROVIDER, llm: moderationEnabled() },
     "🛡️  Agora moderator listening"

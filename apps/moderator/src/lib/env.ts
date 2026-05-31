@@ -6,8 +6,9 @@ import { z } from "zod";
 const optionalStr = z.preprocess((v) => (v === "" ? undefined : v), z.string().optional());
 
 const schema = z.object({
-  // The moderator listens on its own port (4001 by default) alongside the API (4000).
-  PORT: z.coerce.number().default(4001),
+  // The moderator listens on its own port (4001 by default) alongside the API. Named MODERATOR_PORT
+  // (not PORT) so it can share the API's root .env, where PORT=4000 belongs to the API.
+  MODERATOR_PORT: z.coerce.number().default(4001),
   // Same Supabase transaction pooler as the API — the moderator READS projects.webhook_secret and
   // READS/WRITES its own moderation_analyses table. DDL is owned by the API's Drizzle migrations.
   DATABASE_URL: z.string().url(),
