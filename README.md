@@ -455,6 +455,27 @@ the seeded demo user.
 - ⬜ Ops backlog: deployment, and RLS write policies (only needed if the Supabase Data API is opened
   for writes).
 
+## Contributing
+
+**Contributors welcome — Agora is built in the open, and we'd genuinely love your help.** 🌱
+Bug fixes, new admin-app slices, docs, test coverage, deployment guides, or closing a contract gap
+against Replyke — there's room to jump in, whatever your level.
+
+- 🐛 **Found a bug or a contract mismatch?** [Open an issue](https://github.com/jenova-marie/agora-server/issues).
+  For SDK-compat drift, include the endpoint and the expected-vs-actual shape from
+  [`docs/MODELS.md`](docs/MODELS.md).
+- ✨ **Want to build something?** Browse the [open issues](https://github.com/jenova-marie/agora-server/issues)
+  or the **[Status](#status)** backlog. Friendly first areas: admin-app features, test coverage, and
+  the deployment guide.
+- 📋 **Before you start,** read **[CONTRIBUTING.md](CONTRIBUTING.md)** — dev setup, the contract
+  rules, coding conventions, the migration workflow, and how to open a PR.
+
+The one hard rule: **the contract is the constraint.** Any change to request/response shapes, REST
+paths, or socket.io events must keep [`agora-sdk`](https://github.com/jenova-marie/agora-sdk) working
+1:1 — see [The contract is the constraint](#the-contract-is-the-constraint). Everyone is welcome here;
+be kind, assume good faith, and build something we'd all want to use. 💜
+
 ## License
 
-[Apache-2.0](LICENSE) — matching Replyke.
+[Apache-2.0](LICENSE) — matching Replyke. By contributing, you agree your contributions are licensed
+under the same terms.

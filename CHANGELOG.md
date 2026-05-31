@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Contributor guide + "Contributing" invitation.** A new root `CONTRIBUTING.md` (dev setup, the
+  contract rules, coding/security conventions, the migration workflow, testing tiers, changelog
+  rule, and Conventional-Commits + PR process) and a `README.md` **Contributing** section that
+  welcomes contributors and points at it.
 - **Moderation removal now takes effect on reads, with a per-project behavior setting.** Previously
   moderating content as "removed" only stamped `moderationStatus` — no read path honored it, so a
   removed entity/comment kept serving its full content. New `moderation_config.removedContentBehavior`
