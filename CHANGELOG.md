@@ -36,6 +36,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   report ReviewDialog (verdict, confidence, categories, rationale, and a **Re-analyze** action),
   backed by `lib/moderation-ai.ts` against `VITE_MODERATOR_BASE_URL` (default `/moderator`, proxied).
 
+### Changed
+- **Docs: split the README into a high-level root + per-app guides.** The root `README.md` now
+  introduces the project and its packages and links out; each app owns its own setup/config/Docker
+  docs in `apps/api/README.md`, `apps/admin/README.md`, and `apps/moderator/README.md`.
+
 ## [0.4.0] - 2026-05-31
 
 A security & moderation release: server-enforced **space privacy** (members-only reads) + **posting
