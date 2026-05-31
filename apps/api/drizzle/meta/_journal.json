@@ -148,6 +148,20 @@
       "when": 1780207370114,
       "tag": "0020_unknown_micromax",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1780211289608,
+      "tag": "0021_cold_sally_floyd",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1780212020184,
+      "tag": "0022_easy_archangel",
+      "breakpoints": true
     }
   ]
 }

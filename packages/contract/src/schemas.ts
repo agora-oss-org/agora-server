@@ -242,6 +242,24 @@ export const moderationConfigSchema = z.object({
   removedContentBehavior: z.enum(["hide", "placeholder"]).optional(),
 });
 
+// The @agora/moderator integration (PATCH /settings/moderator). Groups everything about automated
+// moderation for one project:
+//   - the internal notifier the API fans content `*.complete` events to (url + write-only secret) —
+//     separate from the project's (external) webhook notifier;
+//   - the auto-action threshold + LLM-provider tuning the moderator overlays on its env defaults.
+// Every field is nullish: omit to leave unchanged, null to clear (→ the moderator's env default).
+// `secret` and `llmApiKey` are write-only (GET exposes only hasSecret / hasLlmApiKey).
+export const moderatorConfigSchema = z.object({
+  url: z.string().url().nullish(),
+  secret: z.string().min(1).nullish(),
+  autoActionThreshold: z.number().min(0).max(1).nullish(),
+  llmProvider: z.enum(["openai", "anthropic"]).nullish(),
+  llmBaseUrl: z.string().url().nullish(),
+  llmApiKey: z.string().min(1).nullish(),
+  llmModel: z.string().min(1).nullish(),
+  llmMaxTokens: z.number().int().positive().nullish(),
+});
+
 // ─── automated moderation (@agora/moderator) ────────────────────────────────
 // Body for the moderator's on-demand POST /moderation/analyze (admin "Re-analyze"). The admin
 // already has the content loaded, so it passes the text directly along with what's being judged.
