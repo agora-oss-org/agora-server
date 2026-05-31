@@ -78,6 +78,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `moderationReason` records *how confidently* and *why*, not just the prose.
 
 ### Changed
+- **API: structured logging across the business logic.** Beyond the existing per-request log, the
+  domain routers + libs now emit `info`/`debug`/`warn` events (data-object-first per wonder-logger;
+  ids on everything, never emails/passwords/secrets): auth (signed up/in/out, password change, email
+  + external verification), token refresh (rotation `debug`, **reuse-detection `warn`**), webhook
+  validation vetoes + broadcast fan-out, content mutations (entity/comment/space create·update·
+  delete + reactions), moderation actions (space moderator + operator report resolution + client
+  write-back), chat (conversation/message create), search queries, and cron sweeps.
 - **Moderator: structured logging across the pipeline.** `info`-level logs for every decision —
   the headline `moderation: verdict` carries `targetId`/`targetType`/`projectId`/`spaceId`, the LLM
   `verdict` + `confidence` (+ `scorePct`), `categories`, `model`, `threshold`, eligibility and LLM

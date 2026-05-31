@@ -4,6 +4,7 @@ import { and, eq, isNull, isNotNull, desc, count, inArray } from "drizzle-orm";
 import type { Variables } from "../http/context.js";
 import { requireAuth } from "../middleware/auth.js";
 import { db } from "../db/index.js";
+import { logger } from "../lib/logger.js";
 import { reports, spaces, spaceMembers, entities, comments } from "../db/schema/index.js";
 import { readPagination, paginate } from "../http/envelope.js";
 import { shapeReport } from "../lib/shape.js";
@@ -47,6 +48,7 @@ export const reportRoutes = new Hono<{ Variables: Variables }>()
       details: body.details,
       spaceId: body.spaceId,
     }).returning();
+    logger.info({ projectId: c.var.projectId, reportId: row!.id, reporterId: c.var.auth!.userId, targetType: body.targetType, targetId: body.targetId, spaceId: body.spaceId ?? null, reason: body.reason }, "report: filed");
     return c.json(shapeReport(row!), 201);
   })
   // Open (unresolved) reports — the moderation inbox. A deployment operator sees every unresolved
@@ -102,5 +104,6 @@ export const reportRoutes = new Hono<{ Variables: Variables }>()
     }
     await db.update(reports).set({ resolvedAt: new Date(), resolvedById: c.var.auth!.userId })
       .where(and(eq(reports.projectId, c.var.projectId), eq(reports.id, report.id)));
+    logger.info({ projectId: c.var.projectId, reportId: report.id, operatorId: c.var.auth!.userId, action, targetType: report.targetType, targetId: report.targetId }, "report: resolved by operator");
     return c.json({ success: true });
   });

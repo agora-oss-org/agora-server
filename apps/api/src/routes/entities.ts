@@ -7,6 +7,7 @@ import type { Variables } from "../http/context.js";
 import { Errors } from "../http/errors.js";
 import { requireAuth } from "../middleware/auth.js";
 import { db } from "../db/index.js";
+import { logger } from "../lib/logger.js";
 import { indexEntityAsync } from "../lib/embeddings.js";
 import * as webhooks from "../lib/webhooks.js";
 import { notifyOnEntityMentions, notifyOnReaction } from "../lib/notifications.js";
@@ -184,6 +185,7 @@ export const entityRoutes = new Hono<{ Variables: Variables }>()
     indexEntityAsync(projectId, row.id, [row.title, row.content].filter(Boolean).join("\n"));
     await notifyOnEntityMentions(projectId, row);
     const shaped = shapeEntity(row, fileRows.length ? { files: fileRows.map(shapeFile) } : {});
+    logger.info({ projectId, entityId: row.id, userId, spaceId: row.spaceId ?? null, isDraft: row.isDraft, files: fileRows.length }, "entity: created");
     webhooks.broadcast(projectId, "entity.created.complete", shaped);
     return c.json(shaped, 201);
   })
@@ -258,17 +260,20 @@ export const entityRoutes = new Hono<{ Variables: Variables }>()
       indexEntityAsync(c.var.projectId, updated!.id, [updated!.title, updated!.content].filter(Boolean).join("\n"));
     }
     const shaped = shapeEntity(updated!);
+    logger.info({ projectId: c.var.projectId, entityId: row.id, userId: row.userId, fields: Object.keys(patch) }, "entity: updated");
     webhooks.broadcast(c.var.projectId, "entity.updated.complete", shaped);
     return c.json(shaped);
   })
   .delete("/:id", requireAuth, async (c) => {
     const row = await ownedEntity(c);
     await db.update(entities).set({ deletedAt: new Date() }).where(eq(entities.id, row.id));
+    logger.info({ projectId: c.var.projectId, entityId: row.id, userId: row.userId }, "entity: deleted");
     return c.json({ success: true });
   })
   .post("/:id/publish", requireAuth, async (c) => {
     const row = await ownedEntity(c);
     const [updated] = await db.update(entities).set({ isDraft: false }).where(eq(entities.id, row.id)).returning();
+    logger.info({ projectId: c.var.projectId, entityId: row.id, userId: row.userId }, "entity: published");
     return c.json(shapeEntity(updated!));
   })
   // ── reactions ─────────────────────────────────────────────────────────────
@@ -377,10 +382,9 @@ async function toggleEntityReaction(c: any, type: string) {
     sql`select toggle_reaction(${projectId}::uuid, 'entity'::reaction_target, ${id}::uuid, ${userId}::uuid, ${type}::reaction_type) as counts`
   );
   await db.execute(sql`select refresh_entity_score(${id}::uuid)`);
-  return {
-    reactionCounts: (res as any)[0]?.counts ?? null,
-    userReaction: await currentReaction(projectId, "entity", id, userId),
-  };
+  const userReaction = await currentReaction(projectId, "entity", id, userId);
+  logger.debug({ projectId, entityId: id, userId, reactionType: type, active: userReaction === type }, "entity: reaction toggled");
+  return { reactionCounts: (res as any)[0]?.counts ?? null, userReaction };
 }
 
 async function clearEntityReaction(c: any) {

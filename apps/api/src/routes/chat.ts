@@ -18,6 +18,7 @@ import {
   addConversationMemberSchema, convMemberRoleSchema,
 } from "../lib/validation.js";
 import { emitToConversation } from "../realtime/socket.js";
+import { logger } from "../lib/logger.js";
 import { indexContentAsync } from "../lib/embeddings.js";
 import * as webhooks from "../lib/webhooks.js";
 
@@ -111,6 +112,7 @@ export const chatRoutes = new Hono<{ Variables: Variables }>()
     await db.insert(conversationMembers).values(memberIds.map((userId) => ({
       projectId, conversationId: convo!.id, userId, role: userId === uid ? "admin" as const : "member" as const,
     }))).onConflictDoNothing();
+    logger.info({ projectId, conversationId: convo!.id, userId: uid, type: convo!.type, spaceId: convo!.spaceId ?? null, members: memberIds.length }, "chat: conversation created");
     return c.json(shapeConversation(convo!, { memberCount: memberIds.length }), 201);
   })
   .post("/conversations/direct", requireAuth, async (c) => {
@@ -315,6 +317,7 @@ export const chatRoutes = new Hono<{ Variables: Variables }>()
     }
     const shaped = shapeChatMessage(row!, { localId: body.localId, ...(fileRows.length ? { files: fileRows.map(shapeFile) } : {}) });
     indexContentAsync(c.var.projectId, "message", row!.id, row!.content);
+    logger.debug({ projectId: c.var.projectId, conversationId: convo.id, messageId: row!.id, userId: c.var.auth!.userId, parentMessageId: row!.parentMessageId ?? null, files: fileRows.length }, "chat: message created");
     emitToConversation(convo.id, "message:created", shaped);
     webhooks.broadcast(c.var.projectId, "message.created.complete", shaped);
     if (row!.parentMessageId) {

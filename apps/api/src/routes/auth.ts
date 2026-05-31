@@ -14,6 +14,7 @@ import { getSupabase, getSupabaseAnon } from "../lib/supabase.js";
 import { mintSession, rotateRefreshToken, revokeRefreshToken, revokeAllForProfile } from "../lib/tokens.js";
 import { isOperator } from "../lib/operators.js";
 import { shapeAuthUser } from "../lib/shape.js";
+import { logger } from "../lib/logger.js";
 import * as webhooks from "../lib/webhooks.js";
 import {
   parseBody, signUpSchema, signInSchema, refreshSchema, signOutSchema,
@@ -70,9 +71,15 @@ export const authRoutes = new Hono<{ Variables: Variables }>()
     const projectId = c.var.projectId;
     const body = parseBody(signUpSchema, await c.req.json().catch(() => ({})), "auth");
     const check = await webhooks.validate(projectId, "user.created", { email: body.email, name: body.name, username: body.username });
-    if (!check.valid) throw Errors.forbidden("auth/rejected", check.message ?? "Sign-up rejected by validation webhook");
+    if (!check.valid) {
+      logger.info({ projectId }, "auth: sign-up rejected by validation webhook");
+      throw Errors.forbidden("auth/rejected", check.message ?? "Sign-up rejected by validation webhook");
+    }
     const { data, error } = await getSupabaseAnon().auth.signUp({ email: body.email, password: body.password });
-    if (error) throw Errors.badRequest("auth/sign-up-failed", error.message);
+    if (error) {
+      logger.warn({ projectId, err: error.message }, "auth: sign-up failed");
+      throw Errors.badRequest("auth/sign-up-failed", error.message);
+    }
     // When email confirmation is enabled, GoTrue creates the user and sends the confirmation
     // email but returns NO session (and supabase-js's _sessionResponse nulls out `data.user`,
     // since GoTrue serializes the new user at the top level rather than under `data.user`).
@@ -81,11 +88,13 @@ export const authRoutes = new Hono<{ Variables: Variables }>()
     // the same shape for "already registered" (GoTrue obfuscates it as no-session) also avoids
     // email enumeration.
     if (!data.session) {
+      logger.info({ projectId }, "auth: sign-up pending email confirmation");
       return c.json({ status: "confirmation_required", email: body.email }, 200);
     }
     // Email confirmation is disabled (auto-confirm): a full session comes back immediately.
     const profile = await ensureProfile(projectId, data.session.user.id, { email: body.email, name: body.name, username: body.username });
     const session = await sessionResponse(projectId, profile);
+    logger.info({ projectId, userId: profile.id, autoConfirmed: true }, "auth: signed up");
     webhooks.broadcast(projectId, "user.created.complete", session.user);
     return c.json(session, 201);
   })
@@ -93,9 +102,13 @@ export const authRoutes = new Hono<{ Variables: Variables }>()
     const projectId = c.var.projectId;
     const body = parseBody(signInSchema, await c.req.json().catch(() => ({})), "auth");
     const { data, error } = await getSupabaseAnon().auth.signInWithPassword({ email: body.email, password: body.password });
-    if (error || !data.user) throw Errors.unauthorized("auth/invalid-credentials", "Invalid email or password");
+    if (error || !data.user) {
+      logger.info({ projectId }, "auth: sign-in failed (invalid credentials)");
+      throw Errors.unauthorized("auth/invalid-credentials", "Invalid email or password");
+    }
     const profile = await ensureProfile(projectId, data.user.id, { email: body.email });
     await db.update(profiles).set({ lastActive: new Date() }).where(eq(profiles.id, profile.id));
+    logger.info({ projectId, userId: profile.id, role: profile.role, operator: isOperator(profile) }, "auth: signed in");
     return c.json(await sessionResponse(projectId, profile));
   })
   // Sign-out is idempotent and must NOT require a valid access token: a stale/expired access token
@@ -106,6 +119,7 @@ export const authRoutes = new Hono<{ Variables: Variables }>()
     const body = parseBody(signOutSchema, await c.req.json().catch(() => ({})), "auth");
     if (body.refreshToken) await revokeRefreshToken(c.var.projectId, body.refreshToken);
     else if (c.var.auth?.userId) await revokeAllForProfile(c.var.auth.userId);
+    logger.info({ projectId: c.var.projectId, userId: c.var.auth?.userId ?? null, byRefreshToken: !!body.refreshToken }, "auth: signed out");
     return c.json({ success: true }); // always 200 — nothing to revoke is still a successful sign-out
   })
   .post("/request-new-access-token", async (c) => {
@@ -135,6 +149,7 @@ export const authRoutes = new Hono<{ Variables: Variables }>()
     if (error) throw Errors.badRequest("auth/change-password-failed", error.message);
     // Invalidate all existing sessions, then hand back a fresh one.
     await revokeAllForProfile(profile.id);
+    logger.info({ projectId, userId: profile.id }, "auth: password changed (all sessions revoked)");
     return c.json({ success: true, ...(await mintSession(projectId, profile.id, profile.role, isOperator(profile))) });
   })
   .post("/request-password-reset", async (c) => {
@@ -150,6 +165,7 @@ export const authRoutes = new Hono<{ Variables: Variables }>()
     if (error || !data.user) throw Errors.badRequest("auth/verify-failed", error?.message ?? "Verification failed");
     await db.update(profiles).set({ isVerified: true })
       .where(and(eq(profiles.projectId, projectId), eq(profiles.authUserId, data.user.id)));
+    logger.info({ projectId }, "auth: email verified");
     return c.json({ success: true });
   })
   .post("/send-verification-email", async (c) => {
@@ -168,6 +184,7 @@ export const authRoutes = new Hono<{ Variables: Variables }>()
       const publicKey = await importSPKI(project.key, "RS256");
       ({ payload } = await jwtVerify(body.userJwt ?? body.token!, publicKey, { audience: "replyke.com", issuer: projectId }) as any);
     } catch (e: any) {
+      logger.info({ projectId, err: e?.message }, "auth: external token verification failed");
       throw Errors.unauthorized("auth/external-invalid", `External token invalid: ${e?.message ?? "verification failed"}`);
     }
     const foreignId = String(payload.sub ?? "");
@@ -193,5 +210,6 @@ export const authRoutes = new Hono<{ Variables: Variables }>()
       }).returning();
       profile = row!;
     }
+    logger.info({ projectId, userId: profile.id, foreignId, isNew: !existing }, "auth: external user verified");
     return c.json(await sessionResponse(projectId, profile));
   });

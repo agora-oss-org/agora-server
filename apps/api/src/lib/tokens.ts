@@ -8,6 +8,7 @@ import { db } from "../db/index.js";
 import { refreshTokens, profiles } from "../db/schema/index.js";
 import { env } from "./env.js";
 import { isOperator } from "./operators.js";
+import { logger } from "./logger.js";
 import { Errors } from "../http/errors.js";
 
 const accessSecret = new TextEncoder().encode(env.ACCESS_TOKEN_SECRET);
@@ -67,29 +68,39 @@ export async function rotateRefreshToken(projectId: string, raw: string): Promis
     .from(refreshTokens)
     .where(and(eq(refreshTokens.projectId, projectId), eq(refreshTokens.tokenHash, sha256(raw))))
     .limit(1);
-  if (!row) throw Errors.unauthorized("auth/invalid-refresh", "Invalid refresh token");
+  if (!row) {
+    logger.info({ projectId }, "auth: refresh rejected — unknown token");
+    throw Errors.unauthorized("auth/invalid-refresh", "Invalid refresh token");
+  }
 
   const now = Date.now();
   const graceMs = env.REFRESH_TOKEN_GRACE_SECONDS * 1000;
 
   // Already revoked → token theft / family compromised.
   if (row.revoked) {
+    logger.warn({ projectId, profileId: row.profileId, familyId: row.familyId }, "auth: refresh token reuse detected — revoking family");
     await revokeFamily(row.familyId);
     throw Errors.unauthorized("auth/refresh-reused", "Refresh token reuse detected");
   }
   // Already rotated: allow once inside the grace window (racing tabs); else it's reuse.
   if (row.rotatedAt) {
     if (now <= row.rotatedAt.getTime() + graceMs) {
+      logger.debug({ projectId, profileId: row.profileId, familyId: row.familyId }, "auth: refresh replay within grace window");
       const { role, operator } = await profileAuthBits(row.profileId);
       return { ...(await mintSession(projectId, row.profileId, role, operator, row.familyId)), profileId: row.profileId };
     }
+    logger.warn({ projectId, profileId: row.profileId, familyId: row.familyId }, "auth: rotated refresh token reused past grace — revoking family");
     await revokeFamily(row.familyId);
     throw Errors.unauthorized("auth/refresh-reused", "Refresh token reuse detected");
   }
-  if (row.expiresAt.getTime() < now) throw Errors.unauthorized("auth/refresh-expired", "Refresh token expired");
+  if (row.expiresAt.getTime() < now) {
+    logger.info({ projectId, profileId: row.profileId }, "auth: refresh rejected — expired");
+    throw Errors.unauthorized("auth/refresh-expired", "Refresh token expired");
+  }
 
   // Normal rotation: spend this token, mint a successor in the same family.
   await db.update(refreshTokens).set({ rotatedAt: new Date() }).where(eq(refreshTokens.id, row.id));
+  logger.debug({ projectId, profileId: row.profileId, familyId: row.familyId }, "auth: refresh rotated");
   const { role, operator } = await profileAuthBits(row.profileId);
   return { ...(await mintSession(projectId, row.profileId, role, operator, row.familyId)), profileId: row.profileId };
 }

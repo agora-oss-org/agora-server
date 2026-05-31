@@ -8,6 +8,7 @@ import { and, eq, or, ilike, isNull, inArray, sql } from "drizzle-orm";
 import type { Variables } from "../http/context.js";
 import { Errors } from "../http/errors.js";
 import { db } from "../db/index.js";
+import { logger } from "../lib/logger.js";
 import { entities, comments, chatMessages, spaces, profiles } from "../db/schema/index.js";
 import { shapeEntity, shapeComment, shapeChatMessage, shapeSpace, shapeUser } from "../lib/shape.js";
 import { embedText, embeddingsEnabled, type SourceType } from "../lib/embeddings.js";
@@ -132,6 +133,10 @@ export const searchRoutes = new Hono<{ Variables: Variables }>()
     const q = (body.query ?? "").trim();
     if (!q) throw Errors.badRequest("search/missing-query", "query is required", "query");
     const results = await retrieveContent(c, q, body);
+    logger.debug(
+      { projectId: c.var.projectId, queryLength: q.length, sourceTypes: body.sourceTypes ?? null, spaceId: body.spaceId ?? null, results: Array.isArray(results) ? results.length : undefined },
+      "search: content query",
+    );
     return c.json(results);
   })
   // POST per the SDK's useAskContent: body { query, sourceTypes?, spaceId?, conversationId?, limit? }.

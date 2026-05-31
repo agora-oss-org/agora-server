@@ -44,12 +44,27 @@ export function createApp() {
   };
 
   // Sweep every digest-enabled space that is due this hour (scripts/send-digests.mjs).
-  app.post("/internal/cron/digests", async (c) => cronGuard(c) ?? c.json(await sendDueDigests()));
+  app.post("/internal/cron/digests", async (c) => {
+    const blocked = cronGuard(c); if (blocked) return blocked;
+    const result = await sendDueDigests();
+    logger.info({ result }, "cron: digests swept");
+    return c.json(result);
+  });
   // Recompute feed scores: stored-mode `decay` snapshots the half-life value, others re-sync
   // hot_score (scripts/recompute-scores.mjs).
-  app.post("/internal/cron/recompute-scores", async (c) => cronGuard(c) ?? c.json(await recomputeDueScores()));
+  app.post("/internal/cron/recompute-scores", async (c) => {
+    const blocked = cronGuard(c); if (blocked) return blocked;
+    const result = await recomputeDueScores();
+    logger.info({ result }, "cron: feed scores recomputed");
+    return c.json(result);
+  });
   // Purge expired refresh tokens so the table doesn't grow unbounded (scripts/purge-tokens.mjs).
-  app.post("/internal/cron/purge-tokens", async (c) => cronGuard(c) ?? c.json(await purgeExpiredRefreshTokens()));
+  app.post("/internal/cron/purge-tokens", async (c) => {
+    const blocked = cronGuard(c); if (blocked) return blocked;
+    const result = await purgeExpiredRefreshTokens();
+    logger.info({ result }, "cron: expired refresh tokens purged");
+    return c.json(result);
+  });
 
   // Automated-moderation write-back: the @agora/moderator service applies a "client" decision
   // (moderationStatus + moderatedByType="client"). Secret-gated like cron; 503 until configured.
@@ -65,7 +80,11 @@ export function createApp() {
       return c.json({ error: "projectId, targetType (entity|comment) and targetId are required", code: "moderation/bad-request" }, 400);
     const status = body.status === "approved" ? "approved" : "removed";
     const ok = await applyClientModeration({ projectId: body.projectId, targetType: body.targetType, targetId: body.targetId, status, reason: body.reason });
-    if (!ok) return c.json({ error: "Target not found", code: "moderation/not-found" }, 404);
+    if (!ok) {
+      logger.warn({ projectId: body.projectId, targetType: body.targetType, targetId: body.targetId, status }, "moderation: client write-back target not found");
+      return c.json({ error: "Target not found", code: "moderation/not-found" }, 404);
+    }
+    logger.info({ projectId: body.projectId, targetType: body.targetType, targetId: body.targetId, status }, "moderation: client decision applied");
     return c.json({ success: true });
   });
 

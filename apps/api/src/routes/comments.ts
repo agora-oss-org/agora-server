@@ -8,6 +8,7 @@ import type { Variables } from "../http/context.js";
 import { Errors } from "../http/errors.js";
 import { requireAuth } from "../middleware/auth.js";
 import { db } from "../db/index.js";
+import { logger } from "../lib/logger.js";
 import { comments, reactions } from "../db/schema/index.js";
 import { readPagination, paginate } from "../http/envelope.js";
 import { shapeComment, parseInclude, attachUserReactions, loadUsers } from "../lib/shape.js";
@@ -104,6 +105,7 @@ export const commentRoutes = new Hono<{ Variables: Variables }>()
     indexContentAsync(projectId, "comment", row.id, row.content);
     await notifyOnComment(projectId, row);
     const shaped = shapeComment(row);
+    logger.info({ projectId, commentId: row.id, entityId: row.entityId, userId: row.userId, parentId: row.parentId ?? null }, "comment: created");
     webhooks.broadcast(projectId, "comment.created.complete", shaped);
     return c.json(shaped, 201);
   })
@@ -203,6 +205,7 @@ export const commentRoutes = new Hono<{ Variables: Variables }>()
     const [updated] = await db.update(comments).set(patch).where(eq(comments.id, row.id)).returning();
     if (body.content !== undefined) indexContentAsync(c.var.projectId, "comment", updated!.id, updated!.content);
     const shaped = shapeComment(updated!);
+    logger.info({ projectId: c.var.projectId, commentId: row.id, entityId: updated!.entityId, userId: row.userId, fields: Object.keys(patch) }, "comment: updated");
     webhooks.broadcast(c.var.projectId, "comment.updated.complete", shaped);
     return c.json(shaped);
   })
@@ -211,6 +214,7 @@ export const commentRoutes = new Hono<{ Variables: Variables }>()
     // Reddit-style soft delete: keep the row (preserves thread), blank via user_deleted_at.
     const now = new Date();
     await db.update(comments).set({ deletedAt: now, userDeletedAt: now }).where(eq(comments.id, row.id));
+    logger.info({ projectId: c.var.projectId, commentId: row.id, userId: row.userId }, "comment: deleted");
     return c.json({ success: true });
   })
   .post("/:id/reactions", requireAuth, async (c) => {

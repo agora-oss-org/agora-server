@@ -7,6 +7,7 @@ import type { Variables } from "../http/context.js";
 import { Errors } from "../http/errors.js";
 import { requireAuth } from "../middleware/auth.js";
 import { db } from "../db/index.js";
+import { logger } from "../lib/logger.js";
 import { spaces, spaceMembers, spaceRules, entities, comments, profiles, reports } from "../db/schema/index.js";
 import { readPagination, paginate } from "../http/envelope.js";
 import { shapeSpace, shapeRule, shapeUser, generateShortId } from "../lib/shape.js";
@@ -104,6 +105,7 @@ export const spaceRoutes = new Hono<{ Variables: Variables }>()
       projectId: c.var.projectId, spaceId: row!.id, userId: c.var.auth!.userId, role: "admin", status: "active",
     }).onConflictDoNothing();
     const shaped = shapeSpace(row!);
+    logger.info({ projectId: c.var.projectId, spaceId: row!.id, userId: c.var.auth!.userId, parentSpaceId: row!.parentSpaceId ?? null }, "space: created");
     webhooks.broadcast(c.var.projectId, "space.created.complete", shaped);
     return c.json(shaped, 201);
   })
@@ -198,6 +200,7 @@ export const spaceRoutes = new Hono<{ Variables: Variables }>()
 
     const [row] = await db.update(spaces).set(patch).where(eq(spaces.id, space.id)).returning();
     const shaped = shapeSpace(row!);
+    logger.info({ projectId: c.var.projectId, spaceId: space.id, userId: c.var.auth!.userId, fields: Object.keys(patch) }, "space: updated");
     webhooks.broadcast(c.var.projectId, "space.updated.complete", shaped);
     return c.json(shaped);
   })
@@ -205,6 +208,7 @@ export const spaceRoutes = new Hono<{ Variables: Variables }>()
     const space = await getSpace(c);
     if (space.userId !== c.var.auth!.userId) throw Errors.forbidden("spaces/not-owner", "Only the owner can delete");
     await db.update(spaces).set({ deletedAt: new Date() }).where(eq(spaces.id, space.id));
+    logger.info({ projectId: c.var.projectId, spaceId: space.id, userId: c.var.auth!.userId }, "space: deleted");
     return c.json({ success: true, deletedSpace: { id: space.id, name: space.name } });
   })
   .get("/:id/breadcrumb", async (c) => {
@@ -420,6 +424,7 @@ export const spaceRoutes = new Hono<{ Variables: Variables }>()
       moderatedById: c.var.auth!.userId, moderatedByType: "user",
     }).where(and(eq(entities.projectId, c.var.projectId), eq(entities.id, c.req.param("entityId")), eq(entities.spaceId, space.id))).returning();
     if (!row) throw Errors.notFound("entities/not-found", "Entity not found in space");
+    logger.info({ projectId: c.var.projectId, spaceId: space.id, entityId: row.id, moderatorId: c.var.auth!.userId, status }, "moderation: entity status set by moderator");
     return c.json({ success: true });
   })
   .patch("/:id/comments/:commentId/moderation", requireAuth, async (c) => {
@@ -431,6 +436,7 @@ export const spaceRoutes = new Hono<{ Variables: Variables }>()
       moderatedById: c.var.auth!.userId, moderatedByType: "user",
     }).where(and(eq(comments.projectId, c.var.projectId), eq(comments.id, c.req.param("commentId")))).returning();
     if (!row) throw Errors.notFound("comments/not-found", "Comment not found");
+    logger.info({ projectId: c.var.projectId, spaceId: space.id, commentId: row.id, moderatorId: c.var.auth!.userId, status }, "moderation: comment status set by moderator");
     return c.json({ success: true });
   })
   // ── report resolution ─────────────────────────────────────────────────────

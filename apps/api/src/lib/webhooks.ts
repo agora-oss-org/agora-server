@@ -14,6 +14,7 @@ import crypto from "node:crypto";
 import { eq } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { projects } from "../db/schema/index.js";
+import { logger } from "./logger.js";
 
 const TIMEOUT_MS = 4000;
 const CONFIG_TTL_MS = 30_000;
@@ -116,18 +117,26 @@ export async function validate(projectId: string, type: string, data: unknown): 
   const cfg = (await getConfig(projectId)).external;
   if (!cfg || !cfg.events.includes(type)) return { valid: true };
 
+  logger.debug({ projectId, type }, "webhook: validating");
   try {
     const res = await post(cfg, projectId, type, "validate", data);
-    if (!res.ok) return { valid: false, message: "Rejected by validation webhook" };
+    if (!res.ok) {
+      logger.info({ projectId, type, status: res.status }, "webhook: validation vetoed (non-2xx)");
+      return { valid: false, message: "Rejected by validation webhook" };
+    }
     const text = await res.text();
     const respSig = res.headers.get("x-response-signature");
     if (!respSig || !timingSafeEqualHex(sign(cfg.secret, text), respSig)) {
+      logger.warn({ projectId, type }, "webhook: validation response signature invalid");
       return { valid: false, message: "Invalid validation-webhook response signature" };
     }
     const parsed = JSON.parse(text) as ValidationResult;
-    return parsed?.valid === true ? { valid: true } : { valid: false, message: parsed?.message || "Rejected by validation webhook" };
+    if (parsed?.valid === true) return { valid: true };
+    logger.info({ projectId, type }, "webhook: validation vetoed by host");
+    return { valid: false, message: parsed?.message || "Rejected by validation webhook" };
   } catch {
     // slow / unavailable → block (fail-closed), per Replyke
+    logger.warn({ projectId, type }, "webhook: validation unavailable — failing closed");
     return { valid: false, message: "Validation webhook unavailable" };
   }
 }
@@ -142,13 +151,13 @@ export function broadcast(projectId: string, type: string, data: unknown): void 
   void (async () => {
     const cfg = await getConfig(projectId).catch(() => null);
     if (!cfg) return;
+    const toExternal = !!(cfg.external && cfg.external.events.includes(type));
+    const toModeration = !!(cfg.moderation && MODERATION_EVENTS.has(type));
+    if (!toExternal && !toModeration) return;
     const sends: Promise<unknown>[] = [];
-    if (cfg.external && cfg.external.events.includes(type)) {
-      sends.push(post(cfg.external, projectId, type, "complete", data));
-    }
-    if (cfg.moderation && MODERATION_EVENTS.has(type)) {
-      sends.push(post(cfg.moderation, projectId, type, "complete", data));
-    }
+    if (toExternal) sends.push(post(cfg.external!, projectId, type, "complete", data));
+    if (toModeration) sends.push(post(cfg.moderation!, projectId, type, "complete", data));
+    logger.debug({ projectId, type, toExternal, toModeration }, "webhook: broadcasting");
     try {
       await Promise.allSettled(sends);
     } catch {
