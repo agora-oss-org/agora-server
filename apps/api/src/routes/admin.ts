@@ -1,10 +1,14 @@
 // Admin dashboard endpoints — operator (project-wide) or space-moderator (scoped) stats.
 // Mounted at /v7/:projectId/admin. Reads only; aggregates the dashboard's "Project metrics"
 // (live SQL counts) + "App metering" (api_usage, request-metering middleware) in one round trip.
+// Also serves GET /admin/config — the operator-only, secret-redacted running configuration.
 import { Hono } from "hono";
 import { and, eq, or, count, sum, isNull, inArray, sql } from "drizzle-orm";
 import type { Variables } from "../http/context.js";
+import { Errors } from "../http/errors.js";
 import { requireAuth } from "../middleware/auth.js";
+import { env } from "../lib/env.js";
+import { buildRunningConfig } from "../lib/running-config.js";
 import { db } from "../db/index.js";
 import {
   profiles, reports, spaces, spaceMembers, entities, comments, files, apiUsage,
@@ -109,5 +113,20 @@ export const adminRoutes = new Hono<{ Variables: Variables }>()
       supabaseMetrics: {
         databaseSizeBytes: dbSize,
       },
+    });
+  })
+
+  // GET /admin/config — the running configuration (deployment-level), OPERATOR-ONLY. Secrets are
+  // never emitted: secret-bearing settings report as `*Set`/`*Enabled` booleans; only non-sensitive
+  // values are echoed (see lib/running-config.ts). Useful for ops to confirm what's actually wired.
+  .get("/config", requireAuth, async (c) => {
+    if (!c.var.auth!.isOperator) throw Errors.forbidden("admin/operator-required", "Operator access required");
+    return c.json({
+      service: "agora-api",
+      node: process.version,
+      pid: process.pid,
+      uptimeSeconds: Math.floor(process.uptime()),
+      startedAt: new Date(Date.now() - process.uptime() * 1000).toISOString(),
+      config: buildRunningConfig(env),
     });
   });
