@@ -1,5 +1,6 @@
 // Admin-facing review aids (operator-gated). The moderator carries its own version: the admin
 // reaches these at /v1/:projectId/moderation/* with the same Bearer token it already holds.
+//   GET  /config                             → the moderator's running configuration (secret-redacted)
 //   GET  /queue                              → the AI-flag queue (unresolved block/review analyses)
 //   GET  /analysis?targetType=&targetId=     → the latest stored analysis for one item
 //   POST /analyze                            → on-demand (re)assessment (admin "Re-analyze")
@@ -10,6 +11,8 @@ import { moderationAnalyzeSchema, paginate } from "@agora/contract";
 import type { Variables } from "../http/context.js";
 import { Errors } from "../http/errors.js";
 import { requireOperator } from "../middleware/auth.js";
+import { env } from "../lib/env.js";
+import { buildRunningConfig } from "../lib/running-config.js";
 import { db } from "../db/index.js";
 import { moderationAnalyses } from "../db/schema.js";
 import { shapeAnalysis } from "../lib/shape.js";
@@ -24,6 +27,19 @@ function readPagination(c: { req: { query: (k: string) => string | undefined } }
 
 export const moderationRoutes = new Hono<{ Variables: Variables }>()
   .use("*", requireOperator)
+
+  // GET /config — the moderator's running configuration (secret-redacted; operator-only via the
+  // router gate above). The `defaults` block is the service's env config — projects can override it.
+  .get("/config", (c) =>
+    c.json({
+      service: "agora-moderator",
+      node: process.version,
+      pid: process.pid,
+      uptimeSeconds: Math.floor(process.uptime()),
+      startedAt: new Date(Date.now() - process.uptime() * 1000).toISOString(),
+      config: buildRunningConfig(env),
+    })
+  )
 
   // The AI-flag queue: unresolved block/review analyses for the project (optionally one space).
   .get("/queue", async (c) => {
