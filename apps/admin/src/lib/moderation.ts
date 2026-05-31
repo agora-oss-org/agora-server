@@ -1,6 +1,6 @@
 // Moderation data access. Listing the queues uses the role-scoped /reports endpoints; taking action
 // uses the space-scoped moderation + report-resolution endpoints (so a report must carry a spaceId).
-import type { PaginatedResponse, Report, Entity, Comment } from "@agora/contract";
+import type { PaginatedResponse, Report, Entity, Comment, ReportTargetType } from "@agora/contract";
 import { api } from "./api";
 import { DEMO_URL } from "../config";
 
@@ -13,14 +13,19 @@ export function listReports(status: ReportStatus, page: number) {
   return api<PaginatedResponse<Report>>(`/reports/${status}`, { query: { page } });
 }
 
-/** Fetch the reported target (for the review panel). Only entity/comment are reportable today.
- *  Note the shape asymmetry: GET /entities/:id returns the entity bare, but GET /comments/:id wraps
- *  it as `{ comment }` (the SDK's useFetchComment contract) — so the comment must be unwrapped. */
+/** Fetch a moderatable target's content by type + id (for the review panels). Only entity/comment
+ *  are loadable today. Shape asymmetry: GET /entities/:id returns the entity bare, but GET
+ *  /comments/:id wraps it as `{ comment }` (the SDK's useFetchComment contract) — unwrap the comment. */
+export function getTargetContent(targetType: ReportTargetType, targetId: string): Promise<Entity | Comment | null> {
+  if (targetType === "entity") return api<Entity>(`/entities/${targetId}`);
+  if (targetType === "comment")
+    return api<{ comment: Comment }>(`/comments/${targetId}`).then((r) => r.comment);
+  return Promise.resolve(null); // message (and anything else) isn't loadable here
+}
+
+/** Fetch the reported target (for the report ReviewDialog). */
 export function getReportTarget(report: Report): Promise<Entity | Comment | null> {
-  if (report.targetType === "entity") return api<Entity>(`/entities/${report.targetId}`);
-  if (report.targetType === "comment")
-    return api<{ comment: Comment }>(`/comments/${report.targetId}`).then((r) => r.comment);
-  return Promise.resolve(null);
+  return getTargetContent(report.targetType, report.targetId);
 }
 
 /**
@@ -28,14 +33,18 @@ export function getReportTarget(report: Report): Promise<Entity | Comment | null
  * `?entity=<id>[&comment=<id>]` off its URL. For a comment we need its parent `entityId`, which only
  * comes from the loaded target — so this returns null until the comment target is available.
  */
-export function reportDeepLink(report: Report, target: Entity | Comment | null): string | null {
+export function contentDeepLink(
+  targetType: ReportTargetType,
+  targetId: string,
+  target: Entity | Comment | null,
+): string | null {
   let entityId: string | undefined;
   let commentId: string | undefined;
-  if (report.targetType === "entity") {
-    entityId = report.targetId;
-  } else if (report.targetType === "comment") {
+  if (targetType === "entity") {
+    entityId = targetId;
+  } else if (targetType === "comment") {
     entityId = (target as Comment | null)?.entityId; // parent entity — needs the loaded comment
-    commentId = report.targetId;
+    commentId = targetId;
   }
   if (!entityId) return null;
   try {
@@ -46,6 +55,11 @@ export function reportDeepLink(report: Report, target: Entity | Comment | null):
   } catch {
     return null; // malformed DEMO_URL
   }
+}
+
+/** Deep link from a report to the reported content in the consumer/demo app. */
+export function reportDeepLink(report: Report, target: Entity | Comment | null): string | null {
+  return contentDeepLink(report.targetType, report.targetId, target);
 }
 
 // ── space-scoped actions ──────────────────────────────────────────────────────

@@ -1,10 +1,10 @@
 import { useState } from "react";
-import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Bot, ChevronLeft, ChevronRight, Inbox, ShieldCheck } from "lucide-react";
 import type { ModerationAnalysis, ModerationVerdict, Report } from "@agora/contract";
 import { useAuth } from "../auth/AuthContext";
 import { listReports, reportsKey, type ReportStatus } from "../lib/moderation";
-import { aiQueueKey, dismissAnalysis, listAiQueue, removeFlagged } from "../lib/moderation-ai";
+import { aiQueueKey, listAiQueue } from "../lib/moderation-ai";
 import { relativeTime, shortId } from "../lib/time";
 import { PageHeader } from "../components/ui/PageHeader";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/Tabs";
@@ -13,9 +13,9 @@ import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { EmptyState } from "../components/ui/EmptyState";
 import { LoadingPanel } from "../components/ui/Spinner";
-import { useToast } from "../components/ui/Toast";
 import { ApiError } from "../lib/api";
 import { ReviewDialog } from "./moderation/ReviewDialog";
+import { AiFlagDialog } from "./moderation/AiFlagDialog";
 
 const VERDICT_BADGE: Record<ModerationVerdict, "success" | "danger" | "warning"> = {
   allow: "success",
@@ -29,6 +29,7 @@ export function ModerationPage() {
   const { isOperator } = useAuth();
   const [tab, setTab] = useState<ModTab>("pending");
   const [reviewing, setReviewing] = useState<Report | null>(null);
+  const [reviewingFlag, setReviewingFlag] = useState<ModerationAnalysis | null>(null);
 
   return (
     <>
@@ -61,11 +62,12 @@ export function ModerationPage() {
           <ReportsTable status="moderated" />
         </TabsContent>
         <TabsContent value="ai" className="mt-4 focus:outline-none">
-          <AiFlagsTable />
+          <AiFlagsTable onReview={setReviewingFlag} />
         </TabsContent>
       </Tabs>
 
       <ReviewDialog report={reviewing} onClose={() => setReviewing(null)} />
+      <AiFlagDialog analysis={reviewingFlag} onClose={() => setReviewingFlag(null)} />
     </>
   );
 }
@@ -159,30 +161,15 @@ function ReportsTable({ status, onReview }: { status: ReportStatus; onReview?: (
 }
 
 // The AI-flag queue: content the @agora/moderator service flagged (block/review) that no human has
-// dispositioned yet. Each row can be confirmed (remove the content) or dismissed (false positive).
-function AiFlagsTable() {
+// dispositioned yet. Reviewing a row opens the AI-flag dialog (content + verdict + Remove/Dismiss).
+function AiFlagsTable({ onReview }: { onReview: (a: ModerationAnalysis) => void }) {
   const [page, setPage] = useState(1);
-  const qc = useQueryClient();
-  const toast = useToast();
   const query = useQuery({
     queryKey: aiQueueKey(page),
     queryFn: () => listAiQueue(page),
     placeholderData: keepPreviousData,
     retry: false,
   });
-
-  const invalidate = () => qc.invalidateQueries({ queryKey: ["ai-queue"] });
-  const remove = useMutation({
-    mutationFn: (id: string) => removeFlagged(id),
-    onSuccess: () => { toast({ title: "Content removed", variant: "danger" }); invalidate(); },
-    onError: (e) => toast({ title: "Couldn't remove", description: e instanceof Error ? e.message : undefined, variant: "danger" }),
-  });
-  const dismiss = useMutation({
-    mutationFn: (id: string) => dismissAnalysis(id),
-    onSuccess: () => { toast({ title: "Flag dismissed", variant: "success" }); invalidate(); },
-    onError: (e) => toast({ title: "Couldn't dismiss", description: e instanceof Error ? e.message : undefined, variant: "danger" }),
-  });
-  const busy = remove.isPending || dismiss.isPending;
 
   if (query.isLoading) return <LoadingPanel />;
   if (query.isError) {
@@ -211,7 +198,7 @@ function AiFlagsTable() {
         </THead>
         <TBody>
           {items.map((a: ModerationAnalysis) => (
-            <Tr key={a.id}>
+            <Tr key={a.id} className="cursor-pointer" onClick={() => onReview(a)}>
               <Td>
                 <div className="flex items-center gap-2">
                   <Badge variant="outline">{a.targetType}</Badge>
@@ -227,14 +214,9 @@ function AiFlagsTable() {
               <Td className="max-w-[18rem] truncate text-muted">{a.reason}</Td>
               <Td className="text-muted">{relativeTime(a.createdAt)}</Td>
               <Td className="text-right">
-                <div className="flex justify-end gap-2">
-                  <Button size="sm" variant="outline" disabled={busy} onClick={() => dismiss.mutate(a.id)}>
-                    Dismiss
-                  </Button>
-                  <Button size="sm" variant="danger" disabled={busy} onClick={() => remove.mutate(a.id)}>
-                    Remove
-                  </Button>
-                </div>
+                <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); onReview(a); }}>
+                  Review
+                </Button>
               </Td>
             </Tr>
           ))}
