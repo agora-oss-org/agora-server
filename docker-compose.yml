@@ -16,6 +16,25 @@ services:
     init: true
     restart: unless-stopped
 
+  # LLM content moderation (@agora/moderator). Receives the api's signed broadcast webhooks, assesses
+  # content with a generic LLM, auto-acts above the confidence threshold, and serves the admin's
+  # AI-flag queue. Shares the same Postgres (DATABASE_URL) + ACCESS_TOKEN_SECRET as the api; needs
+  # MODERATOR_LLM_* + MODERATION_SERVICE_SECRET + API_BASE_URL=http://agora:4000 in .env.
+  moderator:
+    build:
+      context: .
+      dockerfile: apps/moderator/Dockerfile
+    image: agora-moderator
+    env_file: .env
+    environment:
+      API_BASE_URL: http://agora:4000
+    ports:
+      - "${MODERATOR_PORT:-4001}:4001"
+    depends_on:
+      - agora
+    init: true
+    restart: unless-stopped
+
   # Admin frontend (Vite SPA on nginx). Serves the static build and reverse-proxies /v7 + /socket.io
   # to the api over the internal network (same origin → no CORS, no build-time API URL).
   admin:
@@ -25,10 +44,12 @@ services:
     image: agora-admin
     environment:
       API_UPSTREAM: http://agora:4000
+      MODERATOR_UPSTREAM: http://moderator:4001
     ports:
       - "${ADMIN_PORT:-8080}:80"
     depends_on:
       - agora
+      - moderator
     init: true
     restart: unless-stopped
 

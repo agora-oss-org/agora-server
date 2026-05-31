@@ -21,8 +21,9 @@ RUN pnpm --filter @agora/contract build && pnpm --filter @agora/admin build
 
 # ── Runtime: nginx serving the static build + reverse-proxying the API ─────────
 FROM nginx:1.27-alpine AS runtime
-# Upstream Agora API; override per environment. Default matches the compose service name.
+# Upstream Agora API + moderator; override per environment. Defaults match the compose service names.
 ENV API_UPSTREAM=http://agora:4000
+ENV MODERATOR_UPSTREAM=http://moderator:4001
 COPY apps/admin/nginx.conf.template /etc/nginx/templates/default.conf.template
 COPY --from=builder /repo/apps/admin/dist /usr/share/nginx/html
 EXPOSE 80
