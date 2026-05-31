@@ -260,6 +260,20 @@ EMBEDDING_DIMENSIONS=1024
 ANTHROPIC_API_KEY=sk-ant-...
 ANTHROPIC_MODEL=claude-haiku-4-5-20251001
 ANTHROPIC_MAX_TOKENS=64000
+
+# Automated moderation (the @agora/moderator service; optional). MODERATION_SERVICE_SECRET is read by
+# BOTH the api (it gates POST /internal/moderation/apply) and the moderator (it calls that endpoint).
+MODERATION_SERVICE_SECRET=<random>             # shared secret for the moderator's write-back
+
+# ── @agora/moderator only (apps/moderator) ──────────────────────────────────
+PORT=4001                                      # the moderator listens here (api stays 4000)
+API_BASE_URL=http://localhost:4000             # api ORIGIN (no /v7) — write-back target
+MODERATION_AUTO_ACTION_THRESHOLD=0.85          # auto-remove block verdicts at/above this (0 = advisory only)
+MODERATOR_LLM_PROVIDER=openai                  # openai (OpenAI-compatible /chat/completions) | anthropic
+MODERATOR_LLM_BASE_URL=                        # override the provider host (Groq/Together/Ollama/vLLM/…)
+MODERATOR_LLM_API_KEY=sk-...                   # the moderation model's key (separate from ANTHROPIC_API_KEY)
+MODERATOR_LLM_MODEL=gpt-4o-mini
+MODERATOR_LLM_MAX_TOKENS=512
 ```
 
 ### OAuth providers (Supabase Redirect URLs)
@@ -306,7 +320,8 @@ docker compose run --rm agora node scripts/migrate.mjs  # apply migrations (one-
 ```
 
 `compose` also builds the **admin** service — the Vite SPA on nginx (`agora-admin`), served on
-`:8080`, which reverse-proxies `/v7` + `/socket.io` to the api container (same origin, no CORS).
+`:8080`, which reverse-proxies `/v7` + `/socket.io` to the api container and `/moderator` to the
+moderator container (same origin, no CORS) — and the **moderator** service (`agora-moderator`, `:4001`).
 
 Or without compose (build context = repo root):
 
@@ -314,8 +329,11 @@ Or without compose (build context = repo root):
 docker build -f apps/api/Dockerfile   -t agora-api   .
 docker run  --rm --init --env-file .env -p 4000:4000 agora-api
 
+docker build -f apps/moderator/Dockerfile -t agora-moderator .
+docker run  --rm --init --env-file .env -e API_BASE_URL=http://<api-host>:4000 -p 4001:4001 agora-moderator
+
 docker build -f apps/admin/Dockerfile -t agora-admin .
-docker run  --rm -e API_UPSTREAM=http://<api-host>:4000 -p 8080:80 agora-admin
+docker run  --rm -e API_UPSTREAM=http://<api-host>:4000 -e MODERATOR_UPSTREAM=http://<moderator-host>:4001 -p 8080:80 agora-admin
 ```
 
 Migrations are applied via `scripts/migrate.mjs` (uses only runtime deps), so they run as a
@@ -361,6 +379,31 @@ pnpm test:integration     # integration (set TEST_DATABASE_URL first)
   entities is POSTed to the space's own webhook on its scheduled hour. The trigger is decoupled from
   the work: run `scripts/send-digests.mjs` standalone (cron / launchd), or have an external scheduler
   (e.g. Supabase `pg_cron` + `pg_net`) hit the secret-gated `POST /internal/cron/digests`.
+
+## Automated moderation (`@agora/moderator`)
+
+`apps/moderator` is a standalone service (default **:4001**) that moderates content with an LLM,
+without coupling that logic into the API. It plugs into the seams the API already has:
+
+- **Real-time monitoring** — point a project's webhook at the moderator's `POST /webhooks/agora` and
+  subscribe the content `*.complete` broadcast events (in the admin Webhook settings). The moderator
+  verifies the HMAC signature against the project's `webhookSecret`, ACKs immediately, then assesses
+  the content asynchronously (no creation latency).
+- **Generic LLM provider** — `MODERATOR_LLM_PROVIDER=openai` speaks the OpenAI-compatible
+  `/chat/completions` shape (OpenAI, Groq, Together, OpenRouter, Ollama, vLLM, LM Studio — pick the
+  host with `MODERATOR_LLM_BASE_URL`); `anthropic` speaks `/v1/messages`. Each call returns a strict
+  JSON verdict: `allow` | `block` | `review` + categories + confidence + reason.
+- **Auto-action** — a `block` at/above `MODERATION_AUTO_ACTION_THRESHOLD` is written back to the API
+  (`POST /internal/moderation/apply`, `MODERATION_SERVICE_SECRET`-gated) as
+  `moderatedByType="client"`, which removes it from reads immediately via the moderation-visibility
+  layer. Below the threshold, items wait in the human queue. Set the threshold to `0` for advisory-only.
+- **Aids for human moderators** — the admin's Moderation page gains an **AI flags** queue
+  (`GET /v7/:projectId/moderation/queue`) with per-item Remove/Dismiss, and the report ReviewDialog
+  shows an **AI assessment** panel with a Re-analyze action. Every verdict is persisted in
+  `moderation_analyses` (audit trail). These endpoints are operator-gated (shared `ACCESS_TOKEN_SECRET`).
+
+The moderator shares the API's Postgres but **never mutates content directly** — all removals go
+through the API over HTTP, keeping the API the single trust boundary.
 
 ## Feed ranking
 

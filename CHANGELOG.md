@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **New app: `@agora/moderator` — LLM-backed content moderation.** A standalone Hono service
+  (`apps/moderator`, default port 4001) that automatically moderates content with a **generic LLM
+  provider** (OpenAI-compatible `/chat/completions` *or* Anthropic `/v1/messages`, selected by
+  `MODERATOR_LLM_PROVIDER`). It:
+  - **Receives the API's existing broadcast webhooks** (`entity.created.complete`,
+    `comment.created.complete`, `*.updated.complete`, `message.created.complete`) at
+    `POST /webhooks/agora`, verifying the HMAC `X-Signature` against the per-project `webhookSecret`.
+    Content goes live first, then is assessed asynchronously (no creation latency).
+  - **Auto-acts** above a confidence threshold (`MODERATION_AUTO_ACTION_THRESHOLD`, default `0.85`):
+    a `verdict: "block"` writes the removal back to the API as `moderatedByType="client"`. Below the
+    threshold, items route to a human queue.
+  - **Persists every verdict** in a new `moderation_analyses` table (audit trail + AI-flag queue).
+  - **Exposes operator-gated review aids** at `/v7/:projectId/moderation/*` — `GET /queue` (AI-flag
+    queue), `GET /analysis` (stored verdict for an item), `POST /analyze` (on-demand re-assessment),
+    `POST /:id/resolve` (dismiss), `POST /:id/remove` (confirm → remove + clear).
+- **API: `POST /internal/moderation/apply`** — a `MODERATION_SERVICE_SECRET`-gated write-back (503
+  until configured, mirroring the cron endpoints) that applies an automated decision
+  (`moderationStatus` + `moderatedByType="client"`) to an entity/comment. The trust boundary stays
+  the API — the moderator never mutates content directly.
+- **Schema: `moderation_analyses` table + `moderation_verdict` enum** (`allow`/`block`/`review`),
+  migration `0020`. Owned by `apps/api` (single source of truth); the moderator binds a thin copy.
+- **Contract: `ModerationVerdict` + `ModerationAnalysis` types and `moderationAnalyzeSchema`** in
+  `@agora/contract`, shared by the moderator and admin.
+- **Admin: AI moderation surface.** A new **"AI flags"** tab in Moderation (the unresolved
+  block/review queue, with per-item **Remove** / **Dismiss**) and an **"AI assessment"** panel in the
+  report ReviewDialog (verdict, confidence, categories, rationale, and a **Re-analyze** action),
+  backed by `lib/moderation-ai.ts` against `VITE_MODERATOR_BASE_URL` (default `/moderator`, proxied).
+
 ## [0.4.0] - 2026-05-31
 
 A security & moderation release: server-enforced **space privacy** (members-only reads) + **posting

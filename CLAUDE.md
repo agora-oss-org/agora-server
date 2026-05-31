@@ -39,14 +39,23 @@ Supabase Postgres   schema + triggers + RPC + pgvector + PostGIS
 
 ## Monorepo
 
-pnpm workspaces (corepack-pinned `pnpm@10.14.0`). Three packages:
+pnpm workspaces (corepack-pinned `pnpm@10.14.0`). Four packages:
 
 - `apps/api` — `@agora/api`, the Hono backend (everything below; the reference package).
 - `apps/admin` — `@agora/admin`, a Vite + React + TS admin frontend that consumes the API.
+- `apps/moderator` — `@agora/moderator`, a standalone Hono service (default :4001) for **LLM content
+  moderation**: receives the API's signed broadcast webhooks (`POST /webhooks/agora`), assesses
+  content via a generic LLM provider (OpenAI-compatible *or* Anthropic — `lib/llm-provider.ts`),
+  auto-acts above a confidence threshold by writing the removal back to the API (`moderatedByType=
+  "client"`), and serves operator-gated review aids at `/v7/:projectId/moderation/*` (the admin's AI
+  queue). Shares the API's Postgres (reads `projects.webhook_secret`, R/W `moderation_analyses`) +
+  `ACCESS_TOKEN_SECRET`; **all content mutations go through the API over HTTP** (the API stays the
+  trust boundary). See its `apps/moderator/src` and the moderation note in Handler conventions.
 - `packages/contract` — `@agora/contract`, the **shared API contract**: response-model TS types
-  (`User`/`Entity`/`Comment`/`AuthUser`/`AuthContext`), the reaction taxonomy, the pagination
-  envelope + `paginate()`, the error-envelope shape, and the 39 zod request schemas. Pure types +
-  zod, **no hono/drizzle**. Built to `dist/` and consumed via its `exports` map by both api + admin.
+  (`User`/`Entity`/`Comment`/`AuthUser`/`AuthContext`/`ModerationAnalysis`), the reaction taxonomy,
+  the pagination envelope + `paginate()`, the error-envelope shape, and the zod request schemas. Pure
+  types + zod, **no hono/drizzle**. Built to `dist/` and consumed via its `exports` map by api,
+  admin, and moderator.
 
 **Rule:** any API request/response type or zod schema shared between server and admin lives in
 `packages/contract` (built first; `pnpm -r build` orders it). `apps/api`'s `shape.ts` /
@@ -145,7 +154,10 @@ admin app and bypasses moderation-visibility filtering. Unset → no operators (
 
 **Cron triggers** (`app.ts`, `CRON_SECRET`-gated, 503 until set): `/internal/cron/digests`,
 `/internal/cron/recompute-scores`, `/internal/cron/purge-tokens` (delete expired refresh tokens).
-Each also runs standalone via `scripts/*.mjs`. **Rate limiting** is in-memory + per-process
+Each also runs standalone via `scripts/*.mjs`. **Moderation write-back** (`app.ts`,
+`MODERATION_SERVICE_SECRET`-gated, 503 until set): `POST /internal/moderation/apply` lets the
+`@agora/moderator` service stamp `moderationStatus` + `moderatedByType="client"` on an entity/comment
+(`lib/client-moderation.ts`). **Rate limiting** is in-memory + per-process
 (`lib/rate-limit.ts` + `middleware/rate-limit.ts`), mounted on `/v7/*`; stricter cap on `/auth/*`.
 
 **Mint a test JWT** (for authed routes; HS256 over `ACCESS_TOKEN_SECRET`, `sub`=userId):
@@ -196,6 +208,8 @@ journal order and written **idempotently** (`create extension if not exists`, `c
   predicate; `fetch_comment_thread(…, p_hide_removed)` prunes removed comments **and their subtrees**
   in the recursive CTE; `match_content(…, p_viewer, p_privileged, p_hide_removed)` filters semantic-
   search hits by space-readability + chat membership + moderation status (operators bypass).
+- `0020_…` — `moderation_analyses` table + `moderation_verdict` enum (allow/block/review): the
+  `@agora/moderator` service's automated-moderation audit trail + AI-flag queue.
 
 To change schema: edit `src/db/schema/*.ts` → `db:generate` → `db:migrate`. Edit triggers/functions/
 RLS/PostGIS by hand in their custom migration files.
