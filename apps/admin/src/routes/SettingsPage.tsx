@@ -2,6 +2,7 @@ import { PageHeader } from "../components/ui/PageHeader";
 import { FeedRankingPanel } from "./settings/FeedRankingPanel";
 import { WebhooksPanel } from "./settings/WebhooksPanel";
 import { ModerationPanel } from "./settings/ModerationPanel";
+import { ModeratorPanel } from "./settings/ModeratorPanel";
 
 // Settings sections. Feed ranking, project webhooks, and moderation are live; spaces/rules next.
 export function SettingsPage() {
@@ -15,6 +16,10 @@ export function SettingsPage() {
       <section className="space-y-3">
         <h2 className="text-sm font-semibold text-fg">Moderation</h2>
         <ModerationPanel />
+      </section>
+      <section className="space-y-3">
+        <h2 className="text-sm font-semibold text-fg">Moderator (automated)</h2>
+        <ModeratorPanel />
       </section>
       <section className="space-y-3">
         <h2 className="text-sm font-semibold text-fg">Project webhooks</h2>
