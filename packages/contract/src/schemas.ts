@@ -242,6 +242,17 @@ export const moderationConfigSchema = z.object({
   removedContentBehavior: z.enum(["hide", "placeholder"]).optional(),
 });
 
+// ─── automated moderation (@agora/moderator) ────────────────────────────────
+// Body for the moderator's on-demand POST /moderation/analyze (admin "Re-analyze"). The admin
+// already has the content loaded, so it passes the text directly along with what's being judged.
+export const moderationAnalyzeSchema = z.object({
+  targetType: z.enum(["entity", "comment", "message"]),
+  targetId: z.string().uuid(),
+  spaceId: z.string().uuid().nullish(),
+  text: z.string().min(1).max(40000),
+  context: z.string().max(40000).optional(), // optional surrounding context (e.g. parent entity)
+});
+
 export const oauthAuthorizeSchema = z.object({
   provider: z.string().min(1), // e.g. "google", "github", "apple" — passed through to Supabase
   // Where to send the browser after auth completes (default: the SDK sends window.location.href).

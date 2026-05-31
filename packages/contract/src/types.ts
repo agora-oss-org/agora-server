@@ -125,3 +125,26 @@ export interface AuthContext {
   role: "admin" | "moderator" | "visitor";
   isOperator: boolean; // deployment operator (env allowlist) — project-wide moderation/admin
 }
+
+// ─── automated moderation (@agora/moderator) ───────────────────────────────
+// The LLM's structured judgement of a piece of content. "allow" = clean; "block" = clearly
+// violates policy; "review" = uncertain, route to a human. `confidence` is 0..1.
+export type ModerationVerdict = "allow" | "block" | "review";
+
+// One stored LLM assessment (shapeModerationAnalysis). The moderator service persists one row per
+// assessment; the admin app reads these to triage the AI-flag queue and surface reasoning in review.
+export interface ModerationAnalysis {
+  id: string;
+  projectId: string;
+  targetType: ReportTargetType; // entity | comment | message
+  targetId: string;
+  spaceId: string | null;
+  verdict: ModerationVerdict;
+  categories: string[]; // policy categories matched, e.g. ["harassment","spam"]
+  confidence: number; // 0..1
+  reason: string; // short LLM rationale
+  model: string; // provider/model that produced it, e.g. "openai:gpt-4o-mini"
+  autoActioned: boolean; // true when the moderator wrote the removal back to the API itself
+  humanResolvedAt: string | null; // set once a human dispositions it (clears it from the queue)
+  createdAt: string;
+}
