@@ -35,8 +35,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   block/review queue, with per-item **Remove** / **Dismiss**) and an **"AI assessment"** panel in the
   report ReviewDialog (verdict, confidence, categories, rationale, and a **Re-analyze** action),
   backed by `lib/moderation-ai.ts` against `VITE_MODERATOR_BASE_URL` (default `/moderator`, proxied).
+- **Per-project moderator integration — admin-configurable.** A new **Settings → Moderator** panel
+  configures everything about the `@agora/moderator` service for a project, via
+  `GET`/`PATCH /settings/moderator` (`POST …/test` to ping):
+  - **Internal notifier** — `projects.moderation_webhook_url` + `moderation_webhook_secret`
+    (migration `0021`): a **dedicated** destination + HMAC secret, separate from the (external)
+    project webhook. The moderator verifies inbound signatures against `moderation_webhook_secret`,
+    falling back to the legacy `webhook_secret` when unset.
+  - **Auto-action threshold + LLM tuning** — `projects.moderator_config` JSONB (migration `0022`):
+    per-project overrides for `autoActionThreshold` and the LLM provider (`llmProvider`,
+    `llmBaseUrl`, `llmApiKey`, `llmModel`, `llmMaxTokens`) that the moderator **overlays on its own
+    env defaults** (any unset key falls back to env). The moderator resolves these per assessment
+    (`lib/project-config.ts`, cached 30s; `assess()` now takes an explicit `LlmConfig`).
+  - Both secrets (notifier secret + LLM API key) are **write-only** — GET exposes only
+    `hasSecret` / `hasLlmApiKey`.
 
 ### Changed
+- **Webhook broadcast fans out to two independent destinations.** `lib/webhooks.ts` `broadcast()`
+  now delivers content `*.complete` events to the internal moderation notifier (when configured)
+  **regardless of the external webhook's subscribed-events list**, so automated moderation runs even
+  with no external integration. The external notifier is unchanged (still gated by its event list).
 - **Docs: split the README into a high-level root + per-app guides.** The root `README.md` now
   introduces the project and its packages and links out; each app owns its own setup/config/Docker
   docs in `apps/api/README.md`, `apps/admin/README.md`, and `apps/moderator/README.md`.
