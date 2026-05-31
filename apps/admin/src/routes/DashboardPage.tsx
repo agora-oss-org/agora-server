@@ -1,6 +1,6 @@
 import {
-  Activity, Boxes, Database, Download, Flag, Gauge, HardDrive, MessageSquare,
-  Users, UsersRound, Zap, type LucideIcon,
+  Activity, Ban, Bot, Boxes, Cpu, Database, Download, Eye, Flag, Gauge, HardDrive, MessageSquare,
+  ShieldCheck, Users, UsersRound, Zap, type LucideIcon,
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -11,6 +11,7 @@ import { Badge } from "../components/ui/Badge";
 import { Card } from "../components/ui/Card";
 import { LoadingPanel } from "../components/ui/Spinner";
 import { getDashboardMetrics, type DashboardMetrics } from "../lib/dashboard";
+import { getModeratorStats, moderationStatsKey, type ModerationStats } from "../lib/moderation-ai";
 
 interface Stat {
   label: string;
@@ -55,6 +56,23 @@ function appStats(m: DashboardMetrics["appMetrics"]): Stat[] {
 // ── Supabase/infra: the one billing-ish figure the Management API actually exposes is nil, so we
 // read whole-instance Postgres size directly. Operator-only (instance-wide, not per-project). Egress
 // + Auth MAU are deliberately absent — the Management API doesn't expose them, so we don't fake them.
+// ── Automated moderation: aggregates from the @agora/moderator service (moderation_analyses). Shown
+// only when the moderator is reachable + the caller is an operator (the stats endpoint is gated). ──
+function moderationStats(s: ModerationStats): Stat[] {
+  return [
+    { label: "Moderations", value: fmtNum(s.total), description: "Total automated assessments created", icon: Bot },
+    { label: "Block verdicts", value: fmtNum(s.blocks), description: "Content the model judged a violation", icon: Ban },
+    { label: "Review verdicts", value: fmtNum(s.reviews), description: "Routed to a human for review", icon: Eye },
+    { label: "Auto-blocks", value: fmtNum(s.autoBlocks), description: "Auto-removed above the confidence threshold", icon: ShieldCheck },
+    {
+      label: "Token usage",
+      value: fmtNum(s.totalTokens),
+      description: `LLM tokens used (${fmtNum(s.promptTokens)} prompt · ${fmtNum(s.completionTokens)} completion)`,
+      icon: Cpu,
+    },
+  ];
+}
+
 function supabaseStats(m: DashboardMetrics["supabaseMetrics"]): Stat[] {
   return [
     {
@@ -74,6 +92,14 @@ export function DashboardPage() {
     queryKey: ["dashboard", "metrics"],
     queryFn: ({ signal }) => getDashboardMetrics(signal),
     staleTime: 30_000,
+  });
+  // Automated-moderation metrics from the moderator service. Operator-only + needs the moderator
+  // reachable — tolerate failure (no retry) so the section simply hides when it's not enabled.
+  const moderation = useQuery({
+    queryKey: moderationStatsKey,
+    queryFn: () => getModeratorStats(),
+    staleTime: 30_000,
+    retry: false,
   });
 
   return (
@@ -114,6 +140,20 @@ export function DashboardPage() {
               ))}
             </div>
           </Section>
+
+          {moderation.data ? (
+            <Section
+              title="Automated moderation"
+              hint="From the @agora/moderator service"
+              badge={<Badge variant="success">Live</Badge>}
+            >
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {moderationStats(moderation.data).map((s) => (
+                  <StatCard key={s.label} {...s} />
+                ))}
+              </div>
+            </Section>
+          ) : null}
 
           {isOperator ? (
             <Section

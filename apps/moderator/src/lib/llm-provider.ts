@@ -12,12 +12,24 @@ import { env } from "./env.js";
 import { logger } from "./logger.js";
 import { SYSTEM_PROMPT, buildUserPrompt } from "./policy.js";
 
-export interface AssessResult {
+export interface ParsedVerdict {
   verdict: ModerationVerdict;
   categories: string[];
   confidence: number;
   reason: string;
+}
+
+export interface AssessResult extends ParsedVerdict {
   model: string; // "provider:model" — recorded on each analysis row
+  promptTokens: number; // provider-reported usage (0 when the host omits it)
+  completionTokens: number;
+}
+
+// What an adapter hands back: the raw text to parse + the provider's token usage for the call.
+interface LlmResponse {
+  text: string;
+  promptTokens: number;
+  completionTokens: number;
 }
 
 // The provider settings one assessment runs with. Per-project overrides (admin Settings → Moderator)
@@ -67,20 +79,23 @@ export async function assess(input: { text: string; context?: string }, cfg: Llm
     "moderation: calling LLM",
   );
   const startedAt = Date.now();
-  const raw = cfg.provider === "anthropic" ? await callAnthropic(user, cfg) : await callOpenAI(user, cfg);
-  const parsed = parseVerdict(raw);
+  const res = cfg.provider === "anthropic" ? await callAnthropic(user, cfg) : await callOpenAI(user, cfg);
+  const parsed = parseVerdict(res.text);
   logger.debug(
     {
-      provider: cfg.provider, model: cfg.model, latencyMs: Date.now() - startedAt, rawChars: raw.length,
+      provider: cfg.provider, model: cfg.model, latencyMs: Date.now() - startedAt, rawChars: res.text.length,
       verdict: parsed.verdict, confidence: parsed.confidence, categories: parsed.categories,
+      promptTokens: res.promptTokens, completionTokens: res.completionTokens,
     },
     "moderation: LLM responded",
   );
-  return { ...parsed, model: `${cfg.provider}:${cfg.model}` };
+  return { ...parsed, model: `${cfg.provider}:${cfg.model}`, promptTokens: res.promptTokens, completionTokens: res.completionTokens };
 }
 
+const intOr0 = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? Math.trunc(v) : 0);
+
 // ─── OpenAI-compatible /chat/completions ──────────────────────────────────────
-async function callOpenAI(userPrompt: string, cfg: LlmConfig): Promise<string> {
+async function callOpenAI(userPrompt: string, cfg: LlmConfig): Promise<LlmResponse> {
   const res = await fetch(`${baseUrl(cfg)}/chat/completions`, {
     method: "POST",
     headers: {
@@ -101,14 +116,17 @@ async function callOpenAI(userPrompt: string, cfg: LlmConfig): Promise<string> {
     }),
   });
   if (!res.ok) throw new Error(`LLM error ${res.status}: ${await res.text().catch(() => "")}`);
-  const json = (await res.json()) as { choices?: { message?: { content?: string } }[] };
+  const json = (await res.json()) as {
+    choices?: { message?: { content?: string } }[];
+    usage?: { prompt_tokens?: number; completion_tokens?: number };
+  };
   const content = json.choices?.[0]?.message?.content;
   if (!content) throw new Error("LLM returned no content");
-  return content;
+  return { text: content, promptTokens: intOr0(json.usage?.prompt_tokens), completionTokens: intOr0(json.usage?.completion_tokens) };
 }
 
 // ─── Anthropic /v1/messages ───────────────────────────────────────────────────
-async function callAnthropic(userPrompt: string, cfg: LlmConfig): Promise<string> {
+async function callAnthropic(userPrompt: string, cfg: LlmConfig): Promise<LlmResponse> {
   const res = await fetch(`${baseUrl(cfg)}/v1/messages`, {
     method: "POST",
     headers: {
@@ -125,16 +143,19 @@ async function callAnthropic(userPrompt: string, cfg: LlmConfig): Promise<string
     }),
   });
   if (!res.ok) throw new Error(`LLM error ${res.status}: ${await res.text().catch(() => "")}`);
-  const json = (await res.json()) as { content?: { type: string; text?: string }[] };
+  const json = (await res.json()) as {
+    content?: { type: string; text?: string }[];
+    usage?: { input_tokens?: number; output_tokens?: number };
+  };
   const text = json.content?.find((b) => b.type === "text")?.text;
   if (!text) throw new Error("LLM returned no content");
-  return text;
+  return { text, promptTokens: intOr0(json.usage?.input_tokens), completionTokens: intOr0(json.usage?.output_tokens) };
 }
 
 // ─── Tolerant JSON parse → normalized verdict ─────────────────────────────────
 const VERDICTS: ModerationVerdict[] = ["allow", "block", "review"];
 
-export function parseVerdict(raw: string): Omit<AssessResult, "model"> {
+export function parseVerdict(raw: string): ParsedVerdict {
   // Strip code fences and isolate the first {...} object so we survive stray prose.
   const cleaned = raw.replace(/```json/gi, "").replace(/```/g, "").trim();
   const start = cleaned.indexOf("{");

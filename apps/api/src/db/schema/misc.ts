@@ -101,6 +101,10 @@ export const moderationAnalyses = pgTable("moderation_analyses", {
   reason: text("reason").notNull().default(""),
   model: text("model").notNull().default(""),
   autoActioned: boolean("auto_actioned").notNull().default(false),
+  // LLM token usage for this assessment (provider-reported; 0 when the host omits usage). Summed for
+  // the admin dashboard's automated-moderation metrics.
+  promptTokens: integer("prompt_tokens").notNull().default(0),
+  completionTokens: integer("completion_tokens").notNull().default(0),
   humanResolvedAt: timestamp("human_resolved_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (t) => [

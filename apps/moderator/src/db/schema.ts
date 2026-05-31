@@ -5,7 +5,7 @@
 //            to webhook_secret for projects that haven't set a dedicated moderation secret)
 //   - R/W    moderation_analyses (its own audit-trail + AI-flag queue table)
 // All content mutations go through the API over HTTP — the moderator never writes entities/comments.
-import { pgTable, uuid, text, doublePrecision, boolean, timestamp, jsonb, pgEnum } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, integer, doublePrecision, boolean, timestamp, jsonb, pgEnum } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
 // Must match apps/api/src/db/schema/_shared.ts exactly (Drizzle references existing PG types by name).
@@ -33,6 +33,8 @@ export const moderationAnalyses = pgTable("moderation_analyses", {
   reason: text("reason").notNull().default(""),
   model: text("model").notNull().default(""),
   autoActioned: boolean("auto_actioned").notNull().default(false),
+  promptTokens: integer("prompt_tokens").notNull().default(0),
+  completionTokens: integer("completion_tokens").notNull().default(0),
   humanResolvedAt: timestamp("human_resolved_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });

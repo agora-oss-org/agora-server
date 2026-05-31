@@ -34,9 +34,12 @@ describe("parseVerdict", () => {
 });
 
 describe("assess (OpenAI-compatible adapter, mocked fetch)", () => {
-  it("posts to /chat/completions and returns a normalized verdict + model tag", async () => {
+  it("posts to /chat/completions and returns a normalized verdict + model tag + token usage", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      ok({ choices: [{ message: { content: '{"verdict":"block","categories":["harassment"],"confidence":0.95,"reason":"threat"}' } }] })
+      ok({
+        choices: [{ message: { content: '{"verdict":"block","categories":["harassment"],"confidence":0.95,"reason":"threat"}' } }],
+        usage: { prompt_tokens: 120, completion_tokens: 30 },
+      })
     );
     const result = await assess({ text: "I will hurt you" });
 
@@ -46,6 +49,8 @@ describe("assess (OpenAI-compatible adapter, mocked fetch)", () => {
       confidence: 0.95,
       reason: "threat",
       model: "openai:gpt-4o-mini",
+      promptTokens: 120,
+      completionTokens: 30,
     });
     const [url, init] = fetchMock.mock.calls[0]!;
     expect(String(url)).toMatch(/\/chat\/completions$/);
@@ -54,6 +59,15 @@ describe("assess (OpenAI-compatible adapter, mocked fetch)", () => {
     expect(body.temperature).toBe(0);
     expect(body.messages).toHaveLength(2);
     expect(body.messages[1].content).toContain("I will hurt you");
+  });
+
+  it("defaults token usage to 0 when the host omits it", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      ok({ choices: [{ message: { content: '{"verdict":"allow","categories":[],"confidence":0.9,"reason":"fine"}' } }] })
+    );
+    const result = await assess({ text: "hello" });
+    expect(result.promptTokens).toBe(0);
+    expect(result.completionTokens).toBe(0);
   });
 
   it("throws on a non-2xx provider response", async () => {

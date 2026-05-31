@@ -53,6 +53,7 @@ export async function assessAndRecord(t: AssessTarget): Promise<ModerationAnalys
       projectId: t.projectId, targetType: t.targetType, targetId: t.targetId, spaceId: t.spaceId ?? null,
       verdict: verdict.verdict, confidence: verdict.confidence, scorePct: Math.round(verdict.confidence * 100),
       categories: verdict.categories, model: verdict.model,
+      promptTokens: verdict.promptTokens, completionTokens: verdict.completionTokens,
       blockThreshold: config.blockAutoActionThreshold, reviewThreshold: config.reviewAutoActionThreshold,
       eligibleForAutoRemoval: eligible, autoActionVerdict, llmLatencyMs: latencyMs,
     },
@@ -91,6 +92,8 @@ export async function assessAndRecord(t: AssessTarget): Promise<ModerationAnalys
       reason: verdict.reason,
       model: verdict.model,
       autoActioned,
+      promptTokens: verdict.promptTokens,
+      completionTokens: verdict.completionTokens,
     })
     .returning();
   logger.debug(

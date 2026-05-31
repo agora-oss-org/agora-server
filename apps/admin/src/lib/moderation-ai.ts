@@ -8,6 +8,26 @@ import { MODERATOR_BASE } from "../config";
 export const aiQueueKey = (page: number) => ["ai-queue", page] as const;
 export const aiAnalysisKey = (targetType: string, targetId: string) => ["ai-analysis", targetType, targetId] as const;
 
+// Aggregate moderation metrics for the dashboard (GET /moderation/stats, operator-only): how many
+// moderations the service created (by verdict), how many it auto-removed, and total LLM token usage.
+export interface ModerationStats {
+  total: number;
+  blocks: number;
+  reviews: number;
+  allows: number;
+  autoBlocks: number; // auto-removed (auto_actioned) count
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+}
+
+export const moderationStatsKey = ["moderator", "stats"] as const;
+
+/** Aggregate moderation metrics for the project. Operator-only; needs the moderator reachable. */
+export function getModeratorStats() {
+  return api<ModerationStats>(`/moderation/stats`, { base: MODERATOR_BASE });
+}
+
 // The moderator's running configuration (GET /moderation/config, operator-only). The `defaults` block
 // is the service's env config — what a project inherits unless it overrides it (projects.moderator_
 // config). The admin uses these to show the *effective* value behind each Moderator setting.

@@ -162,6 +162,13 @@
       "when": 1780212020184,
       "tag": "0022_easy_archangel",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1780221206491,
+      "tag": "0023_majestic_mother_askani",
+      "breakpoints": true
     }
   ]
 }

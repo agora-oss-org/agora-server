@@ -1,6 +1,7 @@
 // Admin-facing review aids (operator-gated). The moderator carries its own version: the admin
 // reaches these at /v1/:projectId/moderation/* with the same Bearer token it already holds.
 //   GET  /config                             → the moderator's running configuration (secret-redacted)
+//   GET  /stats                              → aggregate metrics (verdict counts, auto-blocks, tokens)
 //   GET  /queue                              → the AI-flag queue (unresolved block/review analyses)
 //   GET  /analysis?targetType=&targetId=     → the latest stored analysis for one item
 //   POST /analyze                            → on-demand (re)assessment (admin "Re-analyze")
@@ -42,6 +43,36 @@ export const moderationRoutes = new Hono<{ Variables: Variables }>()
       config: buildRunningConfig(env),
     })
   )
+
+  // Aggregate metrics for the admin dashboard: how many moderations the service has created
+  // (by verdict), how many it auto-removed, and the total LLM token usage — all-time for the project.
+  .get("/stats", async (c) => {
+    const projectId = c.req.param("projectId")!;
+    const [row] = await db
+      .select({
+        total: sql<number>`count(*)::int`,
+        blocks: sql<number>`(count(*) filter (where ${moderationAnalyses.verdict} = 'block'))::int`,
+        reviews: sql<number>`(count(*) filter (where ${moderationAnalyses.verdict} = 'review'))::int`,
+        allows: sql<number>`(count(*) filter (where ${moderationAnalyses.verdict} = 'allow'))::int`,
+        autoBlocks: sql<number>`(count(*) filter (where ${moderationAnalyses.autoActioned}))::int`,
+        promptTokens: sql<number>`coalesce(sum(${moderationAnalyses.promptTokens}), 0)::bigint`,
+        completionTokens: sql<number>`coalesce(sum(${moderationAnalyses.completionTokens}), 0)::bigint`,
+      })
+      .from(moderationAnalyses)
+      .where(eq(moderationAnalyses.projectId, projectId));
+    const promptTokens = Number(row?.promptTokens ?? 0);
+    const completionTokens = Number(row?.completionTokens ?? 0);
+    return c.json({
+      total: row?.total ?? 0,
+      blocks: row?.blocks ?? 0,
+      reviews: row?.reviews ?? 0,
+      allows: row?.allows ?? 0,
+      autoBlocks: row?.autoBlocks ?? 0,
+      promptTokens,
+      completionTokens,
+      totalTokens: promptTokens + completionTokens,
+    });
+  })
 
   // The AI-flag queue: unresolved block/review analyses for the project (optionally one space).
   .get("/queue", async (c) => {
