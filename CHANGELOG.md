@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-05-31
+
 ### Added
 - **API: `GET /admin/config`** — the running configuration (deployment-level), **operator-only**.
   Returns the resolved server config with **all secrets redacted** to `*Set`/`*Enabled` booleans
@@ -525,7 +527,8 @@ cloud Supabase — no stubbed endpoints remain.
   (`@agora/*`), a repointed fork of `@replyke/core`.
 - Backlog: rate limiting, refresh-token cleanup sweep, RLS write policies, turnkey deploy guide.
 
-[Unreleased]: https://github.com/jenova-marie/agora/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/jenova-marie/agora/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/jenova-marie/agora/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/jenova-marie/agora/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/jenova-marie/agora/compare/v0.2.3...v0.3.0
 [0.2.3]: https://github.com/jenova-marie/agora/compare/v0.2.2...v0.2.3
