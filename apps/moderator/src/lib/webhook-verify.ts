@@ -1,7 +1,8 @@
 // Verifies inbound webhook signatures produced by @agora/api's lib/webhooks.ts. The API signs each
-// delivery as HMAC-SHA256(webhookSecret, `${timestamp}.${rawBody}`) in the X-Signature header. We
-// look the per-project secret up from the shared DB (projects.webhook_secret), cached 30s to mirror
-// the API's own config cache.
+// moderation delivery as HMAC-SHA256(moderationWebhookSecret, `${timestamp}.${rawBody}`) in the
+// X-Signature header. We look the per-project secret up from the shared DB — preferring the
+// dedicated projects.moderation_webhook_secret, falling back to the legacy projects.webhook_secret
+// for projects that point their external webhook straight at us — cached 30s to mirror the API.
 import crypto from "node:crypto";
 import { eq } from "drizzle-orm";
 import { db } from "../db/index.js";
@@ -14,11 +15,11 @@ export async function getProjectSecret(projectId: string): Promise<string | null
   const hit = cache.get(projectId);
   if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.secret;
   const [p] = await db
-    .select({ secret: projects.webhookSecret })
+    .select({ secret: projects.webhookSecret, moderationSecret: projects.moderationWebhookSecret })
     .from(projects)
     .where(eq(projects.id, projectId))
     .limit(1);
-  const secret = p?.secret ?? null;
+  const secret = p?.moderationSecret ?? p?.secret ?? null;
   cache.set(projectId, { secret, at: Date.now() });
   return secret;
 }

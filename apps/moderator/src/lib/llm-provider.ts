@@ -19,46 +19,62 @@ export interface AssessResult {
   model: string; // "provider:model" — recorded on each analysis row
 }
 
+// The provider settings one assessment runs with. Per-project overrides (admin Settings → Moderator)
+// are merged over the env defaults in lib/project-config.ts; the env-only default lives in envLlm().
+export interface LlmConfig {
+  provider: "openai" | "anthropic";
+  baseUrl?: string;     // unset → DEFAULT_BASE[provider]
+  apiKey?: string;      // unset → not enabled (assess throws)
+  model: string;
+  maxTokens: number;
+}
+
 const DEFAULT_BASE: Record<"openai" | "anthropic", string> = {
   openai: "https://api.openai.com/v1",
   anthropic: "https://api.anthropic.com",
 };
 const ANTHROPIC_VERSION = "2023-06-01";
 
-/** True when an API key is configured. When false, callers should skip assessment (no-op). */
-export function moderationEnabled(): boolean {
-  return !!env.MODERATOR_LLM_API_KEY;
+/** The provider config from env alone (the fallback when a project sets no overrides). */
+export function envLlm(): LlmConfig {
+  return {
+    provider: env.MODERATOR_LLM_PROVIDER,
+    baseUrl: env.MODERATOR_LLM_BASE_URL,
+    apiKey: env.MODERATOR_LLM_API_KEY,
+    model: env.MODERATOR_LLM_MODEL,
+    maxTokens: env.MODERATOR_LLM_MAX_TOKENS,
+  };
 }
 
-function baseUrl(): string {
-  return (env.MODERATOR_LLM_BASE_URL ?? DEFAULT_BASE[env.MODERATOR_LLM_PROVIDER]).replace(/\/+$/, "");
+/** True when an API key is configured. When false, callers should skip assessment (no-op). */
+export function moderationEnabled(cfg: LlmConfig = envLlm()): boolean {
+  return !!cfg.apiKey;
 }
+
+const baseUrl = (cfg: LlmConfig) => (cfg.baseUrl ?? DEFAULT_BASE[cfg.provider]).replace(/\/+$/, "");
 
 /**
- * Run the policy classifier over a piece of content. Throws if the LLM isn't configured or the
- * provider returns a non-2xx / unparseable response.
+ * Run the policy classifier over a piece of content with the given provider config (env default).
+ * Throws if the LLM isn't configured or the provider returns a non-2xx / unparseable response.
  */
-export async function assess(input: { text: string; context?: string }): Promise<AssessResult> {
-  if (!env.MODERATOR_LLM_API_KEY) throw new Error("MODERATOR_LLM_API_KEY not configured");
+export async function assess(input: { text: string; context?: string }, cfg: LlmConfig = envLlm()): Promise<AssessResult> {
+  if (!cfg.apiKey) throw new Error("LLM API key not configured");
   const user = buildUserPrompt(input);
-  const raw =
-    env.MODERATOR_LLM_PROVIDER === "anthropic"
-      ? await callAnthropic(user)
-      : await callOpenAI(user);
-  return { ...parseVerdict(raw), model: `${env.MODERATOR_LLM_PROVIDER}:${env.MODERATOR_LLM_MODEL}` };
+  const raw = cfg.provider === "anthropic" ? await callAnthropic(user, cfg) : await callOpenAI(user, cfg);
+  return { ...parseVerdict(raw), model: `${cfg.provider}:${cfg.model}` };
 }
 
 // ─── OpenAI-compatible /chat/completions ──────────────────────────────────────
-async function callOpenAI(userPrompt: string): Promise<string> {
-  const res = await fetch(`${baseUrl()}/chat/completions`, {
+async function callOpenAI(userPrompt: string, cfg: LlmConfig): Promise<string> {
+  const res = await fetch(`${baseUrl(cfg)}/chat/completions`, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${env.MODERATOR_LLM_API_KEY}`,
+      Authorization: `Bearer ${cfg.apiKey}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: env.MODERATOR_LLM_MODEL,
-      max_tokens: env.MODERATOR_LLM_MAX_TOKENS,
+      model: cfg.model,
+      max_tokens: cfg.maxTokens,
       temperature: 0,
       // Ask for a JSON object. Hosts that don't support response_format ignore it; the system prompt
       // still pins the output to JSON, and parseVerdict() is tolerant.
@@ -77,17 +93,17 @@ async function callOpenAI(userPrompt: string): Promise<string> {
 }
 
 // ─── Anthropic /v1/messages ───────────────────────────────────────────────────
-async function callAnthropic(userPrompt: string): Promise<string> {
-  const res = await fetch(`${baseUrl()}/v1/messages`, {
+async function callAnthropic(userPrompt: string, cfg: LlmConfig): Promise<string> {
+  const res = await fetch(`${baseUrl(cfg)}/v1/messages`, {
     method: "POST",
     headers: {
-      "x-api-key": env.MODERATOR_LLM_API_KEY!,
+      "x-api-key": cfg.apiKey!,
       "anthropic-version": ANTHROPIC_VERSION,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: env.MODERATOR_LLM_MODEL,
-      max_tokens: env.MODERATOR_LLM_MAX_TOKENS,
+      model: cfg.model,
+      max_tokens: cfg.maxTokens,
       temperature: 0,
       system: SYSTEM_PROMPT,
       messages: [{ role: "user", content: userPrompt }],

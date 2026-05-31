@@ -6,9 +6,9 @@
 import type { ModerationAnalysis, ReportTargetType } from "@agora/contract";
 import { db } from "../db/index.js";
 import { moderationAnalyses } from "../db/schema.js";
-import { env } from "./env.js";
 import { logger } from "./logger.js";
 import { assess } from "./llm-provider.js";
+import { getModeratorConfig } from "./project-config.js";
 import { applyModeration, writeBackEnabled } from "./api-client.js";
 import { shapeAnalysis } from "./shape.js";
 
@@ -22,15 +22,16 @@ export interface AssessTarget {
 }
 
 export async function assessAndRecord(t: AssessTarget): Promise<ModerationAnalysis> {
-  const verdict = await assess({ text: t.text, context: t.context });
+  const config = await getModeratorConfig(t.projectId); // per-project tuning over env defaults
+  const verdict = await assess({ text: t.text, context: t.context }, config.llm);
 
   // Auto-action: only entity/comment are writable back through the API, and only above the
   // configured confidence threshold (0 disables it entirely → everything queues for a human).
   let autoActioned = false;
   const eligible =
     verdict.verdict === "block" &&
-    env.MODERATION_AUTO_ACTION_THRESHOLD > 0 &&
-    verdict.confidence >= env.MODERATION_AUTO_ACTION_THRESHOLD &&
+    config.autoActionThreshold > 0 &&
+    verdict.confidence >= config.autoActionThreshold &&
     (t.targetType === "entity" || t.targetType === "comment");
   if (eligible && writeBackEnabled()) {
     autoActioned = await applyModeration({

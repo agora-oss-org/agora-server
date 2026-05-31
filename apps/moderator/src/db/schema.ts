@@ -1,10 +1,11 @@
 // Thin Drizzle bindings for the moderator service. This is an INTENTIONAL, documented mirror of
 // just the columns the moderator touches — the authoritative DDL (and migrations) live in
 // apps/api/src/db/schema (the single source of truth per CLAUDE.md). The moderator only:
-//   - READS  projects.webhook_secret (to verify inbound webhook signatures)
+//   - READS  projects.moderation_webhook_secret (to verify inbound webhook signatures; falls back
+//            to webhook_secret for projects that haven't set a dedicated moderation secret)
 //   - R/W    moderation_analyses (its own audit-trail + AI-flag queue table)
 // All content mutations go through the API over HTTP — the moderator never writes entities/comments.
-import { pgTable, uuid, text, doublePrecision, boolean, timestamp, pgEnum } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, doublePrecision, boolean, timestamp, jsonb, pgEnum } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
 // Must match apps/api/src/db/schema/_shared.ts exactly (Drizzle references existing PG types by name).
@@ -14,6 +15,10 @@ export const moderationVerdict = pgEnum("moderation_verdict", ["allow", "block",
 export const projects = pgTable("projects", {
   id: uuid("id").primaryKey(),
   webhookSecret: text("webhook_secret"),
+  moderationWebhookSecret: text("moderation_webhook_secret"),
+  // Per-project tuning the moderator overlays on its env defaults (autoActionThreshold + LLM config).
+  // Authored by the API (admin Settings → Moderator); read here via lib/project-config.ts.
+  moderatorConfig: jsonb("moderator_config").notNull().default(sql`'{}'::jsonb`),
 });
 
 export const moderationAnalyses = pgTable("moderation_analyses", {
