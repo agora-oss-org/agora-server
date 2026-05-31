@@ -18,18 +18,48 @@ import { projects } from "../db/schema/index.js";
 const TIMEOUT_MS = 4000;
 const CONFIG_TTL_MS = 30_000;
 
-type WebhookConfig = { url: string; secret: string; events: string[] };
-const cache = new Map<string, { cfg: WebhookConfig | null; at: number }>();
+// Content events the internal moderation notifier always receives (independent of the external
+// webhook's subscribed-events list). The @agora/moderator service assesses these for violations.
+const MODERATION_EVENTS = new Set([
+  "entity.created.complete", "entity.updated.complete",
+  "comment.created.complete", "comment.updated.complete",
+  "message.created.complete",
+]);
 
-async function getConfig(projectId: string): Promise<WebhookConfig | null> {
+type WebhookTarget = { url: string; secret: string };
+type WebhookConfig = {
+  external: (WebhookTarget & { events: string[] }) | null; // the (external) webhook notifier
+  moderation: WebhookTarget | null;                         // the internal @agora/moderator notifier
+};
+const cache = new Map<string, { cfg: WebhookConfig; at: number }>();
+
+async function getConfig(projectId: string): Promise<WebhookConfig> {
   const hit = cache.get(projectId);
   if (hit && Date.now() - hit.at < CONFIG_TTL_MS) return hit.cfg;
   const [p] = await db
-    .select({ url: projects.webhookUrl, secret: projects.webhookSecret, events: projects.webhookEvents })
+    .select({
+      url: projects.webhookUrl, secret: projects.webhookSecret, events: projects.webhookEvents,
+      modUrl: projects.moderationWebhookUrl, modSecret: projects.moderationWebhookSecret,
+    })
     .from(projects).where(eq(projects.id, projectId)).limit(1);
-  const cfg = p?.url && p?.secret ? { url: p.url, secret: p.secret, events: p.events ?? [] } : null;
+  const cfg: WebhookConfig = {
+    external: p?.url && p?.secret ? { url: p.url, secret: p.secret, events: p.events ?? [] } : null,
+    moderation: p?.modUrl && p?.modSecret ? { url: p.modUrl, secret: p.modSecret } : null,
+  };
   cache.set(projectId, { cfg, at: Date.now() });
   return cfg;
+}
+
+/** POST a signed `{ type, projectId, stage, data }` envelope (rejects on network error/timeout). */
+async function post(target: WebhookTarget, projectId: string, type: string, stage: string, data: unknown): Promise<Response> {
+  const ts = Date.now().toString();
+  const body = JSON.stringify({ type, projectId, stage, data });
+  return fetch(target.url, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-signature": sign(target.secret, `${ts}.${body}`), "x-timestamp": ts },
+    body,
+    signal: AbortSignal.timeout(TIMEOUT_MS),
+  });
 }
 
 const sign = (secret: string, msg: string) => crypto.createHmac("sha256", secret).update(msg).digest("hex");
@@ -39,23 +69,27 @@ export function invalidateConfig(projectId: string): void {
   cache.delete(projectId);
 }
 
-/** Send a signed test ping to the configured URL (ignores the subscribed-events list). */
-export async function sendTest(projectId: string): Promise<{ configured: boolean; ok?: boolean; status?: number; error?: string }> {
-  const cfg = await getConfig(projectId);
-  if (!cfg) return { configured: false };
-  const ts = Date.now().toString();
-  const body = JSON.stringify({ type: "webhook.test", projectId, stage: "complete", data: { message: "Agora test webhook", at: new Date().toISOString() } });
+type TestResult = { configured: boolean; ok?: boolean; status?: number; error?: string };
+
+async function pingTarget(target: WebhookTarget | null, projectId: string): Promise<TestResult> {
+  if (!target) return { configured: false };
+  const data = { message: "Agora test webhook", at: new Date().toISOString() };
   try {
-    const res = await fetch(cfg.url, {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-signature": sign(cfg.secret, `${ts}.${body}`), "x-timestamp": ts },
-      body,
-      signal: AbortSignal.timeout(TIMEOUT_MS),
-    });
+    const res = await post(target, projectId, "webhook.test", "complete", data);
     return { configured: true, ok: res.ok, status: res.status };
   } catch (e: any) {
     return { configured: true, ok: false, error: e?.message ?? "unreachable" };
   }
+}
+
+/** Send a signed test ping to the external webhook URL (ignores the subscribed-events list). */
+export async function sendTest(projectId: string): Promise<TestResult> {
+  return pingTarget((await getConfig(projectId)).external, projectId);
+}
+
+/** Send a signed test ping to the internal moderation-notifier URL. */
+export async function sendModerationTest(projectId: string): Promise<TestResult> {
+  return pingTarget((await getConfig(projectId)).moderation, projectId);
 }
 
 function timingSafeEqualHex(a: string, b: string): boolean {
@@ -79,18 +113,11 @@ export interface ValidationResult {
  * network error, or a missing/invalid response signature.
  */
 export async function validate(projectId: string, type: string, data: unknown): Promise<ValidationResult> {
-  const cfg = await getConfig(projectId);
+  const cfg = (await getConfig(projectId)).external;
   if (!cfg || !cfg.events.includes(type)) return { valid: true };
 
-  const ts = Date.now().toString();
-  const body = JSON.stringify({ type, projectId, stage: "validate", data });
   try {
-    const res = await fetch(cfg.url, {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-signature": sign(cfg.secret, `${ts}.${body}`), "x-timestamp": ts },
-      body,
-      signal: AbortSignal.timeout(TIMEOUT_MS),
-    });
+    const res = await post(cfg, projectId, type, "validate", data);
     if (!res.ok) return { valid: false, message: "Rejected by validation webhook" };
     const text = await res.text();
     const respSig = res.headers.get("x-response-signature");
@@ -105,20 +132,25 @@ export async function validate(projectId: string, type: string, data: unknown): 
   }
 }
 
-/** Fire-and-forget broadcast webhook (never blocks or throws). */
+/**
+ * Fire-and-forget broadcast (never blocks or throws). Fans out to two independent destinations:
+ *   - the external webhook notifier — only when the event is in the project's subscribed list;
+ *   - the internal @agora/moderator notifier — for content `*.complete` events, regardless of the
+ *     external subscription (so automated moderation runs even with no external integration).
+ */
 export function broadcast(projectId: string, type: string, data: unknown): void {
   void (async () => {
+    const cfg = await getConfig(projectId).catch(() => null);
+    if (!cfg) return;
+    const sends: Promise<unknown>[] = [];
+    if (cfg.external && cfg.external.events.includes(type)) {
+      sends.push(post(cfg.external, projectId, type, "complete", data));
+    }
+    if (cfg.moderation && MODERATION_EVENTS.has(type)) {
+      sends.push(post(cfg.moderation, projectId, type, "complete", data));
+    }
     try {
-      const cfg = await getConfig(projectId);
-      if (!cfg || !cfg.events.includes(type)) return;
-      const ts = Date.now().toString();
-      const body = JSON.stringify({ type, projectId, stage: "complete", data });
-      await fetch(cfg.url, {
-        method: "POST",
-        headers: { "content-type": "application/json", "x-signature": sign(cfg.secret, `${ts}.${body}`), "x-timestamp": ts },
-        body,
-        signal: AbortSignal.timeout(TIMEOUT_MS),
-      });
+      await Promise.allSettled(sends);
     } catch {
       /* broadcast is best-effort */
     }
