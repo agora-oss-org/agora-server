@@ -13,6 +13,7 @@
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
+    "dev:contract": "pnpm --filter @agora/contract dev",
     "dev:api": "pnpm --filter @agora/api dev",
     "dev:admin": "pnpm --filter @agora/admin dev",
     "contract:build": "pnpm --filter @agora/contract build",
