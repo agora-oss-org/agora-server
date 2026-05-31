@@ -209,8 +209,9 @@ journal order and written **idempotently** (`create extension if not exists`, `c
   user reads only their own private rows (inbox/collections/connections/oauth/reports/uploads/space
   memberships + member-scoped conversations/messages/reactions). Maps `auth.uid()`→profiles via two
   `SECURITY DEFINER` helpers in a non-exposed `private` schema. No write policies (server-only).
-- `0018_…moderation_config` — `projects.moderation_config jsonb` (per-project removed-content
-  behavior: `hide` vs `placeholder`; see Moderation visibility below).
+- `0018_…moderation_config` — `projects.moderation_config jsonb` (once held the `hide` vs
+  `placeholder` removed-content behavior; now unused — removed content is always hidden, the column
+  is kept only to avoid a migration).
 - `0019_rpc_visibility` — pushes read-path visibility **into SQL**: `space_readable(space, viewer)`
   predicate; `fetch_comment_thread(…, p_hide_removed)` prunes removed comments **and their subtrees**
   in the recursive CTE; `match_content(…, p_viewer, p_privileged, p_hide_removed)` filters semantic-
@@ -221,6 +222,8 @@ journal order and written **idempotently** (`create extension if not exists`, `c
   internal moderation notifier (admin Settings → Moderator), separate from the external webhook.
 - `0022_…` — `projects.moderator_config` jsonb: per-project moderator tuning (`autoActionThreshold`
   + LLM provider config) the `@agora/moderator` overlays on its env defaults (admin Settings → Moderator).
+- `0023_…` — `moderation_analyses.prompt_tokens` + `completion_tokens`: per-assessment LLM token usage,
+  summed by the moderator's `GET /moderation/stats` for the dashboard's automated-moderation metrics.
 
 To change schema: edit `src/db/schema/*.ts` → `db:generate` → `db:migrate`. Edit triggers/functions/
 RLS/PostGIS by hand in their custom migration files.
@@ -245,12 +248,12 @@ RLS/PostGIS by hand in their custom migration files.
   (`anyone`|`members`) and creates behind `postingPermission` (`anyone`|`members`|`admins`,
   `assertCanPostInSpace`) — both on the **server**, not RLS. Don't add a space-scoped read/write
   without wiring the matching check.
-- **Moderation visibility** (`lib/moderation-config.ts` + `lib/moderation-visibility.ts`): a removed
-  (`moderationStatus='removed'`) entity/comment must be honored on **reads** per the project's
-  `moderation_config` — `hide` (omit/404 via `excludeRemovedSql`/`shouldHide`) or `placeholder`
-  (`redactEntity`/`redactComment`). Operators bypass. List/feed paths filter in SQL where possible;
-  recursive/semantic reads delegate to the `0019` RPCs. Any new read path over moderatable content
-  must apply `removedPolicy(c)` — don't return raw `removed` rows.
+- **Moderation visibility** (`lib/moderation-visibility.ts`): a removed (`moderationStatus='removed'`)
+  entity/comment is **always hidden** on reads for non-operators — omitted from lists via
+  `excludeRemovedSql` and 404'd on single reads via `shouldHide`. Operators bypass (they review via
+  the admin queue). List/feed paths filter in SQL; recursive/semantic reads delegate to the `0019`
+  RPCs (`p_hide_removed`). Any new read path over moderatable content must apply `removedPolicy(c)` —
+  don't return raw `removed` rows.
 - **Auth:** `requireAuth`/`optionalAuth` only *verify* tokens; minting + refresh
   rotation/reuse-detection/30s-grace live in `lib/tokens.ts` (`refresh_tokens` table).
   Identity is backed by Supabase Auth via the lazy anon client.

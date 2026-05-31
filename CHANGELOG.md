@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Moderator: automated-moderation metrics on the admin dashboard.** The moderator now records LLM
+  **token usage** per assessment (`moderation_analyses.prompt_tokens` + `completion_tokens`,
+  migration `0023`; captured from the OpenAI/Anthropic `usage` field, `0` when the host omits it) and
+  exposes `GET /v1/:projectId/moderation/stats` (operator-only) aggregating, all-time for the project:
+  total moderations, **block** + **review** verdict counts, **auto-blocks** (auto-removed), and total
+  prompt/completion token usage. The admin **Dashboard** shows these as an **"Automated moderation"**
+  section, rendered only when the moderator is reachable (i.e. auto-moderation is enabled).
 - **Moderator: review auto-action threshold** — a second, independent confidence floor that
   auto-removes a `"review"` verdict (env `MODERATION_REVIEW_AUTO_ACTION_THRESHOLD`, per-project
   `moderator_config.reviewAutoActionThreshold`, default **`0` = off**). `"review"` still means "route
@@ -23,6 +30,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   **Breaking config rename, no data migration:** update the env var name, and any project that saved a
   per-project `autoActionThreshold` override must re-save it under the new field (old key is ignored →
   falls back to the env default).
+
+### Removed
+- **Moderation "removed content" is now always _hide completely_** — dropped the `hide` vs
+  `placeholder` choice. Removed the admin **Settings → Moderation** panel, the
+  `GET`/`PATCH /settings/moderation` endpoints, the `moderationConfigSchema`, `lib/moderation-config.ts`,
+  and the placeholder/redact path in `lib/moderation-visibility.ts` (`shouldRedact`/`redactEntity`/
+  `redactComment`/`redactRemovedList`). Removed entities/comments are filtered from lists/threads and
+  404 on direct reads for non-moderators (operators still review them). The orphaned
+  `projects.moderation_config` column is left in place (no migration); safe to drop later.
 
 ## [0.5.0] - 2026-05-31
 
