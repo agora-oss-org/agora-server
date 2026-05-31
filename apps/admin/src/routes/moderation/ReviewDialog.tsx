@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Ban, Check, ExternalLink, Flag, Paperclip } from "lucide-react";
-import type { Comment, Entity, Report } from "@agora/contract";
+import { AlertTriangle, Ban, Bot, Check, ExternalLink, Flag, Paperclip, Sparkles } from "lucide-react";
+import type { Comment, Entity, ModerationVerdict, Report } from "@agora/contract";
 import { actOnReport, getReportTarget, reportDeepLink, type ModerationDecision } from "../../lib/moderation";
+import { aiAnalysisKey, analyzeTarget, getAnalysis, targetText } from "../../lib/moderation-ai";
 import { ApiError } from "../../lib/api";
 import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogDescription } from "../../components/ui/Dialog";
 import { Button } from "../../components/ui/Button";
@@ -128,6 +129,8 @@ export function ReviewDialog({ report, onClose }: { report: Report | null; onClo
                 ) : null}
               </div>
 
+              {report ? <AiAssessment report={report} target={target} /> : null}
+
               <dl className="grid grid-cols-2 gap-3 text-sm">
                 <Meta label="Reason" value={report?.reason} />
                 <Meta label="Reporter" value={shortId(report?.reporterId)} />
@@ -200,6 +203,75 @@ function collectMedia(target: Entity | Comment | null): {
     .filter((f) => f && f.type !== "image" && typeof f.originalPath === "string")
     .map((f) => ({ name: (f.originalPath as string).split("/").pop() || "attachment", url: f.originalPath as string }));
   return { images, gif: gifSrc((target as Comment | null)?.gif), files: other };
+}
+
+const VERDICT_BADGE: Record<ModerationVerdict, "success" | "danger" | "warning"> = {
+  allow: "success",
+  block: "danger",
+  review: "warning",
+};
+
+// AI assessment panel: shows the moderator service's stored verdict for the reported content and
+// offers an on-demand re-analysis. Only entity/comment are analyzable from here (matches what the
+// ReviewDialog loads). Degrades gracefully when the moderator service is unreachable.
+function AiAssessment({ report, target }: { report: Report; target: Entity | Comment | null }) {
+  const qc = useQueryClient();
+  const toast = useToast();
+  const analyzable = report.targetType === "entity" || report.targetType === "comment";
+  const query = useQuery({
+    queryKey: aiAnalysisKey(report.targetType, report.targetId),
+    queryFn: () => getAnalysis(report.targetType, report.targetId),
+    enabled: analyzable,
+    retry: false,
+  });
+
+  const text = targetText(report.targetType, target);
+  const mutation = useMutation({
+    mutationFn: () =>
+      analyzeTarget({ targetType: report.targetType, targetId: report.targetId, spaceId: report.spaceId, text }),
+    onSuccess: (a) => {
+      qc.setQueryData(aiAnalysisKey(report.targetType, report.targetId), a);
+    },
+    onError: (e) =>
+      toast({ title: "Analysis failed", description: e instanceof Error ? e.message : undefined, variant: "danger" }),
+  });
+
+  if (!analyzable) return null;
+  const a = query.data;
+  const busy = mutation.isPending;
+
+  return (
+    <div className="space-y-2 rounded-lg border border-border bg-bg p-4">
+      <div className="flex items-center justify-between gap-2">
+        <p className="flex items-center gap-1.5 text-sm font-medium text-fg">
+          <Bot className="size-4 text-primary" /> AI assessment
+        </p>
+        <Button variant="ghost" onClick={() => mutation.mutate()} disabled={busy || !text}>
+          <Sparkles className="size-3.5" /> {busy ? "Analyzing…" : a ? "Re-analyze" : "Analyze"}
+        </Button>
+      </div>
+      {query.isLoading ? (
+        <p className="text-sm text-muted">Loading assessment…</p>
+      ) : query.isError ? (
+        <p className="text-sm text-muted">Moderator service unavailable.</p>
+      ) : a ? (
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant={VERDICT_BADGE[a.verdict]}>{a.verdict}</Badge>
+            <span className="text-xs text-muted">{Math.round(a.confidence * 100)}% confidence</span>
+            {a.autoActioned ? <Badge variant="danger">auto-removed</Badge> : null}
+            {a.categories.map((cat) => (
+              <Badge key={cat} variant="default">{cat}</Badge>
+            ))}
+          </div>
+          {a.reason ? <p className="whitespace-pre-wrap break-words text-sm text-muted">{a.reason}</p> : null}
+          <p className="text-xs text-faint">{a.model}</p>
+        </div>
+      ) : (
+        <p className="text-sm text-muted">Not analyzed yet.</p>
+      )}
+    </div>
+  );
 }
 
 function Meta({ label, value, mono }: { label: string; value?: string | null; mono?: boolean }) {

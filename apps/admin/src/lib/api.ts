@@ -25,6 +25,9 @@ export interface ApiOptions {
   projectId?: string;
   /** Send the Bearer token (default true). Set false for public/auth-bootstrap calls. */
   auth?: boolean;
+  /** Override the service base (default API_BASE). Used to target the @agora/moderator service,
+   *  reusing this client's Bearer + single-flight refresh. Token refresh always uses API_BASE. */
+  base?: string;
   signal?: AbortSignal;
 }
 
@@ -54,8 +57,8 @@ async function refreshAccessToken(): Promise<boolean> {
   return ok;
 }
 
-function buildUrl(projectId: string, path: string, query?: ApiOptions["query"]): string {
-  const url = new URL(`${API_BASE}/${projectId}${path}`, window.location.origin);
+function buildUrl(projectId: string, path: string, query?: ApiOptions["query"], base: string = API_BASE): string {
+  const url = new URL(`${base}/${projectId}${path}`, window.location.origin);
   if (query) {
     for (const [k, v] of Object.entries(query)) {
       if (v !== undefined && v !== null) url.searchParams.set(k, String(v));
@@ -75,7 +78,7 @@ async function parse<T>(res: Response): Promise<T> {
 }
 
 export async function api<T = unknown>(path: string, opts: ApiOptions = {}): Promise<T> {
-  const { method = "GET", body, query, auth = true, signal } = opts;
+  const { method = "GET", body, query, auth = true, base, signal } = opts;
   const session = getSession();
   const projectId = opts.projectId ?? session?.projectId ?? ENV_PROJECT_ID;
   if (!projectId) throw new ApiError(0, "config/no-project", "No project id configured");
@@ -84,7 +87,7 @@ export async function api<T = unknown>(path: string, opts: ApiOptions = {}): Pro
     const headers: Record<string, string> = {};
     if (body !== undefined) headers["content-type"] = "application/json";
     if (token) headers.authorization = `Bearer ${token}`;
-    return fetch(buildUrl(projectId, path, query), {
+    return fetch(buildUrl(projectId, path, query, base), {
       method,
       headers,
       body: body !== undefined ? JSON.stringify(body) : undefined,
