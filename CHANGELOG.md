@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **API: `GET /admin/config`** — the running configuration (deployment-level), **operator-only**.
+  Returns the resolved server config with **all secrets redacted** to `*Set`/`*Enabled` booleans
+  (only non-sensitive values — ports, TTLs, model names, public URLs, feature toggles — are echoed;
+  `DATABASE_URL` is reduced to host + db name with credentials stripped), plus runtime facts (node
+  version, pid, uptime). Built by the pure, unit-tested `lib/running-config.ts` (a test asserts no
+  secret value can leak).
+- **Moderator: `GET /v1/:projectId/moderation/config`** — the same secret-redacted running-config
+  view for the `@agora/moderator` service, **operator-only** (the moderation router's existing gate).
+  Reports the service env (port, DB host, write-back wiring) plus the LLM `defaults` block (provider,
+  model, `apiKeySet`, threshold) — labelled `defaults` because projects override it via
+  `projects.moderator_config`. Same pure + no-leak-tested `lib/running-config.ts` pattern.
 - **New app: `@agora/moderator` — LLM-backed content moderation.** A standalone Hono service
   (`apps/moderator`, default port 4001) that automatically moderates content with a **generic LLM
   provider** (OpenAI-compatible `/chat/completions` *or* Anthropic `/v1/messages`, selected by
