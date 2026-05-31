@@ -60,6 +60,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     (`lib/project-config.ts`, cached 30s; `assess()` now takes an explicit `LlmConfig`).
   - Both secrets (notifier secret + LLM API key) are **write-only** — GET exposes only
     `hasSecret` / `hasLlmApiKey`.
+  - The panel reads the moderator's `GET /moderation/config` to show the **effective value behind
+    each setting** — an "Effective for this project" summary (override ?? server default, with a live
+    source badge) and the real default surfaced in every placeholder. So an operator ships sensible
+    `.env` defaults and only overrides what a project needs; degrades gracefully if the moderator is
+    unreachable.
+
+- **Admin: review AI-flagged content before acting.** The Moderation **AI flags** tab now opens a
+  review dialog (like the report flow) instead of blind inline Remove/Dismiss — it loads and shows
+  the flagged entity/comment (text + media + author + "Open in app"), the AI verdict (with
+  **Re-analyze**), and **Remove** (with an optional human reason that overrides the AI's) / **Dismiss**.
+  The report and AI-flag dialogs now share one `ContentPreview`; the moderator's `POST
+  /:id/remove` accepts an optional `{ reason }`.
+- **Moderator: the LLM score travels into the stored moderation reason.** Write-backs (auto-action
+  and human-confirmed removal that falls back to the AI's reason) now format the reason as
+  `AI <verdict> (<n>% confidence): <reason>` (`lib/reason.ts`), so the removed content's
+  `moderationReason` records *how confidently* and *why*, not just the prose.
 
 ### Changed
 - **Webhook broadcast fans out to two independent destinations.** `lib/webhooks.ts` `broadcast()`
