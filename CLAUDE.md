@@ -111,6 +111,11 @@ pnpm dev             # tsx watch -> http://localhost:4000/v7  (loads .env via do
 pnpm typecheck       # tsc --noEmit — ALWAYS run before considering work done
 pnpm build           # tsc -> dist/
 
+pnpm test                    # vitest unit suite (src/**/*.test.ts — pure fns, no DB)
+pnpm test -- shape           # single file/pattern (vitest name filter)
+pnpm test:integration        # real-Postgres suite (test/integration/**) — needs TEST_DATABASE_URL
+pnpm test:cov                # unit suite + v8 coverage
+
 pnpm db:generate     # after editing src/db/schema/*.ts -> new migration in drizzle/
 pnpm db:migrate      # apply migrations (idempotent: journal skips applied; safe to re-run)
 
@@ -128,7 +133,15 @@ url=$(grep '^DATABASE_URL=' .env | cut -d= -f2-); psql "$url" -v ON_ERROR_STOP=1
 is the only hard requirement. The rest gate specific features and are validated as optional:
 `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` + `SUPABASE_ANON_KEY` (Auth + Storage),
 `VOYAGE_API_KEY` (semantic search), `RATE_LIMIT_MAX`/`RATE_LIMIT_AUTH_MAX` (edge rate limiting, off
-unless set). Empty strings are treated as unset.
+unless set), `OPERATOR_USER_IDS`/`OPERATOR_EMAILS` (deployment-operator allowlist — see below).
+Empty strings are treated as unset.
+
+**Operators (deployment god-view).** `OPERATOR_USER_IDS`/`OPERATOR_EMAILS` (comma-separated profile
+UUIDs / case-insensitive emails) are an env allowlist resolved by `lib/operators.ts` `isOperator()`.
+The flag is stamped into the access JWT at mint time (`lib/tokens.ts`), read back in
+`middleware/auth.ts`, and surfaces as **`c.var.auth.isOperator`** — so handlers get a project-wide
+admin (all spaces/content/reports) with no extra DB hit. Independent of any space role; powers the
+admin app and bypasses moderation-visibility filtering. Unset → no operators (everyone space-scoped).
 
 **Cron triggers** (`app.ts`, `CRON_SECRET`-gated, 503 until set): `/internal/cron/digests`,
 `/internal/cron/recompute-scores`, `/internal/cron/purge-tokens` (delete expired refresh tokens).
@@ -145,6 +158,17 @@ TOK=$(SECRET="$SECRET" node --input-type=module -e 'import {SignJWT} from "jose"
 ⚠️ Do NOT load the secret via `dotenv` inside a `$(...)` — its stdout banner (`◇ injected env…`,
 non-ASCII) corrupts the value and yields an invalid HTTP header (400 before Hono). `grep` it.
 
+**Tests (vitest, two suites).** `vitest.config.ts` runs the **unit** suite (`src/**/*.test.ts`) —
+pure functions (shapers, validation, ranking, envelope, rate-limit), no DB; it feeds dummy
+`DATABASE_URL`/`ACCESS_TOKEN_SECRET` so importing `lib/db`→`lib/env` (validates + lazily constructs
+the postgres.js client at import) never touches a real DB. `vitest.integration.config.ts` runs
+`test/integration/**` against a **real Postgres** (`TEST_DATABASE_URL`, a dedicated cloud Supabase
+test project; it points the app's `DATABASE_URL` at it). Integration isolation is **by `project_id`**
+— each test mints its own `projects` row and scopes everything to it; `fileParallelism:false` (one
+shared DB) and `globalSetup` applies migrations on first run. The integration env **forces
+`VOYAGE_API_KEY`/`ANTHROPIC_API_KEY` empty** so embed/LLM write paths are no-ops (hermetic — no real
+Voyage/Anthropic calls); `match_content` is covered offline with synthetic vectors.
+
 ## Database migrations (Drizzle)
 
 Schema lives in `apps/api/src/db/schema/*.ts`. `drizzle-kit generate` produces table DDL; anything
@@ -155,7 +179,7 @@ journal order and written **idempotently** (`create extension if not exists`, `c
 - `0000_init` — extensions (vector/postgis/pgcrypto, prepended) + enums + tables + btree indexes
 - `0001_postgis` — `geography(Point,4326)` columns + GIN/GiST/IVFFlat indexes (kept out of TS schema)
 - `0002_triggers` — denormalized counts + reputation
-- `0003_functions` — `toggle_reaction`, `hot_score`/`refresh_entity_score`, `fetch_comment_thread`, `match_entities`
+- `0003_functions` — `toggle_reaction`, `hot_score`/`refresh_entity_score`, `fetch_comment_thread`, `match_content` (semantic search; later given visibility args by `0019`)
 - `0004_rls` — enable RLS on all tables (deny-all backstop)
 - `0005_refresh_tokens` — token rotation table (auth)
 - `0006_message_report_enum` — extend `reaction_target` with `message` (chat-message reports)
@@ -166,6 +190,12 @@ journal order and written **idempotently** (`create extension if not exists`, `c
   user reads only their own private rows (inbox/collections/connections/oauth/reports/uploads/space
   memberships + member-scoped conversations/messages/reactions). Maps `auth.uid()`→profiles via two
   `SECURITY DEFINER` helpers in a non-exposed `private` schema. No write policies (server-only).
+- `0018_…moderation_config` — `projects.moderation_config jsonb` (per-project removed-content
+  behavior: `hide` vs `placeholder`; see Moderation visibility below).
+- `0019_rpc_visibility` — pushes read-path visibility **into SQL**: `space_readable(space, viewer)`
+  predicate; `fetch_comment_thread(…, p_hide_removed)` prunes removed comments **and their subtrees**
+  in the recursive CTE; `match_content(…, p_viewer, p_privileged, p_hide_removed)` filters semantic-
+  search hits by space-readability + chat membership + moderation status (operators bypass).
 
 To change schema: edit `src/db/schema/*.ts` → `db:generate` → `db:migrate`. Edit triggers/functions/
 RLS/PostGIS by hand in their custom migration files.
@@ -186,6 +216,16 @@ RLS/PostGIS by hand in their custom migration files.
   Keep both v6 `upvotes[]`/`downvotes[]` and v7 `reaction_counts` (SDK exposes both).
 - **Ownership/role checks live in handlers** (`ownedEntity`/`ownedComment`/`ownedCollection`,
   spaces' `requireSpaceRole` where owner⇒admin). Trust boundary is the server, not RLS.
+- **Space access + posting** (`lib/space-access.ts`): gate reads behind `readingPermission`
+  (`anyone`|`members`) and creates behind `postingPermission` (`anyone`|`members`|`admins`,
+  `assertCanPostInSpace`) — both on the **server**, not RLS. Don't add a space-scoped read/write
+  without wiring the matching check.
+- **Moderation visibility** (`lib/moderation-config.ts` + `lib/moderation-visibility.ts`): a removed
+  (`moderationStatus='removed'`) entity/comment must be honored on **reads** per the project's
+  `moderation_config` — `hide` (omit/404 via `excludeRemovedSql`/`shouldHide`) or `placeholder`
+  (`redactEntity`/`redactComment`). Operators bypass. List/feed paths filter in SQL where possible;
+  recursive/semantic reads delegate to the `0019` RPCs. Any new read path over moderatable content
+  must apply `removedPolicy(c)` — don't return raw `removed` rows.
 - **Auth:** `requireAuth`/`optionalAuth` only *verify* tokens; minting + refresh
   rotation/reuse-detection/30s-grace live in `lib/tokens.ts` (`refresh_tokens` table).
   Identity is backed by Supabase Auth via the lazy anon client.
