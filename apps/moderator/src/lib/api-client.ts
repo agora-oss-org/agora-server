@@ -20,6 +20,11 @@ export async function applyModeration(args: {
   // The write-back lives at the API app root (like /internal/cron/*), not under /v7 — projectId
   // travels in the body.
   const url = `${env.API_BASE_URL.replace(/\/+$/, "")}/internal/moderation/apply`;
+  logger.debug(
+    { projectId: args.projectId, targetType: args.targetType, targetId: args.targetId, status: args.status },
+    "moderation: write-back → API",
+  );
+  const startedAt = Date.now();
   try {
     const res = await fetch(url, {
       method: "POST",
@@ -31,12 +36,16 @@ export async function applyModeration(args: {
       signal: AbortSignal.timeout(5000),
     });
     if (!res.ok) {
-      logger.error({ status: res.status, targetId: args.targetId }, "moderation write-back rejected");
+      logger.error({ status: res.status, projectId: args.projectId, targetType: args.targetType, targetId: args.targetId }, "moderation: write-back rejected");
       return false;
     }
+    logger.info(
+      { projectId: args.projectId, targetType: args.targetType, targetId: args.targetId, status: args.status, latencyMs: Date.now() - startedAt },
+      "moderation: write-back applied",
+    );
     return true;
   } catch (err) {
-    logger.error({ err, targetId: args.targetId }, "moderation write-back failed");
+    logger.error({ err, projectId: args.projectId, targetType: args.targetType, targetId: args.targetId }, "moderation: write-back failed");
     return false;
   }
 }

@@ -15,6 +15,7 @@ import { env } from "../lib/env.js";
 import { buildRunningConfig } from "../lib/running-config.js";
 import { db } from "../db/index.js";
 import { moderationAnalyses } from "../db/schema.js";
+import { logger } from "../lib/logger.js";
 import { shapeAnalysis } from "../lib/shape.js";
 import { assessAndRecord } from "../lib/assess-and-record.js";
 import { applyModeration, writeBackEnabled } from "../lib/api-client.js";
@@ -84,6 +85,10 @@ export const moderationRoutes = new Hono<{ Variables: Variables }>()
       throw Errors.badRequest("moderation/invalid-body", first?.message ?? "Invalid body", first?.path.join("."));
     }
     const b = parsed.data;
+    logger.info(
+      { projectId, operatorId: c.var.auth?.userId, targetType: b.targetType, targetId: b.targetId },
+      "moderation: on-demand analyze requested",
+    );
     const analysis = await assessAndRecord({
       projectId,
       targetType: b.targetType,
@@ -105,6 +110,10 @@ export const moderationRoutes = new Hono<{ Variables: Variables }>()
       .where(and(eq(moderationAnalyses.id, id), eq(moderationAnalyses.projectId, projectId)))
       .returning();
     if (!row) throw Errors.notFound("moderation/analysis-not-found", "Analysis not found");
+    logger.info(
+      { projectId, operatorId: c.var.auth?.userId, analysisId: id, targetType: row.targetType, targetId: row.targetId },
+      "moderation: flag dismissed by operator",
+    );
     return c.json(shapeAnalysis(row));
   })
 
@@ -139,5 +148,13 @@ export const moderationRoutes = new Hono<{ Variables: Variables }>()
       .set({ humanResolvedAt: new Date(), autoActioned: true })
       .where(eq(moderationAnalyses.id, id))
       .returning();
+    logger.info(
+      {
+        projectId, operatorId: c.var.auth?.userId, analysisId: id,
+        targetType: analysis.targetType, targetId: analysis.targetId,
+        verdict: analysis.verdict, confidence: analysis.confidence, humanReason: !!humanReason,
+      },
+      "moderation: content removed by operator",
+    );
     return c.json(shapeAnalysis(row!));
   });

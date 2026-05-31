@@ -9,6 +9,7 @@
 // Both are coerced to the same { verdict, categories, confidence, reason } shape via policy.ts.
 import type { ModerationVerdict } from "@agora/contract";
 import { env } from "./env.js";
+import { logger } from "./logger.js";
 import { SYSTEM_PROMPT, buildUserPrompt } from "./policy.js";
 
 export interface AssessResult {
@@ -60,8 +61,22 @@ const baseUrl = (cfg: LlmConfig) => (cfg.baseUrl ?? DEFAULT_BASE[cfg.provider]).
 export async function assess(input: { text: string; context?: string }, cfg: LlmConfig = envLlm()): Promise<AssessResult> {
   if (!cfg.apiKey) throw new Error("LLM API key not configured");
   const user = buildUserPrompt(input);
+  // Debug: the request shape (provider/model/host, sizes) — never the key or the content itself.
+  logger.debug(
+    { provider: cfg.provider, model: cfg.model, baseUrl: baseUrl(cfg), maxTokens: cfg.maxTokens, promptChars: user.length },
+    "moderation: calling LLM",
+  );
+  const startedAt = Date.now();
   const raw = cfg.provider === "anthropic" ? await callAnthropic(user, cfg) : await callOpenAI(user, cfg);
-  return { ...parseVerdict(raw), model: `${cfg.provider}:${cfg.model}` };
+  const parsed = parseVerdict(raw);
+  logger.debug(
+    {
+      provider: cfg.provider, model: cfg.model, latencyMs: Date.now() - startedAt, rawChars: raw.length,
+      verdict: parsed.verdict, confidence: parsed.confidence, categories: parsed.categories,
+    },
+    "moderation: LLM responded",
+  );
+  return { ...parsed, model: `${cfg.provider}:${cfg.model}` };
 }
 
 // ─── OpenAI-compatible /chat/completions ──────────────────────────────────────

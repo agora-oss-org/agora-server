@@ -7,6 +7,7 @@ import { eq } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { projects } from "../db/schema.js";
 import { env } from "./env.js";
+import { logger } from "./logger.js";
 import { type LlmConfig, envLlm } from "./llm-provider.js";
 
 export interface ResolvedModeratorConfig {
@@ -45,6 +46,16 @@ export async function getModeratorConfig(projectId: string): Promise<ResolvedMod
     .where(eq(projects.id, projectId))
     .limit(1);
   const cfg = resolve(p?.cfg);
+  // Debug the RESOLVED config (override ?? env) — provider/model/threshold + whether a key resolved,
+  // never the key itself. Logged on cache miss (≤ once per 30s per project).
+  logger.debug(
+    {
+      projectId,
+      provider: cfg.llm.provider, model: cfg.llm.model, baseUrl: cfg.llm.baseUrl ?? null,
+      maxTokens: cfg.llm.maxTokens, threshold: cfg.autoActionThreshold, llmKeyResolved: !!cfg.llm.apiKey,
+    },
+    "moderation: resolved project config",
+  );
   cache.set(projectId, { cfg, at: Date.now() });
   return cfg;
 }

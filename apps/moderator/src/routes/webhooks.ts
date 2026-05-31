@@ -41,16 +41,27 @@ export const webhookRoutes = new Hono<{ Variables: Variables }>().post("/agora",
     return c.json({ error: "Invalid JSON", code: "webhook/bad-body" }, 400);
   }
 
+  logger.debug({ type: env.type, projectId: env.projectId, stage: env.stage }, "moderation: webhook received");
+
   // Connectivity ping (apps/api sendTest) — ACK without a signature requirement.
-  if (env.type === "webhook.test") return c.json({ ok: true });
+  if (env.type === "webhook.test") {
+    logger.debug({ projectId: env.projectId }, "moderation: webhook test ping");
+    return c.json({ ok: true });
+  }
 
   if (!env.projectId) return c.json({ error: "Missing projectId", code: "webhook/no-project" }, 400);
 
   // Verify the HMAC signature against the per-project secret.
   const secret = await getProjectSecret(env.projectId);
-  if (!secret) return c.json({ error: "No webhook secret configured", code: "webhook/unconfigured" }, 401);
+  if (!secret) {
+    logger.warn({ projectId: env.projectId, type: env.type }, "moderation: webhook rejected — no signing secret configured");
+    return c.json({ error: "No webhook secret configured", code: "webhook/unconfigured" }, 401);
+  }
   const ok = verifySignature(secret, c.req.header("x-timestamp") ?? "", rawBody, c.req.header("x-signature") ?? null);
-  if (!ok) return c.json({ error: "Bad signature", code: "webhook/bad-signature" }, 401);
+  if (!ok) {
+    logger.warn({ projectId: env.projectId, type: env.type }, "moderation: webhook rejected — bad signature");
+    return c.json({ error: "Bad signature", code: "webhook/bad-signature" }, 401);
+  }
 
   // We only handle async broadcasts; a validate-stage call (if ever pointed here) just passes.
   if (env.stage !== "complete") return c.json({ valid: true });
@@ -60,6 +71,10 @@ export const webhookRoutes = new Hono<{ Variables: Variables }>().post("/agora",
   if (targetType && targetId) {
     const text = extractText(targetType, env.data);
     if (text) {
+      logger.debug(
+        { projectId: env.projectId, type: env.type, targetType, targetId, spaceId: env.data?.spaceId ?? null, textLength: text.length },
+        "moderation: dispatching assessment",
+      );
       // Fire-and-forget: ACK now, assess in the background. Errors are logged, never surfaced.
       void assessAndRecord({
         projectId: env.projectId,
@@ -67,8 +82,12 @@ export const webhookRoutes = new Hono<{ Variables: Variables }>().post("/agora",
         targetId,
         spaceId: env.data?.spaceId ?? null,
         text,
-      }).catch((err) => logger.error({ err, type: env.type, targetId }, "assess failed"));
+      }).catch((err) => logger.error({ err, type: env.type, projectId: env.projectId, targetId }, "moderation: assess failed"));
+    } else {
+      logger.debug({ projectId: env.projectId, type: env.type, targetType, targetId }, "moderation: skipped — no moderatable text");
     }
+  } else {
+    logger.debug({ projectId: env.projectId, type: env.type }, "moderation: skipped — non-content event");
   }
 
   return c.json({ ok: true });

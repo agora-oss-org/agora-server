@@ -78,6 +78,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `moderationReason` records *how confidently* and *why*, not just the prose.
 
 ### Changed
+- **Moderator: structured logging across the pipeline.** `info`-level logs for every decision —
+  the headline `moderation: verdict` carries `targetId`/`targetType`/`projectId`/`spaceId`, the LLM
+  `verdict` + `confidence` (+ `scorePct`), `categories`, `model`, `threshold`, eligibility and LLM
+  latency — plus `info` on write-back applied and operator remove/dismiss/analyze actions, and
+  `debug` on inbound webhooks, the LLM request/response, write-back attempts, and resolved per-project
+  config. Secrets are never logged (data-object-first per wonder-logger).
+
 - **Webhook broadcast fans out to two independent destinations.** `lib/webhooks.ts` `broadcast()`
   now delivers content `*.complete` events to the internal moderation notifier (when configured)
   **regardless of the external webhook's subscribed-events list**, so automated moderation runs even

@@ -24,16 +24,38 @@ export interface AssessTarget {
 
 export async function assessAndRecord(t: AssessTarget): Promise<ModerationAnalysis> {
   const config = await getModeratorConfig(t.projectId); // per-project tuning over env defaults
+  logger.debug(
+    {
+      projectId: t.projectId, targetType: t.targetType, targetId: t.targetId, spaceId: t.spaceId ?? null,
+      textLength: t.text.length, hasContext: !!t.context,
+      provider: config.llm.provider, model: config.llm.model, threshold: config.autoActionThreshold,
+    },
+    "moderation: assessing content",
+  );
+
+  const startedAt = Date.now();
   const verdict = await assess({ text: t.text, context: t.context }, config.llm);
+  const latencyMs = Date.now() - startedAt;
 
   // Auto-action: only entity/comment are writable back through the API, and only above the
   // configured confidence threshold (0 disables it entirely → everything queues for a human).
   let autoActioned = false;
+  const removable = t.targetType === "entity" || t.targetType === "comment";
   const eligible =
-    verdict.verdict === "block" &&
-    config.autoActionThreshold > 0 &&
-    verdict.confidence >= config.autoActionThreshold &&
-    (t.targetType === "entity" || t.targetType === "comment");
+    verdict.verdict === "block" && config.autoActionThreshold > 0 && verdict.confidence >= config.autoActionThreshold && removable;
+
+  // The headline log: the LLM's decision + score for this exact item, plus everything an operator
+  // needs to trace it (project, target id/type, space, categories, model, threshold, latency).
+  logger.info(
+    {
+      projectId: t.projectId, targetType: t.targetType, targetId: t.targetId, spaceId: t.spaceId ?? null,
+      verdict: verdict.verdict, confidence: verdict.confidence, scorePct: Math.round(verdict.confidence * 100),
+      categories: verdict.categories, model: verdict.model,
+      threshold: config.autoActionThreshold, eligibleForAutoRemoval: eligible, llmLatencyMs: latencyMs,
+    },
+    "moderation: verdict",
+  );
+
   if (eligible && writeBackEnabled()) {
     autoActioned = await applyModeration({
       projectId: t.projectId,
@@ -42,7 +64,15 @@ export async function assessAndRecord(t: AssessTarget): Promise<ModerationAnalys
       status: "removed",
       reason: moderationReasonText(verdict), // carries the LLM verdict + score into the stored reason
     });
-    if (autoActioned) logger.warn({ targetType: t.targetType, targetId: t.targetId, confidence: verdict.confidence }, "auto-removed content");
+    logger.info(
+      { projectId: t.projectId, targetType: t.targetType, targetId: t.targetId, confidence: verdict.confidence, autoActioned },
+      autoActioned ? "moderation: auto-removed content" : "moderation: auto-removal write-back failed",
+    );
+  } else if (eligible) {
+    logger.warn(
+      { projectId: t.projectId, targetType: t.targetType, targetId: t.targetId },
+      "moderation: eligible for auto-removal but write-back is not configured — queuing for a human",
+    );
   }
 
   const [row] = await db
@@ -60,5 +90,9 @@ export async function assessAndRecord(t: AssessTarget): Promise<ModerationAnalys
       autoActioned,
     })
     .returning();
+  logger.debug(
+    { analysisId: row?.id, projectId: t.projectId, targetType: t.targetType, targetId: t.targetId, autoActioned },
+    "moderation: analysis recorded",
+  );
   return shapeAnalysis(row!);
 }
