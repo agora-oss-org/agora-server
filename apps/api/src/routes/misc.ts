@@ -14,7 +14,7 @@ import { env } from "../lib/env.js";
 import { mintSession } from "../lib/tokens.js";
 import * as webhooks from "../lib/webhooks.js";
 import { getFeedConfig, invalidateFeedConfig, feedConfigView } from "../lib/feed-config.js";
-import { parseBody, oauthAuthorizeSchema, signTestingJwtSchema, webhookConfigSchema, feedConfigSchema, moderatorConfigSchema } from "../lib/validation.js";
+import { parseBody, oauthAuthorizeSchema, signTestingJwtSchema, webhookConfigSchema, feedConfigSchema, moderatorConfigSchema, DEFAULT_MODERATION_CATEGORIES } from "../lib/validation.js";
 
 type ProfileRow = typeof profiles.$inferSelect;
 
@@ -162,7 +162,7 @@ export const miscRoutes = new Hono<{ Variables: Variables }>()
     const [row] = await db.select({ moderatorConfig: projects.moderatorConfig }).from(projects).where(eq(projects.id, c.var.projectId)).limit(1);
     const current = (row?.moderatorConfig && typeof row.moderatorConfig === "object" ? row.moderatorConfig : {}) as Record<string, any>;
     const next: Record<string, any> = { ...current };
-    for (const k of ["blockAutoActionThreshold", "reviewAutoActionThreshold", "llmProvider", "llmBaseUrl", "llmApiKey", "llmModel", "llmMaxTokens"] as const) {
+    for (const k of ["blockAutoActionThreshold", "reviewAutoActionThreshold", "llmProvider", "llmBaseUrl", "llmApiKey", "llmModel", "llmMaxTokens", "categories"] as const) {
       const v = (body as Record<string, unknown>)[k];
       if (v === undefined) continue;
       if (v === null) delete next[k]; // clear → moderator env default
@@ -273,6 +273,8 @@ async function moderatorView(projectId: string) {
     llmModel: cfg.llmModel ?? null,
     llmMaxTokens: typeof cfg.llmMaxTokens === "number" ? cfg.llmMaxTokens : null,
     hasLlmApiKey: !!cfg.llmApiKey,
+    // Effective taxonomy: the project's stored list, or the seed defaults until the moderator persists them.
+    categories: Array.isArray(cfg.categories) && cfg.categories.length ? (cfg.categories as string[]) : [...DEFAULT_MODERATION_CATEGORIES],
   };
 }
 

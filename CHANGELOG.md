@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Moderator: editable per-project moderation categories.** The category taxonomy the agent steers
+  the LLM toward is now per-project, stored in `moderator_config.categories` and **editable in admin
+  Settings → Agent moderation** (add/remove chips + reset-to-defaults). The starting list is the
+  shared `DEFAULT_MODERATION_CATEGORIES` (`@agora/contract`); the moderator **seeds it into a project
+  that has none** on first use, then pulls the project's list and lists exactly those categories in
+  the model's system prompt (`buildSystemPrompt`). `GET /settings/moderator` returns the effective
+  list (stored, or the seed defaults); clearing all resets to defaults.
 - **Moderator: automated-moderation metrics on the admin dashboard.** The moderator now records LLM
   **token usage** per assessment (`moderation_analyses.prompt_tokens` + `completion_tokens`,
   migration `0023`; captured from the OpenAI/Anthropic `usage` field, `0` when the host omits it) and

@@ -10,7 +10,7 @@
 import type { ModerationVerdict } from "@agora/contract";
 import { env } from "./env.js";
 import { logger } from "./logger.js";
-import { SYSTEM_PROMPT, buildUserPrompt } from "./policy.js";
+import { buildSystemPrompt, buildUserPrompt, DEFAULT_MODERATION_CATEGORIES } from "./policy.js";
 
 export interface ParsedVerdict {
   verdict: ModerationVerdict;
@@ -70,8 +70,13 @@ const baseUrl = (cfg: LlmConfig) => (cfg.baseUrl ?? DEFAULT_BASE[cfg.provider]).
  * Run the policy classifier over a piece of content with the given provider config (env default).
  * Throws if the LLM isn't configured or the provider returns a non-2xx / unparseable response.
  */
-export async function assess(input: { text: string; context?: string }, cfg: LlmConfig = envLlm()): Promise<AssessResult> {
+export async function assess(
+  input: { text: string; context?: string },
+  cfg: LlmConfig = envLlm(),
+  categories: readonly string[] = DEFAULT_MODERATION_CATEGORIES,
+): Promise<AssessResult> {
   if (!cfg.apiKey) throw new Error("LLM API key not configured");
+  const system = buildSystemPrompt(categories);
   const user = buildUserPrompt(input);
   // Debug: the request shape (provider/model/host, sizes) — never the key or the content itself.
   logger.debug(
@@ -79,7 +84,7 @@ export async function assess(input: { text: string; context?: string }, cfg: Llm
     "moderation: calling LLM",
   );
   const startedAt = Date.now();
-  const res = cfg.provider === "anthropic" ? await callAnthropic(user, cfg) : await callOpenAI(user, cfg);
+  const res = cfg.provider === "anthropic" ? await callAnthropic(system, user, cfg) : await callOpenAI(system, user, cfg);
   const parsed = parseVerdict(res.text);
   logger.debug(
     {
@@ -95,7 +100,7 @@ export async function assess(input: { text: string; context?: string }, cfg: Llm
 const intOr0 = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? Math.trunc(v) : 0);
 
 // ─── OpenAI-compatible /chat/completions ──────────────────────────────────────
-async function callOpenAI(userPrompt: string, cfg: LlmConfig): Promise<LlmResponse> {
+async function callOpenAI(systemPrompt: string, userPrompt: string, cfg: LlmConfig): Promise<LlmResponse> {
   const res = await fetch(`${baseUrl(cfg)}/chat/completions`, {
     method: "POST",
     headers: {
@@ -110,7 +115,7 @@ async function callOpenAI(userPrompt: string, cfg: LlmConfig): Promise<LlmRespon
       // still pins the output to JSON, and parseVerdict() is tolerant.
       response_format: { type: "json_object" },
       messages: [
-        { role: "system", content: SYSTEM_PROMPT },
+        { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
       ],
     }),
@@ -126,7 +131,7 @@ async function callOpenAI(userPrompt: string, cfg: LlmConfig): Promise<LlmRespon
 }
 
 // ─── Anthropic /v1/messages ───────────────────────────────────────────────────
-async function callAnthropic(userPrompt: string, cfg: LlmConfig): Promise<LlmResponse> {
+async function callAnthropic(systemPrompt: string, userPrompt: string, cfg: LlmConfig): Promise<LlmResponse> {
   const res = await fetch(`${baseUrl(cfg)}/v1/messages`, {
     method: "POST",
     headers: {
@@ -138,7 +143,7 @@ async function callAnthropic(userPrompt: string, cfg: LlmConfig): Promise<LlmRes
       model: cfg.model,
       max_tokens: cfg.maxTokens,
       temperature: 0,
-      system: SYSTEM_PROMPT,
+      system: systemPrompt,
       messages: [{ role: "user", content: userPrompt }],
     }),
   });

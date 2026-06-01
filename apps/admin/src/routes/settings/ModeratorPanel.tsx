@@ -12,7 +12,8 @@
 // sees what's running and only overrides what differs.
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Save, Send, ShieldCheck, Sparkles } from "lucide-react";
+import { RotateCcw, Save, Send, ShieldCheck, Sparkles, X } from "lucide-react";
+import { DEFAULT_MODERATION_CATEGORIES } from "@agora/contract";
 import {
   Card, CardHeader, CardTitle, CardDescription, CardContent,
 } from "../../components/ui/Card";
@@ -87,6 +88,8 @@ function ModeratorForm({
   const [hasLlmApiKey, setHasLlmApiKey] = useState(initial.hasLlmApiKey);
   const [model, setModel] = useState(initial.llmModel ?? "");
   const [maxTokens, setMaxTokens] = useState(str(initial.llmMaxTokens));
+  const [categories, setCategories] = useState<string[]>(initial.categories ?? []);
+  const [newCategory, setNewCategory] = useState("");
 
   const save = useMutation({
     mutationFn: (patch: ModeratorConfigPatch) => updateModeratorConfig(patch),
@@ -125,11 +128,20 @@ function ModeratorForm({
       llmBaseUrl: orNull(baseUrl),
       llmModel: orNull(model),
       llmMaxTokens: mt === "" ? null : Number(mt),
+      categories,                                   // [] resets to the seed defaults server-side
     };
     if (secret.trim()) patch.secret = secret;       // write-only: only send when (re)entered
     if (apiKey.trim()) patch.llmApiKey = apiKey;
     save.mutate(patch);
   }
+
+  // Category editor helpers — slugify new entries (trim → lower → spaces to hyphens), dedupe.
+  function addCategory() {
+    const slug = newCategory.trim().toLowerCase().replace(/\s+/g, "-");
+    if (slug && !categories.includes(slug)) setCategories([...categories, slug]);
+    setNewCategory("");
+  }
+  const removeCategory = (c: string) => setCategories(categories.filter((x) => x !== c));
 
   const enabled = !!url.trim();
 
@@ -167,7 +179,7 @@ function ModeratorForm({
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <ShieldCheck className="size-4 text-muted" />
-            Notifier endpoint
+            Moderator endpoint
           </CardTitle>
           <CardDescription>
             The API fans every content event (<code>entity</code>/<code>comment</code>/<code>message</code>{" "}
@@ -194,7 +206,7 @@ function ModeratorForm({
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Sparkles className="size-4 text-muted" />
-            Automated moderation (LLM)
+            Agent moderation
           </CardTitle>
           <CardDescription>
             Per-project overrides for the moderator’s LLM classifier and auto-removal. Any field left
@@ -246,6 +258,43 @@ function ModeratorForm({
             <Field label="Max tokens" hint="Blank = server default.">
               <Input type="number" min={1} step={1} placeholder={ph(defaults?.llm.maxTokens, "512")} value={maxTokens} onChange={(e) => setMaxTokens(e.target.value)} />
             </Field>
+          </div>
+
+          <div className="space-y-2 border-t border-border pt-4">
+            <Label>Moderation categories</Label>
+            <p className="text-xs text-faint">
+              The taxonomy the agent steers toward (it lists these in the model’s system prompt). Seeded
+              from the built-in defaults; edit per project. Clearing all and saving resets to the defaults.
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {categories.length === 0 ? (
+                <span className="text-xs text-faint">None — saving will reset to the built-in defaults.</span>
+              ) : (
+                categories.map((c) => (
+                  <span key={c} className="inline-flex items-center gap-1 rounded-md border border-border bg-surface-2 px-2 py-1 text-xs text-fg">
+                    {c}
+                    <button type="button" onClick={() => removeCategory(c)} className="text-muted hover:text-danger" aria-label={`Remove ${c}`}>
+                      <X className="size-3" />
+                    </button>
+                  </span>
+                ))
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="flex-1">
+                <Input
+                  type="text"
+                  placeholder="add a category (e.g. misinformation)"
+                  value={newCategory}
+                  onChange={(e) => setNewCategory(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addCategory(); } }}
+                />
+              </div>
+              <Button type="button" variant="outline" onClick={addCategory} disabled={!newCategory.trim()}>Add</Button>
+              <Button type="button" variant="ghost" onClick={() => setCategories([...DEFAULT_MODERATION_CATEGORIES])} title="Reset to the built-in defaults">
+                <RotateCcw className="size-3.5" /> Reset
+              </Button>
+            </div>
           </div>
         </CardContent>
       </Card>

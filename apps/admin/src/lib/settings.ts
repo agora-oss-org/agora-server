@@ -117,6 +117,7 @@ export interface ModeratorConfigView {
   llmModel: string | null;
   llmMaxTokens: number | null;
   hasLlmApiKey: boolean;
+  categories: string[]; // effective taxonomy (stored, or the seed defaults)
 }
 
 // PATCH body: omit a key to leave it unchanged, null to clear it (→ the moderator's env default).
@@ -131,6 +132,7 @@ export interface ModeratorConfigPatch {
   llmApiKey?: string | null;
   llmModel?: string | null;
   llmMaxTokens?: number | null;
+  categories?: string[] | null; // null/[] resets to the seed defaults
 }
 
 export function getModeratorConfig(signal?: AbortSignal): Promise<ModeratorConfigView> {

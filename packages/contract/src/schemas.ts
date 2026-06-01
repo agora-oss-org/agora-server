@@ -236,13 +236,34 @@ export const webhookConfigSchema = z.object({
   events: z.array(z.string()).nullish(), // null/absent → unchanged; [] disables all
 });
 
+// The starting category taxonomy the moderator steers the LLM toward. Seeded into a project's
+// `moderator_config.categories` if none exist, then editable in admin Settings → Agent moderation.
+// The moderator pulls the per-project list (falling back to this) and lists them in its system prompt.
+export const DEFAULT_MODERATION_CATEGORIES = [
+  "fake-news",
+  "conspiricy",
+  "racism",
+  "alcohol-promotion",
+  "drug-promotion",
+  "foul-language",
+  "harassment",
+  "hate-promotion",
+  "sexual",
+  "violence-promotion",
+  "self-harm",
+  "spam",
+  "illicit",
+  "pii",
+] as const;
+
 // The @agora/moderator integration (PATCH /settings/moderator). Groups everything about automated
 // moderation for one project:
 //   - the internal notifier the API fans content `*.complete` events to (url + write-only secret) —
 //     separate from the project's (external) webhook notifier;
-//   - the block/review auto-action thresholds + LLM-provider tuning the moderator overlays on its env defaults.
-// Every field is nullish: omit to leave unchanged, null to clear (→ the moderator's env default).
-// `secret` and `llmApiKey` are write-only (GET exposes only hasSecret / hasLlmApiKey).
+//   - the block/review auto-action thresholds + LLM-provider tuning the moderator overlays on its env defaults;
+//   - the per-project moderation category list (`categories`).
+// Every field is nullish: omit to leave unchanged, null to clear (→ the moderator's env default /
+// the seed categories). `secret` and `llmApiKey` are write-only (GET exposes only hasSecret / hasLlmApiKey).
 export const moderatorConfigSchema = z.object({
   url: z.string().url().nullish(),
   secret: z.string().min(1).nullish(),
@@ -253,6 +274,7 @@ export const moderatorConfigSchema = z.object({
   llmApiKey: z.string().min(1).nullish(),
   llmModel: z.string().min(1).nullish(),
   llmMaxTokens: z.number().int().positive().nullish(),
+  categories: z.array(z.string().trim().min(1).max(64)).max(100).nullish(),
 });
 
 // ─── automated moderation (@agora/moderator) ────────────────────────────────

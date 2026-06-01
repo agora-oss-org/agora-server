@@ -37,7 +37,7 @@ export async function assessAndRecord(t: AssessTarget): Promise<ModerationAnalys
   );
 
   const startedAt = Date.now();
-  const verdict = await assess({ text: t.text, context: t.context }, config.llm);
+  const verdict = await assess({ text: t.text, context: t.context }, config.llm, config.categories);
   const latencyMs = Date.now() - startedAt;
 
   // Auto-action: only entity/comment are writable back through the API, and only when a verdict
