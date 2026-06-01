@@ -21,6 +21,22 @@ export const projects = pgTable("projects", {
   moderatorConfig: jsonb("moderator_config").notNull().default(sql`'{}'::jsonb`),
 });
 
+// Read-only mirrors of just the columns the queue needs to resolve a flagged item's author (poster):
+// target → userId (entities/comments) → profile name. Authoritative DDL lives in apps/api.
+export const entities = pgTable("entities", {
+  id: uuid("id").primaryKey(),
+  userId: uuid("user_id"),
+});
+export const comments = pgTable("comments", {
+  id: uuid("id").primaryKey(),
+  userId: uuid("user_id"),
+});
+export const profiles = pgTable("profiles", {
+  id: uuid("id").primaryKey(),
+  username: text("username"),
+  name: text("name"),
+});
+
 export const moderationAnalyses = pgTable("moderation_analyses", {
   id: uuid("id").primaryKey().defaultRandom(),
   projectId: uuid("project_id").notNull(),

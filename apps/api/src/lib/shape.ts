@@ -8,7 +8,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { db } from "../db/index.js";
 import {
   reactions, profiles, spaces, spaceRules, collections, appNotifications, reports,
-  conversations, conversationMembers, chatMessages, files,
+  conversations, conversationMembers, chatMessages, files, entities, comments,
 } from "../db/schema/index.js";
 import { REACTION_TYPES } from "@agora/contract";
 import type { ReactionType, ReactionCounts, User, Entity, Comment, AuthUser, Report } from "@agora/contract";
@@ -320,7 +320,12 @@ export function shapeAuthUser(
   };
 }
 
-export function shapeReport(row: ReportRow): Report {
+// Reduce a full User to the lightweight summary the moderation views display (poster/flagger names).
+function userSummary(u: User | null | undefined): { id: string; username: string | null; name: string | null } | null {
+  return u ? { id: u.id, username: u.username, name: u.name } : null;
+}
+
+export function shapeReport(row: ReportRow, extra?: { author?: User | null; reporter?: User | null }): Report {
   return {
     id: row.id,
     projectId: row.projectId,
@@ -333,7 +338,45 @@ export function shapeReport(row: ReportRow): Report {
     resolvedAt: iso(row.resolvedAt),
     resolvedById: row.resolvedById ?? null,
     createdAt: iso(row.createdAt)!,
+    ...(extra ? { author: userSummary(extra.author), reporter: userSummary(extra.reporter) } : {}),
   };
+}
+
+// Resolve poster (content author) + flagger (reporter) summaries for a page of reports, batched.
+// Authors are resolved through the target row (entity/comment → userId); message authors aren't
+// loaded here (graceful null). Returns per-report-id maps the caller spreads into shapeReport.
+export async function loadReportParticipants(
+  projectId: string,
+  rows: ReportRow[],
+): Promise<{ authorByReport: Map<string, User | null>; reporterByReport: Map<string, User | null> }> {
+  const entityIds = rows.filter((r) => r.targetType === "entity").map((r) => r.targetId);
+  const commentIds = rows.filter((r) => r.targetType === "comment").map((r) => r.targetId);
+  const [entityRows, commentRows] = await Promise.all([
+    entityIds.length
+      ? db.select({ id: entities.id, userId: entities.userId }).from(entities)
+          .where(and(eq(entities.projectId, projectId), inArray(entities.id, entityIds)))
+      : Promise.resolve([] as { id: string; userId: string | null }[]),
+    commentIds.length
+      ? db.select({ id: comments.id, userId: comments.userId }).from(comments)
+          .where(and(eq(comments.projectId, projectId), inArray(comments.id, commentIds)))
+      : Promise.resolve([] as { id: string; userId: string | null }[]),
+  ]);
+  const targetAuthor = new Map<string, string | null>();
+  for (const e of entityRows) targetAuthor.set(e.id, e.userId);
+  for (const cm of commentRows) targetAuthor.set(cm.id, cm.userId);
+
+  const users = await loadUsers(projectId, [
+    ...rows.map((r) => r.reporterId),
+    ...rows.map((r) => targetAuthor.get(r.targetId) ?? null),
+  ]);
+  const authorByReport = new Map<string, User | null>();
+  const reporterByReport = new Map<string, User | null>();
+  for (const r of rows) {
+    const authorId = targetAuthor.get(r.targetId) ?? null;
+    authorByReport.set(r.id, authorId ? users.get(authorId) ?? null : null);
+    reporterByReport.set(r.id, r.reporterId ? users.get(r.reporterId) ?? null : null);
+  }
+  return { authorByReport, reporterByReport };
 }
 
 // ─── file shaper ─────────────────────────────────────────────────────────────

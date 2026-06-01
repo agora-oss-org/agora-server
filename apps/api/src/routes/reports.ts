@@ -7,7 +7,7 @@ import { db } from "../db/index.js";
 import { logger } from "../lib/logger.js";
 import { reports, spaces, spaceMembers, entities, comments } from "../db/schema/index.js";
 import { readPagination, paginate } from "../http/envelope.js";
-import { shapeReport } from "../lib/shape.js";
+import { shapeReport, loadReportParticipants } from "../lib/shape.js";
 import { parseBody, createReportSchema } from "../lib/validation.js";
 import { Errors } from "../http/errors.js";
 
@@ -61,7 +61,9 @@ export const reportRoutes = new Hono<{ Variables: Variables }>()
     const [{ n } = { n: 0 }] = await db.select({ n: count() }).from(reports).where(where);
     const rows = await db.select().from(reports).where(where)
       .orderBy(desc(reports.createdAt)).limit(limit).offset(offset);
-    return c.json(paginate(rows.map(shapeReport), n, page, limit));
+    const { authorByReport, reporterByReport } = await loadReportParticipants(c.var.projectId, rows);
+    const data = rows.map((r) => shapeReport(r, { author: authorByReport.get(r.id), reporter: reporterByReport.get(r.id) }));
+    return c.json(paginate(data, n, page, limit));
   })
   // Resolved/moderated reports — same role scope as the pending queue. Most-recently-resolved first.
   .get("/moderated", requireAuth, async (c) => {
@@ -71,7 +73,9 @@ export const reportRoutes = new Hono<{ Variables: Variables }>()
     const [{ n } = { n: 0 }] = await db.select({ n: count() }).from(reports).where(where);
     const rows = await db.select().from(reports).where(where)
       .orderBy(desc(reports.resolvedAt)).limit(limit).offset(offset);
-    return c.json(paginate(rows.map(shapeReport), n, page, limit));
+    const { authorByReport, reporterByReport } = await loadReportParticipants(c.var.projectId, rows);
+    const data = rows.map((r) => shapeReport(r, { author: authorByReport.get(r.id), reporter: reporterByReport.get(r.id) }));
+    return c.json(paginate(data, n, page, limit));
   })
   // Operator-only: action a report by id, regardless of space. The space-scoped flow
   // (PATCH /spaces/:id/.../moderation + /spaces/:id/reports/...) needs a spaceId, so PROJECT-LEVEL

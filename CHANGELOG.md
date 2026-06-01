@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Moderation: poster + flagger names in the queues and review dialogs.** Report list/detail now
+  resolve the **poster** (content author) and **flagger** (reporter) display names — new `Report.author`
+  / `Report.reporter` (`UserSummary`) populated by `/reports/pending` + `/moderated` (batched author
+  lookup via the target row). The AI-flag queue resolves just the **poster** (`ModerationAnalysis.author`,
+  the moderator joins target → profile). Admin shows **Poster** + **Flagger** columns in the reports
+  grid (Poster only in the AI-flags grid) and a poster/flagger header at the top of both review dialogs.
 - **Moderator: editable per-project moderation categories.** The category taxonomy the agent steers
   the LLM toward is now per-project, stored in `moderator_config.categories` and **editable in admin
   Settings → Agent moderation** (add/remove chips + reset-to-defaults). The starting list is the

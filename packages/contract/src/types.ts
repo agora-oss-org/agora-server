@@ -105,6 +105,13 @@ export type ReportTargetType = "entity" | "comment" | "message";
 
 // A user-filed report (shapeReport). Resolved when `resolvedAt` is set. `spaceId` scopes it to a
 // space (the moderation + resolution endpoints are space-scoped); null = project-level report.
+// Lightweight user reference for moderation list/detail views (poster + flagger names).
+export interface UserSummary {
+  id: string;
+  username: string | null;
+  name: string | null;
+}
+
 export interface Report {
   id: string;
   projectId: string;
@@ -117,6 +124,9 @@ export interface Report {
   resolvedAt: string | null;
   resolvedById: string | null;
   createdAt: string;
+  // Resolved display names (populated by the moderation list/detail endpoints; absent elsewhere).
+  author?: UserSummary | null;   // the poster (content author)
+  reporter?: UserSummary | null; // the flagger (who filed the report)
 }
 
 // Auth identity attached to a request (set by middleware, returned in some payloads).
@@ -147,4 +157,5 @@ export interface ModerationAnalysis {
   autoActioned: boolean; // true when the moderator wrote the removal back to the API itself
   humanResolvedAt: string | null; // set once a human dispositions it (clears it from the queue)
   createdAt: string;
+  author?: UserSummary | null; // the poster (content author); populated by the AI-flag queue
 }

@@ -1,8 +1,15 @@
 // Moderation data access. Listing the queues uses the role-scoped /reports endpoints; taking action
 // uses the space-scoped moderation + report-resolution endpoints (so a report must carry a spaceId).
-import type { PaginatedResponse, Report, Entity, Comment, ReportTargetType } from "@agora/contract";
+import type { PaginatedResponse, Report, Entity, Comment, ReportTargetType, UserSummary } from "@agora/contract";
 import { api } from "./api";
 import { DEMO_URL } from "../config";
+
+/** Display label for a poster/flagger: @username → name → "—". */
+export function displayName(u: UserSummary | null | undefined): string {
+  if (!u) return "—";
+  if (u.username) return `@${u.username}`;
+  return u.name || "—";
+}
 
 export type ReportStatus = "pending" | "moderated";
 export type ModerationDecision = "approved" | "removed";

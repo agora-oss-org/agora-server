@@ -16,6 +16,7 @@ import { env } from "../lib/env.js";
 import { buildRunningConfig } from "../lib/running-config.js";
 import { db } from "../db/index.js";
 import { moderationAnalyses } from "../db/schema.js";
+import { loadAuthors } from "../lib/authors.js";
 import { logger } from "../lib/logger.js";
 import { shapeAnalysis } from "../lib/shape.js";
 import { assessAndRecord } from "../lib/assess-and-record.js";
@@ -89,7 +90,9 @@ export const moderationRoutes = new Hono<{ Variables: Variables }>()
       db.select().from(moderationAnalyses).where(where).orderBy(desc(moderationAnalyses.createdAt)).limit(limit).offset(offset),
       db.select({ count: sql<number>`count(*)::int` }).from(moderationAnalyses).where(where),
     ]);
-    return c.json(paginate(rows.map(shapeAnalysis), countRows[0]?.count ?? 0, page, limit));
+    const authorByTarget = await loadAuthors(rows);
+    const data = rows.map((r) => shapeAnalysis(r, authorByTarget.get(r.targetId) ?? null));
+    return c.json(paginate(data, countRows[0]?.count ?? 0, page, limit));
   })
 
   // Latest stored analysis for one piece of content (shown in the admin ReviewDialog).

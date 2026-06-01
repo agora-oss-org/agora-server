@@ -3,7 +3,7 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Bot, ChevronLeft, ChevronRight, Inbox, ShieldCheck } from "lucide-react";
 import type { ModerationAnalysis, ModerationVerdict, Report } from "@agora/contract";
 import { useAuth } from "../auth/AuthContext";
-import { listReports, reportsKey, type ReportStatus } from "../lib/moderation";
+import { displayName, listReports, reportsKey, type ReportStatus } from "../lib/moderation";
 import { aiQueueKey, listAiQueue } from "../lib/moderation-ai";
 import { relativeTime, shortId } from "../lib/time";
 import { PageHeader } from "../components/ui/PageHeader";
@@ -109,6 +109,8 @@ function ReportsTable({ status, onReview }: { status: ReportStatus; onReview?: (
         <THead>
           <Tr className="hover:bg-transparent">
             <Th>Target</Th>
+            <Th>Poster</Th>
+            <Th>Flagger</Th>
             <Th>Reason</Th>
             <Th>Space</Th>
             <Th>{status === "pending" ? "Reported" : "Resolved"}</Th>
@@ -124,6 +126,8 @@ function ReportsTable({ status, onReview }: { status: ReportStatus; onReview?: (
                   <span className="font-mono text-xs text-muted">{shortId(r.targetId)}</span>
                 </div>
               </Td>
+              <Td className="text-muted">{displayName(r.author)}</Td>
+              <Td className="text-muted">{displayName(r.reporter)}</Td>
               <Td className="max-w-[16rem] truncate text-muted">{r.reason}</Td>
               <Td className="text-muted">{r.spaceId ? shortId(r.spaceId) : <span className="text-faint">project</span>}</Td>
               <Td className="text-muted">{relativeTime(status === "pending" ? r.createdAt : r.resolvedAt)}</Td>
@@ -190,6 +194,7 @@ function AiFlagsTable({ onReview }: { onReview: (a: ModerationAnalysis) => void 
         <THead>
           <Tr className="hover:bg-transparent">
             <Th>Target</Th>
+            <Th>Poster</Th>
             <Th>Verdict</Th>
             <Th>Reason</Th>
             <Th>Flagged</Th>
@@ -205,6 +210,7 @@ function AiFlagsTable({ onReview }: { onReview: (a: ModerationAnalysis) => void 
                   <span className="font-mono text-xs text-muted">{shortId(a.targetId)}</span>
                 </div>
               </Td>
+              <Td className="text-muted">{displayName(a.author)}</Td>
               <Td>
                 <div className="flex items-center gap-1.5">
                   <Badge variant={VERDICT_BADGE[a.verdict]}>{a.verdict}</Badge>

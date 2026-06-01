@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Ban, Bot, Check, Flag, Sparkles } from "lucide-react";
 import type { Comment, Entity, ModerationVerdict, Report } from "@agora/contract";
-import { actOnReport, getReportTarget, reportDeepLink, type ModerationDecision } from "../../lib/moderation";
+import { actOnReport, displayName, getReportTarget, reportDeepLink, type ModerationDecision } from "../../lib/moderation";
 import { aiAnalysisKey, analyzeTarget, getAnalysis, targetText } from "../../lib/moderation-ai";
 import { ApiError } from "../../lib/api";
 import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogDescription } from "../../components/ui/Dialog";
@@ -75,6 +75,12 @@ export function ReviewDialog({ report, onClose }: { report: Report | null; onClo
         </DialogHeader>
 
         <DialogBody className="min-h-0 flex-1 overflow-y-auto">
+          {report ? (
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-1 rounded-lg border border-border bg-bg px-4 py-2.5 text-sm">
+              <span className="text-muted">Posted by <span className="font-medium text-fg">{displayName(report.author)}</span></span>
+              <span className="text-muted">Flagged by <span className="font-medium text-fg">{displayName(report.reporter)}</span></span>
+            </div>
+          ) : null}
           {targetQuery.isLoading ? (
             <LoadingPanel label="Loading content…" />
           ) : (
