@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Ban, Bot, Sparkles } from "lucide-react";
 import type { Comment, Entity, ModerationAnalysis, ModerationVerdict } from "@agora/contract";
-import { contentDeepLink, displayName, getTargetContent } from "../../lib/moderation";
+import { contentDeepLink, getTargetContent } from "../../lib/moderation";
 import { analyzeTarget, dismissAnalysis, removeFlagged, targetText } from "../../lib/moderation-ai";
 import { ApiError } from "../../lib/api";
 import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogDescription } from "../../components/ui/Dialog";
@@ -17,6 +17,7 @@ import { LoadingPanel } from "../../components/ui/Spinner";
 import { useToast } from "../../components/ui/Toast";
 import { shortId } from "../../lib/time";
 import { ContentPreview } from "./ContentPreview";
+import { Poster } from "./Poster";
 
 const VERDICT_BADGE: Record<ModerationVerdict, "success" | "danger" | "warning"> = {
   allow: "success",
@@ -91,7 +92,7 @@ export function AiFlagDialog({ analysis, onClose }: { analysis: ModerationAnalys
         <DialogBody className="min-h-0 flex-1 overflow-y-auto">
           {analysis ? (
             <div className="flex flex-wrap items-center gap-x-5 gap-y-1 rounded-lg border border-border bg-bg px-4 py-2.5 text-sm">
-              <span className="text-muted">Posted by <span className="font-medium text-fg">{displayName(analysis.author)}</span></span>
+              <span className="text-muted">Posted by <Poster user={analysis.author} bold /></span>
               <span className="text-muted">Flagged by <span className="font-medium text-fg">the moderator (AI)</span></span>
             </div>
           ) : null}

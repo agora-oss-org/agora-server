@@ -32,9 +32,9 @@ export async function loadAuthors(rows: TargetRow[]): Promise<Map<string, UserSu
 
   const userIds = [...new Set([...targetAuthorId.values()].filter((x): x is string => !!x))];
   const profileRows = userIds.length
-    ? await db.select({ id: profiles.id, username: profiles.username, name: profiles.name }).from(profiles).where(inArray(profiles.id, userIds))
+    ? await db.select({ id: profiles.id, username: profiles.username, name: profiles.name, reputation: profiles.reputation }).from(profiles).where(inArray(profiles.id, userIds))
     : [];
-  const byUser = new Map(profileRows.map((p) => [p.id, { id: p.id, username: p.username, name: p.name } as UserSummary]));
+  const byUser = new Map(profileRows.map((p) => [p.id, { id: p.id, username: p.username, name: p.name, reputation: p.reputation } as UserSummary]));
 
   for (const r of rows) {
     const uid = targetAuthorId.get(r.targetId) ?? null;

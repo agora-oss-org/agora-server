@@ -105,11 +105,12 @@ export type ReportTargetType = "entity" | "comment" | "message";
 
 // A user-filed report (shapeReport). Resolved when `resolvedAt` is set. `spaceId` scopes it to a
 // space (the moderation + resolution endpoints are space-scoped); null = project-level report.
-// Lightweight user reference for moderation list/detail views (poster + flagger names).
+// Lightweight user reference for moderation list/detail views (poster + flagger names + reputation).
 export interface UserSummary {
   id: string;
   username: string | null;
   name: string | null;
+  reputation: number;
 }
 
 export interface Report {

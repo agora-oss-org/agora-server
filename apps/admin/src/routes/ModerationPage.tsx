@@ -16,6 +16,7 @@ import { LoadingPanel } from "../components/ui/Spinner";
 import { ApiError } from "../lib/api";
 import { ReviewDialog } from "./moderation/ReviewDialog";
 import { AiFlagDialog } from "./moderation/AiFlagDialog";
+import { Poster } from "./moderation/Poster";
 
 const VERDICT_BADGE: Record<ModerationVerdict, "success" | "danger" | "warning"> = {
   allow: "success",
@@ -126,7 +127,7 @@ function ReportsTable({ status, onReview }: { status: ReportStatus; onReview?: (
                   <span className="font-mono text-xs text-muted">{shortId(r.targetId)}</span>
                 </div>
               </Td>
-              <Td className="text-muted">{displayName(r.author)}</Td>
+              <Td className="text-muted"><Poster user={r.author} /></Td>
               <Td className="text-muted">{displayName(r.reporter)}</Td>
               <Td className="max-w-[16rem] truncate text-muted">{r.reason}</Td>
               <Td className="text-muted">{r.spaceId ? shortId(r.spaceId) : <span className="text-faint">project</span>}</Td>
@@ -210,7 +211,7 @@ function AiFlagsTable({ onReview }: { onReview: (a: ModerationAnalysis) => void 
                   <span className="font-mono text-xs text-muted">{shortId(a.targetId)}</span>
                 </div>
               </Td>
-              <Td className="text-muted">{displayName(a.author)}</Td>
+              <Td className="text-muted"><Poster user={a.author} /></Td>
               <Td>
                 <div className="flex items-center gap-1.5">
                   <Badge variant={VERDICT_BADGE[a.verdict]}>{a.verdict}</Badge>

@@ -320,9 +320,9 @@ export function shapeAuthUser(
   };
 }
 
-// Reduce a full User to the lightweight summary the moderation views display (poster/flagger names).
-function userSummary(u: User | null | undefined): { id: string; username: string | null; name: string | null } | null {
-  return u ? { id: u.id, username: u.username, name: u.name } : null;
+// Reduce a full User to the lightweight summary the moderation views display (names + reputation).
+function userSummary(u: User | null | undefined): { id: string; username: string | null; name: string | null; reputation: number } | null {
+  return u ? { id: u.id, username: u.username, name: u.name, reputation: u.reputation } : null;
 }
 
 export function shapeReport(row: ReportRow, extra?: { author?: User | null; reporter?: User | null }): Report {

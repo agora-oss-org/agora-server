@@ -14,6 +14,7 @@ import { useToast } from "../../components/ui/Toast";
 import { useAuth } from "../../auth/AuthContext";
 import { shortId } from "../../lib/time";
 import { ContentPreview } from "./ContentPreview";
+import { Poster } from "./Poster";
 
 type Action = ModerationDecision | "dismiss";
 
@@ -77,7 +78,7 @@ export function ReviewDialog({ report, onClose }: { report: Report | null; onClo
         <DialogBody className="min-h-0 flex-1 overflow-y-auto">
           {report ? (
             <div className="flex flex-wrap items-center gap-x-5 gap-y-1 rounded-lg border border-border bg-bg px-4 py-2.5 text-sm">
-              <span className="text-muted">Posted by <span className="font-medium text-fg">{displayName(report.author)}</span></span>
+              <span className="text-muted">Posted by <Poster user={report.author} bold /></span>
               <span className="text-muted">Flagged by <span className="font-medium text-fg">{displayName(report.reporter)}</span></span>
             </div>
           ) : null}

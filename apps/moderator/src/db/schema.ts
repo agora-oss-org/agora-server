@@ -35,6 +35,7 @@ export const profiles = pgTable("profiles", {
   id: uuid("id").primaryKey(),
   username: text("username"),
   name: text("name"),
+  reputation: integer("reputation").notNull().default(0),
 });
 
 export const moderationAnalyses = pgTable("moderation_analyses", {
