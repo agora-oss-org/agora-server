@@ -17,6 +17,7 @@ import {
 } from "../lib/validation.js";
 import { notifyOnSpaceApproved } from "../lib/notifications.js";
 import * as webhooks from "../lib/webhooks.js";
+import { trackEvent } from "../lib/umami.js";
 
 type SpaceRow = typeof spaces.$inferSelect;
 type Membership = typeof spaceMembers.$inferSelect;
@@ -107,6 +108,7 @@ export const spaceRoutes = new Hono<{ Variables: Variables }>()
     const shaped = shapeSpace(row!);
     logger.info({ projectId: c.var.projectId, spaceId: row!.id, userId: c.var.auth!.userId, parentSpaceId: row!.parentSpaceId ?? null }, "space: created");
     webhooks.broadcast(c.var.projectId, "space.created.complete", shaped);
+    trackEvent("space-created", { projectId: c.var.projectId });
     return c.json(shaped, 201);
   })
   .get("/by-short-id", async (c) => {

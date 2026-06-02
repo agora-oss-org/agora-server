@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Server-side Umami analytics.** The API reports discrete product-usage events to a Umami instance
+  (`POST {AGORA_UMAMI_URL}/api/send`): `entity-created`, `comment-created`, `message-created`,
+  `user-signup`, `space-created`, `reaction-added`, `follow-added`, and `search` (with a `kind`). Each
+  carries `projectId` in its event `data` for per-tenant filtering; no PII or content is sent. A new
+  fire-and-forget client (`lib/umami.ts`) sends best-effort on the create/add path only (never blocks
+  or fails a request), and is a **no-op unless `AGORA_UMAMI_URL` + `_SERVER_ID` + `_HOSTNAME` are set**
+  (`_API_KEY` optional). Aggregate request metering stays in `api_usage`/the admin dashboard — only
+  discrete events go to Umami. A third, external product-analytics sink alongside `api_usage` + OTel.
 - **Moderation: poster + flagger names in the queues and review dialogs.** Report list/detail now
   resolve the **poster** (content author) and **flagger** (reporter) display names — new `Report.author`
   / `Report.reporter` (`UserSummary`) populated by `/reports/pending` + `/moderated` (batched author

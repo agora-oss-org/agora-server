@@ -12,6 +12,7 @@ import { shapeUser } from "../lib/shape.js";
 import { parseBody, updateProfileSchema } from "../lib/validation.js";
 import { notifyOnFollow } from "../lib/notifications.js";
 import * as webhooks from "../lib/webhooks.js";
+import { trackEvent } from "../lib/umami.js";
 
 async function findUser(projectId: string, col: typeof profiles.id | typeof profiles.username | typeof profiles.foreignId, value: string) {
   const [row] = await db
@@ -112,6 +113,7 @@ export const userRoutes = new Hono<{ Variables: Variables }>()
     }
     // Notify only on a genuinely new follow (onConflictDoNothing returned a row).
     await notifyOnFollow(c.var.projectId, followerId, followedId);
+    trackEvent("follow-added", { projectId: c.var.projectId });
     return c.json({ id: row.id, followedId }, 201);
   })
   .delete("/:id/follow", requireAuth, async (c) => {

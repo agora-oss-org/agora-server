@@ -13,6 +13,7 @@ import { entities, comments, chatMessages, spaces, profiles } from "../db/schema
 import { shapeEntity, shapeComment, shapeChatMessage, shapeSpace, shapeUser } from "../lib/shape.js";
 import { embedText, embeddingsEnabled, type SourceType } from "../lib/embeddings.js";
 import { streamText, llmEnabled } from "../lib/llm.js";
+import { trackEvent } from "../lib/umami.js";
 
 // Mirrors the SDK's ContentSearchResult (interfaces/models): a shaped Entity | Comment | ChatMessage.
 type ContentSearchResult = { sourceType: SourceType; similarity: number; record: unknown };
@@ -137,6 +138,7 @@ export const searchRoutes = new Hono<{ Variables: Variables }>()
       { projectId: c.var.projectId, queryLength: q.length, sourceTypes: body.sourceTypes ?? null, spaceId: body.spaceId ?? null, results: Array.isArray(results) ? results.length : undefined },
       "search: content query",
     );
+    trackEvent("search", { projectId: c.var.projectId, kind: "content" });
     return c.json(results);
   })
   // POST per the SDK's useAskContent: body { query, sourceTypes?, spaceId?, conversationId?, limit? }.
@@ -151,6 +153,7 @@ export const searchRoutes = new Hono<{ Variables: Variables }>()
     // Retrieve before opening the stream so retrieval failures surface as a normal JSON error.
     const sources = await retrieveContent(c, q, body);
     const prompt = buildPrompt(q, sources);
+    trackEvent("search", { projectId: c.var.projectId, kind: "ask" });
 
     return streamSSE(c, async (stream) => {
       try {
@@ -178,6 +181,7 @@ export const searchRoutes = new Hono<{ Variables: Variables }>()
     const results = rows
       .map((r) => ({ similarity: relevance(q, r.name, r.slug, r.description), record: shapeSpace(r) }))
       .sort((a, b) => b.similarity - a.similarity);
+    trackEvent("search", { projectId: c.var.projectId, kind: "spaces" });
     return c.json(results);
   })
   // POST per the SDK's useSearchUsers: body { query, limit? } → BARE UserSearchResult[] { similarity, record }.
@@ -193,5 +197,6 @@ export const searchRoutes = new Hono<{ Variables: Variables }>()
     const results = rows
       .map((r) => ({ similarity: relevance(q, r.username, r.name), record: shapeUser(r) }))
       .sort((a, b) => b.similarity - a.similarity);
+    trackEvent("search", { projectId: c.var.projectId, kind: "users" });
     return c.json(results);
   });

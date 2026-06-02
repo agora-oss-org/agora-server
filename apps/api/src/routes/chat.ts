@@ -21,6 +21,7 @@ import { emitToConversation } from "../realtime/socket.js";
 import { logger } from "../lib/logger.js";
 import { indexContentAsync } from "../lib/embeddings.js";
 import * as webhooks from "../lib/webhooks.js";
+import { trackEvent } from "../lib/umami.js";
 
 type ConversationRow = typeof conversations.$inferSelect;
 type MemberRow = typeof conversationMembers.$inferSelect;
@@ -320,6 +321,7 @@ export const chatRoutes = new Hono<{ Variables: Variables }>()
     logger.debug({ projectId: c.var.projectId, conversationId: convo.id, messageId: row!.id, userId: c.var.auth!.userId, parentMessageId: row!.parentMessageId ?? null, files: fileRows.length }, "chat: message created");
     emitToConversation(convo.id, "message:created", shaped);
     webhooks.broadcast(c.var.projectId, "message.created.complete", shaped);
+    trackEvent("message-created", { projectId: c.var.projectId, conversationId: convo.id });
     if (row!.parentMessageId) {
       const [parent] = await db.select({ n: chatMessages.threadReplyCount }).from(chatMessages).where(eq(chatMessages.id, row!.parentMessageId)).limit(1);
       emitToConversation(convo.id, "thread:reply_count", { messageId: row!.parentMessageId, conversationId: convo.id, threadReplyCount: parent?.n ?? 0 });

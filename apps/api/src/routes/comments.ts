@@ -19,6 +19,7 @@ import {
   reactionSchema,
 } from "../lib/validation.js";
 import * as webhooks from "../lib/webhooks.js";
+import { trackEvent } from "../lib/umami.js";
 import { notifyOnComment, notifyOnReaction } from "../lib/notifications.js";
 import { indexContentAsync } from "../lib/embeddings.js";
 import { assertCanReadEntity, assertCanReadComment } from "../lib/space-access.js";
@@ -105,6 +106,7 @@ export const commentRoutes = new Hono<{ Variables: Variables }>()
     const shaped = shapeComment(row);
     logger.info({ projectId, commentId: row.id, entityId: row.entityId, userId: row.userId, parentId: row.parentId ?? null }, "comment: created");
     webhooks.broadcast(projectId, "comment.created.complete", shaped);
+    trackEvent("comment-created", { projectId, entityId: row.entityId });
     return c.json(shaped, 201);
   })
   .get("/by-foreign-id", async (c) => {
@@ -225,6 +227,8 @@ export const commentRoutes = new Hono<{ Variables: Variables }>()
       isActive: result.userReaction === reactionType,
       reactionCounts: result.reactionCounts,
     });
+    if (result.userReaction === reactionType) // fire only when the reaction was added (not toggled off)
+      trackEvent("reaction-added", { projectId: c.var.projectId, targetType: "comment", reactionType });
     return c.json(result);
   })
   .delete("/:id/reactions", requireAuth, async (c) => {

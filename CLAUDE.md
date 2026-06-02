@@ -267,7 +267,10 @@ RLS/PostGIS by hand in their custom migration files.
   http/db load) starts traces + metrics from `wonder-logger.yaml`. Two metrics worlds, kept separate:
   `lib/metrics.ts`/`api_usage` is per-project **product** metering (admin dashboard); OTel is the
   **ops** layer (service-level RED, Prometheus `:9464` + OTLP, no `project_id` label). `OTEL_*_ENDPOINT`
-  point at a collector; `OTEL_SDK_DISABLED=true` disables it.
+  point at a collector; `OTEL_SDK_DISABLED=true` disables it. A **third** sink, `lib/umami.ts`
+  (`trackEvent`), pushes discrete **product-usage events** (signups/posts/comments/reactions/…) to an
+  external Umami instance — fire-and-forget, no-op unless `AGORA_UMAMI_*` is set; events only, never
+  per-request metering (that's `api_usage`).
 
 ## Status
 
