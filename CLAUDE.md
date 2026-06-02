@@ -270,7 +270,11 @@ RLS/PostGIS by hand in their custom migration files.
   point at a collector; `OTEL_SDK_DISABLED=true` disables it. A **third** sink, `lib/umami.ts`
   (`trackEvent`), pushes discrete **product-usage events** (signups/posts/comments/reactions/…) to an
   external Umami instance — fire-and-forget, no-op unless `AGORA_UMAMI_*` is set; events only, never
-  per-request metering (that's `api_usage`).
+  per-request metering (that's `api_usage`). The **admin app** is instrumented too (its own Umami
+  website via `AGORA_UMAMI_ADMIN_ID`, script injected at build by `apps/admin/vite.config`; custom
+  events via `lib/analytics.ts`), and reads stats back through the operator-only proxy
+  `GET /admin/umami/overview` (`lib/umami-reporting.ts`, holds the secret `AGORA_UMAMI_API_KEY`
+  server-side) rendered on the admin **Analytics** page.
 
 ## Status
 

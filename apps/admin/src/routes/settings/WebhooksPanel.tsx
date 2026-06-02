@@ -11,6 +11,7 @@ import { Input, Label } from "../../components/ui/Input";
 import { LoadingPanel } from "../../components/ui/Spinner";
 import { useToast } from "../../components/ui/Toast";
 import { ApiError } from "../../lib/api";
+import { track } from "../../lib/analytics";
 import {
   getWebhookConfig, updateWebhookConfig, testWebhook,
   WEBHOOK_VALIDATION_EVENTS, WEBHOOK_BROADCAST_EVENTS,
@@ -54,6 +55,7 @@ function WebhookForm({ initial }: { initial: WebhookConfigView }) {
   const save = useMutation({
     mutationFn: (patch: WebhookConfigPatch) => updateWebhookConfig(patch),
     onSuccess: (view) => {
+      track("admin-settings-save", { panel: "webhooks" });
       setHasSecret(view.hasSecret);
       setSecret("");
       qc.setQueryData(["settings", "webhooks"], view);
@@ -65,10 +67,12 @@ function WebhookForm({ initial }: { initial: WebhookConfigView }) {
 
   const test = useMutation({
     mutationFn: () => testWebhook(),
-    onSuccess: (r) =>
-      r.ok
+    onSuccess: (r) => {
+      track("admin-settings-test", { target: "webhook", ok: !!r.ok });
+      return r.ok
         ? toast({ title: "Test ping delivered", description: `HTTP ${r.status}`, variant: "success" })
-        : toast({ title: "Test ping failed", description: r.error ?? `HTTP ${r.status}`, variant: "danger" }),
+        : toast({ title: "Test ping failed", description: r.error ?? `HTTP ${r.status}`, variant: "danger" });
+    },
     onError: (e) =>
       toast({ title: "Test ping failed", description: e instanceof ApiError || e instanceof Error ? e.message : undefined, variant: "danger" }),
   });

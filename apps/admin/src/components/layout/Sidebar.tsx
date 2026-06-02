@@ -17,7 +17,7 @@ export function Sidebar() {
       </div>
 
       <nav className="flex-1 space-y-1 p-3">
-        {NAV_ITEMS.map(({ to, label, icon: Icon, end }) => (
+        {NAV_ITEMS.filter((item) => !item.operatorOnly || isOperator).map(({ to, label, icon: Icon, end }) => (
           <NavLink
             key={to}
             to={to}

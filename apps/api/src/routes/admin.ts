@@ -9,6 +9,7 @@ import { Errors } from "../http/errors.js";
 import { requireAuth } from "../middleware/auth.js";
 import { env } from "../lib/env.js";
 import { buildRunningConfig } from "../lib/running-config.js";
+import { getOverview, umamiReportingEnabled, type UmamiSite } from "../lib/umami-reporting.js";
 import { db } from "../db/index.js";
 import {
   profiles, reports, spaces, spaceMembers, entities, comments, files, apiUsage,
@@ -129,4 +130,16 @@ export const adminRoutes = new Hono<{ Variables: Variables }>()
       startedAt: new Date(Date.now() - process.uptime() * 1000).toISOString(),
       config: buildRunningConfig(env),
     });
+  })
+
+  // GET /admin/umami/overview?site=product|admin&days=N — OPERATOR-ONLY analytics read-back. Proxies
+  // the Umami reporting API with the secret AGORA_UMAMI_API_KEY (server-side only, never exposed to
+  // the browser): summary stats + top custom events + a daily pageviews/sessions series for one site.
+  .get("/umami/overview", requireAuth, async (c) => {
+    if (!c.var.auth!.isOperator) throw Errors.forbidden("admin/operator-required", "Operator access required");
+    if (!umamiReportingEnabled())
+      throw Errors.badRequest("admin/umami-disabled", "Umami reporting is not configured (AGORA_UMAMI_URL + AGORA_UMAMI_API_KEY)");
+    const site: UmamiSite = c.req.query("site") === "admin" ? "admin" : "product";
+    const days = Math.min(Math.max(Number(c.req.query("days")) || 7, 1), 90); // clamp 1..90
+    return c.json(await getOverview(site, days));
   });

@@ -50,8 +50,11 @@ const schema = z.object({
   ANTHROPIC_MODEL: z.string().default("claude-sonnet-4-6"),
   ANTHROPIC_MAX_TOKENS: z.coerce.number().default(1024),
   // Umami analytics — report discrete usage events (signups/posts/comments/…). Optional; no-op when unset.
+  // SERVER_ID = the product-events website; ADMIN_ID = the admin app's website (reporting proxy reads
+  // both back via the API_KEY for the operator Analytics page). HOSTNAME tags server-side sends.
   AGORA_UMAMI_URL: z.preprocess((v) => (v === "" ? undefined : v), z.string().url().optional()),
   AGORA_UMAMI_SERVER_ID: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
+  AGORA_UMAMI_ADMIN_ID: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
   AGORA_UMAMI_HOSTNAME: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
   AGORA_UMAMI_API_KEY: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
 });

@@ -16,6 +16,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   or fails a request), and is a **no-op unless `AGORA_UMAMI_URL` + `_SERVER_ID` + `_HOSTNAME` are set**
   (`_API_KEY` optional). Aggregate request metering stays in `api_usage`/the admin dashboard — only
   discrete events go to Umami. A third, external product-analytics sink alongside `api_usage` + OTel.
+- **Admin Umami analytics — instrumentation + an operator Analytics page.** The admin SPA now loads
+  Umami's tracking script (build-time injection in `vite.config`, gated on `AGORA_UMAMI_URL` +
+  `AGORA_UMAMI_ADMIN_ID` — a **separate** Umami website from the server-events one), giving automatic
+  pageviews plus custom events (`lib/analytics.ts` `track()`): `admin-login`/`admin-logout`,
+  `admin-moderation-action` (report + AI-flag remove/dismiss/approve), `admin-reanalyze`, and
+  `admin-settings-save`/`admin-settings-test` (moderator/webhooks/feed panels). A new **operator-only
+  Analytics page** (`/analytics`, sidebar item shown to operators) reads stats back through a new
+  **operator-gated API proxy** `GET /admin/umami/overview?site=product|admin&days=N`
+  (`lib/umami-reporting.ts`) — summary stats, a daily pageviews series, and top custom events for
+  either site. The proxy holds the secret `AGORA_UMAMI_API_KEY` server-side (it never reaches the
+  browser) and degrades gracefully when reporting isn't configured.
 - **Moderation: poster + flagger names in the queues and review dialogs.** Report list/detail now
   resolve the **poster** (content author) and **flagger** (reporter) display names — new `Report.author`
   / `Report.reporter` (`UserSummary`) populated by `/reports/pending` + `/moderated` (batched author
