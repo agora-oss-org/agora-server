@@ -152,3 +152,38 @@ export const apiUsage = pgTable("api_usage", {
 }, (t) => [
   primaryKey({ columns: [t.projectId, t.month] }),
 ]);
+
+// Hourly community-activity rollup powering the operator-only "Community" dashboard. One row per
+// (project_id, hour), written by the community-stats cron (lib/community-stats.ts) via an idempotent
+// upsert that recomputes a trailing window each run (so a missed run self-heals). Mirrors api_usage's
+// one-row-per-bucket convention. Three groups of columns:
+//   • flow        — events that happened WITHIN the hour (new_*, active_* distinct actors, reports)
+//   • cumulative  — all-time totals as of the END of the hour (total_*), for pulse cards + 24h deltas
+//                   without summing history
+//   • snapshots   — the leaderboard / top-post ranking over the rolling window, as of this hour. We
+//                   store ids + counts ONLY; display fields (username/avatar/title) are hydrated
+//                   fresh at read time so renames/edits never go stale. Past rows keep their history.
+export const communityStatsHourly = pgTable("community_stats_hourly", {
+  projectId: uuid("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  hour: timestamp("hour", { withTimezone: true }).notNull(), // hour boundary (UTC, date_trunc('hour'))
+  newUsers: integer("new_users").notNull().default(0),
+  newPosts: integer("new_posts").notNull().default(0),
+  newComments: integer("new_comments").notNull().default(0),
+  newReactions: integer("new_reactions").notNull().default(0),
+  activePosters: integer("active_posters").notNull().default(0),
+  activeCommenters: integer("active_commenters").notNull().default(0),
+  activeReactors: integer("active_reactors").notNull().default(0),
+  reportsOpened: integer("reports_opened").notNull().default(0),
+  reportsResolved: integer("reports_resolved").notNull().default(0),
+  totalUsers: integer("total_users").notNull().default(0),
+  totalPosts: integer("total_posts").notNull().default(0),
+  totalComments: integer("total_comments").notNull().default(0),
+  totalReactions: integer("total_reactions").notNull().default(0),
+  topPosters: jsonb("top_posters").notNull().default(sql`'[]'::jsonb`),       // [{ userId, count }]
+  topCommenters: jsonb("top_commenters").notNull().default(sql`'[]'::jsonb`), // [{ userId, count }]
+  topReactors: jsonb("top_reactors").notNull().default(sql`'[]'::jsonb`),     // [{ userId, count }]
+  topPosts: jsonb("top_posts").notNull().default(sql`'[]'::jsonb`),           // [{ entityId, reactions, replies, score }]
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  primaryKey({ columns: [t.projectId, t.hour] }),
+]);

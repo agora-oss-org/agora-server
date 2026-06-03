@@ -11,9 +11,10 @@ import { env } from "../lib/env.js";
 import { buildRunningConfig } from "../lib/running-config.js";
 import { getOverview, umamiReportingEnabled, type UmamiSite } from "../lib/umami-reporting.js";
 import { getServerResources } from "../lib/server-resources.js";
+import { loadUsers, shapeEntity } from "../lib/shape.js";
 import { db } from "../db/index.js";
 import {
-  profiles, reports, spaces, spaceMembers, entities, comments, files, apiUsage,
+  profiles, reports, spaces, spaceMembers, entities, comments, files, apiUsage, communityStatsHourly,
 } from "../db/schema/index.js";
 
 // Spaces where the user is an active admin/moderator (their moderation scope when not an operator).
@@ -148,4 +149,115 @@ export const adminRoutes = new Hono<{ Variables: Variables }>()
     const site: UmamiSite = c.req.query("site") === "admin" ? "admin" : "product";
     const days = Math.min(Math.max(Number(c.req.query("days")) || 7, 1), 90); // clamp 1..90
     return c.json(await getOverview(site, days));
+  })
+
+  // GET /admin/community/overview?days=N — OPERATOR-ONLY community-health pulse. Reads the hourly
+  // rollup (community_stats_hourly, written by the community-stats cron): pulse totals + 24h deltas,
+  // a per-hour growth series, moderation pressure, and the latest leaderboard + top-post snapshot
+  // (ranking ids stored in the rollup; display fields hydrated fresh here). `configured:false` until
+  // the first rollup has run, so the page shows a friendly empty state instead of erroring.
+  .get("/community/overview", requireAuth, async (c) => {
+    if (!c.var.auth!.isOperator) throw Errors.forbidden("admin/operator-required", "Operator access required");
+    const projectId = c.var.projectId;
+    const days = Math.min(Math.max(Number(c.req.query("days")) || 30, 1), 90); // clamp 1..90
+
+    const rows = await db
+      .select()
+      .from(communityStatsHourly)
+      .where(and(
+        eq(communityStatsHourly.projectId, projectId),
+        sql`${communityStatsHourly.hour} >= now() - make_interval(days => ${days})`,
+      ))
+      .orderBy(communityStatsHourly.hour);
+
+    const latest = rows.at(-1);
+    if (!latest) {
+      return c.json({
+        configured: false, range: { days }, snapshotAt: null,
+        totals: { users: 0, posts: 0, comments: 0, reactions: 0 },
+        deltas24h: null,
+        series: [], moderation: { series: [], openNow: 0 },
+        leaderboards: { posters: [], commenters: [], reactors: [] }, topPosts: [],
+      });
+    }
+
+    const isoHour = (h: Date | string) => (h instanceof Date ? h.toISOString() : String(h));
+
+    // 24h-delta baseline: the latest row at-or-before (latest.hour − 24h).
+    const targetMs = new Date(latest.hour as unknown as string).getTime() - 24 * 3600 * 1000;
+    const prior = [...rows].reverse().find((r) => new Date(r.hour as unknown as string).getTime() <= targetMs);
+    const deltas24h = prior
+      ? {
+          users: latest.totalUsers - prior.totalUsers,
+          posts: latest.totalPosts - prior.totalPosts,
+          comments: latest.totalComments - prior.totalComments,
+          reactions: latest.totalReactions - prior.totalReactions,
+        }
+      : null;
+
+    // Hydrate leaderboards (userId → public User) and top posts (entityId → entity) from the snapshot.
+    type Ranked = { userId: string; count: number };
+    type PostRank = { entityId: string; reactions: number; replies: number; score: number };
+    const posters = (latest.topPosters as Ranked[]) ?? [];
+    const commenters = (latest.topCommenters as Ranked[]) ?? [];
+    const reactors = (latest.topReactors as Ranked[]) ?? [];
+    const postRanks = (latest.topPosts as PostRank[]) ?? [];
+
+    const users = await loadUsers(projectId, [...posters, ...commenters, ...reactors].map((e) => e.userId));
+    const hydrateBoard = (entries: Ranked[]) =>
+      entries.map((e) => ({ user: users.get(e.userId) ?? null, count: e.count })).filter((x) => x.user);
+
+    const entityRows = postRanks.length
+      ? await db.select().from(entities).where(and(
+          eq(entities.projectId, projectId),
+          inArray(entities.id, postRanks.map((e) => e.entityId)),
+        ))
+      : [];
+    const entityById = new Map(entityRows.map((r) => [r.id, r]));
+    const topPosts = postRanks
+      .map((e) => {
+        const row = entityById.get(e.entityId);
+        if (!row) return null; // deleted since the snapshot
+        const ent = shapeEntity(row);
+        return {
+          entity: {
+            id: ent.id, shortId: ent.shortId, title: ent.title,
+            reactionCounts: ent.reactionCounts, repliesCount: ent.repliesCount,
+            score: ent.score, createdAt: ent.createdAt,
+          },
+          reactions: e.reactions, replies: e.replies,
+        };
+      })
+      .filter((x): x is NonNullable<typeof x> => x !== null);
+
+    const [openNow] = await db
+      .select({ n: count() })
+      .from(reports)
+      .where(and(eq(reports.projectId, projectId), isNull(reports.resolvedAt)));
+
+    return c.json({
+      configured: true,
+      range: { days },
+      snapshotAt: isoHour(latest.updatedAt as unknown as Date),
+      totals: {
+        users: latest.totalUsers, posts: latest.totalPosts,
+        comments: latest.totalComments, reactions: latest.totalReactions,
+      },
+      deltas24h,
+      series: rows.map((r) => ({
+        hour: isoHour(r.hour as unknown as Date),
+        newUsers: r.newUsers, newPosts: r.newPosts, newComments: r.newComments, newReactions: r.newReactions,
+        activePosters: r.activePosters, activeCommenters: r.activeCommenters, activeReactors: r.activeReactors,
+      })),
+      moderation: {
+        series: rows.map((r) => ({ hour: isoHour(r.hour as unknown as Date), opened: r.reportsOpened, resolved: r.reportsResolved })),
+        openNow: openNow?.n ?? 0,
+      },
+      leaderboards: {
+        posters: hydrateBoard(posters),
+        commenters: hydrateBoard(commenters),
+        reactors: hydrateBoard(reactors),
+      },
+      topPosts,
+    });
   });

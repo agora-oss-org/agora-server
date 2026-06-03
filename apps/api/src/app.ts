@@ -14,6 +14,7 @@ import { requestLog } from "./middleware/request-log.js";
 import { sendDueDigests } from "./lib/digests.js";
 import { recomputeDueScores } from "./lib/recompute.js";
 import { purgeExpiredRefreshTokens } from "./lib/token-cleanup.js";
+import { rollupCommunityStats } from "./lib/community-stats.js";
 import { applyClientModeration } from "./lib/client-moderation.js";
 
 function safeEqual(a: string, b: string): boolean {
@@ -63,6 +64,14 @@ export function createApp() {
     const blocked = cronGuard(c); if (blocked) return blocked;
     const result = await purgeExpiredRefreshTokens();
     logger.info({ result }, "cron: expired refresh tokens purged");
+    return c.json(result);
+  });
+  // Roll up the hourly community-activity stats for the operator dashboard, self-healing a trailing
+  // window each run (scripts/rollup-community-stats.mjs).
+  app.post("/internal/cron/community-stats", async (c) => {
+    const blocked = cronGuard(c); if (blocked) return blocked;
+    const result = await rollupCommunityStats();
+    logger.info({ result }, "cron: community stats rolled up");
     return c.json(result);
   });
 

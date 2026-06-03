@@ -169,6 +169,13 @@
       "when": 1780221206491,
       "tag": "0023_majestic_mother_askani",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1780468316536,
+      "tag": "0024_curious_tattoo",
+      "breakpoints": true
     }
   ]
 }
