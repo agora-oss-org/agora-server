@@ -9,6 +9,7 @@ import { reports, spaces, spaceMembers, entities, comments } from "../db/schema/
 import { readPagination, paginate } from "../http/envelope.js";
 import { shapeReport, loadReportParticipants } from "../lib/shape.js";
 import { parseBody, createReportSchema } from "../lib/validation.js";
+import { trackEvent } from "../lib/umami.js";
 import { Errors } from "../http/errors.js";
 
 // The set of space ids a user may moderate: spaces they own (space.userId) + memberships with an
@@ -49,6 +50,7 @@ export const reportRoutes = new Hono<{ Variables: Variables }>()
       spaceId: body.spaceId,
     }).returning();
     logger.info({ projectId: c.var.projectId, reportId: row!.id, reporterId: c.var.auth!.userId, targetType: body.targetType, targetId: body.targetId, spaceId: body.spaceId ?? null, reason: body.reason }, "report: filed");
+    trackEvent("report-created", { projectId: c.var.projectId, targetType: body.targetType });
     return c.json(shapeReport(row!), 201);
   })
   // Open (unresolved) reports — the moderation inbox. A deployment operator sees every unresolved

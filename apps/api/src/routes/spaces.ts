@@ -241,6 +241,7 @@ export const spaceRoutes = new Hono<{ Variables: Variables }>()
       .values({ projectId: c.var.projectId, spaceId: space.id, userId: uid, role: "member", status })
       .onConflictDoNothing().returning();
     const m = row ?? (await membershipOf(c.var.projectId, space.id, uid))!;
+    if (row) trackEvent("space-joined", { projectId: c.var.projectId, status }); // genuine new membership only
     return c.json({ message: "ok", membership: { id: m.id, spaceId: space.id, userId: uid, role: m.role, status: m.status, joinedAt: m.joinedAt } });
   })
   .delete("/:id/leave", requireAuth, async (c) => {

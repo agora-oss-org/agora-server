@@ -114,6 +114,7 @@ export const chatRoutes = new Hono<{ Variables: Variables }>()
       projectId, conversationId: convo!.id, userId, role: userId === uid ? "admin" as const : "member" as const,
     }))).onConflictDoNothing();
     logger.info({ projectId, conversationId: convo!.id, userId: uid, type: convo!.type, spaceId: convo!.spaceId ?? null, members: memberIds.length }, "chat: conversation created");
+    trackEvent("conversation-created", { projectId, type: convo!.type });
     return c.json(shapeConversation(convo!, { memberCount: memberIds.length }), 201);
   })
   .post("/conversations/direct", requireAuth, async (c) => {
@@ -137,6 +138,7 @@ export const chatRoutes = new Hono<{ Variables: Variables }>()
       { projectId, conversationId: convo!.id, userId: uid, role: "member" as const },
       { projectId, conversationId: convo!.id, userId: other, role: "member" as const },
     ]);
+    trackEvent("conversation-created", { projectId, type: "direct" }); // only on genuine create (get-or-create returns above)
     return c.json(shapeConversation(convo!, { memberCount: 2 }), 201);
   })
   // Total unread across the user's active conversations. MUST stay above /conversations/:id
@@ -391,6 +393,7 @@ export const chatRoutes = new Hono<{ Variables: Variables }>()
       projectId: c.var.projectId, reporterId: c.var.auth!.userId,
       targetType: "message", targetId: c.req.param("messageId"), reason: body.reason, details: body.details,
     });
+    trackEvent("report-created", { projectId: c.var.projectId, targetType: "message" });
     return c.json({ success: true }, 201);
   })
   // ── space conversation (get-or-create, space-member gated) ──────────────────

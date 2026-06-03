@@ -12,7 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`POST {AGORA_UMAMI_URL}{AGORA_UMAMI_SEND_PATH}`, default collect path `/api/send`). `AGORA_UMAMI_URL`
   may carry a path prefix (e.g. `https://host/umami` to consolidate all Umami routes under one mount —
   the prefix is preserved when building every endpoint): `entity-created`, `comment-created`, `message-created`,
-  `user-signup`, `space-created`, `reaction-added`, `follow-added`, and `search` (with a `kind`). Each
+  `user-signup`, `space-created`, `space-joined`, `reaction-added`, `follow-added`, `report-created`,
+  `conversation-created`, and `search` (with a `kind`). Each
   carries `projectId` in its event `data` for per-tenant filtering; no PII or content is sent. A new
   fire-and-forget client (`lib/umami.ts`) sends best-effort on the create/add path only (never blocks
   or fails a request), and is a **no-op unless `AGORA_UMAMI_URL` + `_SERVER_ID` + `_HOSTNAME` are set**
