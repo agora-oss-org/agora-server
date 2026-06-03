@@ -25,6 +25,7 @@ export function trackEvent(name: string, data?: Record<string, unknown>): void {
       const base = env.AGORA_UMAMI_URL!.replace(/\/+$/, "");
       const sendPath = env.AGORA_UMAMI_SEND_PATH.startsWith("/") ? env.AGORA_UMAMI_SEND_PATH : `/${env.AGORA_UMAMI_SEND_PATH}`;
       const endpoint = `${base}${sendPath}`;
+      logger.trace({ name, data, endpoint, website: env.AGORA_UMAMI_SERVER_ID }, "umami: sending event");
       const res = await fetch(endpoint, {
         method: "POST",
         headers: {
@@ -43,7 +44,8 @@ export function trackEvent(name: string, data?: Record<string, unknown>): void {
           },
         }),
       });
-      if (!res.ok) logger.debug({ status: res.status, name }, "umami: send rejected");
+      if (res.ok) logger.trace({ name, status: res.status }, "umami: event sent");
+      else logger.debug({ status: res.status, name }, "umami: send rejected");
     } catch (e) {
       logger.debug({ err: e, name }, "umami: send failed");
     }

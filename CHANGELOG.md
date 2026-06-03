@@ -63,6 +63,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Moderator alongside the block threshold, with its effective (override ?? env default) value shown.
 
 ### Changed
+- **Umami: trace logging on every event emit.** The API's `trackEvent` logs `umami: sending event`
+  (name + endpoint + website) at `trace` and `umami: event sent` on success; the admin's `track()`
+  logs each emit to `console.debug` with whether `window.umami` is present (`→ sent` / `→ dropped`).
+  Makes it instantly visible whether browser custom events are firing or being dropped (e.g. blocked).
 - **Moderator: renamed the block auto-action threshold** for symmetry with the new review threshold —
   env `MODERATION_AUTO_ACTION_THRESHOLD` → **`MODERATION_BLOCK_AUTO_ACTION_THRESHOLD`** (default
   `0.85`, behavior unchanged), and the `projects.moderator_config` jsonb key `autoActionThreshold` →

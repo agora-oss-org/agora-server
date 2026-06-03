@@ -10,9 +10,14 @@ declare global {
 
 /** Fire a custom Umami event. Safe to call unconditionally — silently no-ops if tracking is off. */
 export function track(event: string, data?: Record<string, unknown>): void {
+  const available = typeof window !== "undefined" && !!window.umami;
+  // Trace every emit + whether the tracker is loaded. console.debug is the frontend trace level
+  // (hidden unless DevTools "Verbose" is on), so it never spams users — but it makes it instantly
+  // visible whether an event fired or was dropped because window.umami is absent/blocked.
+  console.debug("[umami] track", event, data ?? {}, available ? "→ sent" : "→ dropped (no window.umami)");
   try {
     window.umami?.track(event, data);
-  } catch {
-    /* analytics must never break the UI */
+  } catch (err) {
+    console.debug("[umami] track failed", event, err);
   }
 }
