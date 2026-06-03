@@ -27,10 +27,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Analytics page** (`/analytics`, sidebar item shown to operators) reads stats back through a new
   **operator-gated API proxy** `GET /admin/umami/overview?site=product|admin&days=N`
   (`lib/umami-reporting.ts`) — summary stats, a daily pageviews series, and top custom events for
-  either site. The proxy holds the secret `AGORA_UMAMI_API_KEY` server-side (it never reaches the
-  browser), reads the reporting API at `AGORA_UMAMI_API_URL` (falls back to `AGORA_UMAMI_URL` for
-  deployments whose public host doesn't expose `/api/websites/*`), and degrades gracefully when
-  reporting isn't configured.
+  either site. The proxy authenticates **server-side only** (credentials never reach the browser):
+  **self-hosted** Umami via `POST /api/auth/login` → Bearer token (`AGORA_UMAMI_USERNAME` /
+  `AGORA_UMAMI_PASSWORD`, cached + re-login on expiry), with `AGORA_UMAMI_API_KEY` (`x-umami-api-key`)
+  as a **Umami-Cloud** fallback. Reads the reporting API at `AGORA_UMAMI_API_URL` (falls back to
+  `AGORA_UMAMI_URL`), and degrades gracefully when reporting isn't configured.
 - **Moderation: poster + flagger names in the queues and review dialogs.** Report list/detail now
   resolve the **poster** (content author) and **flagger** (reporter) display names — new `Report.author`
   / `Report.reporter` (`UserSummary`) populated by `/reports/pending` + `/moderated` (batched author

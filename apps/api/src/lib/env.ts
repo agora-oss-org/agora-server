@@ -57,6 +57,11 @@ const schema = z.object({
   AGORA_UMAMI_ADMIN_ID: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
   AGORA_UMAMI_HOSTNAME: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
   AGORA_UMAMI_API_KEY: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
+  // Reporting-API auth. `x-umami-api-key` (above) works on Umami **Cloud** only; **self-hosted**
+  // (cloudMode:false) authenticates via POST /api/auth/login → Bearer token, so set these instead.
+  // When both are present they take precedence over the API key.
+  AGORA_UMAMI_USERNAME: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
+  AGORA_UMAMI_PASSWORD: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
   // Collect endpoint for server-side sends, relative to AGORA_UMAMI_URL. Default is stock Umami's
   // `/api/send`; a deployment can remap it (e.g. `/v7/send` to dodge ad-blockers) and set this to match.
   AGORA_UMAMI_SEND_PATH: z.preprocess((v) => (v === "" ? undefined : v), z.string().default("/api/send")),

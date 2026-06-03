@@ -1,7 +1,8 @@
 // Umami reporting client — reads analytics BACK from Umami for the admin's operator-only Analytics
-// page (the counterpart to lib/umami.ts, which only SENDS events). Authenticates with the secret
-// AGORA_UMAMI_API_KEY (x-umami-api-key), so this must only ever run server-side behind the operator
-// gate — the key must never reach the browser. Returns a shaped overview; throws ApiError on failure.
+// page (the counterpart to lib/umami.ts, which only SENDS events). Self-hosted Umami authenticates via
+// POST /api/auth/login → Bearer token (AGORA_UMAMI_USERNAME/PASSWORD); `x-umami-api-key` is a Umami
+// **Cloud**-only fallback. Runs server-side behind the operator gate only — credentials must never
+// reach the browser. Returns a shaped overview; throws ApiError on failure.
 import { env } from "./env.js";
 import { Errors } from "../http/errors.js";
 import { logger } from "./logger.js";
@@ -18,11 +19,18 @@ export interface UmamiOverview {
 }
 
 // The reporting API lives at AGORA_UMAMI_API_URL when set, else AGORA_UMAMI_URL (the tracker host).
+// Paths are joined by concatenation (not `new URL(absolutePath, base)`) so a path-prefixed base
+// (e.g. https://host/umami) is preserved — an absolute path would reset to the host root.
 const reportingBase = (): string | undefined => env.AGORA_UMAMI_API_URL ?? env.AGORA_UMAMI_URL;
+const apiUrl = (path: string): string => `${reportingBase()!.replace(/\/+$/, "")}${path}`;
 
-/** True when the reporting API can be called (a reporting base URL + the secret key are both set). */
+// Self-hosted Umami authenticates via POST /api/auth/login → Bearer token; `x-umami-api-key` only
+// works on Umami Cloud. Prefer the login flow when username/password are set, else fall back to the key.
+const usePasswordAuth = (): boolean => !!(env.AGORA_UMAMI_USERNAME && env.AGORA_UMAMI_PASSWORD);
+
+/** True when the reporting API can be called: a base URL + a credential (login creds OR a Cloud key). */
 export function umamiReportingEnabled(): boolean {
-  return !!(reportingBase() && env.AGORA_UMAMI_API_KEY);
+  return !!(reportingBase() && (usePasswordAuth() || env.AGORA_UMAMI_API_KEY));
 }
 
 /** The Umami website id for a logical site, or undefined when that site isn't configured. */
@@ -34,20 +42,49 @@ function websiteId(site: UmamiSite): string | undefined {
 const num = (v: unknown): number =>
   typeof v === "number" ? v : Number((v as { value?: unknown } | null)?.value ?? 0) || 0;
 
-async function umamiGet(path: string, params: Record<string, string | number>): Promise<unknown> {
-  // Concatenate (not `new URL(absolutePath, base)`) so a path-prefixed base (e.g. https://host/umami)
-  // is preserved — an absolute path would reset to the host root and drop the /umami mount.
-  const base = reportingBase()!.replace(/\/+$/, "");
-  const url = new URL(`${base}/api/websites/${path}`);
-  for (const [k, v] of Object.entries(params)) url.searchParams.set(k, String(v));
-  const res = await fetch(url, {
-    headers: { "x-umami-api-key": env.AGORA_UMAMI_API_KEY!, accept: "application/json" },
+// Cached self-hosted Bearer token — cleared + re-fetched on a 401 (expiry), so no fixed TTL needed.
+let tokenCache: string | null = null;
+
+async function login(): Promise<string> {
+  const res = await fetch(apiUrl("/api/auth/login"), {
+    method: "POST",
+    headers: { "content-type": "application/json", accept: "application/json" },
+    body: JSON.stringify({ username: env.AGORA_UMAMI_USERNAME, password: env.AGORA_UMAMI_PASSWORD }),
     signal: AbortSignal.timeout(8000),
   });
   if (!res.ok) {
+    logger.warn({ status: res.status }, "umami-reporting: login failed");
+    throw Errors.badRequest("admin/umami-auth", "Umami login failed — check AGORA_UMAMI_USERNAME / AGORA_UMAMI_PASSWORD");
+  }
+  const data = (await res.json()) as { token?: string };
+  if (!data.token) throw Errors.badRequest("admin/umami-auth", "Umami login returned no token");
+  return data.token;
+}
+
+async function authHeaders(): Promise<Record<string, string>> {
+  if (usePasswordAuth()) {
+    tokenCache ??= await login();
+    return { authorization: `Bearer ${tokenCache}` };
+  }
+  return { "x-umami-api-key": env.AGORA_UMAMI_API_KEY! };
+}
+
+async function umamiGet(path: string, params: Record<string, string | number>, retried = false): Promise<unknown> {
+  const url = new URL(apiUrl(`/api/websites/${path}`));
+  for (const [k, v] of Object.entries(params)) url.searchParams.set(k, String(v));
+  const res = await fetch(url, {
+    headers: { ...(await authHeaders()), accept: "application/json" },
+    signal: AbortSignal.timeout(8000),
+  });
+  // A Bearer token likely just expired → drop it, re-login once, retry.
+  if (res.status === 401 && usePasswordAuth() && !retried) {
+    tokenCache = null;
+    return umamiGet(path, params, true);
+  }
+  if (!res.ok) {
     logger.warn({ status: res.status, path }, "umami-reporting: upstream error");
     if (res.status === 401 || res.status === 403)
-      throw Errors.badRequest("admin/umami-auth", "Umami rejected the API key — check AGORA_UMAMI_API_KEY and that the instance supports API keys");
+      throw Errors.badRequest("admin/umami-auth", "Umami rejected the reporting credentials — self-hosted needs AGORA_UMAMI_USERNAME/PASSWORD (x-umami-api-key is Umami-Cloud only)");
     throw Errors.badRequest("admin/umami-upstream", `Umami reporting request failed (HTTP ${res.status})`);
   }
   return res.json();
