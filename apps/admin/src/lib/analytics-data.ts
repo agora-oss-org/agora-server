@@ -11,6 +11,9 @@ export interface UmamiOverview {
   stats: { pageviews: number; visitors: number; visits: number };
   topEvents: { name: string; count: number }[];
   series: { date: string; pageviews: number; sessions: number }[];
+  totalEvents: number;
+  eventSeries: { date: string; count: number }[];
+  properties: { name: string; values: { value: string; count: number }[] }[];
 }
 
 export const umamiOverviewKey = (site: UmamiSite, days: number) => ["umami-overview", site, days] as const;

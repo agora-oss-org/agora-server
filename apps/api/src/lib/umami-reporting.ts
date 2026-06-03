@@ -16,6 +16,10 @@ export interface UmamiOverview {
   stats: { pageviews: number; visitors: number; visits: number };
   topEvents: { name: string; count: number }[];
   series: { date: string; pageviews: number; sessions: number }[];
+  // Event-centric analytics (the meaningful view for the server site, which has no pageviews):
+  totalEvents: number;                                                  // total events in window
+  eventSeries: { date: string; count: number }[];                       // all events per time bucket
+  properties: { name: string; values: { value: string; count: number }[] }[]; // breakdowns of our event `data`
 }
 
 // The reporting API lives at AGORA_UMAMI_API_URL when set, else AGORA_UMAMI_URL (the tracker host).
@@ -90,16 +94,26 @@ async function umamiGet(path: string, params: Record<string, string | number>, r
   return res.json();
 }
 
+/** Best-effort GET for supplementary endpoints (older Umami may lack event-data) — null on any failure. */
+async function umamiGetSafe(path: string, params: Record<string, string | number>): Promise<unknown> {
+  try {
+    return await umamiGet(path, params);
+  } catch {
+    return null;
+  }
+}
+
 /**
- * Fetch a shaped analytics overview for one site over the trailing `days` window: summary stats, the
- * top custom events, and a daily pageviews/sessions series. Operator-gated by the caller.
+ * Fetch a shaped analytics overview for one site over the trailing `days` window: summary stats +
+ * pageviews series (browser sites) and the event-centric view (top events, total, per-bucket series,
+ * and breakdowns of the custom event `data`) — the latter is what the server site has. Operator-gated.
  */
 export async function getOverview(site: UmamiSite, days: number): Promise<UmamiOverview> {
   const id = websiteId(site);
   const empty: UmamiOverview = {
     site, days, configured: !!id,
     stats: { pageviews: 0, visitors: 0, visits: 0 },
-    topEvents: [], series: [],
+    topEvents: [], series: [], totalEvents: 0, eventSeries: [], properties: [],
   };
   if (!id) return empty; // that site has no website id configured → render an empty, clearly-unconfigured view
 
@@ -108,20 +122,51 @@ export async function getOverview(site: UmamiSite, days: number): Promise<UmamiO
   const unit = days <= 2 ? "hour" : "day";
   const range = { startAt, endAt };
 
-  const [stats, events, pageviews] = await Promise.all([
+  const [stats, events, pageviews, edStats, evSeries, edFields] = await Promise.all([
     umamiGet(`${id}/stats`, range) as Promise<Record<string, unknown>>,
     umamiGet(`${id}/metrics`, { ...range, type: "event", limit: 10 }) as Promise<{ x: string; y: number }[]>,
     umamiGet(`${id}/pageviews`, { ...range, unit, timezone: "UTC" }) as Promise<{
       pageviews: { x: string; y: number }[];
       sessions: { x: string; y: number }[];
     }>,
+    // Event-centric extras (best-effort — Umami v2 event-data endpoints):
+    umamiGetSafe(`${id}/event-data/stats`, range) as Promise<{ events?: number } | null>,
+    umamiGetSafe(`${id}/events/series`, { ...range, unit, timezone: "UTC" }) as Promise<{ x: string; t: string; y: number }[] | null>,
+    umamiGetSafe(`${id}/event-data/fields`, range) as Promise<{ propertyName: string; value: unknown; total: number }[] | null>,
   ]);
 
   const sessionsByX = new Map((pageviews.sessions ?? []).map((p) => [p.x, p.y]));
+
+  // events/series gives per-(eventName, bucket) rows — sum across event names per time bucket.
+  const seriesByBucket = new Map<string, number>();
+  for (const r of evSeries ?? []) seriesByBucket.set(r.t, (seriesByBucket.get(r.t) ?? 0) + r.y);
+  const eventSeries = [...seriesByBucket.entries()]
+    .sort((a, b) => (a[0] < b[0] ? -1 : 1))
+    .map(([date, count]) => ({ date, count }));
+
+  // Group event-data fields by property; drop identifier-ish props (…Id — high-cardinality, not a
+  // useful breakdown) and cap the values shown per property / properties shown.
+  const byProp = new Map<string, { value: string; count: number }[]>();
+  for (const f of edFields ?? []) {
+    if (/id$/i.test(f.propertyName)) continue;
+    const list = byProp.get(f.propertyName) ?? [];
+    list.push({ value: String(f.value), count: f.total });
+    byProp.set(f.propertyName, list);
+  }
+  const properties = [...byProp.entries()]
+    .map(([name, values]) => ({ name, values: values.sort((a, b) => b.count - a.count).slice(0, 8) }))
+    .sort((a, b) => total(b.values) - total(a.values))
+    .slice(0, 8);
+
   return {
     site, days, configured: true,
     stats: { pageviews: num(stats.pageviews), visitors: num(stats.visitors), visits: num(stats.visits) },
     topEvents: (events ?? []).map((e) => ({ name: e.x, count: e.y })),
     series: (pageviews.pageviews ?? []).map((p) => ({ date: p.x, pageviews: p.y, sessions: sessionsByX.get(p.x) ?? 0 })),
+    totalEvents: Number(edStats?.events ?? 0) || 0,
+    eventSeries,
+    properties,
   };
 }
+
+const total = (values: { count: number }[]): number => values.reduce((s, v) => s + v.count, 0);

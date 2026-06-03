@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   may carry a path prefix (e.g. `https://host/umami` to consolidate all Umami routes under one mount —
   the prefix is preserved when building every endpoint): `entity-created`, `comment-created`, `message-created`,
   `user-signup`, `space-created`, `space-joined`, `reaction-added`, `follow-added`, `report-created`,
-  `conversation-created`, and `search` (with a `kind`). Each
+  `conversation-created`, `connection-requested`, `connection-accepted`, and `search` (with a `kind`). Each
   carries `projectId` in its event `data` for per-tenant filtering; no PII or content is sent. A new
   fire-and-forget client (`lib/umami.ts`) sends best-effort on the create/add path only (never blocks
   or fails a request), and is a **no-op unless `AGORA_UMAMI_URL` + `_SERVER_ID` + `_HOSTNAME` are set**
@@ -27,8 +27,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `admin-settings-save`/`admin-settings-test` (moderator/webhooks/feed panels). A new **operator-only
   Analytics page** (`/analytics`, sidebar item shown to operators) reads stats back through a new
   **operator-gated API proxy** `GET /admin/umami/overview?site=product|admin&days=N`
-  (`lib/umami-reporting.ts`) — summary stats, a daily pageviews series, and top custom events for
-  either site. The proxy authenticates **server-side only** (credentials never reach the browser):
+  (`lib/umami-reporting.ts`). The **Admin app** tab shows summary stats + a daily pageviews series +
+  top events; the **Agora server** tab is event-centric (it has no pageviews) — **Total events**, an
+  **Events-over-time** trend, **Top events**, and **Event properties** breakdowns of the custom event
+  `data` we attach (e.g. search by `kind`, reactions by `type`; identifier-ish `…Id` props filtered).
+  The event-data reads are best-effort (older Umami without those endpoints degrades gracefully). The
+  proxy authenticates **server-side only** (credentials never reach the browser):
   **self-hosted** Umami via `POST /api/auth/login` → Bearer token (`AGORA_UMAMI_USERNAME` /
   `AGORA_UMAMI_PASSWORD`, cached + re-login on expiry), with `AGORA_UMAMI_API_KEY` (`x-umami-api-key`)
   as a **Umami-Cloud** fallback. Reads the reporting API at `AGORA_UMAMI_API_URL` (falls back to

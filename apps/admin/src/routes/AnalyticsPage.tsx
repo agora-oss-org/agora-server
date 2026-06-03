@@ -4,7 +4,7 @@
 // when Umami reporting isn't configured (the proxy answers admin/umami-disabled).
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { BarChart3, Eye, MousePointerClick, Users } from "lucide-react";
+import { Activity, BarChart3, Eye, Layers, MousePointerClick, Users } from "lucide-react";
 import { PageHeader } from "../components/ui/PageHeader";
 import { StatCard } from "../components/ui/StatCard";
 import { Card } from "../components/ui/Card";
@@ -14,7 +14,7 @@ import { ApiError } from "../lib/api";
 import { getUmamiOverview, umamiOverviewKey, type UmamiSite } from "../lib/analytics-data";
 
 const SITES: { value: UmamiSite; label: string }[] = [
-  { value: "product", label: "Product usage" },
+  { value: "product", label: "Agora server" },
   { value: "admin", label: "Admin app" },
 ];
 const RANGES: { value: number; label: string }[] = [
@@ -42,7 +42,7 @@ export function AnalyticsPage() {
     <>
       <PageHeader
         title="Analytics"
-        description="Usage analytics from Umami — product events and the admin app, over your selected window."
+        description="Usage analytics from Umami — server events and the admin app, over your selected window."
       />
 
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -72,6 +72,18 @@ export function AnalyticsPage() {
             (<code className="text-fg">{site === "admin" ? "AGORA_UMAMI_ADMIN_ID" : "AGORA_UMAMI_SERVER_ID"}</code>).
           </p>
         </Card>
+      ) : site === "product" ? (
+        // The Agora server site is events-only (no pageviews/visitors/visits) — show event analytics.
+        <>
+          <div className="grid gap-4 sm:grid-cols-3">
+            <StatCard label="Total events" value={fmtNum(data!.totalEvents)} description={`Server events in the last ${days} days`} icon={Activity} />
+          </div>
+          <div className="grid gap-4 lg:grid-cols-2">
+            <EventsChart series={data!.eventSeries} />
+            <TopEvents events={data!.topEvents} />
+          </div>
+          {data!.properties.length > 0 ? <PropertyBreakdowns properties={data!.properties} /> : null}
+        </>
       ) : (
         <>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -138,6 +150,71 @@ function SeriesChart({ series }: { series: { date: string; pageviews: number; se
           ))}
         </div>
       )}
+    </Card>
+  );
+}
+
+function EventsChart({ series }: { series: { date: string; count: number }[] }) {
+  const max = Math.max(1, ...series.map((d) => d.count));
+  const label = (d: string) => {
+    const t = new Date(d);
+    return Number.isNaN(t.getTime()) ? d.slice(5, 10) : `${t.getMonth() + 1}/${t.getDate()}`;
+  };
+  return (
+    <Card className="p-5">
+      <div className="flex items-center gap-1.5">
+        <BarChart3 className="size-4 text-primary" />
+        <h3 className="text-sm font-semibold text-fg">Events over time</h3>
+      </div>
+      {series.length === 0 ? (
+        <p className="mt-4 text-sm text-faint">No events in this window.</p>
+      ) : (
+        <div className="mt-4 flex h-40 items-end gap-1">
+          {series.map((d, i) => (
+            <div key={i} className="group flex min-w-0 flex-1 flex-col items-center justify-end">
+              <div
+                className="w-full rounded-t bg-primary/70 transition-colors group-hover:bg-primary"
+                style={{ height: `${(d.count / max) * 100}%` }}
+                title={`${label(d.date)}: ${d.count} events`}
+              />
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function PropertyBreakdowns({ properties }: { properties: { name: string; values: { value: string; count: number }[] }[] }) {
+  return (
+    <Card className="p-5">
+      <div className="flex items-center gap-1.5">
+        <Layers className="size-4 text-primary" />
+        <h3 className="text-sm font-semibold text-fg">Event properties</h3>
+      </div>
+      <div className="mt-4 grid gap-x-8 gap-y-5 sm:grid-cols-2">
+        {properties.map((p) => {
+          const max = Math.max(1, ...p.values.map((v) => v.count));
+          return (
+            <div key={p.name} className="space-y-2">
+              <p className="font-mono text-xs font-medium text-muted">{p.name}</p>
+              <ul className="space-y-1.5">
+                {p.values.map((v) => (
+                  <li key={v.value} className="space-y-1">
+                    <div className="flex items-center justify-between gap-2 text-sm">
+                      <span className="truncate text-xs text-fg">{v.value}</span>
+                      <span className="shrink-0 text-muted">{fmtNum(v.count)}</span>
+                    </div>
+                    <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface-2">
+                      <div className="h-full rounded-full bg-primary/70" style={{ width: `${(v.count / max) * 100}%` }} />
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          );
+        })}
+      </div>
     </Card>
   );
 }
