@@ -1,4 +1,4 @@
-import { BarChart3, LayoutDashboard, ShieldAlert, Settings, type LucideIcon } from "lucide-react";
+import { Activity, BarChart3, LayoutDashboard, ShieldAlert, Settings, type LucideIcon } from "lucide-react";
 
 export interface NavItem {
   to: string;
@@ -14,6 +14,7 @@ export interface NavItem {
 // (operator god-view vs space-scoped). `operatorOnly` items are filtered out for non-operators.
 export const NAV_ITEMS: NavItem[] = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { to: "/community", label: "Community", icon: Activity, operatorOnly: true },
   { to: "/analytics", label: "Analytics", icon: BarChart3, operatorOnly: true },
   { to: "/moderation", label: "Moderation", icon: ShieldAlert },
   { to: "/settings", label: "Settings", icon: Settings },
