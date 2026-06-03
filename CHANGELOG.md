@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`db:drop` — rebuild-the-schema tooling.** New `apps/api/scripts/drop.mjs` (`pnpm db:drop`) drops the
+  app schema **objects** (where `db:wipe` only TRUNCATEs rows): `DROP SCHEMA private CASCADE` +
+  `DROP SCHEMA public CASCADE` (tables, enums, functions, triggers, the migration ledger, and the
+  public-installed pgcrypto/vector/postgis extensions), then recreates an empty `public` with the
+  baseline Supabase schema grants — so `migrate.mjs` can rebuild from `0000`. Leaves the Supabase-managed
+  `auth` schema (and Auth users / Storage) untouched. Mirrors `wipe.mjs` safety: dry-run by default,
+  `--yes` to execute, type-the-ref confirm in a TTY (`--force` for CI), atomic drop+recreate, and a
+  `--migrate` flag to chain the rebuild (`node scripts/drop.mjs --yes --migrate`).
 - **Community dashboard — operator-only community-health pulse.** A new **Community** tab in the admin
   (operator-gated `/community`) shows the felt sense of the deployment: **pulse cards** (all-time
   members/posts/comments/reactions with their trailing-24h delta), **per-day growth charts**, **activity
