@@ -160,7 +160,11 @@ admin (all spaces/content/reports) with no extra DB hit. Independent of any spac
 admin app and bypasses moderation-visibility filtering. Unset → no operators (everyone space-scoped).
 
 **Cron triggers** (`app.ts`, `CRON_SECRET`-gated, 503 until set): `/internal/cron/digests`,
-`/internal/cron/recompute-scores`, `/internal/cron/purge-tokens` (delete expired refresh tokens).
+`/internal/cron/recompute-scores`, `/internal/cron/purge-tokens` (delete expired refresh tokens),
+`/internal/cron/community-stats` (hourly community-health rollup → `community_stats_hourly`, one row
+per project per hour: flow counts + cumulative totals + leaderboard/top-post snapshots; re-derives a
+trailing 25h window each run so a missed run self-heals — `lib/community-stats.ts`; read back by the
+operator-only `GET /admin/community/overview` powering the admin **Community** dashboard).
 Each also runs standalone via `scripts/*.mjs`. **Moderation write-back** (`app.ts`,
 `MODERATION_SERVICE_SECRET`-gated, 503 until set): `POST /internal/moderation/apply` lets the
 `@agora/moderator` service stamp `moderationStatus` + `moderatedByType="client"` on an entity/comment

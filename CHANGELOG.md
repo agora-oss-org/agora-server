@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Community dashboard — operator-only community-health pulse.** A new **Community** tab in the admin
+  (operator-gated `/community`) shows the felt sense of the deployment: **pulse cards** (all-time
+  members/posts/comments/reactions with their trailing-24h delta), **per-day growth charts**, **activity
+  leaderboards** (top posters/commenters/reactors ranked by volume in the window, with each
+  contributor's reputation), **top posts** (ranked by reactions + replies, deep-linked into the demo app
+  via `?entity=`), and **moderation pressure** (reports opened vs resolved + the live open count). Backed
+  by a new **hourly rollup**: `community_stats_hourly` (migration `0024`, one row per project per hour —
+  flow counts, cumulative all-time totals, and leaderboard/top-post JSON snapshots), written by
+  `rollupCommunityStats()` (`lib/community-stats.ts`) which re-derives a trailing 25h window each run so a
+  missed run self-heals. Driven by a new secret-gated cron **`POST /internal/cron/community-stats`**
+  (+ standalone `scripts/rollup-community-stats.mjs`), and read back through the operator-only
+  **`GET /admin/community/overview?days=N`**.
 - **Dashboard: server container resources (free memory + disk).** `GET /admin/dashboard/metrics` now
   returns `serverMetrics` (operator-only) — the running API container's free/total **memory** and
   **disk**, rendered as a **"Server resources"** section on the admin Dashboard beside the DB size.
