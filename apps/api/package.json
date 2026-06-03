@@ -19,9 +19,8 @@
     "db:migrate:run": "node scripts/migrate.mjs",
     "db:studio": "drizzle-kit studio",
     "db:wipe": "node scripts/wipe.mjs",
-    "seed:miso": "node scripts/seed-miso-post.mjs",
-    "seed:lasagna": "node scripts/seed-lasagna-post.mjs",
-    "seed:ribs": "node scripts/seed-ribs-post.mjs"
+    "db:drop": "node scripts/drop.mjs",
+    "seed": "node scripts/seeds/seed.mjs"
   },
   "dependencies": {
     "@agora/contract": "workspace:*",

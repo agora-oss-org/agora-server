@@ -94,6 +94,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Moderator alongside the block threshold, with its effective (override ?? env default) value shown.
 
 ### Changed
+- **Seed scripts reorganized into `scripts/seeds/` with a one-shot runner.** All seeders (the auth-user
+  seeder, `seed.sql`, and the post seeders) moved from `apps/api/scripts/` into `apps/api/scripts/seeds/`.
+  A new **`scripts/seeds/seed.mjs`** orchestrator runs every sibling `*.mjs` in sequence — the
+  account-creating `seed-demo-user.mjs` first (fatal if it fails), then each idempotent post seeder
+  (a single failure is reported but doesn't stop the rest). Ten new topical post seeders were added
+  (stargazing, sourdough, trail run, monstera, vinyl, cold brew, tide pools, mechanical keyboard, bike
+  commute, watercolor), each with a reliable `picsum.photos` default image overridable via a per-post
+  `*_IMAGE_URL` env. The many `seed:*` npm scripts are **consolidated into a single `pnpm seed`**
+  (`node scripts/seeds/seed.mjs`); individual seeders remain runnable directly. The seeded/operator
+  default user is now **`agora-admin@gmail.com`** (was `agora-demo@gmail.com`). `seed.sql` is still run
+  separately via psql (`-f scripts/seeds/seed.sql`).
 - **Umami: trace logging on every event emit.** The API's `trackEvent` logs `umami: sending event`
   (name + endpoint + website) at `trace` and `umami: event sent` on success; the admin's `track()`
   logs each emit to `console.debug` with whether `window.umami` is present (`→ sent` / `→ dropped`).

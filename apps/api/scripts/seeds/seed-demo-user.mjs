@@ -1,6 +1,6 @@
 // Seed a pre-confirmed Supabase auth user for the demo app (so email/password sign-in works
 // without the email-confirmation round-trip). Idempotent. Run from agora/server:
-//   node scripts/seed-demo-user.mjs
+//   node scripts/seeds/seed-demo-user.mjs
 // The matching `profiles` row auto-creates on first sign-in (ensureProfile in routes/auth.ts).
 import "dotenv/config";
 import { createClient } from "@supabase/supabase-js";
@@ -11,7 +11,7 @@ if (!url || !key) {
   console.error("Need SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY in env (.env).");
   process.exit(1);
 }
-const email = process.env.DEMO_EMAIL || "agora-demo@gmail.com";
+const email = process.env.DEMO_EMAIL || "agora-admin@gmail.com";
 const password = process.env.DEMO_PASSWORD || "DemoPass123!";
 
 const admin = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });

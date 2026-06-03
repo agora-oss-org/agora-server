@@ -12,7 +12,7 @@ export const MODERATOR_BASE = (import.meta.env.VITE_MODERATOR_BASE_URL ?? "/mode
 export const ENV_PROJECT_ID = import.meta.env.VITE_PROJECT_ID || undefined;
 
 // Optional dev convenience: prefill the login form with seeded demo credentials
-// (apps/api/scripts/seed-demo-user.mjs). Leave unset in any real deployment.
+// (apps/api/scripts/seeds/seed-demo-user.mjs). Leave unset in any real deployment.
 export const DEMO_EMAIL = import.meta.env.VITE_DEMO_EMAIL || "";
 export const DEMO_PASSWORD = import.meta.env.VITE_DEMO_PASSWORD || "";
 

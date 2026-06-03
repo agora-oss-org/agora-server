@@ -92,7 +92,7 @@ the published contract — defeating the point. Its `vite.config.ts` auto-aliase
 `../agora-sdk/packages/*/dist` build when present, so SDK-fork dev still works without publishing.
 
 **Run all three locally:** start the server (`cd apps/api && pnpm dev` → `:4000`), seed a confirmed
-demo user (`node scripts/seed-demo-user.mjs` → `agora-demo@gmail.com` / `DemoPass123!`), then run the
+demo user (`node scripts/seeds/seed-demo-user.mjs` → `agora-demo@gmail.com` / `DemoPass123!`), then run the
 demo (`cd ../agora-demo && npm run dev` → `:5173`, points at the server via `VITE_API_BASE_URL`).
 Project id is the seed UUID `11111111-1111-1111-1111-111111111111`.
 
@@ -136,7 +136,7 @@ pnpm db:generate     # after editing src/db/schema/*.ts -> new migration in driz
 pnpm db:migrate      # apply migrations (idempotent: journal skips applied; safe to re-run)
 
 # Validate triggers/RPC + (re)seed dev data; asserts loudly on failure (run from apps/api):
-url=$(grep '^DATABASE_URL=' .env | cut -d= -f2-); psql "$url" -v ON_ERROR_STOP=1 -f scripts/seed.sql
+url=$(grep '^DATABASE_URL=' .env | cut -d= -f2-); psql "$url" -v ON_ERROR_STOP=1 -f scripts/seeds/seed.sql
 ```
 
 > ⚠️ `@agora/api` depends on `@agora/contract`'s built `dist/` (consumed via its `exports` map), so
@@ -283,7 +283,7 @@ RLS/PostGIS by hand in their custom migration files.
 ## Status
 
 - ✅ **Foundation validated on cloud Supabase**: migrations applied + idempotent; triggers/RPC
-  asserted by `scripts/seed.sql`; end-to-end HTTP verified.
+  asserted by `scripts/seeds/seed.sql`; end-to-end HTTP verified.
 - ✅ **Implemented handlers**: `entities`, `comments`, `users`, `follows`, `collections`,
   `notifications`, `reports`, `spaces`, `auth`.
 - ✅ **Auth**: Supabase Auth backs identity (passwords + confirmation/reset emails); Agora mints

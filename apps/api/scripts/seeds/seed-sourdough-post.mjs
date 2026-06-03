@@ -1,31 +1,27 @@
-// Seed a sample "BBQ ribs" feed post owned by the demo user, with an image uploaded through the
-// normal entity pipeline (multipart → sharp variants → Storage → files row). Complements the miso
-// soup + lasagna posts. Idempotent: skips if the post already exists. Run from agora/server:
-//   node scripts/seed-ribs-post.mjs
-// Requires the demo auth user (node scripts/seed-demo-user.mjs) and a reachable Agora server.
-// Env (all optional): API_BASE_URL (default http://localhost:4000/v7), PROJECT_ID (default 11111111-…),
-// DEMO_EMAIL / DEMO_PASSWORD, RIBS_IMAGE_URL.
+// Seed a sample "sourdough starter" feed post owned by the seed user, with an image uploaded through the
+// normal entity pipeline (multipart → sharp variants → Storage → files row). Skips creation if a
+// post with the same title already exists. Run from agora/server:
+//   node scripts/seeds/seed-sourdough-post.mjs
+// Requires the seed auth user (node scripts/seeds/seed-demo-user.mjs) and a reachable Agora server. Env
+// (all optional): API_BASE_URL (default http://localhost:4000/v7), PROJECT_ID (default 11111111-…),
+// DEMO_EMAIL / DEMO_PASSWORD, SOURDOUGH_IMAGE_URL.
 import "dotenv/config";
 
 const BASE = (process.env.API_BASE_URL || "http://localhost:4000/v7").replace(/\/$/, "");
 const PROJECT_ID = process.env.PROJECT_ID || "11111111-1111-1111-1111-111111111111";
-const EMAIL = process.env.DEMO_EMAIL || "agora-demo@gmail.com";
+const EMAIL = process.env.DEMO_EMAIL || "agora-admin@gmail.com";
 const PASSWORD = process.env.DEMO_PASSWORD || "DemoPass123!";
-const IMAGE_URL = process.env.RIBS_IMAGE_URL ||
-  "https://www.tastingtable.com/img/gallery/the-13-hands-down-best-bbq-ribs-in-the-us/l-intro-1763611717.jpg";
-// Some publishers block non-browser user-agents on their image hosts.
-const BROWSER_UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
+const IMAGE_URL = process.env.SOURDOUGH_IMAGE_URL || "https://picsum.photos/seed/sourdough/1200/800";
+const FILENAME = "sourdough.jpg";
 
-// Original copy (not reproduced from any source) — a friendly demo post that pairs with the others.
-const TITLE = "Low-and-slow BBQ ribs 🍖";
+// Original copy (not reproduced from any source) — a friendly demo post.
+const TITLE = "Day 7: my sourdough starter is finally alive 🍞";
 const CONTENT =
-  "Rounding out the comfort-food table: a rack rubbed and smoked low and slow until the meat pulls " +
-  "clean off the bone, lacquered in sticky sauce and charred just at the edges. Set them next to the " +
-  "miso soup and the lasagna and call it the coziest spread of the year. 🔥🍖";
+  "After a week of stubborn flatness it finally doubled overnight — domed top, webbed with bubbles, smelling like tangy yogurt instead of wet flour. The trick was warmth and a stricter 1:1:1 feeding ratio. The discard didn't go to waste either: best pancakes I've made all year. 🥞";
 
 const api = (path) => `${BASE}/${PROJECT_ID}${path}`;
 
-// 1. Sign in as the demo user → access token.
+// 1. Sign in as the seed user → access token.
 const signIn = await fetch(api("/auth/sign-in"), {
   method: "POST",
   headers: { "Content-Type": "application/json" },
@@ -33,7 +29,7 @@ const signIn = await fetch(api("/auth/sign-in"), {
 });
 if (!signIn.ok) {
   const msg = await signIn.text().catch(() => "");
-  die(`sign-in failed (${signIn.status}). Does the demo user exist? Run: node scripts/seed-demo-user.mjs\n${msg}`);
+  die(`sign-in failed (${signIn.status}). Does the seed user exist? Run: node scripts/seeds/seed-demo-user.mjs\n${msg}`);
 }
 const { accessToken } = await signIn.json();
 if (!accessToken) die("sign-in returned no accessToken");
@@ -48,20 +44,19 @@ if (existing) {
   process.exit(0);
 }
 
-// 3. Fetch the image bytes (browser UA to get past publisher bot rules).
+// 3. Fetch the image bytes.
 console.log(`Fetching image: ${IMAGE_URL}`);
-const imgRes = await fetch(IMAGE_URL, { headers: { "User-Agent": BROWSER_UA, Accept: "image/*" } });
+const imgRes = await fetch(IMAGE_URL, { headers: { "User-Agent": "AgoraSeed/1.0" } });
 if (!imgRes.ok) die(`image fetch failed (${imgRes.status})`);
 const contentType = imgRes.headers.get("content-type") || "image/jpeg";
 const bytes = new Uint8Array(await imgRes.arrayBuffer());
-const filename = (IMAGE_URL.split("/").pop() || "ribs.jpg").split("?")[0];
 
 // 4. Create the entity as multipart (title + content + images.files) — the server runs the image
 //    through sharp → Storage → a files row linked to the new entity (same path the SDK uses).
 const form = new FormData();
 form.append("title", TITLE);
 form.append("content", CONTENT);
-form.append("images.files", new Blob([bytes], { type: contentType }), filename);
+form.append("images.files", new Blob([bytes], { type: contentType }), FILENAME);
 
 const create = await fetch(api("/entities"), {
   method: "POST",

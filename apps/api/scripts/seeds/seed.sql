@@ -2,7 +2,7 @@
 -- Every step asserts the trigger/RPC behaviour; the whole thing runs in one transaction so a
 -- failed ASSERT rolls back (no partial seed) and surfaces loudly. On success the rows persist.
 --
--- Run:  url=$(grep '^DATABASE_URL=' .env | cut -d= -f2-); psql "$url" -v ON_ERROR_STOP=1 -f scripts/seed.sql
+-- Run:  url=$(grep '^DATABASE_URL=' .env | cut -d= -f2-); psql "$url" -v ON_ERROR_STOP=1 -f scripts/seeds/seed.sql
 --
 -- Fixed ids:
 --   project   11111111-1111-1111-1111-111111111111

@@ -1,30 +1,29 @@
-// Seed a sample "lasagna" feed post owned by the demo user, with an image uploaded through the
-// normal entity pipeline (multipart → sharp variants → Storage → files row). Complements the miso
-// soup post (scripts/seed-miso-post.mjs). Idempotent: skips if the post already exists. Run from
-// agora/server:  node scripts/seed-lasagna-post.mjs
-// Requires the demo auth user (node scripts/seed-demo-user.mjs) and a reachable Agora server.
-// Env (all optional): API_BASE_URL (default http://localhost:4000/v7), PROJECT_ID (default 11111111-…),
-// DEMO_EMAIL / DEMO_PASSWORD, LASAGNA_IMAGE_URL.
+// Seed a sample "backyard stargazing" feed post owned by the seed user, with an image uploaded
+// through the normal entity pipeline (multipart → sharp variants → Storage → files row). Skips
+// creation if a post with the same title already exists. Run from agora/server:
+//   node scripts/seeds/seed-stargazing-post.mjs
+// Requires the seed auth user (node scripts/seeds/seed-demo-user.mjs) and a reachable Agora server. Env
+// (all optional): API_BASE_URL (default http://localhost:4000/v7), PROJECT_ID (default 11111111-…),
+// DEMO_EMAIL / DEMO_PASSWORD, STARGAZING_IMAGE_URL.
 import "dotenv/config";
 
 const BASE = (process.env.API_BASE_URL || "http://localhost:4000/v7").replace(/\/$/, "");
 const PROJECT_ID = process.env.PROJECT_ID || "11111111-1111-1111-1111-111111111111";
-const EMAIL = process.env.DEMO_EMAIL || "agora-demo@gmail.com";
+const EMAIL = process.env.DEMO_EMAIL || "agora-admin@gmail.com";
 const PASSWORD = process.env.DEMO_PASSWORD || "DemoPass123!";
-const IMAGE_URL = process.env.LASAGNA_IMAGE_URL ||
-  "https://cdn.apartmenttherapy.info/image/upload/f_auto,q_auto:eco,c_fill,g_auto,w_1500,ar_3:2/k%2FDesign%2F2024%2F12-2024%2Frecipe-showdown-lasagna%2Fk-lasagna-recipe-showdown-lead";
+const IMAGE_URL = process.env.STARGAZING_IMAGE_URL || "https://picsum.photos/seed/stargazing/1200/800";
+const FILENAME = "stargazing.jpg";
 
-// Original copy (not reproduced from any source) — a friendly demo post that pairs with the miso soup.
-const TITLE = "Sunday-best lasagna 🍝";
+// Original copy (not reproduced from any source) — a friendly demo post.
+const TITLE = "Backyard stargazing on a clear night 🔭";
 const CONTENT =
-  "The ultimate comfort bake to set next to that miso soup: layers of tender pasta, a rich " +
-  "slow-simmered meat-and-tomato sauce, and a creamy ricotta–mozzarella tangle, baked until the " +
-  "edges go golden and bubbly. Make it the day before — it only gets better overnight. Leftovers " +
-  "not guaranteed. 🧀🍅";
+  "Dragged the little telescope onto the driveway and gave my eyes a full twenty minutes to adjust — " +
+  "no phone, no porch light. Caught four of Jupiter's moons in a neat little row and the rings of " +
+  "Saturn looked impossibly crisp. A paper star chart beats any app once you're dark-adapted. 🌌";
 
 const api = (path) => `${BASE}/${PROJECT_ID}${path}`;
 
-// 1. Sign in as the demo user → access token.
+// 1. Sign in as the seed user → access token.
 const signIn = await fetch(api("/auth/sign-in"), {
   method: "POST",
   headers: { "Content-Type": "application/json" },
@@ -32,7 +31,7 @@ const signIn = await fetch(api("/auth/sign-in"), {
 });
 if (!signIn.ok) {
   const msg = await signIn.text().catch(() => "");
-  die(`sign-in failed (${signIn.status}). Does the demo user exist? Run: node scripts/seed-demo-user.mjs\n${msg}`);
+  die(`sign-in failed (${signIn.status}). Does the seed user exist? Run: node scripts/seeds/seed-demo-user.mjs\n${msg}`);
 }
 const { accessToken } = await signIn.json();
 if (!accessToken) die("sign-in returned no accessToken");
@@ -53,14 +52,13 @@ const imgRes = await fetch(IMAGE_URL, { headers: { "User-Agent": "AgoraSeed/1.0"
 if (!imgRes.ok) die(`image fetch failed (${imgRes.status})`);
 const contentType = imgRes.headers.get("content-type") || "image/jpeg";
 const bytes = new Uint8Array(await imgRes.arrayBuffer());
-const filename = (IMAGE_URL.split("/").pop() || "lasagna.jpg").split("?")[0] + (/\.\w+$/.test(IMAGE_URL) ? "" : ".jpg");
 
 // 4. Create the entity as multipart (title + content + images.files) — the server runs the image
 //    through sharp → Storage → a files row linked to the new entity (same path the SDK uses).
 const form = new FormData();
 form.append("title", TITLE);
 form.append("content", CONTENT);
-form.append("images.files", new Blob([bytes], { type: contentType }), filename);
+form.append("images.files", new Blob([bytes], { type: contentType }), FILENAME);
 
 const create = await fetch(api("/entities"), {
   method: "POST",

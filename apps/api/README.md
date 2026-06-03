@@ -89,7 +89,7 @@ pnpm db:migrate           # apply migrations to your Supabase DB (idempotent; sa
 pnpm dev                  # http://localhost:4000/v7   (GET /health to verify)
 
 # optional: seed dev data + validate triggers/RPC (asserts loudly on failure)
-url=$(grep '^DATABASE_URL=' .env | cut -d= -f2-); psql "$url" -v ON_ERROR_STOP=1 -f scripts/seed.sql
+url=$(grep '^DATABASE_URL=' .env | cut -d= -f2-); psql "$url" -v ON_ERROR_STOP=1 -f scripts/seeds/seed.sql
 ```
 
 ## Commands

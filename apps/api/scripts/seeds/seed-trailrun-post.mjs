@@ -1,28 +1,27 @@
-// Seed a sample "miso soup" feed post owned by the demo user, with an image uploaded through the
-// normal entity pipeline (multipart → sharp variants → Storage → files row). Idempotent-ish: it
-// skips creation if the demo user already has a post with the same title. Run from agora/server:
-//   node scripts/seed-miso-post.mjs
-// Requires the demo auth user to exist first (node scripts/seed-demo-user.mjs) and a reachable
-// Agora server. Env (all optional): API_BASE_URL (default http://localhost:4000/v7),
-// PROJECT_ID (default 11111111-…), DEMO_EMAIL / DEMO_PASSWORD, MISO_IMAGE_URL.
+// Seed a sample "trail run" feed post owned by the seed user, with an image uploaded through the
+// normal entity pipeline (multipart → sharp variants → Storage → files row). Skips creation if a
+// post with the same title already exists. Run from agora/server:
+//   node scripts/seeds/seed-trailrun-post.mjs
+// Requires the seed auth user (node scripts/seeds/seed-demo-user.mjs) and a reachable Agora server. Env
+// (all optional): API_BASE_URL (default http://localhost:4000/v7), PROJECT_ID (default 11111111-…),
+// DEMO_EMAIL / DEMO_PASSWORD, TRAILRUN_IMAGE_URL.
 import "dotenv/config";
 
 const BASE = (process.env.API_BASE_URL || "http://localhost:4000/v7").replace(/\/$/, "");
 const PROJECT_ID = process.env.PROJECT_ID || "11111111-1111-1111-1111-111111111111";
-const EMAIL = process.env.DEMO_EMAIL || "agora-demo@gmail.com";
+const EMAIL = process.env.DEMO_EMAIL || "agora-admin@gmail.com";
 const PASSWORD = process.env.DEMO_PASSWORD || "DemoPass123!";
-const IMAGE_URL = process.env.MISO_IMAGE_URL || "https://www.yummytummyaarthi.com/wp-content/uploads/2021/03/miso-soup-1.jpg";
+const IMAGE_URL = process.env.TRAILRUN_IMAGE_URL || "https://picsum.photos/seed/trailrun/1200/800";
+const FILENAME = "trail-run.jpg";
 
 // Original copy (not reproduced from any source) — a friendly demo post.
-const TITLE = "Weeknight miso soup 🍲";
+const TITLE = "First trail 10k in the books 🏃‍♀️";
 const CONTENT =
-  "My favorite 15-minute comfort bowl: warm dashi, a few cubes of silken tofu, and white miso " +
-  "whisked in off the heat so it stays silky — never let it boil. Finished with a big handful of " +
-  "green onions. Savory, cozy, and done before the rice cooker even beeps. 🥢";
+  "Roots, rocks, and a creek crossing I absolutely did not stay dry for. I learned to power-hike the steep switchbacks instead of fighting them — heart rate down, legs happier. Totally different sport than road running, and I think I'm hooked. Mud as a badge of honor. 🌲";
 
 const api = (path) => `${BASE}/${PROJECT_ID}${path}`;
 
-// 1. Sign in as the demo user → access token.
+// 1. Sign in as the seed user → access token.
 const signIn = await fetch(api("/auth/sign-in"), {
   method: "POST",
   headers: { "Content-Type": "application/json" },
@@ -30,7 +29,7 @@ const signIn = await fetch(api("/auth/sign-in"), {
 });
 if (!signIn.ok) {
   const msg = await signIn.text().catch(() => "");
-  die(`sign-in failed (${signIn.status}). Does the demo user exist? Run: node scripts/seed-demo-user.mjs\n${msg}`);
+  die(`sign-in failed (${signIn.status}). Does the seed user exist? Run: node scripts/seeds/seed-demo-user.mjs\n${msg}`);
 }
 const { accessToken } = await signIn.json();
 if (!accessToken) die("sign-in returned no accessToken");
@@ -51,14 +50,13 @@ const imgRes = await fetch(IMAGE_URL, { headers: { "User-Agent": "AgoraSeed/1.0"
 if (!imgRes.ok) die(`image fetch failed (${imgRes.status})`);
 const contentType = imgRes.headers.get("content-type") || "image/jpeg";
 const bytes = new Uint8Array(await imgRes.arrayBuffer());
-const filename = (IMAGE_URL.split("/").pop() || "miso-soup.jpg").split("?")[0];
 
 // 4. Create the entity as multipart (title + content + images.files) — the server runs the image
 //    through sharp → Storage → a files row linked to the new entity (same path the SDK uses).
 const form = new FormData();
 form.append("title", TITLE);
 form.append("content", CONTENT);
-form.append("images.files", new Blob([bytes], { type: contentType }), filename);
+form.append("images.files", new Blob([bytes], { type: contentType }), FILENAME);
 
 const create = await fetch(api("/entities"), {
   method: "POST",

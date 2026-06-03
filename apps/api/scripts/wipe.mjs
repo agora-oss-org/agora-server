@@ -4,7 +4,7 @@
 //   1. App data    — TRUNCATE ... RESTART IDENTITY CASCADE on all public tables (schema kept).
 //                    The `projects` + `project_integrations` tenant rows are PRESERVED by default
 //                    (without them the server can't resolve :projectId); pass --include-projects
-//                    to wipe those too (then re-seed: psql ... -f scripts/seed.sql).
+//                    to wipe those too (then re-seed: psql ... -f scripts/seeds/seed.sql).
 //   2. Auth users  — deletes every Supabase Auth user via the admin API.
 //   3. Storage      — empties the `agora` Storage bucket (recursively).
 //
@@ -137,7 +137,7 @@ try {
   }
 
   console.log("\n✅ wipe complete.");
-  if (INCLUDE_PROJECTS) console.log("   Tenant rows were wiped — re-seed before use: psql \"$DATABASE_URL\" -f scripts/seed.sql");
+  if (INCLUDE_PROJECTS) console.log("   Tenant rows were wiped — re-seed before use: psql \"$DATABASE_URL\" -f scripts/seeds/seed.sql");
 } finally {
   await sql.end();
 }
