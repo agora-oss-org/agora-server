@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Dashboard: server container resources (free memory + disk).** `GET /admin/dashboard/metrics` now
+  returns `serverMetrics` (operator-only) — the running API container's free/total **memory** and
+  **disk**, rendered as a **"Server resources"** section on the admin Dashboard beside the DB size.
+  Memory is **cgroup-aware** (reads `/sys/fs/cgroup/memory.{max,current}` v2 / `memory.{limit,usage}_in_bytes`
+  v1 so it reflects the container limit, not the host; falls back to `os` when unlimited); disk uses
+  `fs.statfs` (`lib/server-resources.ts`). Fail-soft (null fields on read error). Note: on a
+  multi-replica deploy it reflects whichever container served the request.
 - **Server-side Umami analytics.** The API reports discrete product-usage events to a Umami instance
   (`POST {AGORA_UMAMI_URL}{AGORA_UMAMI_SEND_PATH}`, default collect path `/api/send`). `AGORA_UMAMI_URL`
   may carry a path prefix (e.g. `https://host/umami` to consolidate all Umami routes under one mount —

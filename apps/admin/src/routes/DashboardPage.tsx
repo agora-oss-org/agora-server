@@ -1,6 +1,6 @@
 import {
-  Activity, Ban, Bot, Boxes, Cpu, Database, Download, Eye, Flag, Gauge, HardDrive, MessageSquare,
-  ShieldCheck, Users, UsersRound, Zap, type LucideIcon,
+  Activity, Ban, Bot, Boxes, Cpu, Database, Download, Eye, Flag, Gauge, HardDrive, MemoryStick,
+  MessageSquare, ShieldCheck, Users, UsersRound, Zap, type LucideIcon,
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -79,6 +79,26 @@ function supabaseStats(m: DashboardMetrics["supabaseMetrics"]): Stat[] {
       label: "Database size",
       value: m.databaseSizeBytes == null ? "—" : fmtBytes(m.databaseSizeBytes),
       description: "Total Postgres size across the instance",
+      icon: HardDrive,
+    },
+  ];
+}
+
+// ── Server container: free memory + disk for the container the API runs in (cgroup-aware). Reflects
+// whichever replica served the request on a multi-container deploy. ──
+function serverStats(m: NonNullable<DashboardMetrics["serverMetrics"]>): Stat[] {
+  const ofTotal = (total: number | null) => (total == null ? "" : ` free of ${fmtBytes(total)}`);
+  return [
+    {
+      label: "Free memory",
+      value: m.memoryFreeBytes == null ? "—" : fmtBytes(m.memoryFreeBytes),
+      description: `Container RAM${ofTotal(m.memoryTotalBytes)}`,
+      icon: MemoryStick,
+    },
+    {
+      label: "Free disk",
+      value: m.diskFreeBytes == null ? "—" : fmtBytes(m.diskFreeBytes),
+      description: `Container volume${ofTotal(m.diskTotalBytes)}`,
       icon: HardDrive,
     },
   ];
@@ -163,6 +183,20 @@ export function DashboardPage() {
             >
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {supabaseStats(data!.supabaseMetrics).map((s) => (
+                  <StatCard key={s.label} {...s} />
+                ))}
+              </div>
+            </Section>
+          ) : null}
+
+          {isOperator && data!.serverMetrics ? (
+            <Section
+              title="Server resources"
+              hint="The API container (cgroup-aware)"
+              badge={<Badge variant="success">Live</Badge>}
+            >
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {serverStats(data!.serverMetrics).map((s) => (
                   <StatCard key={s.label} {...s} />
                 ))}
               </div>

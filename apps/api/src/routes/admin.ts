@@ -10,6 +10,7 @@ import { requireAuth } from "../middleware/auth.js";
 import { env } from "../lib/env.js";
 import { buildRunningConfig } from "../lib/running-config.js";
 import { getOverview, umamiReportingEnabled, type UmamiSite } from "../lib/umami-reporting.js";
+import { getServerResources } from "../lib/server-resources.js";
 import { db } from "../db/index.js";
 import {
   profiles, reports, spaces, spaceMembers, entities, comments, files, apiUsage,
@@ -88,6 +89,9 @@ export const adminRoutes = new Hono<{ Variables: Variables }>()
           .catch(() => null)
       : null;
 
+    // Container resource snapshot (free memory + disk) — operator-only deployment infra.
+    const serverResources = isOperator ? await getServerResources().catch(() => null) : null;
+
     const storageBytes = Number(storage[0]?.total ?? 0);
     const apiCalls = Number(usage[0]?.requests ?? 0);
     const egressBytes = Number(usage[0]?.egress ?? 0);
@@ -114,6 +118,8 @@ export const adminRoutes = new Hono<{ Variables: Variables }>()
       supabaseMetrics: {
         databaseSizeBytes: dbSize,
       },
+      // The running container's free memory + disk (operator-only; null otherwise / on read failure).
+      serverMetrics: serverResources,
     });
   })
 

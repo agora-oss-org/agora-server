@@ -24,6 +24,14 @@ export interface DashboardMetrics {
     // query failed. Egress + Auth MAU are deliberately omitted — not exposed by the Management API.
     databaseSizeBytes: number | null;
   };
+  // Running container's free memory + disk (operator-only; null otherwise / on read failure).
+  serverMetrics: {
+    memoryTotalBytes: number | null;
+    memoryUsedBytes: number | null;
+    memoryFreeBytes: number | null;
+    diskTotalBytes: number | null;
+    diskFreeBytes: number | null;
+  } | null;
 }
 
 export function getDashboardMetrics(signal?: AbortSignal): Promise<DashboardMetrics> {
