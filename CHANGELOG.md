@@ -23,7 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `conversation-created`, `connection-requested`, `connection-accepted`, and `search` (with a `kind`). Each
   carries `projectId` in its event `data` for per-tenant filtering; no PII or content is sent. A new
   fire-and-forget client (`lib/umami.ts`) sends best-effort on the create/add path only (never blocks
-  or fails a request), and is a **no-op unless `AGORA_UMAMI_URL` + `_SERVER_ID` + `_HOSTNAME` are set**
+  or fails a request), and is a **no-op unless `AGORA_UMAMI_URL` + `_SERVER_ID` + `_SERVER_HOSTNAME` are set**
   (`_API_KEY` optional). Aggregate request metering stays in `api_usage`/the admin dashboard — only
   discrete events go to Umami. A third, external product-analytics sink alongside `api_usage` + OTel.
 - **Admin Umami analytics — instrumentation + an operator Analytics page.** The admin SPA now loads

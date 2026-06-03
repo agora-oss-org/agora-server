@@ -7,10 +7,10 @@
 import { env } from "./env.js";
 import { logger } from "./logger.js";
 
-const isConfigured = () => !!(env.AGORA_UMAMI_URL && env.AGORA_UMAMI_SERVER_ID && env.AGORA_UMAMI_HOSTNAME);
+const isConfigured = () => !!(env.AGORA_UMAMI_URL && env.AGORA_UMAMI_SERVER_ID && env.AGORA_UMAMI_SERVER_HOSTNAME);
 
 /**
- * Report a discrete usage event to Umami. No-op unless AGORA_UMAMI_URL + _SERVER_ID + _HOSTNAME are all
+ * Report a discrete usage event to Umami. No-op unless AGORA_UMAMI_URL + _SERVER_ID + _SERVER_HOSTNAME are all
  * set (so the server runs Umami-free by default). Best-effort: failures are debug-logged, never
  * surfaced — analytics must never disrupt a request. Carry `projectId` in `data` to filter per-tenant.
  */
@@ -37,7 +37,7 @@ export function trackEvent(name: string, data?: Record<string, unknown>): void {
           type: "event",
           payload: {
             website: env.AGORA_UMAMI_SERVER_ID,
-            hostname: env.AGORA_UMAMI_HOSTNAME,
+            hostname: env.AGORA_UMAMI_SERVER_HOSTNAME,
             name,
             url: `/api/${name}`, // gives a per-event URL breakdown in Umami too
             ...(data ? { data } : {}),

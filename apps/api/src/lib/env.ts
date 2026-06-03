@@ -51,11 +51,13 @@ const schema = z.object({
   ANTHROPIC_MAX_TOKENS: z.coerce.number().default(1024),
   // Umami analytics — report discrete usage events (signups/posts/comments/…). Optional; no-op when unset.
   // SERVER_ID = the product-events website; ADMIN_ID = the admin app's website (reporting proxy reads
-  // both back via the API_KEY for the operator Analytics page). HOSTNAME tags server-side sends.
+  // both back via the API_KEY for the operator Analytics page). SERVER_HOSTNAME tags server-side sends;
+  // ADMIN_HOSTNAME is informational only — the browser tracker auto-reports window.location.hostname.
   AGORA_UMAMI_URL: z.preprocess((v) => (v === "" ? undefined : v), z.string().url().optional()),
   AGORA_UMAMI_SERVER_ID: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
   AGORA_UMAMI_ADMIN_ID: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
-  AGORA_UMAMI_HOSTNAME: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
+  AGORA_UMAMI_SERVER_HOSTNAME: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
+  AGORA_UMAMI_ADMIN_HOSTNAME: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
   AGORA_UMAMI_API_KEY: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
   // Reporting-API auth. `x-umami-api-key` (above) works on Umami **Cloud** only; **self-hosted**
   // (cloudMode:false) authenticates via POST /api/auth/login → Bearer token, so set these instead.
