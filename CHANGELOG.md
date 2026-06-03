@@ -9,7 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **Server-side Umami analytics.** The API reports discrete product-usage events to a Umami instance
-  (`POST {AGORA_UMAMI_URL}/api/send`): `entity-created`, `comment-created`, `message-created`,
+  (`POST {AGORA_UMAMI_URL}{AGORA_UMAMI_SEND_PATH}`, default collect path `/api/send`). `AGORA_UMAMI_URL`
+  may carry a path prefix (e.g. `https://host/umami` to consolidate all Umami routes under one mount —
+  the prefix is preserved when building every endpoint): `entity-created`, `comment-created`, `message-created`,
   `user-signup`, `space-created`, `reaction-added`, `follow-added`, and `search` (with a `kind`). Each
   carries `projectId` in its event `data` for per-tenant filtering; no PII or content is sent. A new
   fire-and-forget client (`lib/umami.ts`) sends best-effort on the create/add path only (never blocks
@@ -26,7 +28,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   **operator-gated API proxy** `GET /admin/umami/overview?site=product|admin&days=N`
   (`lib/umami-reporting.ts`) — summary stats, a daily pageviews series, and top custom events for
   either site. The proxy holds the secret `AGORA_UMAMI_API_KEY` server-side (it never reaches the
-  browser) and degrades gracefully when reporting isn't configured.
+  browser), reads the reporting API at `AGORA_UMAMI_API_URL` (falls back to `AGORA_UMAMI_URL` for
+  deployments whose public host doesn't expose `/api/websites/*`), and degrades gracefully when
+  reporting isn't configured.
 - **Moderation: poster + flagger names in the queues and review dialogs.** Report list/detail now
   resolve the **poster** (content author) and **flagger** (reporter) display names — new `Report.author`
   / `Report.reporter` (`UserSummary`) populated by `/reports/pending` + `/moderated` (batched author

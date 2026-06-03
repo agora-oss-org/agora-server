@@ -17,9 +17,12 @@ export interface UmamiOverview {
   series: { date: string; pageviews: number; sessions: number }[];
 }
 
-/** True when the reporting API can be called (instance URL + secret key both set). */
+// The reporting API lives at AGORA_UMAMI_API_URL when set, else AGORA_UMAMI_URL (the tracker host).
+const reportingBase = (): string | undefined => env.AGORA_UMAMI_API_URL ?? env.AGORA_UMAMI_URL;
+
+/** True when the reporting API can be called (a reporting base URL + the secret key are both set). */
 export function umamiReportingEnabled(): boolean {
-  return !!(env.AGORA_UMAMI_URL && env.AGORA_UMAMI_API_KEY);
+  return !!(reportingBase() && env.AGORA_UMAMI_API_KEY);
 }
 
 /** The Umami website id for a logical site, or undefined when that site isn't configured. */
@@ -32,7 +35,10 @@ const num = (v: unknown): number =>
   typeof v === "number" ? v : Number((v as { value?: unknown } | null)?.value ?? 0) || 0;
 
 async function umamiGet(path: string, params: Record<string, string | number>): Promise<unknown> {
-  const url = new URL(`/api/websites/${path}`, env.AGORA_UMAMI_URL);
+  // Concatenate (not `new URL(absolutePath, base)`) so a path-prefixed base (e.g. https://host/umami)
+  // is preserved — an absolute path would reset to the host root and drop the /umami mount.
+  const base = reportingBase()!.replace(/\/+$/, "");
+  const url = new URL(`${base}/api/websites/${path}`);
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, String(v));
   const res = await fetch(url, {
     headers: { "x-umami-api-key": env.AGORA_UMAMI_API_KEY!, accept: "application/json" },

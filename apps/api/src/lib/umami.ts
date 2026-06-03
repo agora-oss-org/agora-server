@@ -18,9 +18,13 @@ export function trackEvent(name: string, data?: Record<string, unknown>): void {
   if (!isConfigured()) return;
   void (async () => {
     try {
-      // Umami /api/send: POST { type:"event", payload:{ website, hostname, name, url, data } }.
-      // A User-Agent header is REQUIRED — Umami silently drops events without one.
-      const endpoint = new URL("/api/send", env.AGORA_UMAMI_URL).toString();
+      // Collect endpoint = AGORA_UMAMI_URL + AGORA_UMAMI_SEND_PATH (default /api/send), joined by
+      // concatenation so a path-prefixed base (e.g. https://host/umami) is preserved — `new URL` with
+      // an absolute path would drop the prefix. POST { type:"event", payload:{ website, hostname, name,
+      // url, data } }. A User-Agent header is REQUIRED — Umami silently drops events without one.
+      const base = env.AGORA_UMAMI_URL!.replace(/\/+$/, "");
+      const sendPath = env.AGORA_UMAMI_SEND_PATH.startsWith("/") ? env.AGORA_UMAMI_SEND_PATH : `/${env.AGORA_UMAMI_SEND_PATH}`;
+      const endpoint = `${base}${sendPath}`;
       const res = await fetch(endpoint, {
         method: "POST",
         headers: {

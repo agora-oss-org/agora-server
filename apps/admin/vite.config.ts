@@ -14,9 +14,11 @@ export default defineConfig(({ mode }) => {
   const umamiSite = (rootEnv.AGORA_UMAMI_ADMIN_ID ?? "").trim();
   // Umami's tracking script auto-tracks pageviews incl. SPA route changes (it patches History). The
   // data-website-id binds this build to the *admin* Umami site (separate from the server-events site).
+  // data-host-url carries the full mount (incl. any /umami path prefix) so the tracker POSTs events to
+  // `${umamiUrl}/api/send` — the script's src origin alone would miss the prefix.
   const umamiTag =
     umamiUrl && umamiSite
-      ? `<script defer src="${umamiUrl}/script.js" data-website-id="${umamiSite}"></script>`
+      ? `<script defer src="${umamiUrl}/script.js" data-website-id="${umamiSite}" data-host-url="${umamiUrl}"></script>`
       : "";
 
   return {

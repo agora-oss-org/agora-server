@@ -57,6 +57,13 @@ const schema = z.object({
   AGORA_UMAMI_ADMIN_ID: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
   AGORA_UMAMI_HOSTNAME: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
   AGORA_UMAMI_API_KEY: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
+  // Collect endpoint for server-side sends, relative to AGORA_UMAMI_URL. Default is stock Umami's
+  // `/api/send`; a deployment can remap it (e.g. `/v7/send` to dodge ad-blockers) and set this to match.
+  AGORA_UMAMI_SEND_PATH: z.preprocess((v) => (v === "" ? undefined : v), z.string().default("/api/send")),
+  // Base for the Umami *reporting* API (`/api/websites/...`) when it isn't reachable on AGORA_UMAMI_URL
+  // (e.g. the public host only exposes the tracker + collect routes; the dashboard API is its own host).
+  // Falls back to AGORA_UMAMI_URL when unset.
+  AGORA_UMAMI_API_URL: z.preprocess((v) => (v === "" ? undefined : v), z.string().url().optional()),
 });
 
 export const env = schema.parse(process.env);

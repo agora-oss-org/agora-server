@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // env.ts parses process.env at import time, so each case sets the AGORA_UMAMI_* vars, resets the
 // module registry, and dynamically re-imports umami.js to pick up a fresh `env`. fetch is stubbed.
 const ORIGINAL_ENV = { ...process.env };
-const UMAMI_KEYS = ["AGORA_UMAMI_URL", "AGORA_UMAMI_SERVER_ID", "AGORA_UMAMI_HOSTNAME", "AGORA_UMAMI_API_KEY"] as const;
+const UMAMI_KEYS = ["AGORA_UMAMI_URL", "AGORA_UMAMI_SERVER_ID", "AGORA_UMAMI_HOSTNAME", "AGORA_UMAMI_API_KEY", "AGORA_UMAMI_SEND_PATH"] as const;
 
 async function loadTrackEvent(umamiEnv: Partial<Record<(typeof UMAMI_KEYS)[number], string>>) {
   vi.resetModules();
@@ -67,6 +67,30 @@ describe("trackEvent (umami)", () => {
         data: { projectId: "p1", spaceId: "s1" },
       },
     });
+  });
+
+  it("preserves a path-prefixed base URL (consolidated /umami mount)", async () => {
+    const trackEvent = await loadTrackEvent({
+      AGORA_UMAMI_URL: "https://agora-oss.org/umami",
+      AGORA_UMAMI_SERVER_ID: "site-123",
+      AGORA_UMAMI_HOSTNAME: "agora-oss.org",
+    });
+    trackEvent("entity-created", { projectId: "p1" });
+    await flush();
+    // /umami prefix must survive — concatenation, not new URL(absolutePath, base).
+    expect(fetchMock.mock.calls[0]![0]).toBe("https://agora-oss.org/umami/api/send");
+  });
+
+  it("honors a remapped AGORA_UMAMI_SEND_PATH", async () => {
+    const trackEvent = await loadTrackEvent({
+      AGORA_UMAMI_URL: "https://agora-oss.org",
+      AGORA_UMAMI_SERVER_ID: "site-123",
+      AGORA_UMAMI_HOSTNAME: "agora-oss.org",
+      AGORA_UMAMI_SEND_PATH: "/v7/send",
+    });
+    trackEvent("entity-created", { projectId: "p1" });
+    await flush();
+    expect(fetchMock.mock.calls[0]![0]).toBe("https://agora-oss.org/v7/send");
   });
 
   it("includes the x-umami-api-key header when the key is set", async () => {
