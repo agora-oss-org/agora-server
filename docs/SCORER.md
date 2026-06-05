@@ -81,6 +81,28 @@ scorer-worker ── poll pgmq.read() ──► per job:
 - **id-only payload.** Jobs carry only `{targetType, targetId, projectId}`; the worker fetches the text
   (and space/author) by id. Keeps messages small and avoids stale/duplicated content in the queue.
 
+## Why pgmq, not Redis (even though Redis is now in the stack)
+
+Redis was added to Agora for **rate limiting** (shared atomic counters across API replicas — the
+in-process limiter in `lib/rate-limit.ts` doesn't hold across processes). That removed the original
+"no new infra" argument for pgmq — but the queue **stays on pgmq**, because the two jobs want different
+tools:
+
+- **The decisive reason is atomic enqueue.** "Trigger A" calls `pgmq.send()` *inside the same Postgres
+  transaction* as the content write, so a job exists iff the row committed. Redis isn't in that
+  transaction, so a Redis queue forces one of: app-level `XADD` after the insert (lossy dual-write — the
+  exact failure mode pgmq kills), a `pg_net` trigger → Redis (non-transactional, lossy, +extension), or a
+  transactional outbox (which is just pgmq rebuilt). None is better than what we have.
+- **Durability.** Moderation jobs shouldn't silently vanish; pgmq is ACID-durable by default. Redis
+  Streams needs AOF tuning and is still weaker.
+- **Latency doesn't matter here.** The pipeline is async/post-publish, so Redis's throughput/latency edge
+  (its real strength, and why it's perfect for rate limiting) buys nothing for the queue.
+- **Smaller dependency surface.** The worker already needs a Postgres connection (for
+  `moderation_analyses`); pgmq adds none. A Redis queue would make it need both.
+
+**So: Redis for rate limiting, pgmq for the scorer queue — right tool per job, not redundancy.** Revisit
+only if you decide one queue technology is worth giving up the atomic-enqueue guarantee.
+
 ## The cascade
 
 The toxicity RoBERTa runs on **everything** and its score drives a gray-zone gate:
