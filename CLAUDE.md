@@ -70,7 +70,10 @@ pnpm workspaces (corepack-pinned `pnpm@10.14.0`). Four packages:
 are unchanged — never redefine a contract type locally (that reintroduces drift).
 
 Root `.env` is the single source (direnv `dotenv`), symlinked from `apps/api/.env -> ../../.env`.
-`docker-compose.yml` lives at the repo root; the api image builds from the repo root context.
+`docker-compose.yml` lives at the repo root; the api image builds from the repo root context. Two
+optional profiles: `--profile scale` adds Redis (cross-replica rate limiting), `--profile edge` adds a
+**Caddy** TLS front door (auto-HTTPS + HSTS/headers + body cap + authoritative `X-Forwarded-For` →
+admin; `deploy/proxy/`, set `RATE_LIMIT_TRUSTED_HOPS=2` behind it).
 
 ## Ecosystem (sibling repos)
 

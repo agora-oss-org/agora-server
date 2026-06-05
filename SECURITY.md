@@ -46,7 +46,13 @@ written to be the trust boundary (see [Security model](#-security-model)), but i
 transport security, TLS, and network isolation to your infrastructure**. This checklist is the contract.
 
 ### 1. Terminate TLS — never serve the API over plain HTTP
-Put a reverse proxy (nginx, Caddy, Traefik) or a CDN (Cloudflare) in front and terminate HTTPS there.
+> **Bundled shortcut:** `docker compose --profile edge up` starts a **Caddy** front door that does all of
+> this automatically — **auto-HTTPS** (Let's Encrypt, auto-renewed), `http → https` redirect, HSTS +
+> security headers, WebSocket upgrade, body-size cap, and an authoritative `X-Forwarded-For`. Set
+> `SERVER_NAME` + `RATE_LIMIT_TRUSTED_HOPS=2`. See `deploy/proxy/README.md`. The rest of this checklist is
+> for bringing your own proxy/CDN instead.
+
+Put a reverse proxy (Caddy, nginx, Traefik) or a CDN (Cloudflare) in front and terminate HTTPS there.
 Agora speaks HTTP behind it; the public hop must be HTTPS.
 
 - Redirect `http → https`.
@@ -57,10 +63,11 @@ Agora speaks HTTP behind it; the public hop must be HTTPS.
 - socket.io (chat realtime) needs WebSocket upgrade proxied on the same origin.
 
 ### 2. Set the trusted-proxy / forwarded headers correctly
-Rate limiting and request logging derive the client IP from **`X-Forwarded-For`** (first hop), falling
-back to `X-Real-IP`. **A client can spoof these if your proxy passes them through unvalidated.** Your
-proxy must *overwrite* (not append-trust) `X-Forwarded-For` with the real peer address. Only expose the
-API through the proxy — never bind it to a public interface directly.
+Rate limiting derives the client IP from **`X-Forwarded-For`**, read `RATE_LIMIT_TRUSTED_HOPS` hops from
+the **right** (the entries trusted proxies appended), so a client-supplied left-most value can't poison
+it. Your edge must set `X-Forwarded-For` to the real peer and **not trust an inbound one** — the bundled
+Caddy edge does this by default (set `RATE_LIMIT_TRUSTED_HOPS=2` for caddy + admin; `1` when admin is the
+only proxy). Only expose the API through the proxy — never bind it to a public interface directly.
 
 ### 3. Encrypt the database — at rest and in transit
 - **Managed Supabase Postgres** (the default target) is **encrypted at rest** (AES-256) by the platform,
@@ -97,8 +104,9 @@ it is **in-memory per process** — see [known limitations](#-known-limitations-
 with proxy/WAF/CDN rate limiting for real quota enforcement, especially across multiple replicas.
 
 ### 7. Cap request and upload sizes at the proxy
-The app does not currently enforce a global body-size limit (see roadmap). Set a sane `client_max_body_size`
-(nginx) / equivalent at the proxy to bound uploads and JSON bodies.
+The app does not currently enforce a global body-size limit (see roadmap). The bundled Caddy edge caps it
+(`MAX_BODY_SIZE`, default `25MB`); with your own proxy set `client_max_body_size` (nginx) / equivalent to
+bound uploads and JSON bodies.
 
 ### 8. Operators, storage, and backups
 - **`OPERATOR_USER_IDS` / `OPERATOR_EMAILS`** grant a project-wide god-view. Keep the allowlist minimal;

@@ -190,6 +190,18 @@ The admin service is the Vite SPA on nginx, reverse-proxying `/v7` + `/socket.io
 `/moderator` to the moderator (same origin, no CORS). Each app's README documents building and
 running its image standalone.
 
+For production, an **optional TLS edge proxy** (Caddy) gives the stack a single HTTPS front door with
+**automatic Let's Encrypt certs**, HSTS + security headers, a body-size cap, and an authoritative
+`X-Forwarded-For`. It's gated behind the `edge` compose profile (default deploy is unchanged):
+
+```bash
+# in .env: SERVER_NAME=your.domain  and  RATE_LIMIT_TRUSTED_HOPS=2
+docker compose --profile edge up --build
+```
+
+See [`deploy/proxy/README.md`](deploy/proxy/README.md). (Optionally `--profile scale` adds Redis for
+cross-replica rate limiting.)
+
 ## Ecosystem
 
 Agora is **three separate repos** — kept separate on purpose, *not* one monorepo:

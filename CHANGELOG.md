@@ -33,6 +33,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `apps/api/src/lib/ssrf.ts` (`isPrivateIp` / `assertPublicUrl` / `safeFetchText`) with unit coverage.
 
 ### Added
+- **Bundled TLS edge proxy (Caddy) — optional single front door.** A new `proxy` service in
+  `docker-compose.yml`, gated behind the **`edge` profile** (`docker compose --profile edge up`), that
+  terminates HTTPS with **automatic Let's Encrypt certs** (auto-renewed; internal CA for `localhost` so
+  dev needs no setup), adds HSTS + security headers (`X-Content-Type-Options`/`Referrer-Policy`/
+  `X-Frame-Options`, strips `Server`), caps request bodies (`MAX_BODY_SIZE`, default 25MB), and stamps an
+  **authoritative `X-Forwarded-For`** (ignores client-supplied values), reverse-proxying to the admin
+  nginx. Satisfies the `SECURITY.md` TLS/headers/forwarded-IP/body-size checklist out of the box; set
+  `RATE_LIMIT_TRUSTED_HOPS=2` behind it. `deploy/proxy/Caddyfile` + `deploy/proxy/README.md`; the default
+  (no-profile) deploy is unchanged.
 - **`SECURITY.md` — security policy + operator hardening guide.** Documents the vulnerability-disclosure
   process (private reporting + contact), supported versions, and a deploy-time **hardening checklist**
   (terminate TLS/HSTS at the proxy, `sslmode=require` for the DB in transit + at-rest notes, strong-secret
