@@ -45,17 +45,16 @@ async def process_job(settings: Settings, job: ScoreJob, msg_id: int | None = No
     # ── gray-zone cascade ──────────────────────────────────────────────────────
     tox = toxicity.score
     verdict, categories, confidence, reason, model = "allow", [], tox, "", "roberta:toxicity"
+    prompt_tokens = completion_tokens = 0
     if tox >= settings.grayzone_high:
         verdict, confidence, reason = "block", tox, "High toxicity score"
     elif tox >= settings.grayzone_low:
-        # Borderline → ask Haiku for a nuanced verdict (None when Haiku disabled → stays review).
-        result = None
-        if settings.haiku_enabled():
-            # NOTE: haiku_assess raises NotImplementedError in the foundation stub.
-            result = await haiku_assess(settings, text, cfg.categories)
+        # Borderline → ask Haiku for a nuanced verdict (None when disabled or errored → human review).
+        result = await haiku_assess(settings, text, cfg.categories) if settings.haiku_enabled() else None
         if result is not None:
             verdict, categories, confidence, reason = result.verdict, result.categories, result.confidence, result.reason
             model = result.model
+            prompt_tokens, completion_tokens = result.prompt_tokens, result.completion_tokens
         else:
             verdict, confidence, reason = "review", tox, "Borderline toxicity; queued for human review"
 
@@ -89,6 +88,8 @@ async def process_job(settings: Settings, job: ScoreJob, msg_id: int | None = No
             reason=reason,
             model=model,
             auto_actioned=auto_actioned,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
             source_msg_id=msg_id,
         ),
     )
