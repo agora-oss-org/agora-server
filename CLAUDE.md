@@ -179,8 +179,10 @@ operator-only `GET /admin/community/overview` powering the admin **Community** d
 Each also runs standalone via `scripts/*.mjs`. **Moderation write-back** (`app.ts`,
 `MODERATION_SERVICE_SECRET`-gated, 503 until set): `POST /internal/moderation/apply` lets the
 `@agora/moderator` service stamp `moderationStatus` + `moderatedByType="client"` on an entity/comment
-(`lib/client-moderation.ts`). **Rate limiting** is in-memory + per-process
-(`lib/rate-limit.ts` + `middleware/rate-limit.ts`), mounted on `/v7/*`; stricter cap on `/auth/*`.
+(`lib/client-moderation.ts`). **Rate limiting** (`lib/rate-limit.ts` + `middleware/rate-limit.ts`,
+mounted on `/v7/*`; stricter cap on `/auth/*`) keys on the real client IP read `RATE_LIMIT_TRUSTED_HOPS`
+hops from the right of `X-Forwarded-For` (spoof-resistant), via a pluggable store: in-process by
+default, or a shared **Redis** store when `REDIS_URL` is set (`lib/redis.ts`; fail-opens to in-memory).
 
 **Mint a test JWT** (for authed routes; HS256 over `ACCESS_TOKEN_SECRET`, `sub`=userId):
 ```bash

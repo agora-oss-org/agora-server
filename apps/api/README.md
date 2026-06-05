@@ -149,6 +149,8 @@ CRON_SECRET=                                   # gates the POST /internal/cron/*
 RATE_LIMIT_WINDOW_SECONDS=60                    # window length
 RATE_LIMIT_MAX=                                # general per-IP cap per window (unset = no general limit)
 RATE_LIMIT_AUTH_MAX=                           # stricter cap for /auth/* (unset = falls back to RATE_LIMIT_MAX)
+RATE_LIMIT_TRUSTED_HOPS=1                       # trusted proxies in front; client IP = this many hops from the RIGHT of XFF
+REDIS_URL=                                     # optional shared store for multi-replica limits (see "Redis ACL" below)
 
 # Semantic search — Voyage AI (optional)
 VOYAGE_API_KEY=pa-...
@@ -289,6 +291,51 @@ evaluated half-life into `entities.score` (index-served, minutes-stale). The rec
 **Re-rank webhook (escape hatch).** With `feed_config.rerankWebhook` set and `?rerank=true`, the
 server over-fetches a candidate pool, POSTs it HMAC-signed to the host app, and applies the returned
 ordering — **fail-open** to the algorithm order on timeout/error (`lib/rerank.ts`).
+
+## Rate limiting
+
+Edge rate limiting is **off** until you set `RATE_LIMIT_MAX` (general per-IP/window) and/or
+`RATE_LIMIT_AUTH_MAX` (stricter, for `/auth/*`). It's a fixed window (`RATE_LIMIT_WINDOW_SECONDS`,
+default 60) mounted on `/v7/*`; over-limit → `429 { code:"common/rate-limited" }` + `Retry-After`.
+
+**Client IP (spoof-resistant).** The key is the real client IP, read **`RATE_LIMIT_TRUSTED_HOPS` hops
+from the right** of `X-Forwarded-For` — i.e. the entries your trusted proxies actually appended, never
+a client-supplied left-most value. Set it to the number of trusted proxies in front of the app: **1**
+for a single nginx/CDN edge (the default, and what the bundled `nginx.conf.template` produces with
+`$proxy_add_x_forwarded_for`), **2** for e.g. CDN → nginx. Falls back to `X-Real-IP` then `"unknown"`.
+
+**Multi-replica (optional Redis).** The default store is in-process, so behind **N** replicas the
+ceiling is ~N×limit. Set **`REDIS_URL`** to count in a shared store instead, so the cap holds across
+replicas. A single replica needs no Redis. If Redis is unreachable the limiter **fail-opens** to
+in-memory (it never 500s a request). In Docker, `docker compose --profile scale up` starts a bundled
+`redis` service.
+
+### Redis ACL
+
+The limiter is the *only* thing that touches Redis, and it uses a tiny, fixed command set on keys
+under the **`rl:`** prefix. Lock the connecting user down with a least-privilege [ACL]:
+
+- **Keys:** `rl:*` only.
+- **Commands:** `EVAL` (one atomic fixed-window Lua script) which calls **`INCR`**, **`PEXPIRE`**,
+  **`PTTL`**. Nothing else — no reads of other keys, no `KEYS`/`SCAN`/`FLUSH`/`CONFIG`, no `INFO`
+  (the client sets `enableReadyCheck:false`, so the ready-probe `INFO` isn't needed).
+
+```bash
+# Redis 6+ — create a dedicated, least-privilege user for the rate limiter:
+ACL SETUSER agora-rl on >REPLACE_WITH_STRONG_PASSWORD \
+    resetkeys ~rl:* \
+    resetchannels \
+    nocommands +eval +incr +pexpire +pttl
+
+# Then point the app at it (note the username):
+#   REDIS_URL=redis://agora-rl:REPLACE_WITH_STRONG_PASSWORD@redis:6379
+```
+
+Persist it in `redis.conf` (`user agora-rl on >… ~rl:* resetchannels -@all +eval +incr +pexpire +pttl`)
+or `ACL SAVE` if you use an `aclfile`. The bundled compose `redis` runs with no persistence and the
+default user — fine for a trusted internal network; add the ACL when Redis is shared or exposed.
+
+[ACL]: https://redis.io/docs/latest/operate/oss_and_stack/management/security/acl/
 
 ## Docker
 

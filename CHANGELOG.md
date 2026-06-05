@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Security
+- **Rate limiting: spoof-resistant client IP + optional cross-replica Redis store.** The limiter no
+  longer keys on the **left-most** (client-supplied, spoofable) `X-Forwarded-For` hop — it reads the
+  real client IP **`RATE_LIMIT_TRUSTED_HOPS` hops from the right** (default 1; the entries trusted
+  proxies actually appended), falling back to `X-Real-IP`. New optional **`REDIS_URL`** swaps the
+  in-process counter for a shared Redis store (atomic fixed-window Lua) so the cap holds across
+  multiple api replicas; **fail-opens to in-memory** if Redis is unreachable, and stays off unless
+  `RATE_LIMIT_MAX` is set. Adds `ioredis`, a `scale`-profiled `redis` service in `docker-compose.yml`,
+  and a documented least-privilege Redis ACL (`apps/api/README.md`). New `lib/redis.ts` +
+  `clientIp`/`RateLimitStore`/`redisStore` in `lib/rate-limit.ts`, with unit coverage.
 - **Enforce user suspensions server-side.** A suspended user is now blocked on **every authenticated
   request** (`requireAuth` → `403 auth/suspended`), not just at token refresh — previously
   `user_suspensions` were reported to the client but never enforced, so a suspended user's access token
