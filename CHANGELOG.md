@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Security
+- **Enforce user suspensions server-side.** A suspended user is now blocked on **every authenticated
+  request** (`requireAuth` → `403 auth/suspended`), not just at token refresh — previously
+  `user_suspensions` were reported to the client but never enforced, so a suspended user's access token
+  kept working until expiry. Operators bypass the check (they lift). Suspending also revokes the user's
+  refresh families so the session can't be renewed. Adds operator-only endpoints to manage it
+  (`GET/POST/DELETE /v7/:projectId/users/:id/suspend[sions]`) and an index on `user_suspensions.profile_id`
+  (migration `0026`). New `lib/suspensions.ts` (`isActiveSuspension` / `hasActiveSuspension` / `suspendUser`
+  / `liftSuspensions`) with unit + integration coverage.
 - **Hardened `/utils/get-metadata` against SSRF.** The link-preview fetcher now validates the target host
   on the initial URL **and every redirect hop** (manual redirect following), **resolves** the host and
   rejects any private resolved IP, and covers cases the old string check missed — IPv6 (incl.
