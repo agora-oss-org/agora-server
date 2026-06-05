@@ -13,6 +13,7 @@ import { profiles, userSuspensions, projects } from "../db/schema/index.js";
 import { getSupabase, getSupabaseAnon } from "../lib/supabase.js";
 import { mintSession, rotateRefreshToken, revokeRefreshToken, revokeAllForProfile } from "../lib/tokens.js";
 import { isOperator } from "../lib/operators.js";
+import { isSteward } from "../lib/stewards.js";
 import { shapeAuthUser } from "../lib/shape.js";
 import { logger } from "../lib/logger.js";
 import * as webhooks from "../lib/webhooks.js";
@@ -61,10 +62,13 @@ async function ensureProfile(projectId: string, authUserId: string, attrs: { ema
 
 // Build the auth response: AuthUser + a fresh token pair.
 async function sessionResponse(projectId: string, profile: ProfileRow) {
-  const suspensions = await db.select().from(userSuspensions).where(eq(userSuspensions.profileId, profile.id));
-  const operator = isOperator(profile);
-  const { accessToken, refreshToken } = await mintSession(projectId, profile.id, profile.role, operator);
-  return { user: shapeAuthUser(profile, suspensions, operator), accessToken, refreshToken };
+  const [suspensions, operator, steward] = await Promise.all([
+    db.select().from(userSuspensions).where(eq(userSuspensions.profileId, profile.id)),
+    Promise.resolve(isOperator(profile)),
+    isSteward(projectId, profile.id),
+  ]);
+  const { accessToken, refreshToken } = await mintSession(projectId, profile.id, profile.role, operator, steward);
+  return { user: shapeAuthUser(profile, suspensions, operator, steward), accessToken, refreshToken };
 }
 
 export const authRoutes = new Hono<{ Variables: Variables }>()
@@ -136,7 +140,8 @@ export const authRoutes = new Hono<{ Variables: Variables }>()
     const suspensions = profile
       ? await db.select().from(userSuspensions).where(eq(userSuspensions.profileId, profile.id))
       : [];
-    return c.json({ ...tokens, user: profile ? shapeAuthUser(profile, suspensions, isOperator(profile)) : undefined });
+    const steward = profile ? await isSteward(projectId, profile.id) : false;
+    return c.json({ ...tokens, user: profile ? shapeAuthUser(profile, suspensions, isOperator(profile), steward) : undefined });
   })
   .post("/change-password", requireAuth, async (c) => {
     const projectId = c.var.projectId;
@@ -152,7 +157,7 @@ export const authRoutes = new Hono<{ Variables: Variables }>()
     // Invalidate all existing sessions, then hand back a fresh one.
     await revokeAllForProfile(profile.id);
     logger.info({ projectId, userId: profile.id }, "auth: password changed (all sessions revoked)");
-    return c.json({ success: true, ...(await mintSession(projectId, profile.id, profile.role, isOperator(profile))) });
+    return c.json({ success: true, ...(await mintSession(projectId, profile.id, profile.role, isOperator(profile), await isSteward(projectId, profile.id))) });
   })
   .post("/request-password-reset", async (c) => {
     const body = parseBody(emailSchema, await c.req.json().catch(() => ({})), "auth");

@@ -98,6 +98,9 @@ export interface AuthUser extends User {
   // Agora extension: true when this identity is a deployment operator (env allowlist). Grants the
   // admin app a project-wide god-view (all spaces/content/reports) instead of space-scoped authority.
   isOperator: boolean;
+  // Agora extension: true when this identity holds a steward grant (DB-backed, operator-granted) —
+  // a trust tier between member and operator that gates the admin Steward (conflict-resolution) tab.
+  isSteward: boolean;
 }
 
 // ─── reports / moderation ──────────────────────────────────────────────────
@@ -135,6 +138,7 @@ export interface AuthContext {
   userId: string; // Agora profile id
   role: "admin" | "moderator" | "visitor";
   isOperator: boolean; // deployment operator (env allowlist) — project-wide moderation/admin
+  isSteward: boolean; // conflict-resolution steward (DB grant) — gates the Steward routes/tab
 }
 
 // ─── automated moderation (@agora/moderator) ───────────────────────────────

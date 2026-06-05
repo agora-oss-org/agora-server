@@ -18,6 +18,7 @@ async function verify(token: string): Promise<AuthContext | null> {
       userId: payload.sub,
       role: (payload.role as AuthContext["role"]) ?? "visitor",
       isOperator: payload.operator === true,
+      isSteward: payload.steward === true,
     };
   } catch {
     return null;

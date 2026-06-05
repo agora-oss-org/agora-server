@@ -9,6 +9,7 @@ import { db } from "../db/index.js";
 import {
   reactions, profiles, spaces, spaceRules, collections, appNotifications, reports,
   conversations, conversationMembers, chatMessages, files, entities, comments,
+  stewardCases, stewardCaseEvents,
 } from "../db/schema/index.js";
 import { REACTION_TYPES } from "@agora/contract";
 import type { ReactionType, ReactionCounts, User, Entity, Comment, AuthUser, Report } from "@agora/contract";
@@ -301,7 +302,8 @@ export function shapeNotification(row: NotificationRow) {
 export function shapeAuthUser(
   row: ProfileRow,
   suspensions: { reason: string | null; startDate: Date; endDate: Date | null }[] = [],
-  isOperator = false
+  isOperator = false,
+  isSteward = false
 ): AuthUser {
   return {
     ...(shapeUser(row) as User),
@@ -317,6 +319,7 @@ export function shapeAuthUser(
     })),
     authMethods: row.authMethods ?? [],
     isOperator,
+    isSteward,
   };
 }
 
@@ -377,6 +380,56 @@ export async function loadReportParticipants(
     reporterByReport.set(r.id, r.reporterId ? users.get(r.reporterId) ?? null : null);
   }
   return { authorByReport, reporterByReport };
+}
+
+// ─── steward case shapers ──────────────────────────────────────────────────
+type StewardCaseRow = typeof stewardCases.$inferSelect;
+type StewardCaseEventRow = typeof stewardCaseEvents.$inferSelect;
+
+// A conflict-resolution case (admin-only; not SDK-contract surface). Parties are hydrated as the
+// lightweight UserSummary (names + reputation), matching the moderation views. The route attaches
+// `subject` (the content at issue) + `events` (timeline) for the detail view.
+export function shapeCase(
+  row: StewardCaseRow,
+  parties: { complainant?: User | null; respondent?: User | null; assignedTo?: User | null; openedBy?: User | null } = {},
+) {
+  return {
+    id: row.id,
+    projectId: row.projectId,
+    reportId: row.reportId ?? null,
+    complainantId: row.complainantId ?? null,
+    respondentId: row.respondentId ?? null,
+    subjectType: row.subjectType ?? null,
+    subjectId: row.subjectId ?? null,
+    spaceId: row.spaceId ?? null,
+    summary: row.summary ?? "",
+    state: row.state,
+    outcome: row.outcome ?? null,
+    asymmetry: row.asymmetry,
+    resolutionNote: row.resolutionNote ?? null,
+    openedById: row.openedById ?? null,
+    assignedToId: row.assignedToId ?? null,
+    createdAt: iso(row.createdAt)!,
+    updatedAt: iso(row.updatedAt)!,
+    closedAt: iso(row.closedAt),
+    complainant: userSummary(parties.complainant),
+    respondent: userSummary(parties.respondent),
+    assignedTo: userSummary(parties.assignedTo),
+    openedBy: userSummary(parties.openedBy),
+  };
+}
+
+export function shapeCaseEvent(row: StewardCaseEventRow, actor?: User | null) {
+  return {
+    id: row.id,
+    caseId: row.caseId,
+    actorId: row.actorId ?? null,
+    actor: userSummary(actor),
+    kind: row.kind,
+    body: row.body ?? null,
+    meta: (row.meta as Record<string, unknown> | null) ?? null,
+    createdAt: iso(row.createdAt)!,
+  };
 }
 
 // ─── file shaper ─────────────────────────────────────────────────────────────
