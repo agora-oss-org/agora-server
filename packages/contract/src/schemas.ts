@@ -241,7 +241,7 @@ export const webhookConfigSchema = z.object({
 // The moderator pulls the per-project list (falling back to this) and lists them in its system prompt.
 export const DEFAULT_MODERATION_CATEGORIES = [
   "fake-news",
-  "conspiricy",
+  "conspiracy",
   "racism",
   "alcohol-promotion",
   "drug-promotion",

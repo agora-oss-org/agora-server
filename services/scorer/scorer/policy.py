@@ -21,18 +21,25 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-# Mirror of @agora/contract DEFAULT_MODERATION_CATEGORIES. Keep in sync with the contract.
-# TODO(scorer): confirm this list against packages/contract once the worker is wired; the
-# values below are the documented moderation taxonomy categories.
+# Mirror of @agora/contract DEFAULT_MODERATION_CATEGORIES (packages/contract/src/schemas.ts),
+# copied VERBATIM. There is no Python build of the contract, so keep this in sync by hand if the
+# contract's list changes — it seeds projects.moderator_config.categories and is admin-editable, so
+# the strings must match exactly.
 DEFAULT_MODERATION_CATEGORIES: tuple[str, ...] = (
+    "fake-news",
+    "conspiracy",
+    "racism",
+    "alcohol-promotion",
+    "drug-promotion",
+    "foul-language",
     "harassment",
-    "hate",
-    "self-harm",
+    "hate-promotion",
     "sexual",
-    "sexual/minors",
-    "violence",
+    "violence-promotion",
+    "self-harm",
     "spam",
-    "illegal",
+    "illicit",
+    "pii",
 )
 
 
