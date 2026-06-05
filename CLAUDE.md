@@ -243,6 +243,12 @@ journal order and written **idempotently** (`create extension if not exists`, `c
   the operator-only Community dashboard (`lib/community-stats.ts`).
 - `0025_…` — steward conflict-resolution: `project_stewards` (the steward grant) + `steward_cases` +
   `steward_case_events` (+ `steward_case_state` / `steward_case_outcome` / `steward_case_event_kind` enums).
+- `0026_…` — `user_suspensions.profile_id` btree index: the suspension-enforcement lookup that now runs
+  on every authenticated request (`lib/suspensions.ts` `hasActiveSuspension`).
+- `0027_…` — **`services/scorer` pgmq enqueue**: `create extension pgmq` + the `scorer_jobs` queue +
+  `enqueue_scorer_job()` trigger fn, attached as AFTER INSERT / **content-gated** UPDATE triggers on
+  `entities`/`comments`/`chat_messages` (the UPDATE gate skips moderation/count writes so the write-back
+  doesn't re-enqueue). Replaces the moderation webhook notifier; see `docs/SCORER.md`.
 
 To change schema: edit `src/db/schema/*.ts` → `db:generate` → `db:migrate`. Edit triggers/functions/
 RLS/PostGIS by hand in their custom migration files. (Apply with `db:migrate:run` — the runtime
