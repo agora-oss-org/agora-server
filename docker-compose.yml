@@ -125,6 +125,31 @@ services:
     init: true
     restart: unless-stopped
 
+  # OPTIONAL TLS edge proxy (Caddy) — the single public front door. Terminates HTTPS with AUTOMATIC
+  # Let's Encrypt certs (auto-renewed; internal CA for localhost), adds HSTS + security headers + a
+  # request-body cap + an authoritative X-Forwarded-For, and reverse-proxies to the admin nginx. Gated
+  # behind the `edge` profile so the default deploy is unchanged:  docker compose --profile edge up
+  # When using it: point your domain's DNS at this host (so ACME can validate on :80), set SERVER_NAME +
+  # RATE_LIMIT_TRUSTED_HOPS=2 in .env, and firewall the now-internal 4000/4001/8080 host ports.
+  proxy:
+    image: caddy:2-alpine
+    profiles: ["edge"]
+    environment:
+      SERVER_NAME: ${SERVER_NAME:-localhost}
+      ADMIN_UPSTREAM: http://admin:80
+      MAX_BODY_SIZE: ${MAX_BODY_SIZE:-25MB}
+    volumes:
+      - ./deploy/proxy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data # persists issued certs + ACME account — survives restarts (avoids LE rate limits)
+      - caddy-config:/config
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    depends_on:
+      - admin
+    init: true
+    restart: unless-stopped
+
   # Scheduler: fires the secret-gated /internal/cron/* endpoints over the internal network on the
   # schedule in apps/api/crontab. Requires CRON_SECRET in .env (without it the endpoints return 503).
   cron:
@@ -142,3 +167,5 @@ services:
 
 volumes:
   neo4j-data:
+  caddy-data:
+  caddy-config:
