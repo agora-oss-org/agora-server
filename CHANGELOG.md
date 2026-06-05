@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- **Hardened `/utils/get-metadata` against SSRF.** The link-preview fetcher now validates the target host
+  on the initial URL **and every redirect hop** (manual redirect following), **resolves** the host and
+  rejects any private resolved IP, and covers cases the old string check missed — IPv6 (incl.
+  IPv4-mapped `::ffff:…`), ULA/link-local, and numeric-IP encodings (decimal/octal/hex). Previously a
+  public URL that `302`-redirected to `169.254.169.254`/`127.0.0.1` was followed unchecked. New guard in
+  `apps/api/src/lib/ssrf.ts` (`isPrivateIp` / `assertPublicUrl` / `safeFetchText`) with unit coverage.
+
+### Added
+- **`SECURITY.md` — security policy + operator hardening guide.** Documents the vulnerability-disclosure
+  process (private reporting + contact), supported versions, and a deploy-time **hardening checklist**
+  (terminate TLS/HSTS at the proxy, `sslmode=require` for the DB in transit + at-rest notes, strong-secret
+  generation, the service-role-key boundary, `CORS_ORIGIN`, rate-limit env, trusted-proxy `X-Forwarded-For`,
+  upload-size caps, backups). Also writes down the **security model** (server-as-trust-boundary, RLS
+  defense-in-depth, JWT rotation/reuse-detection, tenant isolation, constant-time secret compares) and an
+  honest **known-limitations / hardening roadmap** (link-preview SSRF redirects, server-side suspension
+  enforcement, multi-replica rate-limit durability, upload bounds, public storage bucket, secret-length +
+  JWT-algorithm pinning).
+
 ## [0.7.0] - 2026-06-05
 
 ### Added
