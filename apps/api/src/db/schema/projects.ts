@@ -83,7 +83,10 @@ export const userSuspensions = pgTable("user_suspensions", {
   reason: text("reason"),
   startDate: timestamp("start_date", { withTimezone: true }).defaultNow().notNull(),
   endDate: timestamp("end_date", { withTimezone: true }),
-});
+}, (t) => [
+  // Per-request suspension enforcement looks this up by profile on every authed request.
+  index("user_suspensions_profile_idx").on(t.profileId),
+]);
 
 export const oauthIdentities = pgTable("oauth_identities", {
   id: uuid("id").primaryKey().defaultRandom(),

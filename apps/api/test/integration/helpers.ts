@@ -28,8 +28,8 @@ export async function api(method: string, path: string, init: Init = {}) {
 }
 
 /** Mint an Agora access token the auth middleware will accept (HS256 over ACCESS_TOKEN_SECRET). */
-export function signToken(userId: string, role = "visitor") {
-  return new SignJWT({ role })
+export function signToken(userId: string, role = "visitor", operator = false) {
+  return new SignJWT({ role, operator })
     .setProtectedHeader({ alg: "HS256" })
     .setSubject(userId)
     .setExpirationTime("1h")

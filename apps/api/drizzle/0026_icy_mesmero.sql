@@ -1,0 +1,1 @@
+CREATE INDEX "user_suspensions_profile_idx" ON "user_suspensions" USING btree ("profile_id");

@@ -10,6 +10,7 @@ import { jwtVerify } from "jose";
 import type { Variables, AuthContext } from "../http/context.js";
 import { Errors } from "../http/errors.js";
 import { env } from "../lib/env.js";
+import { hasActiveSuspension } from "../lib/suspensions.js";
 
 const secret = new TextEncoder().encode(env.ACCESS_TOKEN_SECRET);
 
@@ -44,6 +45,11 @@ export const requireAuth = createMiddleware<{ Variables: Variables }>(async (c, 
   const token = bearer(c);
   const auth = token ? await verify(token) : null;
   if (!auth) throw Errors.unauthorized();
+  // Block suspended users on every authed request (the access token outlives a fresh suspension).
+  // Operators bypass — they hold the deployment god-view and lift suspensions (avoids self-lockout).
+  if (!auth.isOperator && (await hasActiveSuspension(auth.userId))) {
+    throw Errors.forbidden("auth/suspended", "Account suspended");
+  }
   c.set("auth", auth);
   await next();
 });

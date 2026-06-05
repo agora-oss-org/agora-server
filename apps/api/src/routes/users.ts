@@ -1,6 +1,7 @@
 // /v7/:projectId/users/*
 // Static routes (/by-username, /check-username, …) MUST stay above /:id.
 import { Hono } from "hono";
+import { z } from "zod";
 import { and, eq, ne, or, count, desc, ilike, inArray } from "drizzle-orm";
 import type { Variables } from "../http/context.js";
 import { Errors } from "../http/errors.js";
@@ -8,7 +9,9 @@ import { requireAuth } from "../middleware/auth.js";
 import { db } from "../db/index.js";
 import { profiles, follows, connections } from "../db/schema/index.js";
 import { readPagination, paginate } from "../http/envelope.js";
-import { shapeUser } from "../lib/shape.js";
+import { shapeUser, shapeSuspension } from "../lib/shape.js";
+import { listSuspensions, suspendUser, liftSuspensions } from "../lib/suspensions.js";
+import { logger } from "../lib/logger.js";
 import { parseBody, updateProfileSchema } from "../lib/validation.js";
 import { notifyOnFollow } from "../lib/notifications.js";
 import * as webhooks from "../lib/webhooks.js";
@@ -151,7 +154,50 @@ export const userRoutes = new Hono<{ Variables: Variables }>()
         or(eq(connections.requesterId, id), eq(connections.addresseeId, id))
       ));
     return c.json({ count: r?.n ?? 0 });
+  })
+  // ── account suspensions (operator-only) ─────────────────────────────────────
+  // Suspending blocks the user on every authed request (middleware/auth.ts) and revokes their refresh
+  // families. Operators bypass enforcement, so they can always lift.
+  .get("/:id/suspensions", requireAuth, async (c) => {
+    requireOperator(c);
+    const target = await loadTarget(c.var.projectId, c.req.param("id"));
+    const rows = await listSuspensions(target.id);
+    return c.json({ suspensions: rows.map(shapeSuspension) });
+  })
+  .post("/:id/suspend", requireAuth, async (c) => {
+    requireOperator(c);
+    const target = await loadTarget(c.var.projectId, c.req.param("id"));
+    const body = parseBody(suspendSchema, await c.req.json().catch(() => ({})), "users");
+    const endDate = body.endDate ? new Date(body.endDate) : null;
+    if (endDate && endDate.getTime() <= Date.now()) throw Errors.badRequest("users/end-in-past", "endDate must be in the future", "endDate");
+    const row = await suspendUser(target.id, { reason: body.reason ?? null, endDate });
+    logger.info({ projectId: c.var.projectId, profileId: target.id, by: c.var.auth!.userId, until: endDate?.toISOString() ?? null }, "user: suspended");
+    return c.json(shapeSuspension(row), 201);
+  })
+  .delete("/:id/suspend", requireAuth, async (c) => {
+    requireOperator(c);
+    const target = await loadTarget(c.var.projectId, c.req.param("id"));
+    const lifted = await liftSuspensions(target.id);
+    logger.info({ projectId: c.var.projectId, profileId: target.id, by: c.var.auth!.userId, lifted }, "user: suspensions lifted");
+    return c.json({ success: true, lifted });
   });
+
+const suspendSchema = z.object({
+  reason: z.string().max(500).optional(),
+  endDate: z.string().datetime().optional(), // ISO 8601; absent = indefinite
+});
+
+function requireOperator(c: any): void {
+  if (!c.var.auth!.isOperator) throw Errors.forbidden("users/operator-only", "Operator access required");
+}
+
+// Resolve a target profile within the project (404 if it doesn't belong here) — keeps suspension
+// operations project-scoped even though profile ids are globally unique.
+async function loadTarget(projectId: string, id: string) {
+  const row = await findUser(projectId, profiles.id, id);
+  if (!row) throw Errors.notFound("users/not-found", "User not found");
+  return row;
+}
 
 // Shared: paginated follower/following user lists.
 async function followList(projectId: string, kind: "followers" | "following", id: string, page: number, limit: number, offset: number) {

@@ -9,7 +9,7 @@ import { db } from "../db/index.js";
 import {
   reactions, profiles, spaces, spaceRules, collections, appNotifications, reports,
   conversations, conversationMembers, chatMessages, files, entities, comments,
-  stewardCases, stewardCaseEvents,
+  stewardCases, stewardCaseEvents, userSuspensions,
 } from "../db/schema/index.js";
 import { REACTION_TYPES } from "@agora/contract";
 import type { ReactionType, ReactionCounts, User, Entity, Comment, AuthUser, Report } from "@agora/contract";
@@ -320,6 +320,19 @@ export function shapeAuthUser(
     authMethods: row.authMethods ?? [],
     isOperator,
     isSteward,
+  };
+}
+
+type SuspensionRow = typeof userSuspensions.$inferSelect;
+
+/** A suspension row for the operator endpoints (camelCase, Date→ISO). */
+export function shapeSuspension(row: SuspensionRow) {
+  return {
+    id: row.id,
+    profileId: row.profileId,
+    reason: row.reason ?? null,
+    startDate: iso(row.startDate)!,
+    endDate: iso(row.endDate),
   };
 }
 
