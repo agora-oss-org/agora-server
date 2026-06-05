@@ -20,6 +20,7 @@ import { reportRoutes } from "./reports.js";
 import { searchRoutes } from "./search.js";
 import { storageRoutes } from "./storage.js";
 import { adminRoutes } from "./admin.js";
+import { stewardRoutes } from "./steward.js";
 import { miscRoutes } from "./misc.js";
 
 export function mountRoutes() {
@@ -41,6 +42,7 @@ export function mountRoutes() {
   project.route("/search", searchRoutes);
   project.route("/storage", storageRoutes);
   project.route("/admin", adminRoutes);
+  project.route("/steward", stewardRoutes);
   // oauth, projects, crypto, utils — small, grouped in misc
   project.route("/", miscRoutes);
 
