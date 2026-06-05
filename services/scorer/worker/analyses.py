@@ -1,26 +1,28 @@
-"""``moderation_analyses`` persistence — idempotent insert + row→envelope shaper.
+"""``moderation_analyses`` persistence — deduped append + row→envelope shaper.
 
-PRESERVES the admin contract: the table + the ``ModerationAnalysis`` shape are unchanged from
-the retired moderator (port of ``apps/moderator/src/lib/shape.ts`` ``shapeAnalysis``), and the
-table stays an **append log** (one row per assessment → cumulative ``/stats`` + token metering).
+PRESERVES the admin contract: the table + the ``ModerationAnalysis`` shape are unchanged from the
+retired moderator (port of ``apps/moderator/src/lib/shape.ts`` ``shapeAnalysis``), and the table stays
+an **append log** (one row per assessment → cumulative ``/stats`` + token metering).
 
-IDEMPOTENCY (pgmq is at-least-once): each row is stamped with the pgmq ``source_msg_id`` and
-inserted ``ON CONFLICT (source_msg_id) DO NOTHING`` (partial unique index from migration
-``0028_scorer_analysis_dedup``). A redelivered job (same msg_id) is a no-op; a genuine re-score
-(content edit → new pgmq message → new msg_id) inserts a new row; an on-demand ``/analyze`` row
-carries ``source_msg_id = NULL`` and is unconstrained. ``analysis_exists_for_msg`` is the cheap
-pre-check the consumer uses to skip re-processing (and a redundant Haiku call) on a redelivery.
+IDEMPOTENCY (pgmq is at-least-once): each row is stamped with the pgmq ``source_msg_id`` and inserted
+``ON CONFLICT (source_msg_id) DO NOTHING`` (partial unique index from migration
+``0028_scorer_analysis_dedup``). A redelivered job (same msg_id) is a no-op; a genuine re-score (content
+edit → new pgmq message → new msg_id) inserts a new row; an on-demand ``/analyze`` row carries
+``source_msg_id = NULL`` and is unconstrained. ``analysis_exists_for_msg`` is the cheap pre-check the
+consumer uses to skip re-processing (and a redundant Haiku call) on a redelivery.
 
-STUB: the SQL (insert + queue/stats/analysis reads) is described; wired with ``scorer/db.py`` in
-the implementation pass.
+The actual SQL lives in ``scorer/db.py``; this module is the worker-facing seam (the ``AnalysisInput``
+record + the row shaper).
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any, Optional
 
+from scorer import db
 from scorer.config import Settings
-from scorer.logging import get_logger, log
+from scorer.logging import get_logger
 from scorer.models import ModerationAnalysis
 
 logger = get_logger("scorer.worker.analyses")
@@ -45,36 +47,54 @@ class AnalysisInput:
 
 
 async def record_analysis(settings: Settings, data: AnalysisInput) -> None:
-    """Append one analysis row, deduped on the pgmq message id.
-
-    STUB: INSERT INTO moderation_analyses (..., source_msg_id) VALUES (...)
-          ON CONFLICT (source_msg_id) DO NOTHING;
-    (wired with db.py). The ON CONFLICT makes a redelivered job a no-op.
-    """
-    log(
-        logger,
-        "info",
-        "record moderation_analyses (stub)",
+    """Append one analysis row, deduped on the pgmq message id (ON CONFLICT DO NOTHING)."""
+    await db.insert_analysis(
+        settings,
+        project_id=data.project_id,
         target_type=data.target_type,
         target_id=data.target_id,
+        space_id=data.space_id,
         verdict=data.verdict,
+        categories=data.categories,
         confidence=data.confidence,
+        reason=data.reason,
+        model=data.model,
         auto_actioned=data.auto_actioned,
+        prompt_tokens=data.prompt_tokens,
+        completion_tokens=data.completion_tokens,
         source_msg_id=data.source_msg_id,
     )
 
 
 async def analysis_exists_for_msg(settings: Settings, source_msg_id: int) -> bool:
-    """Cheap pre-check: has this pgmq message already been recorded? (redelivery dedup).
+    """Cheap pre-check: has this pgmq message already been recorded? (redelivery dedup)."""
+    return await db.analysis_exists_for_msg(settings, source_msg_id)
 
-    STUB: SELECT 1 FROM moderation_analyses WHERE source_msg_id = $1 LIMIT 1. Returns False until
-    db.py is wired (so the foundation never skips work).
+
+def _iso(value: Any) -> Optional[str]:
+    return value.isoformat() if value is not None else None
+
+
+def shape_analysis(row: Any) -> ModerationAnalysis:
+    """asyncpg row → ModerationAnalysis envelope (camelCase out, Date→ISO). shape.ts shapeAnalysis.
+
+    ``author`` is left None for now — resolving the target's author (entity/comment/message → profile)
+    is a batched display enrichment deferred to a follow-up; the contract field is optional.
     """
-    log(logger, "debug", "analysis_exists_for_msg (stub)", source_msg_id=source_msg_id)
-    return False
-
-
-def shape_analysis(row: dict[str, object]) -> ModerationAnalysis:
-    """Row → ModerationAnalysis envelope (camelCase, Date→ISO). Port of shape.ts shapeAnalysis."""
-    # TODO(scorer): map DB row columns to the model; stubbed passthrough for the foundation.
-    return ModerationAnalysis(**row)  # type: ignore[arg-type]
+    space_id = row["space_id"]
+    return ModerationAnalysis(
+        id=str(row["id"]),
+        project_id=str(row["project_id"]),
+        target_type=row["target_type"],
+        target_id=str(row["target_id"]),
+        space_id=str(space_id) if space_id is not None else None,
+        verdict=row["verdict"],
+        categories=list(row["categories"] or []),
+        confidence=float(row["confidence"]),
+        reason=row["reason"] or "",
+        model=row["model"] or "",
+        auto_actioned=bool(row["auto_actioned"]),
+        human_resolved_at=_iso(row["human_resolved_at"]),
+        created_at=_iso(row["created_at"]) or "",
+        author=None,
+    )

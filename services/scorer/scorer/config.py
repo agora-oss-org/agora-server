@@ -13,7 +13,6 @@ New scorer-only knobs (gray-zone cascade thresholds, Haiku model, queue/poll, Ne
 from __future__ import annotations
 
 import os
-import time
 from dataclasses import dataclass, field
 
 from .policy import DEFAULT_MODERATION_CATEGORIES
@@ -122,25 +121,8 @@ def resolve(raw: object, settings: Settings) -> ResolvedModeratorConfig:
     )
 
 
-_CACHE_TTL_S = 30.0
-_cache: dict[str, tuple[ResolvedModeratorConfig, float]] = {}
-
-
-async def get_moderator_config(project_id: str, settings: Settings) -> ResolvedModeratorConfig:
-    """Fetch + cache (30s) a project's resolved config.
-
-    STUB: the DB read of ``projects.moderator_config`` is not wired yet — falls back to env
-    defaults. Wire ``scorer/db.py`` + ``seed_categories_if_missing`` in the implementation pass.
-    """
-    hit = _cache.get(project_id)
-    now = time.monotonic()
-    if hit and now - hit[1] < _CACHE_TTL_S:
-        return hit[0]
-    # TODO(scorer): SELECT moderator_config FROM projects WHERE id=$1 via scorer/db.py, then
-    # seed_categories_if_missing(). For the foundation, resolve env-only.
-    cfg = resolve({}, settings)
-    _cache[project_id] = (cfg, now)
-    return cfg
+# NOTE: the DB-backed, cached ``get_moderator_config(settings, project_id)`` lives in ``scorer/db.py``
+# (it needs the pool); ``resolve()`` above is the pure merge it builds on.
 
 
 # A single, lazily-instantiated Settings for convenience imports.

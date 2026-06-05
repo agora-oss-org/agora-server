@@ -1,32 +1,32 @@
 """The operator-gated admin API — port of ``apps/moderator/src/routes/moderation.ts`` (Hono → FastAPI).
 
-PRESERVED CONTRACT: these routes + their response shapes must match what the admin UI
-(``apps/admin``) calls, since compose repoints ``MODERATOR_UPSTREAM`` at this worker. The admin
-nginx rewrites ``/moderator/* → /v1/*`` and proxies here, so the paths below are the
-``/v1/:projectId/moderation/*`` surface verbatim:
+PRESERVED CONTRACT: these routes + their response shapes must match what the admin UI (``apps/admin``)
+calls, since compose repoints ``MODERATOR_UPSTREAM`` at this worker. The admin nginx rewrites
+``/moderator/* → /v1/*`` and proxies here, so the paths below are the ``/v1/:projectId/moderation/*``
+surface verbatim:
 
     GET  /v1/{projectId}/moderation/config
     GET  /v1/{projectId}/moderation/stats
     GET  /v1/{projectId}/moderation/queue?page=&limit=
     GET  /v1/{projectId}/moderation/analysis?targetType=&targetId=
-    POST /v1/{projectId}/moderation/analyze
-    POST /v1/{projectId}/moderation/{id}/resolve
-    POST /v1/{projectId}/moderation/{id}/remove
+    POST /v1/{projectId}/moderation/analyze            ← on-demand re-assess (wired in a later step)
+    POST /v1/{projectId}/moderation/{id}/resolve       ← dismiss a flag
+    POST /v1/{projectId}/moderation/{id}/remove        ← confirm + write-back removal (needs step 4)
 
-All operator-gated via ``scorer/jwt_auth.verify_operator``. Responses use the ``{ data,
-pagination }`` envelope + ``ModerationAnalysis`` shape from ``scorer/models``.
-
-STUB: handlers return shape-correct empty/placeholder payloads so the admin contract holds and
-the UI doesn't error; real reads/writes land with ``scorer/db.py`` in the impl pass.
+All operator-gated via ``scorer/jwt_auth.verify_operator``; responses use the ``{ data, pagination }``
+envelope + ``ModerationAnalysis`` shape from ``scorer/models``.
 """
 
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 
+from scorer import db
 from scorer.config import get_settings
 from scorer.jwt_auth import AuthContext, AuthError, verify_operator
 from scorer.models import ModerationAnalysis, Page, Pagination
+
+from . import analyses
 
 router = APIRouter(prefix="/v1/{project_id}/moderation")
 
@@ -41,7 +41,7 @@ def require_operator(authorization: str | None = Header(default=None)) -> AuthCo
 @router.get("/config")
 def get_config(project_id: str, _auth: AuthContext = Depends(require_operator)) -> dict[str, object]:
     s = get_settings()
-    # Redacted running config (never leak secrets) — booleans for key presence.
+    # Redacted running config (never leak secrets) — booleans for capability presence.
     return {
         "blockAutoActionThreshold": s.block_auto_action_threshold,
         "reviewAutoActionThreshold": s.review_auto_action_threshold,
@@ -55,47 +55,55 @@ def get_config(project_id: str, _auth: AuthContext = Depends(require_operator)) 
 
 
 @router.get("/stats")
-def get_stats(project_id: str, _auth: AuthContext = Depends(require_operator)) -> dict[str, int]:
-    # TODO(scorer): aggregate from moderation_analyses.
-    return {"total": 0, "blocks": 0, "reviews": 0, "allows": 0, "autoBlocks": 0,
-            "promptTokens": 0, "completionTokens": 0, "totalTokens": 0}
+async def get_stats(project_id: str, _auth: AuthContext = Depends(require_operator)) -> dict[str, int]:
+    return await db.fetch_stats(get_settings(), project_id)
 
 
 @router.get("/queue", response_model=Page[ModerationAnalysis])
-def get_queue(
+async def get_queue(
     project_id: str,
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=100),
     _auth: AuthContext = Depends(require_operator),
 ) -> Page[ModerationAnalysis]:
-    # TODO(scorer): unresolved (block/review, human_resolved_at is null) with author summaries.
-    return Page(data=[], pagination=Pagination(page=page, limit=limit, total=0, total_pages=0, has_next_page=False))
+    rows, total = await db.fetch_queue(get_settings(), project_id, page, limit)
+    total_pages = (total + limit - 1) // limit
+    return Page(
+        data=[analyses.shape_analysis(r) for r in rows],
+        pagination=Pagination(
+            page=page, limit=limit, total=total, total_pages=total_pages, has_next_page=page < total_pages
+        ),
+    )
 
 
 @router.get("/analysis")
-def get_analysis(
+async def get_analysis(
     project_id: str,
     target_type: str = Query(..., alias="targetType"),
     target_id: str = Query(..., alias="targetId"),
     _auth: AuthContext = Depends(require_operator),
 ) -> ModerationAnalysis | None:
-    # TODO(scorer): latest analysis for one target. None until wired.
-    return None
+    row = await db.fetch_latest_analysis(get_settings(), project_id, target_type, target_id)
+    return analyses.shape_analysis(row) if row is not None else None
 
 
 @router.post("/analyze")
 def post_analyze(project_id: str, _auth: AuthContext = Depends(require_operator)) -> dict[str, object]:
-    # TODO(scorer): on-demand (re)assessment via the cascade.
-    raise HTTPException(status_code=501, detail={"error": "not implemented (foundation)", "code": "scorer/stub"})
+    # On-demand (re)assessment runs the cascade; wired once the model clients + Haiku are live.
+    raise HTTPException(status_code=501, detail={"error": "not implemented yet", "code": "scorer/todo"})
 
 
 @router.post("/{analysis_id}/resolve")
-def post_resolve(project_id: str, analysis_id: str, _auth: AuthContext = Depends(require_operator)) -> dict[str, bool]:
-    # TODO(scorer): set human_resolved_at = now() (dismiss flag, leave content).
-    raise HTTPException(status_code=501, detail={"error": "not implemented (foundation)", "code": "scorer/stub"})
+async def post_resolve(
+    project_id: str, analysis_id: str, _auth: AuthContext = Depends(require_operator)
+) -> dict[str, bool]:
+    ok = await db.resolve_analysis(get_settings(), project_id, analysis_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail={"error": "analysis not found", "code": "scorer/not-found"})
+    return {"ok": True}
 
 
 @router.post("/{analysis_id}/remove")
 def post_remove(project_id: str, analysis_id: str, _auth: AuthContext = Depends(require_operator)) -> dict[str, bool]:
-    # TODO(scorer): confirm flag + write-back removal through the API.
-    raise HTTPException(status_code=501, detail={"error": "not implemented (foundation)", "code": "scorer/stub"})
+    # Confirm flag + write-back removal — needs the API write-back (step 4).
+    raise HTTPException(status_code=501, detail={"error": "not implemented yet", "code": "scorer/todo"})

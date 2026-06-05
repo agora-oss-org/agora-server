@@ -18,7 +18,7 @@ from typing import Optional
 from .config import Settings
 from .logging import get_logger, log
 from .policy import build_system_prompt, build_user_prompt
-from .verdict import ParsedVerdict, parse_verdict
+from .verdict import ParsedVerdict
 
 logger = get_logger("scorer.haiku")
 

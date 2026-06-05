@@ -18,9 +18,9 @@ shape is exercisable; the scoring→verdict mapping details are finalized in the
 from __future__ import annotations
 
 from scorer.auto_action import AutoActionThresholds, decide_auto_action
-from scorer.config import Settings, get_moderator_config
+from scorer.config import Settings
+from scorer.db import fetch_content, get_moderator_config
 from scorer.haiku import assess as haiku_assess
-from scorer.db import fetch_content_text
 from scorer.logging import get_logger, log
 from scorer.models import ScoreJob
 from scorer.reason import moderation_reason_text
@@ -33,13 +33,14 @@ logger = get_logger("scorer.worker.pipeline")
 async def process_job(settings: Settings, job: ScoreJob, msg_id: int | None = None) -> None:
     """Run one job through the full cascade. Idempotent end-to-end (pgmq is at-least-once):
     the analysis insert dedups on ``msg_id``, and the write-back + Neo4j MERGE are idempotent."""
-    text = await fetch_content_text(settings, job.target_type, job.target_id)
-    if not text:
+    content = await fetch_content(settings, job.target_type, job.target_id)
+    if content is None or not content.text:
         log(logger, "warn", "no content text for job (skipping)", target_id=job.target_id)
         return
+    text = content.text
 
     toxicity, relationship = await model_clients.score_both(settings, text)
-    cfg = await get_moderator_config(job.project_id, settings)
+    cfg = await get_moderator_config(settings, job.project_id)
 
     # ── gray-zone cascade ──────────────────────────────────────────────────────
     tox = toxicity.score
@@ -81,7 +82,7 @@ async def process_job(settings: Settings, job: ScoreJob, msg_id: int | None = No
             project_id=job.project_id,
             target_type=job.target_type,
             target_id=job.target_id,
-            space_id=job.space_id,
+            space_id=content.space_id,
             verdict=verdict,
             categories=categories,
             confidence=confidence,
@@ -99,7 +100,7 @@ async def process_job(settings: Settings, job: ScoreJob, msg_id: int | None = No
         project_id=job.project_id,
         target_type=job.target_type,
         target_id=job.target_id,
-        author_id=None,  # TODO(scorer): resolve author id when fetching content
+        author_id=content.author_id,
         relationship_score=rel_score,
     )
 
