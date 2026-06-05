@@ -176,6 +176,13 @@
       "when": 1780468316536,
       "tag": "0024_curious_tattoo",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1780636631821,
+      "tag": "0025_new_hemingway",
+      "breakpoints": true
     }
   ]
 }

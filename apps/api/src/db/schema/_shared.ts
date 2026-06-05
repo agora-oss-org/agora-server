@@ -24,5 +24,15 @@ export const conversationType = pgEnum("conversation_type", ["direct", "group", 
 export const convMemberRole = pgEnum("conv_member_role", ["admin", "member"]);
 export const connectionStatus = pgEnum("connection_status", ["pending", "connected", "declined"]);
 
+// ─── Steward (conflict resolution) ───────────────────────────────────────────
+// Case lifecycle: open → in_mediation → closed. "Open caseload" = state <> 'closed'.
+export const stewardCaseState = pgEnum("steward_case_state", ["open", "in_mediation", "closed"]);
+// Disposition set when a case closes. Declared in TRANSFORMATIVE ORDER (repair → separation →
+// protection → escalation → dismissal) so the admin renders the outcome menu straight from the enum:
+// repair/separation/protection come first; escalate-to-removal is the last resort.
+export const stewardCaseOutcome = pgEnum("steward_case_outcome", ["repaired", "separated", "protective_action", "escalated", "dismissed"]);
+// Timeline event kinds (append-only audit trail — nothing on a case is silently mutated).
+export const stewardCaseEventKind = pgEnum("steward_case_event_kind", ["opened", "note", "state_change", "assignment", "asymmetry", "outcome", "escalation"]);
+
 // ─── Reusable jsonb default: the 8 v7 reaction counts, all zero ──────────────
 export const zeroReactionCounts = sql`'{"upvote":0,"downvote":0,"like":0,"love":0,"wow":0,"sad":0,"angry":0,"funny":0}'::jsonb`;
