@@ -33,6 +33,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   honest **known-limitations / hardening roadmap** (link-preview SSRF redirects, server-side suspension
   enforcement, multi-replica rate-limit durability, upload bounds, public storage bucket, secret-length +
   JWT-algorithm pinning).
+- **`services/scorer` — Python scoring/moderation subsystem (foundation).** A new subsystem that
+  **replaces `@agora/moderator`**: async, post-publish moderation off a **Supabase pgmq** queue, fed by
+  a Postgres trigger (migration `0027_scorer_pgmq_enqueue`) that enqueues a job atomically with each
+  content INSERT/content-changing UPDATE on `entities`, `comments`, and `chat_messages`. Three
+  containers — two RoBERTa model servers (toxicity + relationship-quality, warm in RAM, CPU-pinned) and
+  a worker that scores both in parallel, **cascades** borderline toxicity to **Claude Haiku**, writes
+  removals back through the API (`/internal/moderation/apply`, unchanged), records `moderation_analyses`,
+  and MERGEs a relationship edge into a bundled **Neo4j**. Preserves the admin AI-flag contract
+  (`/v1/:projectId/moderation/*` shapes + operator JWT). The salvaged policy prompts, auto-action
+  thresholds, and verdict parsing are ported verbatim (with unit tests). **This pass is foundation +
+  architecture docs** (`docs/SCORER.md`, `docs/superpowers/specs/2026-06-05-scorer-architecture.md`);
+  ML / pgmq / Neo4j / Haiku I/O are structured stubs. See `services/scorer/`.
+
+### Changed
+- **Moderation enqueue moved from the HMAC webhook to a pgmq Postgres trigger** (migration `0027`). The
+  `apps/api/src/lib/webhooks.ts` `MODERATION_EVENTS` notifier path is superseded (left in place for the
+  external-webhook half; dead-after-cutover cleanup deferred).
+- **Admin AI-flag-queue upstream repointed** from `@agora/moderator` to the new `scorer-worker`
+  (compose `MODERATOR_UPSTREAM`); the nginx rewrite and the served `/v1/:projectId/moderation/*` shapes
+  are unchanged.
+
+### Removed
+- **`moderator` retired from `docker-compose.yml`** (replaced by `services/scorer`). The
+  `apps/moderator` source is left in the tree; its deletion is a follow-up.
 
 ## [0.7.0] - 2026-06-05
 

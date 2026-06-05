@@ -1,0 +1,32 @@
+# Shared RoBERTa model server (runs as both scorer-toxicity and scorer-relationship; the model is
+# chosen by SCORER_MODEL / SCORER_MODEL_KIND env). Build context is the REPO ROOT (matches the api/
+# moderator images), so paths below are repo-relative.
+#
+# Multi-stage: a builder installs deps into a venv, the runtime stage copies only the venv + source.
+#
+# NOTE (foundation): classifier.py is a stub and does NOT import transformers/torch, so this image
+# stays small. When the real classifier lands, add the model extras in the builder:
+#   RUN pip install --no-cache-dir transformers>=4.40 torch>=2.2 --index-url https://download.pytorch.org/whl/cpu
+# (the CPU torch wheel is large — see the image-size note in docs/SCORER.md).
+
+FROM python:3.11-slim AS builder
+WORKDIR /app
+ENV PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+# Deps before source for layer caching.
+COPY services/scorer/requirements.txt ./requirements.txt
+RUN pip install -r requirements.txt
+
+FROM python:3.11-slim AS runtime
+WORKDIR /app
+ENV PATH="/opt/venv/bin:$PATH" PYTHONUNBUFFERED=1
+COPY --from=builder /opt/venv /opt/venv
+COPY services/scorer/model_server ./model_server
+# Non-root.
+RUN useradd --create-home --uid 10001 scorer && chown -R scorer /app
+USER scorer
+EXPOSE 8001
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD python -c "import os,urllib.request; urllib.request.urlopen(f\"http://127.0.0.1:{os.environ.get('SCORER_PORT','8001')}/health\").read()" || exit 1
+CMD ["python", "-m", "model_server.main"]

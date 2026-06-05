@@ -1,0 +1,9 @@
+# Worker runtime deps (mirrored from pyproject for the Docker COPY-before-source layer-cache).
+# The model server adds transformers + torch on top of these (see Dockerfile.model-server).
+fastapi>=0.110
+uvicorn[standard]>=0.29
+pydantic>=2.6
+httpx>=0.27
+asyncpg>=0.29
+pyjwt>=2.8
+neo4j>=5.19

@@ -16,22 +16,80 @@ services:
     init: true
     restart: unless-stopped
 
-  # LLM content moderation (@agora/moderator). Receives the api's signed broadcast webhooks, assesses
-  # content with a generic LLM, auto-acts above the confidence threshold, and serves the admin's
-  # AI-flag queue. Shares the same Postgres (DATABASE_URL) + ACCESS_TOKEN_SECRET as the api; needs
-  # MODERATOR_LLM_* + MODERATION_SERVICE_SECRET + API_BASE_URL=http://agora:4000 in .env.
-  moderator:
+  # ── services/scorer ──────────────────────────────────────────────────────────────────────────
+  # Python scoring/moderation subsystem — REPLACES @agora/moderator. Async, post-publish: a Postgres
+  # trigger (migration 0026) enqueues jobs on Supabase pgmq; the worker scores with two RoBERTa model
+  # servers in parallel, cascades borderline toxicity to Claude Haiku, writes removals back through the
+  # api, records moderation_analyses (the admin AI-flag queue), and MERGEs a relationship edge into
+  # Neo4j. See docs/SCORER.md. FOUNDATION: ML/pgmq/Neo4j/Haiku I/O are stubs in this pass.
+
+  # RoBERTa toxicity classifier (model warm in RAM). Pinned to dedicated cores so it runs truly in
+  # parallel with the relationship server. cpuset values are HOST-SPECIFIC — adjust to your core layout.
+  scorer-toxicity:
     build:
       context: .
-      dockerfile: apps/moderator/Dockerfile
-    image: agora-moderator
+      dockerfile: services/scorer/Dockerfile.model-server
+    image: agora-scorer-model
+    env_file: .env
+    environment:
+      SCORER_MODEL: ${SCORER_TOXICITY_MODEL:-s-nlp/roberta_toxicity_classifier}
+      SCORER_MODEL_KIND: toxicity
+      SCORER_PORT: "8001"
+      OMP_NUM_THREADS: "2"
+    cpuset: "0,1"
+    init: true
+    restart: unless-stopped
+
+  # RoBERTa relationship-quality (sentiment) classifier — same image, different model + cores.
+  scorer-relationship:
+    build:
+      context: .
+      dockerfile: services/scorer/Dockerfile.model-server
+    image: agora-scorer-model
+    env_file: .env
+    environment:
+      SCORER_MODEL: ${SCORER_RELATIONSHIP_MODEL:-cardiffnlp/twitter-roberta-base-sentiment-latest}
+      SCORER_MODEL_KIND: relationship
+      SCORER_PORT: "8002"
+      OMP_NUM_THREADS: "2"
+    cpuset: "2,3"
+    init: true
+    restart: unless-stopped
+
+  # Orchestrator: pgmq consumer + cascade + write-back + Neo4j + the operator-gated admin API. Serves
+  # /v1/:projectId/moderation/* on :4001 (the admin upstream). Shares DATABASE_URL + ACCESS_TOKEN_SECRET
+  # + MODERATION_SERVICE_SECRET with the api; needs ANTHROPIC_API_KEY (Haiku) + NEO4J_* in .env.
+  scorer-worker:
+    build:
+      context: .
+      dockerfile: services/scorer/Dockerfile.worker
+    image: agora-scorer-worker
     env_file: .env
     environment:
       API_BASE_URL: http://agora:4000
+      SCORER_TOXICITY_URL: http://scorer-toxicity:8001
+      SCORER_RELATIONSHIP_URL: http://scorer-relationship:8002
+      SCORER_ADMIN_PORT: "4001"
     ports:
-      - "${MODERATOR_PORT:-4001}:4001"
+      - "${SCORER_ADMIN_PORT:-4001}:4001"
     depends_on:
       - agora
+      - scorer-toxicity
+      - scorer-relationship
+      - neo4j
+    init: true
+    restart: unless-stopped
+
+  # Neo4j for relationship-edge writes. FOUNDATION ONLY — the graph schema is out of scope.
+  neo4j:
+    image: neo4j:5-community
+    environment:
+      NEO4J_AUTH: ${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:-please_change_me}
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    volumes:
+      - neo4j-data:/data
     init: true
     restart: unless-stopped
 
@@ -44,12 +102,14 @@ services:
     image: agora-admin
     environment:
       API_UPSTREAM: http://agora:4000
-      MODERATOR_UPSTREAM: http://moderator:4001
+      # The scorer-worker serves the same /v1/:projectId/moderation/* surface the admin nginx proxies,
+      # so only this upstream value changes (env name kept as MODERATOR_UPSTREAM for the foundation).
+      MODERATOR_UPSTREAM: http://scorer-worker:4001
     ports:
       - "${ADMIN_PORT:-8080}:80"
     depends_on:
       - agora
-      - moderator
+      - scorer-worker
     init: true
     restart: unless-stopped
 
@@ -67,3 +127,6 @@ services:
       - agora
     init: true
     restart: unless-stopped
+
+volumes:
+  neo4j-data:
