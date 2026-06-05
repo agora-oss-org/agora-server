@@ -47,6 +47,9 @@ describe("misc routes (integration)", () => {
         "https://foo.local/x",
         "ftp://example.com/x",
         "file:///etc/passwd",
+        "http://[::1]/x",          // IPv6 loopback
+        "http://2130706433/",      // decimal-encoded 127.0.0.1
+        "http://0x7f.0.0.1/",      // hex-encoded 127.0.0.1
       ];
       for (const url of blocked) {
         const res = await api("GET", `${B}/utils/get-metadata?url=${encodeURIComponent(url)}`);

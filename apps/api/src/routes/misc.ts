@@ -14,6 +14,7 @@ import { env } from "../lib/env.js";
 import { mintSession } from "../lib/tokens.js";
 import * as webhooks from "../lib/webhooks.js";
 import { getFeedConfig, invalidateFeedConfig, feedConfigView } from "../lib/feed-config.js";
+import { safeFetchText } from "../lib/ssrf.js";
 import { parseBody, oauthAuthorizeSchema, signTestingJwtSchema, webhookConfigSchema, feedConfigSchema, moderatorConfigSchema, DEFAULT_MODERATION_CATEGORIES } from "../lib/validation.js";
 
 type ProfileRow = typeof profiles.$inferSelect;
@@ -211,31 +212,19 @@ export const miscRoutes = new Hono<{ Variables: Variables }>()
     }
   })
   // ── link/OG metadata fetcher ────────────────────────────────────────────────
+  // SSRF-guarded: safeFetchText validates the host (and every redirect hop) before fetching — see
+  // lib/ssrf.ts. It throws the utils/* ApiErrors below, handled by the global error handler.
   .get("/utils/get-metadata", async (c) => {
     const url = c.req.query("url");
     if (!url) throw Errors.badRequest("utils/missing-url", "url is required", "url");
-    let target: URL;
-    try { target = new URL(url); } catch { throw Errors.badRequest("utils/bad-url", "Invalid URL", "url"); }
-    if (!/^https?:$/.test(target.protocol) || isInternalHost(target.hostname)) {
-      throw Errors.badRequest("utils/blocked-url", "URL not allowed", "url");
-    }
-    try {
-      const res = await fetch(target, {
-        headers: { "User-Agent": "AgoraBot/1.0 (+link-preview)" },
-        signal: AbortSignal.timeout(6000),
-        redirect: "follow",
-      });
-      const html = (await res.text()).slice(0, 500_000); // cap parse size
-      return c.json({
-        url: target.toString(),
-        title: meta(html, "og:title") ?? tag(html, "title"),
-        description: meta(html, "og:description") ?? metaName(html, "description"),
-        image: meta(html, "og:image"),
-        siteName: meta(html, "og:site_name"),
-      });
-    } catch {
-      throw Errors.badRequest("utils/fetch-failed", "Could not fetch URL metadata", "url");
-    }
+    const { url: finalUrl, html } = await safeFetchText(url);
+    return c.json({
+      url: finalUrl,
+      title: meta(html, "og:title") ?? tag(html, "title"),
+      description: meta(html, "og:description") ?? metaName(html, "description"),
+      image: meta(html, "og:image"),
+      siteName: meta(html, "og:site_name"),
+    });
   });
 
 // ── webhook-admin helpers ───────────────────────────────────────────────────
@@ -348,14 +337,6 @@ function errorRedirect(c: any, base: string, code: string, desc: string) {
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────────
-function isInternalHost(host: string): boolean {
-  return (
-    host === "localhost" || host.endsWith(".local") ||
-    /^127\./.test(host) || /^10\./.test(host) || /^192\.168\./.test(host) ||
-    /^169\.254\./.test(host) || /^172\.(1[6-9]|2\d|3[01])\./.test(host) ||
-    host === "0.0.0.0" || host === "::1"
-  );
-}
 function meta(html: string, property: string): string | undefined {
   const re = new RegExp(`<meta[^>]+property=["']${property}["'][^>]+content=["']([^"']+)["']`, "i");
   const re2 = new RegExp(`<meta[^>]+content=["']([^"']+)["'][^>]+property=["']${property}["']`, "i");
