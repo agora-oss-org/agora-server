@@ -4,10 +4,9 @@
 #
 # Multi-stage: a builder installs deps into a venv, the runtime stage copies only the venv + source.
 #
-# NOTE (foundation): classifier.py is a stub and does NOT import transformers/torch, so this image
-# stays small. When the real classifier lands, add the model extras in the builder:
-#   RUN pip install --no-cache-dir transformers>=4.40 torch>=2.2 --index-url https://download.pytorch.org/whl/cpu
-# (the CPU torch wheel is large — see the image-size note in docs/SCORER.md).
+# The CPU torch wheel is large (see the image-size note in docs/SCORER.md). The HF model is downloaded
+# on first startup and kept warm in RAM; mount a HF cache (HF_HOME) volume to avoid re-downloading on
+# container recreate.
 
 FROM python:3.11-slim AS builder
 WORKDIR /app
@@ -17,6 +16,9 @@ ENV PATH="/opt/venv/bin:$PATH"
 # Deps before source for layer caching.
 COPY services/scorer/requirements.txt ./requirements.txt
 RUN pip install -r requirements.txt
+# Model deps: CPU-only torch from the pytorch index, then transformers from PyPI.
+RUN pip install --no-cache-dir "torch>=2.2" --index-url https://download.pytorch.org/whl/cpu
+RUN pip install --no-cache-dir "transformers>=4.40"
 
 FROM python:3.11-slim AS runtime
 WORKDIR /app

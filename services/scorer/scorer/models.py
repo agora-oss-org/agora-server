@@ -22,7 +22,8 @@ T = TypeVar("T")
 class CamelModel(BaseModel):
     """Serializes to camelCase (matching the TS contract) while accepting snake_case in code."""
 
-    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+    # protected_namespaces=() because ModerationAnalysis has a legit `model` field (the LLM id).
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, protected_namespaces=())
 
 
 class ScoreJob(CamelModel):
