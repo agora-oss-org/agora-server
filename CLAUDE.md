@@ -159,6 +159,17 @@ The flag is stamped into the access JWT at mint time (`lib/tokens.ts`), read bac
 admin (all spaces/content/reports) with no extra DB hit. Independent of any space role; powers the
 admin app and bypasses moderation-visibility filtering. Unset → no operators (everyone space-scoped).
 
+**Stewards (conflict resolution).** A trust tier **between member and operator** powering the admin
+**Steward** tab (a conflict-resolution caseload — distinct from moderation, which judges content).
+Unlike operators (env), it's a **DB-backed grant**: `project_stewards`, where operators grant community
+members (`POST /steward/stewards`). Resolved by `lib/stewards.ts` `isSteward(projectId, profileId)`,
+stamped into the access JWT at mint/refresh (`lib/tokens.ts`), read back in `middleware/auth.ts` as
+**`c.var.auth.isSteward`** (so a grant takes effect on the user's next token refresh, like the operator
+flag). Privilege is **route-scoped** to `routes/steward.ts` (gated `isSteward||isOperator`) — stewards
+do NOT inherit the operator's global read bypass. A case escalation removes the subject content via the
+normal moderation path (`moderatedByType="user"`); outcomes otherwise stay restorative (repair /
+separation / protection).
+
 **Cron triggers** (`app.ts`, `CRON_SECRET`-gated, 503 until set): `/internal/cron/digests`,
 `/internal/cron/recompute-scores`, `/internal/cron/purge-tokens` (delete expired refresh tokens),
 `/internal/cron/community-stats` (hourly community-health rollup → `community_stats_hourly`, one row
@@ -228,9 +239,14 @@ journal order and written **idempotently** (`create extension if not exists`, `c
   + LLM provider config) the `@agora/moderator` overlays on its env defaults (admin Settings → Moderator).
 - `0023_…` — `moderation_analyses.prompt_tokens` + `completion_tokens`: per-assessment LLM token usage,
   summed by the moderator's `GET /moderation/stats` for the dashboard's automated-moderation metrics.
+- `0024_…` — `community_stats_hourly`: hourly community-health rollup (one row/project/hour) powering
+  the operator-only Community dashboard (`lib/community-stats.ts`).
+- `0025_…` — steward conflict-resolution: `project_stewards` (the steward grant) + `steward_cases` +
+  `steward_case_events` (+ `steward_case_state` / `steward_case_outcome` / `steward_case_event_kind` enums).
 
 To change schema: edit `src/db/schema/*.ts` → `db:generate` → `db:migrate`. Edit triggers/functions/
-RLS/PostGIS by hand in their custom migration files.
+RLS/PostGIS by hand in their custom migration files. (Apply with `db:migrate:run` — the runtime
+migrator the container uses; its journal is the `drizzle` schema.)
 
 ## Handler conventions (don't break these)
 
