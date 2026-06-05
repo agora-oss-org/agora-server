@@ -51,4 +51,8 @@ async def run_consumer(settings: Settings, stop: asyncio.Event) -> None:
                     log(logger, "error", "job failed; will redeliver", msg_id=msg.msg_id)
         except Exception:  # noqa: BLE001
             log(logger, "error", "consumer poll failed")
-        await asyncio.wait([asyncio.create_task(stop.wait())], timeout=interval)
+        # Sleep up to one interval, but wake immediately when asked to stop.
+        try:
+            await asyncio.wait_for(stop.wait(), timeout=interval)
+        except asyncio.TimeoutError:
+            pass

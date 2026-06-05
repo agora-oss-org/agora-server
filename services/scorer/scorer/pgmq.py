@@ -1,25 +1,22 @@
-"""Thin wrappers over the Supabase pgmq SQL functions, via ``scorer/db.py``.
+"""Thin wrappers over the Supabase pgmq SQL functions, via ``scorer/db.py``'s pool.
 
 The queue + the AFTER INSERT/UPDATE enqueue trigger are created by the API migration
-``apps/api/drizzle/0026_*.sql``. The worker is a CONSUMER: ``read`` (with a visibility
-timeout) → process → ``delete`` on success; ``archive`` a poison message after N reads.
+``apps/api/drizzle/0027_scorer_pgmq_enqueue.sql``. The worker is a CONSUMER: ``read`` (with a
+visibility timeout) → process → ``delete`` on success; ``archive`` a poison message after N reads.
 
-pgmq is AT-LEAST-ONCE (a crash between process and delete redelivers after the visibility
-timeout), so the worker's downstream writes MUST be idempotent — see ``worker/analyses.py``
-(upsert keyed by target) and ``worker/neo4j_writer.py`` (MERGE).
-
-STUB: SQL bodies are sketched as the exact pgmq calls; wired in the implementation pass.
+pgmq is AT-LEAST-ONCE (a crash between process and delete redelivers after the visibility timeout),
+so the worker's downstream writes are idempotent — see ``worker/analyses.py`` (dedup on
+``source_msg_id``) and ``worker/neo4j_writer.py`` (MERGE).
 """
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from typing import Any
 
 from .config import Settings
-from .logging import get_logger, log
-
-logger = get_logger("scorer.pgmq")
+from .db import get_pool
 
 
 @dataclass
@@ -30,19 +27,28 @@ class QueueMessage:
 
 
 async def read(settings: Settings, vt_seconds: int, qty: int = 1) -> list[QueueMessage]:
-    """``SELECT * FROM pgmq.read($queue, $vt, $qty)`` — hides messages for ``vt`` seconds.
-
-    STUB: returns no messages until db.py is wired.
-    """
-    log(logger, "debug", "pgmq.read (stub)", queue=settings.queue, vt=vt_seconds, qty=qty)
-    return []
+    """``pgmq.read($queue, $vt, $qty)`` — claim up to ``qty`` messages, hidden for ``vt`` seconds."""
+    pool = await get_pool(settings)
+    rows = await pool.fetch(
+        "select msg_id, read_ct, message from pgmq.read($1, $2, $3)",
+        settings.queue, vt_seconds, qty,
+    )
+    out: list[QueueMessage] = []
+    for r in rows:
+        msg = r["message"]
+        if isinstance(msg, str):  # jsonb often comes back as text
+            msg = json.loads(msg)
+        out.append(QueueMessage(msg_id=int(r["msg_id"]), read_ct=int(r["read_ct"]), message=msg or {}))
+    return out
 
 
 async def delete(settings: Settings, msg_id: int) -> None:
-    """``SELECT pgmq.delete($queue, $msg_id)`` — ack a successfully-processed message."""
-    log(logger, "debug", "pgmq.delete (stub)", queue=settings.queue, msg_id=msg_id)
+    """``pgmq.delete($queue, $msg_id)`` — ack a successfully-processed message."""
+    pool = await get_pool(settings)
+    await pool.execute("select pgmq.delete($1, $2::bigint)", settings.queue, msg_id)
 
 
 async def archive(settings: Settings, msg_id: int) -> None:
-    """``SELECT pgmq.archive($queue, $msg_id)`` — move a poison message off the queue."""
-    log(logger, "debug", "pgmq.archive (stub)", queue=settings.queue, msg_id=msg_id)
+    """``pgmq.archive($queue, $msg_id)`` — move a poison message off the queue into its archive."""
+    pool = await get_pool(settings)
+    await pool.execute("select pgmq.archive($1, $2::bigint)", settings.queue, msg_id)
