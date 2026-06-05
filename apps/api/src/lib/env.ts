@@ -34,13 +34,21 @@ const schema = z.object({
   // service calls to apply an automated decision (moderationStatus, moderatedByType="client").
   // Optional: when unset the endpoint is disabled (503) and no service can auto-moderate.
   MODERATION_SERVICE_SECRET: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
-  // Edge rate limiting (in-memory fixed window, per-process; see middleware/rate-limit.ts). OFF
-  // unless a max is set. RATE_LIMIT_MAX caps general per-IP traffic per window; RATE_LIMIT_AUTH_MAX
-  // is a stricter cap for /auth/* (brute-force target), falling back to the general cap when unset.
-  // Behind a proxy the client IP comes from X-Forwarded-For / X-Real-IP. Empty string = unset.
+  // Edge rate limiting (fixed window; see middleware/rate-limit.ts). OFF unless a max is set.
+  // RATE_LIMIT_MAX caps general per-IP traffic per window; RATE_LIMIT_AUTH_MAX is a stricter cap for
+  // /auth/* (brute-force target), falling back to the general cap when unset.
   RATE_LIMIT_WINDOW_SECONDS: z.coerce.number().int().positive().default(60),
   RATE_LIMIT_MAX: z.preprocess((v) => (v === "" ? undefined : v), z.coerce.number().int().positive().optional()),
   RATE_LIMIT_AUTH_MAX: z.preprocess((v) => (v === "" ? undefined : v), z.coerce.number().int().positive().optional()),
+  // Number of TRUSTED reverse proxies in front of the app. The client IP is read this many hops from
+  // the RIGHT of X-Forwarded-For (the entries trusted proxies actually wrote), so a client can't spoof
+  // it via a left-most value. Your edge must overwrite X-Forwarded-For with the real peer (1 = a single
+  // nginx/CDN edge). Falls back to X-Real-IP when XFF has fewer hops than this.
+  RATE_LIMIT_TRUSTED_HOPS: z.coerce.number().int().positive().default(1),
+  // OPTIONAL shared store for cross-replica rate limiting. When set, the limiter counts in Redis so the
+  // cap holds across API replicas; unset → in-process (per-replica) limiting. The app fail-opens to
+  // in-memory if Redis is unreachable. A single replica needs no Redis. e.g. redis://redis:6379
+  REDIS_URL: z.preprocess((v) => (v === "" ? undefined : v), z.string().url().optional()),
   // Embeddings (Voyage AI). Optional until semantic search is used.
   VOYAGE_API_KEY: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
   VOYAGE_MODEL: z.string().default("voyage-3.5"),

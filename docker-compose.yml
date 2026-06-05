@@ -16,6 +16,18 @@ services:
     init: true
     restart: unless-stopped
 
+  # OPTIONAL shared rate-limit store. Only needed when running MORE THAN ONE `agora` replica — a single
+  # replica limits fine in-process. Gated behind the `scale` profile so the default deploy stays
+  # Redis-free:  docker compose --profile scale up
+  # Then set REDIS_URL=redis://redis:6379 in .env (least-privilege ACL: see apps/api/README.md). The api
+  # fail-opens to in-memory if Redis is unreachable. No persistence — these are throwaway counters.
+  redis:
+    image: redis:7-alpine
+    profiles: ["scale"]
+    command: ["redis-server", "--save", "", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru"]
+    init: true
+    restart: unless-stopped
+
   # ── services/scorer ──────────────────────────────────────────────────────────────────────────
   # Python scoring/moderation subsystem — REPLACES @agora/moderator. Async, post-publish: a Postgres
   # trigger (migration 0026) enqueues jobs on Supabase pgmq; the worker scores with two RoBERTa model
