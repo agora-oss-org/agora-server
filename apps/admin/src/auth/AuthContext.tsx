@@ -16,6 +16,7 @@ interface AuthValue {
   session: Session | null;
   user: AuthUser | null;
   isOperator: boolean;
+  isSteward: boolean;
   signIn: (email: string, password: string, projectId: string) => Promise<void>;
   signOut: () => Promise<void>;
 }
@@ -30,6 +31,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       session,
       user: session?.user ?? null,
       isOperator: !!session?.user?.isOperator,
+      // Operators are stewards implicitly (they hold the project-wide god-view).
+      isSteward: !!session?.user?.isSteward || !!session?.user?.isOperator,
       async signIn(email, password, projectId) {
         const data = await api<SignInResponse>("/auth/sign-in", {
           method: "POST",

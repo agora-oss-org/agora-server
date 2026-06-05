@@ -1,4 +1,4 @@
-import { Activity, BarChart3, LayoutDashboard, ShieldAlert, Settings, type LucideIcon } from "lucide-react";
+import { Activity, BarChart3, LayoutDashboard, Scale, ShieldAlert, Settings, type LucideIcon } from "lucide-react";
 
 export interface NavItem {
   to: string;
@@ -8,6 +8,8 @@ export interface NavItem {
   end?: boolean;
   /** Only shown to deployment operators (the route's data is operator-gated server-side). */
   operatorOnly?: boolean;
+  /** Shown to stewards (and operators) — the route is steward||operator-gated server-side. */
+  stewardOnly?: boolean;
 }
 
 // Most sections show for both personas (operator + owner/moderator); the *content* adapts to role
@@ -17,5 +19,6 @@ export const NAV_ITEMS: NavItem[] = [
   { to: "/community", label: "Community", icon: Activity, operatorOnly: true },
   { to: "/analytics", label: "Analytics", icon: BarChart3, operatorOnly: true },
   { to: "/moderation", label: "Moderation", icon: ShieldAlert },
+  { to: "/steward", label: "Steward", icon: Scale, stewardOnly: true },
   { to: "/settings", label: "Settings", icon: Settings },
 ];

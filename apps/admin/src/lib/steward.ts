@@ -1,0 +1,157 @@
+// Steward (conflict-resolution) data access. Cases are admin-only — these shapes mirror the server's
+// routes/steward.ts JSON, not an SDK-contract type. Lists use the standard { data, pagination }
+// envelope; mutations return the shaped case. Steward grant management is operator-only.
+import type { Comment, Entity, PaginatedResponse, User } from "@agora/contract";
+import { api } from "./api";
+
+export type CaseState = "open" | "in_mediation" | "closed";
+export type CaseOutcome = "repaired" | "separated" | "protective_action" | "escalated" | "dismissed";
+export type SubjectType = "entity" | "comment" | "message";
+export type CaseEventKind = "opened" | "note" | "state_change" | "assignment" | "asymmetry" | "outcome" | "escalation";
+
+export interface CaseUser {
+  id: string;
+  username: string | null;
+  name: string | null;
+  reputation: number;
+}
+
+export interface Case {
+  id: string;
+  projectId: string;
+  reportId: string | null;
+  complainantId: string | null;
+  respondentId: string | null;
+  subjectType: SubjectType | null;
+  subjectId: string | null;
+  spaceId: string | null;
+  summary: string;
+  state: CaseState;
+  outcome: CaseOutcome | null;
+  asymmetry: boolean;
+  resolutionNote: string | null;
+  openedById: string | null;
+  assignedToId: string | null;
+  createdAt: string;
+  updatedAt: string;
+  closedAt: string | null;
+  complainant: CaseUser | null;
+  respondent: CaseUser | null;
+  assignedTo: CaseUser | null;
+  openedBy: CaseUser | null;
+}
+
+export interface CaseEvent {
+  id: string;
+  caseId: string;
+  actorId: string | null;
+  actor: CaseUser | null;
+  kind: CaseEventKind;
+  body: string | null;
+  meta: Record<string, unknown> | null;
+  createdAt: string;
+}
+
+export interface CaseSubject {
+  type: SubjectType;
+  id: string;
+  entity?: Entity | null;
+  comment?: Comment | null;
+}
+
+export interface CaseDetail extends Case {
+  subject: CaseSubject | null;
+  events: CaseEvent[];
+}
+
+export interface OpenCaseBody {
+  reportId?: string;
+  respondentId?: string;
+  complainantId?: string;
+  subjectType?: SubjectType;
+  subjectId?: string;
+  spaceId?: string;
+  summary?: string;
+}
+
+export interface PatchCaseBody {
+  state?: CaseState;
+  assignedToId?: string | null;
+  asymmetry?: boolean;
+  outcome?: Exclude<CaseOutcome, "escalated">; // escalation goes through escalateCase (it removes content)
+  resolutionNote?: string;
+}
+
+// ── display helpers ──────────────────────────────────────────────────────────
+export const STATE_LABEL: Record<CaseState, string> = {
+  open: "Open",
+  in_mediation: "In mediation",
+  closed: "Closed",
+};
+
+export const OUTCOME_LABEL: Record<CaseOutcome, string> = {
+  repaired: "Repaired",
+  separated: "Separated",
+  protective_action: "Protective action",
+  escalated: "Escalated · removed",
+  dismissed: "Dismissed",
+};
+
+// The closing outcomes a steward picks directly, in transformative order (repair → separation →
+// protection → dismissal). `escalated` is intentionally absent: it removes content, so it's reached
+// only via the dedicated Escalate button.
+export const CLOSE_OUTCOMES: Exclude<CaseOutcome, "escalated">[] = [
+  "repaired",
+  "separated",
+  "protective_action",
+  "dismissed",
+];
+
+export function caseUserLabel(u: CaseUser | null | undefined): string {
+  if (!u) return "—";
+  if (u.username) return `@${u.username}`;
+  return u.name || "—";
+}
+
+// ── query keys ────────────────────────────────────────────────────────────────
+export const caseloadKey = (state: CaseState, page: number) => ["steward", "cases", state, page] as const;
+export const caseKey = (id: string) => ["steward", "case", id] as const;
+export const stewardsKey = () => ["steward", "stewards"] as const;
+
+// ── fetchers / mutations ───────────────────────────────────────────────────────
+export function listCases(state: CaseState, page: number) {
+  return api<PaginatedResponse<Case>>("/steward/cases", { query: { state, page } });
+}
+
+export function getCase(id: string) {
+  return api<CaseDetail>(`/steward/cases/${id}`);
+}
+
+export function openCase(body: OpenCaseBody) {
+  return api<Case>("/steward/cases", { method: "POST", body });
+}
+
+export function patchCase(id: string, body: PatchCaseBody) {
+  return api<Case>(`/steward/cases/${id}`, { method: "PATCH", body });
+}
+
+export function addCaseNote(id: string, text: string) {
+  return api(`/steward/cases/${id}/notes`, { method: "POST", body: { body: text } });
+}
+
+export function escalateCase(id: string, reason?: string) {
+  return api<Case>(`/steward/cases/${id}/escalate`, { method: "POST", body: reason ? { reason } : {} });
+}
+
+// ── steward grant management (operator-only) ───────────────────────────────────
+export function listStewards() {
+  return api<{ stewards: User[] }>("/steward/stewards");
+}
+
+export function grantStewardByUserId(userId: string) {
+  return api("/steward/stewards", { method: "POST", body: { userId } });
+}
+
+export function revokeStewardByUserId(userId: string) {
+  return api(`/steward/stewards/${userId}`, { method: "DELETE" });
+}

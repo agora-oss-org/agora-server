@@ -6,7 +6,7 @@ import { cn } from "../../lib/cn";
 import { NAV_ITEMS } from "./nav";
 
 export function Sidebar() {
-  const { isOperator } = useAuth();
+  const { isOperator, isSteward } = useAuth();
 
   return (
     <aside className="flex w-60 shrink-0 flex-col border-r border-border bg-surface">
@@ -17,7 +17,9 @@ export function Sidebar() {
       </div>
 
       <nav className="flex-1 space-y-1 p-3">
-        {NAV_ITEMS.filter((item) => !item.operatorOnly || isOperator).map(({ to, label, icon: Icon, end }) => (
+        {NAV_ITEMS.filter((item) =>
+          (item.operatorOnly ? isOperator : true) && (item.stewardOnly ? isSteward || isOperator : true),
+        ).map(({ to, label, icon: Icon, end }) => (
           <NavLink
             key={to}
             to={to}
@@ -36,8 +38,8 @@ export function Sidebar() {
       </nav>
 
       <div className="border-t border-border p-3">
-        <Badge variant={isOperator ? "primary" : "muted"} className="w-full justify-center py-1">
-          {isOperator ? "Operator" : "Moderator"}
+        <Badge variant={isOperator ? "primary" : isSteward ? "info" : "muted"} className="w-full justify-center py-1">
+          {isOperator ? "Operator" : isSteward ? "Steward" : "Moderator"}
         </Badge>
       </div>
     </aside>

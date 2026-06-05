@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Ban, Bot, Check, Flag, Sparkles } from "lucide-react";
+import { AlertTriangle, Ban, Bot, Check, Flag, Scale, Sparkles } from "lucide-react";
 import type { Comment, Entity, ModerationVerdict, Report } from "@agora/contract";
 import { actOnReport, displayName, getReportTarget, reportDeepLink, type ModerationDecision } from "../../lib/moderation";
+import { openCase } from "../../lib/steward";
 import { aiAnalysisKey, analyzeTarget, getAnalysis, targetText } from "../../lib/moderation-ai";
 import { ApiError } from "../../lib/api";
 import { track } from "../../lib/analytics";
@@ -29,6 +31,7 @@ export function ReviewDialog({ report, onClose }: { report: Report | null; onClo
   const open = !!report;
   const qc = useQueryClient();
   const toast = useToast();
+  const navigate = useNavigate();
   const [reason, setReason] = useState("");
 
   useEffect(() => {
@@ -56,11 +59,23 @@ export function ReviewDialog({ report, onClose }: { report: Report | null; onClo
       toast({ title: "Action failed", description: e instanceof ApiError || e instanceof Error ? e.message : undefined, variant: "danger" }),
   });
 
+  // Open a steward (conflict-resolution) case seeded from this report — the report's reporter becomes
+  // the complainant (server-filled) and the content author the respondent. Lands in the Steward tab.
+  const openStewardCase = useMutation({
+    mutationFn: () => openCase({ reportId: report!.id, respondentId: report!.author?.id }),
+    onSuccess: () => {
+      toast({ title: "Steward case opened", variant: "success" });
+      onClose();
+      navigate("/steward");
+    },
+    onError: (e) => toast({ title: "Couldn't open case", description: e instanceof Error ? e.message : undefined, variant: "danger" }),
+  });
+
   const target = targetQuery.data ?? null;
   // Deep link to the reported content in the consumer app (null for a comment until its parent
   // entity id loads with the target).
   const deepLink = report ? reportDeepLink(report, target) : null;
-  const { isOperator } = useAuth();
+  const { isOperator, isSteward } = useAuth();
   const scoped = !!report?.spaceId;
   // Space reports are actioned via the space flow; project-level reports (no space) only by operators.
   const canAct = scoped || isOperator;
@@ -109,6 +124,15 @@ export function ReviewDialog({ report, onClose }: { report: Report | null; onClo
 
               {report?.details ? (
                 <div className="rounded-lg border border-border bg-bg p-3 text-sm text-muted">{report.details}</div>
+              ) : null}
+
+              {isSteward || isOperator ? (
+                <div className="flex items-center justify-between gap-2 rounded-lg border border-border bg-bg p-3 text-sm">
+                  <span className="text-muted">A conflict between members, not just bad content?</span>
+                  <Button variant="outline" size="sm" disabled={openStewardCase.isPending} onClick={() => openStewardCase.mutate()}>
+                    <Scale /> Open steward case
+                  </Button>
+                </div>
               ) : null}
 
               {canAct ? (
