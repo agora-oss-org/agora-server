@@ -1,9 +1,10 @@
 # `services/scorer` — content scoring & moderation 🧪💞
 
-> **Status: FOUNDATION.** The salvaged pure logic (policy prompts, auto-action, verdict parsing,
-> reason formatting) is real and unit-tested. The ML / pgmq / Neo4j / Haiku I/O is structured **stubs**
-> (signatures + control-flow skeletons + logged TODOs). This doc describes the target architecture; the
-> implementation pass fills the stubs.
+> **Status: IMPLEMENTED — pending live integration verification.** The RoBERTa model server, asyncpg
+> db layer, pgmq consumer, Claude Haiku adjudication + API write-back, and the Neo4j relationship graph
+> are all wired (with unit tests for the pure logic + the HTTP paths via mocks). What remains is an
+> end-to-end smoke against real infra (Supabase pgmq, HF weights, Neo4j, Anthropic) and the deferred
+> cleanup (retire `apps/moderator`, author-enrichment, the user→user graph v2). See the roadmap.
 
 `services/scorer` is Agora's content scoring + moderation subsystem. It **replaces `apps/moderator`**
 (the Node/Hono LLM-over-webhooks service) with an **async, post-publish** Python pipeline: content
@@ -59,7 +60,7 @@ scorer-worker ── poll pgmq.read() ──► per job:
    │   decide_auto_action(verdict, confidence, thresholds)   ← salvaged pure fn
    │   if removable + triggered → POST {API}/internal/moderation/apply (x-moderation-secret)
    │   record moderation_analyses  (append; dedup on pgmq msg_id)  ← admin AI-flag queue source
-   │   MERGE relationship edge into Neo4j  (idempotent)            ← graph schema OUT OF SCOPE
+   │   MERGE relationship edge into Neo4j  (idempotent)            ← see "The relationship graph"
    │   pgmq.delete(msg_id)
    └── ALSO serves /v1/:projectId/moderation/* (operator JWT) — identical shapes to the old moderator
 ```
@@ -121,7 +122,30 @@ The toxicity RoBERTa runs on **everything** and its score drives a gray-zone gat
 The verdict then flows through the **salvaged** `auto_action.decide_auto_action` against the project's
 two confidence floors (block/review), and — for `entity`/`comment` only (messages always queue) — a
 triggered removal is applied via the API write-back. Every assessment records one `moderation_analyses`
-row (the admin queue). The **relationship** RoBERTa score is written as a Neo4j edge in parallel.
+row (the admin queue). The **relationship** RoBERTa score is written to the Neo4j graph in parallel.
+
+## The relationship graph
+
+The relationship-quality classifier (a 3-way sentiment model) produces a signed quality in **[-1, 1]**
+(`P(positive) − P(negative)`), which the worker writes to Neo4j. **v1 schema** (idempotent, all `MERGE`):
+
+```cypher
+MERGE (u:User {id: $author})
+MERGE (c:Content {id: $target})
+  ON CREATE SET c.type = $targetType, c.projectId = $projectId
+SET c.relationshipScore = $quality, c.scoredAt = timestamp()
+MERGE (u)-[:AUTHORED]->(c)
+```
+
+- Uniqueness constraints on `User.id` + `Content.id` (created once on worker startup via
+  `ensure_constraints`) back the MERGE and create the supporting indexes.
+- All-`MERGE` → a redelivered job just re-`SET`s the latest score (idempotent).
+- No-op (logged) when `NEO4J_*` is unset or the content has no resolvable author.
+
+⚠️ **v1 captures "who authored what, and how positive/negative it reads."** The richer **user→user
+interaction graph** — `(:User)-[:INTERACTED {sentiment}]->(:User)` weighted by how warmly A engages B,
+which needs resolving the *recipient* of a reply/DM (parent-content author / conversation members) — is
+**v2** (see the roadmap). The v1 schema is a deliberate, easily-revised starting point.
 
 ## Preserved contracts (so the admin keeps working)
 
@@ -184,13 +208,20 @@ cd services/scorer && pip install -r requirements-dev.txt && pytest
 - **Image size:** the real (un-stubbed) model server adds the CPU `torch` wheel, which is large; slimming
   it is later work.
 
-## Roadmap (un-stub, in order)
+## Roadmap
 
-1. Real RoBERTa load + `/score` (`model_server/classifier.py`).
-2. asyncpg pool + content-text fetch + `moderation_analyses` dedup insert (`ON CONFLICT (source_msg_id)`)
-   + admin reads (`scorer/db.py`,
-   `worker/analyses.py`, `worker/admin_api.py`).
-3. pgmq read/delete/archive wiring (`scorer/pgmq.py`, `worker/consumer.py`).
-4. Haiku HTTP call (`scorer/haiku.py`) + write-back HTTP (`worker/writeback.py`).
-5. Neo4j **graph schema** + edge MERGE (`scorer/neo4j.py`, `worker/neo4j_writer.py`).
-6. Retire `apps/moderator` source + clean the dead `webhooks.ts` moderation path.
+**Done** (implemented, unit-tested where feasible): ✅ RoBERTa `/score` · ✅ asyncpg db layer (content
+fetch, dedup insert, config, admin reads) · ✅ pgmq read/delete/archive · ✅ Haiku adjudication +
+API write-back · ✅ Neo4j v1 graph (author→content + sentiment).
+
+**Remaining:**
+1. **Live integration smoke** — against real Supabase pgmq + HF weights + Neo4j + Anthropic: insert a
+   post → see a `moderation_analyses` row + a graph edge; verify the admin `/queue` shape end-to-end.
+2. **Author enrichment** — resolve the target's author → profile for the admin queue's `author` chip
+   (batched, `worker/analyses.shape_analysis` currently leaves it `null`).
+3. **`/analyze` + `/{id}/remove`** admin endpoints (on-demand re-assess via the cascade; confirm-remove
+   via the write-back) — currently `501`.
+4. **Relationship graph v2** — the user→user `INTERACTED` edge (resolve the recipient of replies/DMs).
+5. **Retire `apps/moderator`** source + clean the dead `webhooks.ts` moderation path.
+6. **Ops polish** — Python CI job (ruff/mypy/pytest), scorer images in the docker-publish matrix, torch
+   image slimming, a HF cache volume.

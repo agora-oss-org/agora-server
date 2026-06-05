@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Security
+- **Upload size + image-dimension caps.** Every upload path now enforces a `MAX_UPLOAD_BYTES` byte cap
+  (default 25 MiB → `413 storage/file-too-large`) before buffering, plus a **50 MP** image limit
+  (`sharp`'s `limitInputPixels` + a metadata pre-check → `413 storage/image-too-large`) to stop
+  decompression-bomb / OOM uploads — defense-in-depth alongside the proxy's body cap. New
+  `assertUploadSize` (`lib/storage.ts`); `Errors.tooLarge` (413).
+- **Hardened JWT verification + secret strength.** `jwtVerify` now **pins the algorithm** — `["HS256"]`
+  on the access-token and socket.io verifies (and the moderator service), `["RS256"]` on the external-
+  auth verify — closing algorithm-confusion. **`ACCESS_TOKEN_SECRET`** is now validated as **≥ 32 chars**
+  (was non-empty only).
 - **Rate limiting: spoof-resistant client IP + optional cross-replica Redis store.** The limiter no
   longer keys on the **left-most** (client-supplied, spoofable) `X-Forwarded-For` hop — it reads the
   real client IP **`RATE_LIMIT_TRUSTED_HOPS` hops from the right** (default 1; the entries trusted
@@ -60,12 +69,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   removals back through the API (`/internal/moderation/apply`, unchanged), records `moderation_analyses`,
   and MERGEs a relationship edge into a bundled **Neo4j**. Preserves the admin AI-flag contract
   (`/v1/:projectId/moderation/*` shapes + operator JWT). The salvaged policy prompts, auto-action
-  thresholds, and verdict parsing are ported verbatim (with unit tests). **This pass is foundation +
-  architecture docs** (`docs/SCORER.md`, `docs/superpowers/specs/2026-06-05-scorer-architecture.md`);
-  ML / pgmq / Neo4j / Haiku I/O are structured stubs. Idempotency under pgmq's at-least-once redelivery is
-  by `source_msg_id` dedup on `moderation_analyses` (`ON CONFLICT DO NOTHING`, partial unique index,
-  migration `0028_scorer_analysis_dedup`), preserving the append-log + cumulative stats. See
-  `services/scorer/`.
+  thresholds, and verdict parsing are ported verbatim. The RoBERTa model server, asyncpg db layer, pgmq
+  consumer, Haiku adjudication + write-back, and a v1 Neo4j relationship graph (author→content + signed
+  sentiment) are all implemented (unit-tested where feasible — pure logic + the HTTP paths via mocks;
+  pending a live integration smoke). Idempotency under pgmq's at-least-once redelivery is by
+  `source_msg_id` dedup on `moderation_analyses` (`ON CONFLICT DO NOTHING`, partial unique index,
+  migration `0028_scorer_analysis_dedup`), preserving the append-log + cumulative stats. Docs:
+  `docs/SCORER.md`, `docs/superpowers/specs/2026-06-05-scorer-architecture.md`. See `services/scorer/`.
 
 ### Changed
 - **Moderation enqueue moved from the HMAC webhook to a pgmq Postgres trigger** (migration `0027`). The

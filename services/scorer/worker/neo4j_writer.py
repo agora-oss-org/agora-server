@@ -1,10 +1,15 @@
-"""Write the relationship-quality score as an edge into Neo4j.
+"""Write the relationship-quality signal as an edge into Neo4j.
 
-FOUNDATION ONLY — the graph model (which nodes, which edge type, properties, indexes) is OUT
-OF SCOPE. This is an idempotent ``MERGE`` skeleton: a redelivered job must not create a
-duplicate edge. No-op (logged) when ``NEO4J_*`` is unset.
+Graph schema v1 (see docs/SCORER.md → "The relationship graph"):
 
-STUB: the Cypher is sketched as a MERGE; wired when the graph schema is designed.
+    MERGE (u:User {id: author})
+    MERGE (c:Content {id: target})  ON CREATE SET type, projectId
+    SET c.relationshipScore = <signed sentiment, -1..1>, c.scoredAt = timestamp()
+    MERGE (u)-[:AUTHORED]->(c)
+
+All-MERGE → idempotent under pgmq redelivery (a re-run just re-SETs the score). No-op (logged) when
+``NEO4J_*`` is unset or the content has no resolvable author (anonymous). The richer user→user
+interaction graph (resolving the *recipient* of a reply/DM) is a planned v2 — see the roadmap.
 """
 
 from __future__ import annotations
@@ -14,6 +19,14 @@ from scorer.logging import get_logger, log
 from scorer.neo4j import get_driver
 
 logger = get_logger("scorer.worker.neo4j_writer")
+
+_MERGE = """
+merge (u:User {id: $author_id})
+merge (c:Content {id: $target_id})
+  on create set c.type = $target_type, c.projectId = $project_id
+set c.relationshipScore = $score, c.scoredAt = timestamp()
+merge (u)-[:AUTHORED]->(c)
+"""
 
 
 async def write_relationship_edge(
@@ -29,6 +42,16 @@ async def write_relationship_edge(
     if driver is None:
         log(logger, "debug", "neo4j edge write skipped (not configured)", target_id=target_id)
         return
-    # TODO(scorer): graph model is out of scope — illustrative MERGE only:
-    #   MERGE (a)-[r:INTERACTED {project:$p, target:$t}]->(b) SET r.relationship = $score
-    log(logger, "info", "neo4j MERGE relationship edge (stub)", target_id=target_id, score=relationship_score)
+    if author_id is None:
+        log(logger, "debug", "neo4j edge write skipped (no author)", target_id=target_id)
+        return
+    async with driver.session() as session:
+        await session.run(
+            _MERGE,
+            author_id=author_id,
+            target_id=target_id,
+            target_type=target_type,
+            project_id=project_id,
+            score=relationship_score,
+        )
+    log(logger, "info", "neo4j relationship edge merged", target_id=target_id, score=relationship_score)

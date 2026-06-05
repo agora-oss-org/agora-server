@@ -34,7 +34,9 @@ reuses those contracts and supersedes the rest.
 - **Preserve** the admin contract: `moderation_analyses`, the `/v1/:projectId/moderation/*` shapes,
   `/internal/moderation/apply`, and operator JWT — the admin nginx upstream is just repointed to the worker.
 - **id-only job payload** `{targetType, targetId, projectId}`; the worker fetches text by id.
-- **Neo4j bundled** in compose; the **graph schema is out of scope** (connection + idempotent MERGE stub).
+- **Neo4j bundled** in compose; **v1 graph** = `(:User)-[:AUTHORED]->(:Content {relationshipScore})` with
+  a signed sentiment in [-1,1] (idempotent MERGE + uniqueness constraints); the user→user interaction
+  graph is a deferred v2.
 - **Cutover now**: `moderator` removed from compose; `apps/moderator` source deletion deferred.
 - **DB driver**: asyncpg with `statement_cache_size=0` (Supabase txn pooler `:6543`, `prepare:false`).
 
@@ -76,9 +78,12 @@ write_relationship_edge(rel.score)         # Neo4j MERGE (graph schema out of sc
   manual `pgmq.send` → worker logs a consumed job with stubbed scores + `pgmq.delete`; operator JWT →
   `/v1/:projectId/moderation/{queue,config}` returns the expected envelope shape.
 
-## Out of scope
+## Deferred (post-implementation)
 
-- Neo4j graph schema (nodes/edges/indexes/queries) — MERGE stub only.
-- Real RoBERTa load + the full ML/LLM/pgmq/Neo4j I/O — structured stubs this pass.
+The model server, db layer, pgmq, Haiku + write-back, and the v1 Neo4j graph are implemented. Still out:
+
+- **Live integration smoke** against real Supabase pgmq / HF weights / Neo4j / Anthropic.
+- **Relationship graph v2** — the user→user `INTERACTED` edge (resolve the reply/DM recipient).
+- **Author enrichment** for the admin queue; `/analyze` + `/{id}/remove` admin endpoints (currently 501).
 - Deleting `apps/moderator` source + cleaning the dead `webhooks.ts` moderation path.
-- torch image-size optimization.
+- torch image-size optimization; Python CI job + docker-publish matrix entries.

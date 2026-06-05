@@ -14,6 +14,7 @@ import contextlib
 import uvicorn
 from fastapi import FastAPI
 
+from scorer import db, neo4j
 from scorer.config import get_settings
 from scorer.logging import get_logger, log
 
@@ -37,6 +38,7 @@ def create_app() -> FastAPI:
     async def _startup() -> None:
         nonlocal consumer_task
         settings = get_settings()
+        await neo4j.ensure_constraints(settings)  # best-effort; no-op when NEO4J_* unset
         consumer_task = asyncio.create_task(run_consumer(settings, stop))
         log(logger, "info", "worker started", admin_port=settings.admin_port)
 
@@ -46,6 +48,8 @@ def create_app() -> FastAPI:
         if consumer_task is not None:
             with contextlib.suppress(asyncio.CancelledError):
                 await consumer_task
+        await db.close_pool()
+        await neo4j.close_driver()
 
     return app
 

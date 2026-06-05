@@ -94,15 +94,18 @@ async def process_job(settings: Settings, job: ScoreJob, msg_id: int | None = No
         ),
     )
 
-    # ── relationship edge → Neo4j (graph schema out of scope) ──────────────────
-    rel_score = relationship.score
+    # ── relationship edge → Neo4j ──────────────────────────────────────────────
+    # Map the sentiment distribution to a signed quality in [-1, 1] (P(positive) - P(negative));
+    # fall back to the top-label score if the model isn't a 3-way sentiment classifier.
+    rel = relationship.scores
+    rel_quality = (rel.get("positive", 0.0) - rel.get("negative", 0.0)) if rel else relationship.score
     await neo4j_writer.write_relationship_edge(
         settings,
         project_id=job.project_id,
         target_type=job.target_type,
         target_id=job.target_id,
         author_id=content.author_id,
-        relationship_score=rel_score,
+        relationship_score=rel_quality,
     )
 
     log(logger, "info", "job processed", target_id=job.target_id, verdict=verdict, auto_actioned=auto_actioned)
