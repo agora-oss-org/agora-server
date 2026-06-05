@@ -58,7 +58,7 @@ scorer-worker ── poll pgmq.read() ──► per job:
    │       in between       → escalate to Claude Haiku (salvaged policy prompt + verdict schema)
    │   decide_auto_action(verdict, confidence, thresholds)   ← salvaged pure fn
    │   if removable + triggered → POST {API}/internal/moderation/apply (x-moderation-secret)
-   │   upsert moderation_analyses  (idempotent, keyed by target)   ← admin AI-flag queue source
+   │   record moderation_analyses  (append; dedup on pgmq msg_id)  ← admin AI-flag queue source
    │   MERGE relationship edge into Neo4j  (idempotent)            ← graph schema OUT OF SCOPE
    │   pgmq.delete(msg_id)
    └── ALSO serves /v1/:projectId/moderation/* (operator JWT) — identical shapes to the old moderator
@@ -75,9 +75,15 @@ scorer-worker ── poll pgmq.read() ──► per job:
   moderation write-back itself (which only touches `moderation_status`) and trigger-maintained
   count/reaction bumps do **not** re-enqueue. This is what prevents a write-back → re-score loop.
 - **At-least-once → idempotency contract.** pgmq redelivers a message if the worker dies before
-  `pgmq.delete` (visibility-timeout). So every downstream write MUST be idempotent: the
-  `moderation_analyses` upsert is keyed by target, and the Neo4j write is a `MERGE`. A poison message is
-  archived after N redeliveries.
+  `pgmq.delete` (visibility-timeout). So every downstream write is idempotent: the `moderation_analyses`
+  insert is stamped with the pgmq **`source_msg_id`** and uses `ON CONFLICT (source_msg_id) DO NOTHING`
+  (partial unique index, migration `0028_scorer_analysis_dedup`) — a redelivery (same msg_id) is a no-op,
+  a genuine re-score (content edit → a *new* pgmq message → new msg_id) inserts a new row, and an
+  on-demand `/analyze` row carries `source_msg_id = NULL` (unconstrained). The write-back (set
+  `moderation_status`) and the Neo4j `MERGE` are idempotent too. The consumer also pre-checks
+  `source_msg_id` on a redelivery to skip a redundant Haiku call; a poison message is archived after N
+  reads. This keeps the **append-log** semantics (cumulative `/stats` + token metering) rather than
+  collapsing history.
 - **id-only payload.** Jobs carry only `{targetType, targetId, projectId}`; the worker fetches the text
   (and space/author) by id. Keeps messages small and avoids stale/duplicated content in the queue.
 
@@ -181,7 +187,8 @@ cd services/scorer && pip install -r requirements-dev.txt && pytest
 ## Roadmap (un-stub, in order)
 
 1. Real RoBERTa load + `/score` (`model_server/classifier.py`).
-2. asyncpg pool + content-text fetch + `moderation_analyses` upsert + admin reads (`scorer/db.py`,
+2. asyncpg pool + content-text fetch + `moderation_analyses` dedup insert (`ON CONFLICT (source_msg_id)`)
+   + admin reads (`scorer/db.py`,
    `worker/analyses.py`, `worker/admin_api.py`).
 3. pgmq read/delete/archive wiring (`scorer/pgmq.py`, `worker/consumer.py`).
 4. Haiku HTTP call (`scorer/haiku.py`) + write-back HTTP (`worker/writeback.py`).

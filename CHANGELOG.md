@@ -53,7 +53,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`/v1/:projectId/moderation/*` shapes + operator JWT). The salvaged policy prompts, auto-action
   thresholds, and verdict parsing are ported verbatim (with unit tests). **This pass is foundation +
   architecture docs** (`docs/SCORER.md`, `docs/superpowers/specs/2026-06-05-scorer-architecture.md`);
-  ML / pgmq / Neo4j / Haiku I/O are structured stubs. See `services/scorer/`.
+  ML / pgmq / Neo4j / Haiku I/O are structured stubs. Idempotency under pgmq's at-least-once redelivery is
+  by `source_msg_id` dedup on `moderation_analyses` (`ON CONFLICT DO NOTHING`, partial unique index,
+  migration `0028_scorer_analysis_dedup`), preserving the append-log + cumulative stats. See
+  `services/scorer/`.
 
 ### Changed
 - **Moderation enqueue moved from the HMAC webhook to a pgmq Postgres trigger** (migration `0027`). The

@@ -251,6 +251,10 @@ journal order and written **idempotently** (`create extension if not exists`, `c
   `enqueue_scorer_job()` trigger fn, attached as AFTER INSERT / **content-gated** UPDATE triggers on
   `entities`/`comments`/`chat_messages` (the UPDATE gate skips moderation/count writes so the write-back
   doesn't re-enqueue). Replaces the moderation webhook notifier; see `docs/SCORER.md`.
+- `0028_…` — **`services/scorer` analysis dedup**: `moderation_analyses.source_msg_id` (bigint) + a
+  partial unique index. The worker stamps the pgmq message id and inserts `ON CONFLICT (source_msg_id)
+  DO NOTHING`, so pgmq's at-least-once redelivery can't create duplicate analysis rows (kept out of the
+  Drizzle schema like the `0001_postgis` columns — only the scorer's raw-SQL worker uses it).
 
 To change schema: edit `src/db/schema/*.ts` → `db:generate` → `db:migrate`. Edit triggers/functions/
 RLS/PostGIS by hand in their custom migration files. (Apply with `db:migrate:run` — the runtime

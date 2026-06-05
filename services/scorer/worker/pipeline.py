@@ -30,8 +30,9 @@ from . import analyses, model_clients, neo4j_writer, writeback
 logger = get_logger("scorer.worker.pipeline")
 
 
-async def process_job(settings: Settings, job: ScoreJob) -> None:
-    """Run one job through the full cascade. Idempotent end-to-end (pgmq is at-least-once)."""
+async def process_job(settings: Settings, job: ScoreJob, msg_id: int | None = None) -> None:
+    """Run one job through the full cascade. Idempotent end-to-end (pgmq is at-least-once):
+    the analysis insert dedups on ``msg_id``, and the write-back + Neo4j MERGE are idempotent."""
     text = await fetch_content_text(settings, job.target_type, job.target_id)
     if not text:
         log(logger, "warn", "no content text for job (skipping)", target_id=job.target_id)
@@ -73,8 +74,8 @@ async def process_job(settings: Settings, job: ScoreJob) -> None:
             reason=moderation_reason_text(verdict, confidence, reason),
         )
 
-    # ── record the audit row (admin queue source) ──────────────────────────────
-    await analyses.upsert_analysis(
+    # ── record the audit row (admin queue source), deduped on the pgmq msg_id ───
+    await analyses.record_analysis(
         settings,
         analyses.AnalysisInput(
             project_id=job.project_id,
@@ -87,6 +88,7 @@ async def process_job(settings: Settings, job: ScoreJob) -> None:
             reason=reason,
             model=model,
             auto_actioned=auto_actioned,
+            source_msg_id=msg_id,
         ),
     )
 

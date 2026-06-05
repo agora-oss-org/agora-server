@@ -26,8 +26,11 @@ reuses those contracts and supersedes the rest.
 - **Cascade**: toxicity score → gray-zone gate → escalate borderline to **Claude Haiku** using the
   **salvaged** policy prompt + verdict schema; `decide_auto_action` (salvaged) applies removals via the
   API write-back (entity/comment only).
-- **Idempotent at-least-once**: pgmq redelivers on crash, so `moderation_analyses` upsert is keyed by
-  target and the Neo4j write is a `MERGE`; poison messages archived after N reads.
+- **Idempotent at-least-once**: pgmq redelivers on crash, so the `moderation_analyses` insert is deduped
+  on the pgmq `source_msg_id` (`ON CONFLICT DO NOTHING`, partial unique index, migration `0028`) — keeping
+  the append-log (cumulative stats/tokens) rather than an upsert that collapses history; the write-back +
+  Neo4j `MERGE` are idempotent too; the consumer pre-checks the msg_id to skip a redundant Haiku call;
+  poison messages archived after N reads.
 - **Preserve** the admin contract: `moderation_analyses`, the `/v1/:projectId/moderation/*` shapes,
   `/internal/moderation/apply`, and operator JWT — the admin nginx upstream is just repointed to the worker.
 - **id-only job payload** `{targetType, targetId, projectId}`; the worker fetches text by id.
