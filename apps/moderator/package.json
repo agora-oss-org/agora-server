@@ -1,6 +1,6 @@
 {
   "name": "@agora/moderator",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "private": true,
   "type": "module",
   "description": "LLM-backed content moderation service for Agora (webhook receiver + admin-facing review aids)",

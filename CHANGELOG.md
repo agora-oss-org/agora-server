@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-06-05
+
+### Added
+- **Steward — conflict resolution (Caseload v1).** A new admin **Steward** tab and a new **Steward
+  role** — a trust tier *between* member and operator for resolving conflicts between members
+  (distinct from moderation, which judges content). The role is a **DB-backed grant** (operators grant
+  community members) that rides the same JWT path as `isOperator`: stamped at mint/refresh, read back
+  on every request as **`c.var.auth.isSteward`** (additive `AuthUser.isSteward` /
+  `AuthContext.isSteward` in `@agora/contract`). A **case** records a dyadic conflict (complainant vs
+  respondent) over some content, moves through `open → in_mediation → closed`, and closes with a
+  **transformative-leaning outcome** (the outcome enum is ordered repair → separation → protection →
+  dismissal; `escalated` — the only one that removes content — is reached solely via the escalate
+  action). An **`asymmetry`** flag marks "targeting, not a symmetric dispute." Every action appends to
+  an append-only `steward_case_events` timeline.
+  - **Schema** (migration `0025`): `project_stewards` (the grant), `steward_cases`, `steward_case_events`
+    + enums `steward_case_state` / `steward_case_outcome` / `steward_case_event_kind`.
+  - **API** (`routes/steward.ts`, mounted at `/v7/:projectId/steward`, gated steward||operator):
+    `GET /steward/cases` (caseload, by state/assignee), `POST /steward/cases` (open — cold or seeded
+    from a `reportId`), `GET /steward/cases/:id` (parties + subject content + timeline),
+    `PATCH /steward/cases/:id` (state/assignee/asymmetry/outcome + note), `POST /steward/cases/:id/notes`,
+    and `POST /steward/cases/:id/escalate` (removes the subject content as `moderatedByType="user"`,
+    closes the case, resolves the originating report). Operator-only grant management:
+    `GET/POST /steward/stewards`, `DELETE /steward/stewards/:userId`.
+  - **Admin**: the operator-or-steward **Steward** tab (caseload list + case-detail dialog with the
+    asymmetry toggle, transformative outcome menu, and Escalate &amp; remove), an operator-only
+    Stewards grant card, and an **"Open steward case"** action on the Moderation review dialog that
+    seeds a case from a report.
+  - **Docs**: `STEWARDSHIP.md` — a (draft) steward-facing guide to the model, the philosophy, and the
+    caseload workflow; grows as the Watch and mediation-channel pieces land.
+
 ## [0.6.0] - 2026-06-03
 
 ### Added
@@ -648,7 +678,8 @@ cloud Supabase — no stubbed endpoints remain.
   (`@agora/*`), a repointed fork of `@replyke/core`.
 - Backlog: rate limiting, refresh-token cleanup sweep, RLS write policies, turnkey deploy guide.
 
-[Unreleased]: https://github.com/jenova-marie/agora/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/jenova-marie/agora/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/jenova-marie/agora/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/jenova-marie/agora/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/jenova-marie/agora/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/jenova-marie/agora/compare/v0.3.0...v0.4.0
