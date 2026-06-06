@@ -339,4 +339,6 @@ migrator the container uses; its journal is the `drizzle` schema.)
 
 `apps/api/src/routes/entities.ts` is the reference for a fully-built domain router.
 
-License: Apache-2.0 (matching Replyke).
+License: **AGPL-3.0-only** for the server (`@agora/api`/`admin`/`moderator` + `services/*`);
+`@agora/contract` stays **Apache-2.0** as the permissive wire-contract surface the SDK builds on.
+Contributions are DCO-signed (`git commit -s`), no CLA. Community edition is AGPL-3.0 forever.

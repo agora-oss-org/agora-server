@@ -189,13 +189,41 @@ Common types: `feat` ✨ · `fix` 🐛 · `docs` 📝 · `refactor` ♻️ · `t
 2. Keep each PR to one logical change — smaller is easier to review.
 3. Make sure `pnpm -r typecheck` and `pnpm test` pass.
 4. Update `CHANGELOG.md`, and `docs/MANIFEST.md` / `docs/MODELS.md` if the contract changed.
-5. Describe what changed and why; link any related issue.
+5. **Sign off every commit** (`git commit -s`) — DCO, no CLA. See [Licensing](#licensing).
+6. Describe what changed and why; link any related issue.
 
 We'll review as promptly as we can. Thanks for helping build the open social layer. 🌸
 
 ---
 
-## License
+## Licensing
 
-By contributing, you agree that your contributions are licensed under the project's
-[Apache-2.0](LICENSE) license, matching Replyke.
+Agora's server is **[AGPL-3.0-only](LICENSE)** — `@agora/api`, `@agora/admin`, `@agora/moderator`
+(and the `services/*` workers). The shared wire contract, [`@agora/contract`](packages/contract),
+stays **Apache-2.0** so the [`agora-sdk`](https://github.com/jenova-marie/agora-sdk) and third-party
+clients can build against it freely. **The community edition is AGPL-3.0 and always will be** — that's
+a promise, not a placeholder.
+
+### No CLA — we use the DCO
+
+There is **no Contributor License Agreement**. We don't ask you to assign or relicense your copyright,
+and the project *can't* quietly go closed-source later: your contributions stay yours, licensed
+AGPL-3.0. Instead we use the lightweight **[Developer Certificate of Origin](https://developercertificate.org/)** —
+a one-line attestation that you wrote the patch (or otherwise have the right to submit it) under the
+project's license.
+
+Sign off every commit:
+
+```
+git commit -s -m "✨ feat(api): ..."
+```
+
+That appends a `Signed-off-by: Your Name <you@example.com>` trailer from your git `user.name` /
+`user.email`. Forgot one? `git commit --amend -s` for the last commit, or `git rebase --signoff root`
+for a whole branch. CI checks that every commit in a PR is signed off.
+
+### A note for operators (AGPL §13)
+
+If you run Agora as a network service, the AGPL requires you to offer your users the *corresponding
+source* of the version you're running. Agora ships a source link by default — if you modify Agora,
+keep that link pointing at your fork.

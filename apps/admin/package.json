@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "description": "Agora admin frontend (Vite + React + TS), consuming @agora/contract.",
-  "license": "Apache-2.0",
+  "license": "AGPL-3.0-only",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",

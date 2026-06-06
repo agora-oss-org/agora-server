@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "description": "Agora monorepo — Replyke-compatible backend API, shared contract, and admin frontend.",
-  "license": "Apache-2.0",
+  "license": "AGPL-3.0-only",
   "packageManager": "pnpm@10.14.0",
   "engines": {
     "node": ">=20"
