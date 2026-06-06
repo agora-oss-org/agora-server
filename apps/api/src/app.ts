@@ -23,16 +23,29 @@ function safeEqual(a: string, b: string): boolean {
   return ab.length === bb.length && crypto.timingSafeEqual(ab, bb);
 }
 
+// AGPL-3.0 §13: users interacting with Agora over a network must be offered its corresponding
+// source. We surface it by default; operators running a modified build MUST repoint this at the
+// fork they actually run (set AGORA_SOURCE_URL). Empty string is treated as unset.
+const SOURCE_URL =
+  (process.env.AGORA_SOURCE_URL || "").trim() || "https://github.com/jenova-marie/agora-server";
+
 export function createApp() {
   const app = new Hono<{ Variables: Variables }>();
 
   app.use("*", requestLog);
   app.use("*", cors({ origin: env.CORS_ORIGIN }));
+  // AGPL §13: advertise the corresponding source on every response (cheap header, no body change).
+  app.use("*", async (c, next) => {
+    c.header("X-Source-Code", SOURCE_URL);
+    await next();
+  });
   // Edge rate limiting on the public API surface only (health + /internal/cron stay unlimited; cron
   // is secret-gated). No-op unless RATE_LIMIT_MAX / RATE_LIMIT_AUTH_MAX is configured.
   app.use("/v7/*", rateLimit);
 
-  app.get("/health", (c) => c.json({ ok: true, service: "agora", version: "v7" }));
+  app.get("/health", (c) => c.json({ ok: true, service: "agora", version: "v7", source: SOURCE_URL }));
+  // AGPL §13 source offer: a stable, human-reachable link to the running version's source.
+  app.get("/source", (c) => c.redirect(SOURCE_URL, 302));
 
   // Secret-gated cron triggers (external scheduler / Supabase pg_cron + pg_net). Each returns 503
   // until CRON_SECRET is set, 401 on a bad secret; the same work runs standalone via scripts/*.mjs.
