@@ -5,7 +5,7 @@
 import type { Context } from "hono";
 import { or, isNull, ne, type SQL } from "drizzle-orm";
 import type { Variables } from "../http/context.js";
-import { entities, comments } from "../db/schema/index.js";
+import { entities, comments, chatMessages } from "../db/schema/index.js";
 
 type Ctx = Context<{ Variables: Variables }>;
 
@@ -25,7 +25,7 @@ export async function removedPolicy(c: Ctx): Promise<RemovedPolicy> {
  */
 export function excludeRemovedSql(
   p: RemovedPolicy,
-  table: typeof entities | typeof comments,
+  table: typeof entities | typeof comments | typeof chatMessages,
 ): SQL | undefined {
   if (p.privileged) return undefined;
   return or(isNull(table.moderationStatus), ne(table.moderationStatus, "removed"));

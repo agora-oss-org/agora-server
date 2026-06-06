@@ -52,11 +52,19 @@ export interface CaseEvent {
   createdAt: string;
 }
 
+export interface CaseMessage {
+  id: string;
+  content: string | null;
+  user?: CaseUser | null;
+  createdAt: string;
+}
+
 export interface CaseSubject {
   type: SubjectType;
   id: string;
   entity?: Entity | null;
   comment?: Comment | null;
+  message?: CaseMessage | null;
 }
 
 export interface CaseDetail extends Case {

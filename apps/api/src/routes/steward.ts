@@ -17,9 +17,10 @@ import type { Variables } from "../http/context.js";
 import { requireAuth } from "../middleware/auth.js";
 import { db } from "../db/index.js";
 import { logger } from "../lib/logger.js";
-import { stewardCases, stewardCaseEvents, reports, entities, comments, profiles } from "../db/schema/index.js";
+import { stewardCases, stewardCaseEvents, reports, entities, comments, chatMessages, profiles } from "../db/schema/index.js";
 import { readPagination, paginate } from "../http/envelope.js";
-import { shapeCase, shapeCaseEvent, shapeEntity, shapeComment, loadUsers } from "../lib/shape.js";
+import { shapeCase, shapeCaseEvent, shapeEntity, shapeComment, shapeChatMessage, loadUsers } from "../lib/shape.js";
+import { emitToConversation } from "../realtime/socket.js";
 import { listStewardIds, grantSteward, revokeSteward } from "../lib/stewards.js";
 import { parseBody } from "../lib/validation.js";
 import { Errors } from "../http/errors.js";
@@ -75,7 +76,7 @@ async function hydrateCases(projectId: string, rows: CaseRow[]): Promise<ReturnT
 }
 
 // The content at issue, hydrated directly (privileged — this route is steward/operator-gated, and a
-// steward must be able to review removed/members-only content). Messages aren't hydrated in v1.
+// steward must be able to review removed/members-only content).
 async function loadSubject(projectId: string, type: CaseRow["subjectType"], id: string | null) {
   if (!type || !id) return null;
   if (type === "entity") {
@@ -90,7 +91,10 @@ async function loadSubject(projectId: string, type: CaseRow["subjectType"], id: 
     const user = cm.userId ? (await loadUsers(projectId, [cm.userId])).get(cm.userId) ?? null : null;
     return { type, id, comment: shapeComment(cm, { user }) };
   }
-  return { type, id }; // message — chat lives elsewhere; surfaced by id only in v1
+  const [m] = await db.select().from(chatMessages).where(and(eq(chatMessages.projectId, projectId), eq(chatMessages.id, id))).limit(1);
+  if (!m) return { type, id, message: null };
+  const user = m.userId ? (await loadUsers(projectId, [m.userId])).get(m.userId) ?? null : null;
+  return { type, id, message: shapeChatMessage(m, { user }) };
 }
 
 async function getCase(projectId: string, id: string): Promise<CaseRow> {
@@ -223,21 +227,27 @@ export const stewardRoutes = new Hono<{ Variables: Variables }>()
     const body = parseBody(escalateSchema, await c.req.json().catch(() => ({})), "steward");
     const row = await getCase(c.var.projectId, c.req.param("id"));
     if (!row.subjectType || !row.subjectId) throw Errors.badRequest("steward/no-subject", "This case has no content subject to remove");
-    if (row.subjectType === "message") throw Errors.badRequest("steward/unsupported-subject", "Chat-message removal isn't supported from steward escalation");
     const reason = body.reason?.trim() || `Removed via steward case ${row.id}`;
     const mod = {
       moderationStatus: "removed" as const, moderationReason: reason, moderatedAt: new Date(),
       moderatedById: c.var.auth!.userId, moderatedByType: "user" as const,
     };
     let removed = false;
+    let msgConversationId: string | undefined;
     if (row.subjectType === "entity") {
       const [u] = await db.update(entities).set(mod)
         .where(and(eq(entities.projectId, c.var.projectId), eq(entities.id, row.subjectId))).returning({ id: entities.id });
       removed = !!u;
-    } else {
+    } else if (row.subjectType === "comment") {
       const [u] = await db.update(comments).set(mod)
         .where(and(eq(comments.projectId, c.var.projectId), eq(comments.id, row.subjectId))).returning({ id: comments.id });
       removed = !!u;
+    } else {
+      const [u] = await db.update(chatMessages).set(mod)
+        .where(and(eq(chatMessages.projectId, c.var.projectId), eq(chatMessages.id, row.subjectId)))
+        .returning({ id: chatMessages.id, conversationId: chatMessages.conversationId });
+      removed = !!u;
+      msgConversationId = u?.conversationId;
     }
     if (!removed) throw Errors.notFound("steward/subject-not-found", "Case subject content not found");
 
@@ -249,6 +259,8 @@ export const stewardRoutes = new Hono<{ Variables: Variables }>()
       await db.update(reports).set({ resolvedAt: new Date(), resolvedById: c.var.auth!.userId })
         .where(and(eq(reports.projectId, c.var.projectId), eq(reports.id, row.reportId), isNull(reports.resolvedAt)));
     }
+    // Tell connected chat clients to drop the removed message live (entities/comments hide on next read).
+    if (msgConversationId) emitToConversation(msgConversationId, "message:removed", { messageId: row.subjectId, conversationId: msgConversationId });
     logger.info({ projectId: c.var.projectId, caseId: row.id, stewardId: c.var.auth!.userId, subjectType: row.subjectType, subjectId: row.subjectId }, "steward: case escalated → content removed");
     const [shaped] = await hydrateCases(c.var.projectId, [updated!]);
     return c.json(shaped);

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { removedPolicy, excludeRemovedSql, shouldHide } from "./moderation-visibility.js";
-import { entities, comments } from "../db/schema/index.js";
+import { entities, comments, chatMessages } from "../db/schema/index.js";
 
 const PRIVILEGED = { privileged: true };
 const NON_PRIVILEGED = { privileged: false };
@@ -28,6 +28,7 @@ describe("excludeRemovedSql", () => {
   it("returns undefined for privileged viewers (so callers can conditionally push)", () => {
     expect(excludeRemovedSql(PRIVILEGED, entities)).toBeUndefined();
     expect(excludeRemovedSql(PRIVILEGED, comments)).toBeUndefined();
+    expect(excludeRemovedSql(PRIVILEGED, chatMessages)).toBeUndefined();
   });
 
   it("returns a defined SQL object for non-privileged viewers on entities", () => {
@@ -38,6 +39,12 @@ describe("excludeRemovedSql", () => {
 
   it("returns a defined SQL object for non-privileged viewers on comments", () => {
     const sql = excludeRemovedSql(NON_PRIVILEGED, comments);
+    expect(sql).not.toBeUndefined();
+    expect(typeof sql).toBe("object");
+  });
+
+  it("returns a defined SQL object for non-privileged viewers on chat messages", () => {
+    const sql = excludeRemovedSql(NON_PRIVILEGED, chatMessages);
     expect(sql).not.toBeUndefined();
     expect(typeof sql).toBe("object");
   });

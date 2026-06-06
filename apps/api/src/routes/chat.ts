@@ -18,6 +18,7 @@ import {
   addConversationMemberSchema, convMemberRoleSchema,
 } from "../lib/validation.js";
 import { emitToConversation } from "../realtime/socket.js";
+import { removedPolicy, excludeRemovedSql } from "../lib/moderation-visibility.js";
 import { logger } from "../lib/logger.js";
 import { indexContentAsync } from "../lib/embeddings.js";
 import * as webhooks from "../lib/webhooks.js";
@@ -260,6 +261,9 @@ export const chatRoutes = new Hono<{ Variables: Variables }>()
     // Main stream = top-level messages; thread view = replies to a specific parent.
     conds.push(parentId ? eq(chatMessages.parentMessageId, parentId) : sql`${chatMessages.parentMessageId} is null`);
     if (before) conds.push(sql`${chatMessages.createdAt} < ${before}::timestamptz`);
+    // Hide moderation-removed messages from members (operators bypass for review) — mirrors entities/comments.
+    const removedFilter = excludeRemovedSql(await removedPolicy(c), chatMessages);
+    if (removedFilter) conds.push(removedFilter);
 
     const rows = await db.select().from(chatMessages)
       .where(and(...conds))

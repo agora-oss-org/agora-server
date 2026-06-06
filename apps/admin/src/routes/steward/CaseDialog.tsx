@@ -97,7 +97,7 @@ function CaseBody({ c, onClose }: { c: CaseDetail; onClose: () => void }) {
   const busy = patch.isPending || escalate.isPending;
   const closed = c.state === "closed";
   const subjectTarget: Entity | Comment | null = c.subject?.entity ?? c.subject?.comment ?? null;
-  const canEscalate = !closed && (c.subjectType === "entity" || c.subjectType === "comment");
+  const canEscalate = !closed && !!c.subjectType; // entity | comment | message all removable now
   const deepLink =
     c.subject && (c.subject.type === "entity" || c.subject.type === "comment")
       ? contentDeepLink(c.subject.type, c.subject.id, subjectTarget)
@@ -131,8 +131,21 @@ function CaseBody({ c, onClose }: { c: CaseDetail; onClose: () => void }) {
         {/* Subject content */}
         {c.subject ? (
           c.subject.type === "message" ? (
-            <div className="rounded-lg border border-border bg-bg p-3 text-sm text-muted">
-              Chat message <span className="font-mono text-xs">{shortId(c.subject.id)}</span> (not previewable here).
+            <div className="space-y-2 rounded-lg border border-border bg-bg p-4">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-sm font-medium text-fg">Chat message</p>
+                <span className="font-mono text-xs text-faint">{shortId(c.subject.id)}</span>
+              </div>
+              {c.subject.message ? (
+                <>
+                  <p className="whitespace-pre-wrap break-words text-sm text-muted">
+                    {c.subject.message.content ?? <span className="text-faint">(no text)</span>}
+                  </p>
+                  <p className="text-xs text-faint">by {caseUserLabel(c.subject.message.user)}</p>
+                </>
+              ) : (
+                <p className="text-sm text-muted">Message not found (it may have been deleted).</p>
+              )}
             </div>
           ) : (
             <ContentPreview
