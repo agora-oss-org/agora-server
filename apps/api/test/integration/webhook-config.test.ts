@@ -25,7 +25,7 @@ describe("webhook config surface (integration)", () => {
     expect((await api("GET", `${B}/webhooks/config`, { token: visitor.token })).status).toBe(403);
     const denied = await api("PATCH", `${B}/webhooks/config`, { token: visitor.token, body: { url: "https://x/h" } });
     expect(denied.status).toBe(403);
-    expect(denied.body.code).toBe("webhooks/not-admin");
+    expect(denied.body.code).toBe("project/not-admin"); // shared requireProjectAdmin guard (misc.ts)
     expect((await api("GET", `${B}/webhooks/config`)).status).toBe(401); // unauthenticated
   });
 

@@ -56,7 +56,7 @@ describe("entities + comments + reactions (integration)", () => {
     // upvote -> count 1
     const up = await api("POST", `${base(projectId)}/entities/${entity.id}/reactions`, {
       token: other.token,
-      body: { type: "upvote" },
+      body: { reactionType: "upvote" },
     });
     expect(up.status).toBe(200);
     expect(up.body.reactionCounts.upvote).toBe(1);
@@ -65,7 +65,7 @@ describe("entities + comments + reactions (integration)", () => {
     // same type again -> toggles off -> count 0
     const off = await api("POST", `${base(projectId)}/entities/${entity.id}/reactions`, {
       token: other.token,
-      body: { type: "upvote" },
+      body: { reactionType: "upvote" },
     });
     expect(off.body.reactionCounts.upvote).toBe(0);
     expect(off.body.userReaction).toBeNull();
@@ -73,7 +73,7 @@ describe("entities + comments + reactions (integration)", () => {
     // the count is persisted (visible on a fresh GET as the authed reactor)
     const refetch = await api("POST", `${base(projectId)}/entities/${entity.id}/reactions`, {
       token: other.token,
-      body: { type: "love" },
+      body: { reactionType: "love" },
     });
     expect(refetch.body.reactionCounts.love).toBe(1);
     expect(refetch.body.reactionCounts.upvote).toBe(0);

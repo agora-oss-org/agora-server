@@ -111,18 +111,18 @@ describe("notification fan-out (integration)", () => {
   it("entity reaction: upvote→entity-upvote, love→entity-reaction; fires on add, NOT on toggle-off", async () => {
     const e = await newEntity(alice);
 
-    await api("POST", `${B}/entities/${e.id}/reactions`, { token: bob.token, body: { type: "upvote" } });
+    await api("POST", `${B}/entities/${e.id}/reactions`, { token: bob.token, body: { reactionType: "upvote" } });
     let up = (await ofType(alice, "entity-upvote")).filter((n) => n.metadata.entityId === e.id);
     expect(up).toHaveLength(1);
     expect(up[0].metadata.initiatorId).toBe(bob.id);
 
     // toggle the same reaction off → no new notification
-    await api("POST", `${B}/entities/${e.id}/reactions`, { token: bob.token, body: { type: "upvote" } });
+    await api("POST", `${B}/entities/${e.id}/reactions`, { token: bob.token, body: { reactionType: "upvote" } });
     up = (await ofType(alice, "entity-upvote")).filter((n) => n.metadata.entityId === e.id);
     expect(up).toHaveLength(1); // unchanged
 
     // a non-upvote reaction → entity-reaction carrying reactionType
-    await api("POST", `${B}/entities/${e.id}/reactions`, { token: bob.token, body: { type: "love" } });
+    await api("POST", `${B}/entities/${e.id}/reactions`, { token: bob.token, body: { reactionType: "love" } });
     const react = (await ofType(alice, "entity-reaction")).filter((n) => n.metadata.entityId === e.id);
     expect(react).toHaveLength(1);
     expect(react[0].metadata).toMatchObject({ reactionType: "love", initiatorId: bob.id });
@@ -131,7 +131,7 @@ describe("notification fan-out (integration)", () => {
   it("comment reaction notifies the comment author (comment-upvote)", async () => {
     const e = await newEntity(alice);
     const c = await api("POST", `${B}/comments`, { token: bob.token, body: { entityId: e.id, content: "react to me" } });
-    await api("POST", `${B}/comments/${c.body.id}/reactions`, { token: carol.token, body: { type: "upvote" } });
+    await api("POST", `${B}/comments/${c.body.id}/reactions`, { token: carol.token, body: { reactionType: "upvote" } });
     const notes = (await ofType(bob, "comment-upvote")).filter((n) => n.metadata.commentId === c.body.id);
     expect(notes).toHaveLength(1);
     expect(notes[0]).toMatchObject({ action: "open-comment", userId: bob.id });
@@ -143,7 +143,7 @@ describe("notification fan-out (integration)", () => {
     const reactors = await Promise.all(Array.from({ length: 10 }, () => createUser(projectId)));
     // sequential so exactly one reaction observes count === 10 (the threshold)
     for (const r of reactors) {
-      await api("POST", `${B}/entities/${e.id}/reactions`, { token: r.token, body: { type: "upvote" } });
+      await api("POST", `${B}/entities/${e.id}/reactions`, { token: r.token, body: { reactionType: "upvote" } });
     }
 
     const specific = (await ofType(alice, "entity-reaction-milestone-specific")).filter((n) => n.metadata.entityId === e.id);
@@ -196,8 +196,8 @@ describe("notification fan-out (integration)", () => {
     const dave = await createUser(projectId);
     const e1 = await newEntity(dave);
     const e2 = await newEntity(dave);
-    await api("POST", `${B}/entities/${e1.id}/reactions`, { token: alice.token, body: { type: "upvote" } });
-    await api("POST", `${B}/entities/${e2.id}/reactions`, { token: bob.token, body: { type: "upvote" } });
+    await api("POST", `${B}/entities/${e1.id}/reactions`, { token: alice.token, body: { reactionType: "upvote" } });
+    await api("POST", `${B}/entities/${e2.id}/reactions`, { token: bob.token, body: { reactionType: "upvote" } });
 
     const list = await api("GET", `${B}/app-notifications`, { token: dave.token });
     expect(list.status).toBe(200);

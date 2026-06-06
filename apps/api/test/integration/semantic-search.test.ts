@@ -23,9 +23,12 @@ describe("match_content semantic search RPC (integration)", () => {
 
   const match = async (types: string[] | null, space: string | null) => {
     const typesArg = types ? sql`array[${sql.join(types.map((t) => sql`${t}`), sql`, `)}]::text[]` : sql`null::text[]`;
+    // Privileged call (p_privileged => true): exercise the full result set across all source types.
+    // Messages are membership-gated in match_content (migration 0019), so a viewer-less, non-privileged
+    // call would correctly drop them — privileged review mode is what surfaces every source type.
     const rows = (await db.execute(sql`
       select source_type, source_id, similarity
-      from match_content(${projectId}::uuid, ${lit(vec(1))}::vector, 20, ${typesArg}, ${space}::uuid)
+      from match_content(${projectId}::uuid, ${lit(vec(1))}::vector, 20, ${typesArg}, ${space}::uuid, null::uuid, true)
     `)) as unknown as { source_type: string; source_id: string; similarity: number }[];
     return [...rows];
   };

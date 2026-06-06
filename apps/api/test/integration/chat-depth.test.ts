@@ -235,7 +235,8 @@ describe("chat depth (socket.io e2e + REST)", () => {
 
     const findConvo = async (token: string) => {
       const list = await api("GET", `${B}/chat/conversations`, { token });
-      return list.body.data.find((co: any) => co.id === convo.id);
+      // GET /chat/conversations follows the SDK cursor contract: { conversations, hasMore }.
+      return list.body.conversations.find((co: any) => co.id === convo.id);
     };
 
     expect((await findConvo(bob.token)).unreadCount).toBe(2);

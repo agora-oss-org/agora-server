@@ -49,12 +49,12 @@ describe("comments depth (integration)", () => {
   it("toggles a comment reaction (target=comment, no score refresh)", async () => {
     const { body: comment } = await mkComment(owner.token, { content: "react to me" });
 
-    const like = await api("POST", `${B}/comments/${comment.id}/reactions`, { token: other.token, body: { type: "like" } });
+    const like = await api("POST", `${B}/comments/${comment.id}/reactions`, { token: other.token, body: { reactionType: "like" } });
     expect(like.status).toBe(200);
     expect(like.body.reactionCounts.like).toBe(1);
     expect(like.body.userReaction).toBe("like");
 
-    const off = await api("POST", `${B}/comments/${comment.id}/reactions`, { token: other.token, body: { type: "like" } });
+    const off = await api("POST", `${B}/comments/${comment.id}/reactions`, { token: other.token, body: { reactionType: "like" } });
     expect(off.body.reactionCounts.like).toBe(0);
     expect(off.body.userReaction).toBeNull();
   });

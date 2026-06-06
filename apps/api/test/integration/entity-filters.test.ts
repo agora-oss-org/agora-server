@@ -110,7 +110,7 @@ describe("entity feed filters + sort (integration)", () => {
   });
 
   it("sortByReaction puts the most-reacted first", async () => {
-    await api("POST", `${B}/entities/${id.sushi}/reactions`, { token: owner.token, body: { type: "upvote" } });
+    await api("POST", `${B}/entities/${id.sushi}/reactions`, { token: owner.token, body: { reactionType: "upvote" } });
     const ranked = await feed("sortByReaction=upvote&sortDir=desc");
     expect(ranked[0]).toBe(id.sushi);
   });
