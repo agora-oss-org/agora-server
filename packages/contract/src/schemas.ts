@@ -101,11 +101,24 @@ export const feedConfigSchema = z
 // symmetric: both every stage; resolution-only: only at close. See lib/steward-config.ts.
 export const STEWARD_NOTIFY_POLICIES = ["power-aware", "symmetric", "resolution-only"] as const;
 export type StewardNotifyPolicy = (typeof STEWARD_NOTIFY_POLICIES)[number];
+// How mediation channels are run for a case. caucus: per-party private channels only (steward bridges,
+// fully preserves the respondent-anonymity guarantee). hybrid (default): caucus channels PLUS an optional
+// joint room when both parties consent and the case isn't flagged targeting. See lib/mediation.ts.
+export const STEWARD_MEDIATION_MODES = ["caucus", "hybrid"] as const;
+export type StewardMediationMode = (typeof STEWARD_MEDIATION_MODES)[number];
+// What happens to a case's mediation channels when the case closes. archive-read-only (default): lock
+// posting, keep history. lock-leave: lock + drop parties (steward keeps read access). leave-open: noop.
+export const STEWARD_MEDIATION_ON_CLOSE = ["archive-read-only", "lock-leave", "leave-open"] as const;
+export type StewardMediationOnClose = (typeof STEWARD_MEDIATION_ON_CLOSE)[number];
 export const stewardConfigSchema = z.object({
   notifyPolicy: z.enum(STEWARD_NOTIFY_POLICIES),
+  mediationMode: z.enum(STEWARD_MEDIATION_MODES),
+  mediationOnClose: z.enum(STEWARD_MEDIATION_ON_CLOSE),
 }).partial();
 export interface StewardConfigView {
   notifyPolicy: StewardNotifyPolicy;
+  mediationMode: StewardMediationMode;
+  mediationOnClose: StewardMediationOnClose;
 }
 
 // ─── users / profiles ────────────────────────────────────────────────────────

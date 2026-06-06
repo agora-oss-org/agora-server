@@ -1,8 +1,8 @@
 # 🕊️ Stewardship — a guide for stewards
 
 > 🚧 **Draft.** Stewardship is being built in stages. The **Caseload** (resolving conflicts between
-> members) is live; the **Watch** (spotting harm patterns proactively) and in-app **mediation
-> channels** are still on the way. Sections marked **🔜 Coming** describe where we're headed — we'll
+> members) and in-app **mediation channels** are live; the **Watch** (spotting harm patterns
+> proactively) is still on the way. Sections marked **🔜 Coming** describe where we're headed — we'll
 > fill in the details as we build them. If something here doesn't match what you see in the app yet,
 > trust the app; this page is the north star, not the changelog.
 
@@ -62,8 +62,8 @@ it or re-justify their pain to you. They've been through enough.
 
 ### 🧊 Async &amp; cooling-off
 A lot of online conflict is just *public + real-time*. Moving a dispute somewhere private and slow is
-often 80% of the de-escalation. (In-app channels for this are **🔜 Coming** — for now you coordinate
-out-of-band.)
+often 80% of the de-escalation. That's exactly what **mediation channels** (below) are for — a private,
+async space, built on the existing chat.
 
 ---
 
@@ -140,6 +140,48 @@ clear, removable abuse).
 
 ---
 
+## 💬 Mediation channels *(live)*
+
+The hardest part of a case is usually just *talking to people*. Mediation channels give you a **private,
+async space** to do that — built on the same chat the community already uses. The parties see the channel
+in their normal inbox; you read and post from the case in the admin.
+
+There are two shapes, and which you get is a **per-deployment setting** an operator chooses in
+**Settings → Stewardship → Mediation channels**:
+
+### 🤲 Caucus *(always available)*
+A **1:1 private channel between you and one party** — one for the complainant, one for the respondent.
+You shuttle between them. This is **caucus mediation**: it fully preserves the privacy-of-the-harmed —
+the respondent never sees who raised the case, because they're never in a room with them. For a
+**Targeting** case, this is the *only* shape you get (and rightly so).
+
+### 🫂 Joint room *(hybrid mode only)*
+A **shared room with you and both parties** — true face-to-face mediation, for when both people *consent*
+and the conflict is genuinely symmetric. A joint room is offered **only** when:
+
+- the deployment is in **hybrid** mode (the default), **and**
+- the case is **not** flagged **Targeting**, **and**
+- both a complainant and a respondent are on the case.
+
+If any of those isn't true, you stick to caucus. (A joint room inevitably reveals the parties to each
+other — which is the whole point when it's consensual, and exactly why we never force it.)
+
+### 🙋 Consent
+Opening a channel **invites** the party (they get a notification) — it never forces them. They take part
+by replying, or step away by leaving. No forced kumbaya: if someone won't engage, the case routes toward
+separation or protection instead.
+
+### 🌇 When the case closes
+What happens to the channels on close is also an operator setting:
+
+- **Archive read-only** *(default)* — posting locks, the history stays, and a "case resolved" line is
+  posted. A gentle wind-down that keeps the record.
+- **Lock &amp; remove parties** — posting locks and the parties leave the channel; you keep read access
+  for the audit trail.
+- **Leave open** — nothing changes; the channel stays a normal chat.
+
+---
+
 ## 🪪 Becoming a steward
 
 Stewardship is **granted by a deployment operator** — there's no self-signup. An operator adds you in
@@ -158,8 +200,6 @@ Things we've designed for but haven't built yet — this section will grow:
 - **📡 The Watch** — proactive pile-on / targeting detection over reactions, replies, and the
   automated-moderation signals, so you can catch harm *before* a report. Includes putting a **watch**
   on a member who's been targeted so new hits surface immediately.
-- **💬 Mediation channels** — bringing the parties into a private, async space to actually talk it
-  through (built on the existing chat), instead of coordinating out-of-band.
 - *(more as we go)*
 
 ## 🔔 Participant notifications *(live)*
@@ -188,6 +228,8 @@ A respondent notification **never** carries the complainant's identity, in any m
 - **Targeting** — the flag marking a case as one-sided harm (a pile-on / harassment), not a symmetric dispute.
 - **Escalation** — the last-resort outcome that removes the content.
 - **Caseload** — the reactive, case-by-case side of stewardship *(live)*.
+- **Mediation channel** — a private, async chat for a case. **Caucus** = steward ↔ one party (always
+  available); **joint room** = steward + both parties (hybrid mode, consensual, non-targeting only).
 - **Watch** — the proactive, pattern-spotting side *(🔜 coming)*.
 
 ---

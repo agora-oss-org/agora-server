@@ -32,7 +32,7 @@ export const stewardCaseState = pgEnum("steward_case_state", ["open", "in_mediat
 // repair/separation/protection come first; escalate-to-removal is the last resort.
 export const stewardCaseOutcome = pgEnum("steward_case_outcome", ["repaired", "separated", "protective_action", "escalated", "dismissed"]);
 // Timeline event kinds (append-only audit trail — nothing on a case is silently mutated).
-export const stewardCaseEventKind = pgEnum("steward_case_event_kind", ["opened", "note", "state_change", "assignment", "asymmetry", "outcome", "escalation"]);
+export const stewardCaseEventKind = pgEnum("steward_case_event_kind", ["opened", "note", "state_change", "assignment", "asymmetry", "outcome", "escalation", "mediation_opened", "mediation_closed"]);
 
 // ─── Reusable jsonb default: the 8 v7 reaction counts, all zero ──────────────
 export const zeroReactionCounts = sql`'{"upvote":0,"downvote":0,"like":0,"love":0,"wow":0,"sad":0,"angry":0,"funny":0}'::jsonb`;

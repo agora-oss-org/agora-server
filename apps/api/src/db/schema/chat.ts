@@ -7,6 +7,7 @@ import {
 import { conversationType, convMemberRole, moderationStatus, moderatedByType } from "./_shared.js";
 import { projects, profiles } from "./projects.js";
 import { spaces } from "./spaces.js";
+import { stewardCases } from "./steward.js";
 
 export const conversations = pgTable("conversations", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -15,6 +16,9 @@ export const conversations = pgTable("conversations", {
   name: text("name"),
   description: text("description"),
   spaceId: uuid("space_id").references(() => spaces.id, { onDelete: "cascade" }),
+  // Set when this conversation is a steward mediation channel (caucus or joint). The role + caucus party
+  // live in metadata.mediation = { role: 'caucus'|'joint', party? }. See lib/mediation.ts.
+  stewardCaseId: uuid("steward_case_id").references(() => stewardCases.id, { onDelete: "set null" }),
   createdById: uuid("created_by_id").references(() => profiles.id, { onDelete: "set null" }),
   avatarFileId: uuid("avatar_file_id"),
   lastMessageAt: timestamp("last_message_at", { withTimezone: true }),
@@ -25,6 +29,7 @@ export const conversations = pgTable("conversations", {
 }, (t) => [
   index("conversations_recent_idx").on(t.projectId, t.lastMessageAt.desc()),
   index("conversations_space_idx").on(t.spaceId),
+  index("conversations_steward_case_idx").on(t.stewardCaseId),
   check("conversations_posting_perm", sql`${t.postingPermission} in ('members','admins')`),
 ]);
 

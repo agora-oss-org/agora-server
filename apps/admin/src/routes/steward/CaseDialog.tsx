@@ -5,13 +5,16 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Ban, CheckCircle2, Crosshair, FileText, Handshake, MessageSquarePlus, RotateCcw, UserCheck, UserMinus,
+  Ban, CheckCircle2, Crosshair, FileText, Handshake, Lock, MessageSquarePlus, MessagesSquare,
+  RotateCcw, Send, UserCheck, UserMinus, Users,
 } from "lucide-react";
 import type { Comment, Entity } from "@agora/contract";
 import {
   addCaseNote, caseKey, caseUserLabel, escalateCase, getCase, patchCase,
+  listCaseChannels, openCaseChannels, listChannelMessages, sendChannelMessage,
+  channelsKey, channelMessagesKey,
   CLOSE_OUTCOMES, OUTCOME_LABEL, STATE_LABEL,
-  type CaseDetail, type CaseEvent, type PatchCaseBody,
+  type CaseDetail, type CaseEvent, type PatchCaseBody, type MediationChannel, type MediationRole,
 } from "../../lib/steward";
 import { contentDeepLink } from "../../lib/moderation";
 import { ApiError } from "../../lib/api";
@@ -206,6 +209,9 @@ function CaseBody({ c, onClose }: { c: CaseDetail; onClose: () => void }) {
           </div>
         ) : null}
 
+        {/* Mediation channels */}
+        <MediationSection c={c} />
+
         {/* Timeline */}
         <div className="space-y-2">
           <p className="flex items-center gap-1.5 text-sm font-medium text-fg">
@@ -285,6 +291,8 @@ function eventText(e: CaseEvent): string {
     case "asymmetry": return m.asymmetry ? "flagged this as targeting" : "cleared the targeting flag";
     case "outcome": return `closed as ${String(m.outcome ?? "?")}`;
     case "escalation": return "escalated — removed the content";
+    case "mediation_opened": return `opened ${m.kind === "joint" ? "a joint room" : "caucus channel(s)"}`;
+    case "mediation_closed": return "wound down the mediation channels";
     default: return e.kind;
   }
 }
@@ -301,5 +309,150 @@ function Timeline({ e }: { e: CaseEvent }) {
         <p className="text-xs text-faint">{relativeTime(e.createdAt)}</p>
       </div>
     </li>
+  );
+}
+
+// Mediation channels for the case — caucus (steward ↔ each party, private) and an optional joint room.
+// Messaging reuses the normal chat routes; the steward is a member, so they read/post right here.
+function MediationSection({ c }: { c: CaseDetail }) {
+  const qc = useQueryClient();
+  const toast = useToast();
+  const [openId, setOpenId] = useState<string | null>(null);
+
+  const channelsQuery = useQuery({
+    queryKey: channelsKey(c.id),
+    queryFn: () => listCaseChannels(c.id),
+    select: (d) => d.channels,
+  });
+
+  const onErr = (e: unknown) =>
+    toast({ title: "Couldn't open channel", description: e instanceof ApiError || e instanceof Error ? e.message : undefined, variant: "danger" });
+  const open = useMutation({
+    mutationFn: (kind: MediationRole) => openCaseChannels(c.id, kind),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: channelsKey(c.id) });
+      qc.invalidateQueries({ queryKey: caseKey(c.id) });
+      toast({ title: "Mediation channel opened", variant: "success" });
+    },
+    onError: onErr,
+  });
+
+  const channels = channelsQuery.data ?? [];
+  const hasCaucus = channels.some((ch) => ch.mediationRole === "caucus");
+  const hasJoint = channels.some((ch) => ch.mediationRole === "joint");
+  const bothParties = !!(c.complainantId && c.respondentId);
+  const partyLabel = (ch: MediationChannel) =>
+    ch.mediationRole === "joint"
+      ? "Joint room"
+      : `Caucus · ${ch.mediationParty === c.complainantId ? caseUserLabel(c.complainant) : ch.mediationParty === c.respondentId ? caseUserLabel(c.respondent) : "party"}`;
+
+  return (
+    <div className="space-y-2">
+      <p className="flex items-center gap-1.5 text-sm font-medium text-fg">
+        <MessagesSquare className="size-4 text-muted" /> Mediation channels
+      </p>
+      <p className="text-xs text-faint">
+        Bring the parties into a private, async space to talk it through. Caucus channels are 1:1 with the steward; a
+        joint room (both parties) is offered only in hybrid mode, when neither party is being targeted.
+      </p>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <Button size="sm" variant="outline" disabled={open.isPending || hasCaucus} onClick={() => open.mutate("caucus")}>
+          <MessagesSquare /> {hasCaucus ? "Caucus open" : "Open caucus"}
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={open.isPending || hasJoint || c.asymmetry || !bothParties}
+          title={c.asymmetry ? "Disabled for targeting cases" : !bothParties ? "Needs both parties" : undefined}
+          onClick={() => open.mutate("joint")}
+        >
+          <Users /> {hasJoint ? "Joint room open" : "Open joint room"}
+        </Button>
+      </div>
+
+      {channels.length ? (
+        <ul className="space-y-1.5">
+          {channels.map((ch) => (
+            <li key={ch.id}>
+              <button
+                type="button"
+                onClick={() => setOpenId((id) => (id === ch.id ? null : ch.id))}
+                className={`flex w-full items-center justify-between gap-2 rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
+                  openId === ch.id ? "border-primary bg-primary/5" : "border-border hover:bg-surface-2"
+                }`}
+              >
+                <span className="flex items-center gap-2 text-fg">
+                  {ch.mediationRole === "joint" ? <Users className="size-4 text-muted" /> : <MessagesSquare className="size-4 text-muted" />}
+                  {partyLabel(ch)}
+                  {ch.postingPermission === "admins" ? <Lock className="size-3 text-faint" /> : null}
+                </span>
+                <span className="text-xs text-faint">{openId === ch.id ? "Hide" : "Open"}</span>
+              </button>
+              {openId === ch.id ? <ChannelThread channel={ch} /> : null}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-xs text-faint">No channels yet.</p>
+      )}
+    </div>
+  );
+}
+
+function ChannelThread({ channel }: { channel: MediationChannel }) {
+  const qc = useQueryClient();
+  const toast = useToast();
+  const [text, setText] = useState("");
+  const locked = channel.postingPermission === "admins"; // post-close: steward (admin) can still post
+
+  const messagesQuery = useQuery({
+    queryKey: channelMessagesKey(channel.id),
+    queryFn: () => listChannelMessages(channel.id),
+    select: (d) => d.messages,
+  });
+
+  const send = useMutation({
+    mutationFn: () => sendChannelMessage(channel.id, text.trim()),
+    onSuccess: () => {
+      setText("");
+      qc.invalidateQueries({ queryKey: channelMessagesKey(channel.id) });
+    },
+    onError: (e) => toast({ title: "Couldn't send", description: e instanceof ApiError || e instanceof Error ? e.message : undefined, variant: "danger" }),
+  });
+
+  const messages = messagesQuery.data ?? [];
+  return (
+    <div className="mt-1.5 space-y-2 rounded-lg border border-border bg-bg p-3">
+      <div className="max-h-56 space-y-1.5 overflow-y-auto">
+        {messagesQuery.isLoading ? (
+          <p className="text-xs text-faint">Loading…</p>
+        ) : messages.length ? (
+          messages.map((m) => (
+            <div key={m.id} className="text-sm">
+              {m.userId === null ? (
+                <p className="italic text-faint">{m.content}</p>
+              ) : (
+                <p className="whitespace-pre-wrap break-words text-muted">{m.content}</p>
+              )}
+              <p className="text-[10px] text-faint">{relativeTime(m.createdAt)}</p>
+            </div>
+          ))
+        ) : (
+          <p className="text-xs text-faint">No messages yet. Say hello.</p>
+        )}
+      </div>
+      <div className="flex items-center gap-2">
+        <Input
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder={locked ? "Channel is read-only (case closed)" : "Message the channel as steward…"}
+          onKeyDown={(e) => { if (e.key === "Enter" && text.trim()) send.mutate(); }}
+        />
+        <Button size="sm" variant="secondary" disabled={send.isPending || !text.trim()} onClick={() => send.mutate()}>
+          <Send /> Send
+        </Button>
+      </div>
+    </div>
   );
 }

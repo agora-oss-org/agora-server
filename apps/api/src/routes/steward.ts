@@ -19,9 +19,11 @@ import { db } from "../db/index.js";
 import { logger } from "../lib/logger.js";
 import { stewardCases, stewardCaseEvents, reports, entities, comments, chatMessages, profiles } from "../db/schema/index.js";
 import { readPagination, paginate } from "../http/envelope.js";
-import { shapeCase, shapeCaseEvent, shapeEntity, shapeComment, shapeChatMessage, loadUsers } from "../lib/shape.js";
+import { shapeCase, shapeCaseEvent, shapeEntity, shapeComment, shapeChatMessage, shapeConversation, loadUsers } from "../lib/shape.js";
 import { emitToConversation } from "../realtime/socket.js";
 import { notifyStewardCaseEvent } from "../lib/notifications.js";
+import { getStewardConfig } from "../lib/steward-config.js";
+import { openCaucusChannels, openJointChannel, listCaseChannels, closeMediationForCase } from "../lib/mediation.js";
 import { listStewardIds, grantSteward, revokeSteward } from "../lib/stewards.js";
 import { parseBody } from "../lib/validation.js";
 import { Errors } from "../http/errors.js";
@@ -59,7 +61,14 @@ const patchCaseSchema = z.object({
 });
 const noteSchema = z.object({ body: z.string().min(1).max(4000) });
 const escalateSchema = z.object({ reason: z.string().max(1000).optional() });
+const openChannelSchema = z.object({ kind: z.enum(["caucus", "joint"]) });
 const grantSchema = z.object({ userId: z.string().uuid() });
+
+// Shape a mediation-channel conversation row for the steward UI (+ surface its mediation role/party).
+function shapeChannel(row: Parameters<typeof shapeConversation>[0]) {
+  const med = (row.metadata as { mediation?: { role?: string; party?: string } } | null)?.mediation;
+  return { ...shapeConversation(row), mediationRole: med?.role ?? null, mediationParty: med?.party ?? null };
+}
 
 // ─── helpers ───────────────────────────────────────────────────────────────
 async function addEvent(caseId: string, actorId: string | null, kind: EventKind, body: string | null = null, meta: unknown = null): Promise<void> {
@@ -218,6 +227,8 @@ export const stewardRoutes = new Hono<{ Variables: Variables }>()
         kind: "closed", caseId: row.id, actorId: actor, outcome: set.outcome,
         complainantId: updated!.complainantId, respondentId: updated!.respondentId, subjectType: updated!.subjectType,
       });
+      const { mediationOnClose } = await getStewardConfig(c.var.projectId);
+      await closeMediationForCase(c.var.projectId, row.id, mediationOnClose);
     } else if (set.state === "in_mediation") {
       await notifyStewardCaseEvent(c.var.projectId, {
         kind: "in_mediation", caseId: row.id, actorId: actor,
@@ -282,9 +293,48 @@ export const stewardRoutes = new Hono<{ Variables: Variables }>()
       kind: "closed", caseId: row.id, actorId: c.var.auth!.userId, outcome: "escalated",
       complainantId: row.complainantId, respondentId: row.respondentId, subjectType: row.subjectType,
     });
+    const { mediationOnClose } = await getStewardConfig(c.var.projectId);
+    await closeMediationForCase(c.var.projectId, row.id, mediationOnClose);
     logger.info({ projectId: c.var.projectId, caseId: row.id, stewardId: c.var.auth!.userId, subjectType: row.subjectType, subjectId: row.subjectId }, "steward: case escalated → content removed");
     const [shaped] = await hydrateCases(c.var.projectId, [updated!]);
     return c.json(shaped);
+  })
+  // ── Mediation channels for a case (built on chat). Steward/operator-gated; the steward + parties are
+  //    seeded as conversation members, so messaging itself flows through the normal /chat routes. List +
+  //    open here; wind-down happens automatically when the case closes (per project mediationOnClose).
+  .get("/cases/:id/channels", requireAuth, async (c) => {
+    requireSteward(c);
+    const row = await getCase(c.var.projectId, c.req.param("id"));
+    const channels = await listCaseChannels(c.var.projectId, row.id);
+    return c.json({ channels: channels.map(shapeChannel) });
+  })
+  .post("/cases/:id/channels", requireAuth, async (c) => {
+    requireSteward(c);
+    const body = parseBody(openChannelSchema, await c.req.json().catch(() => ({})), "steward");
+    const row = await getCase(c.var.projectId, c.req.param("id"));
+    const stewardId = c.var.auth!.userId;
+    let opened;
+    if (body.kind === "caucus") {
+      opened = await openCaucusChannels(row, stewardId);
+      if (opened.length === 0) throw Errors.badRequest("steward/no-parties", "This case has no parties to open a caucus with");
+    } else {
+      const { mediationMode } = await getStewardConfig(c.var.projectId);
+      const joint = await openJointChannel(row, stewardId, mediationMode);
+      if (!joint) {
+        throw Errors.badRequest(
+          "steward/joint-not-allowed",
+          mediationMode !== "hybrid"
+            ? "Joint rooms are disabled (mediation mode is caucus-only)"
+            : row.asymmetry
+              ? "A joint room can't be opened for a targeting case — use caucus channels"
+              : "A joint room needs both a complainant and a respondent",
+        );
+      }
+      opened = [joint];
+    }
+    await addEvent(row.id, stewardId, "mediation_opened", null, { kind: body.kind, conversationIds: opened.map((o) => o.id) });
+    logger.info({ projectId: c.var.projectId, caseId: row.id, stewardId, kind: body.kind, channels: opened.length }, "steward: mediation channel(s) opened");
+    return c.json({ channels: opened.map(shapeChannel) }, 201);
   })
   // ── Steward grant management (operator-only).
   .get("/stewards", requireAuth, async (c) => {

@@ -379,6 +379,26 @@ export async function notifyStewardCaseEvent(
   }
 }
 
+/**
+ * Invite a party into a steward mediation channel (caucus or joint). Carries only the conversation id +
+ * role — never any other party's identity. A caucus channel is steward↔party only (so there's nothing to
+ * leak); a joint room's members are visible by membership, which is the consensual point of a joint room
+ * (only opened when both parties consent and the case isn't flagged targeting — see lib/mediation.ts).
+ */
+export async function notifyMediationInvite(
+  projectId: string,
+  args: { recipientId: string; actorId: string; conversationId: string; role: "caucus" | "joint" },
+): Promise<void> {
+  try {
+    await insert(projectId, args.recipientId, args.actorId, "steward-mediation-invite", "open-conversation", {
+      conversationId: args.conversationId,
+      mediationRole: args.role,
+    });
+  } catch (err) {
+    logger.error({ err }, "[notifications] notifyMediationInvite failed");
+  }
+}
+
 /** On space membership approval: notify the approved member (space-membership-approved). */
 export async function notifyOnSpaceApproved(
   projectId: string,

@@ -7,7 +7,31 @@ import { api } from "./api";
 export type CaseState = "open" | "in_mediation" | "closed";
 export type CaseOutcome = "repaired" | "separated" | "protective_action" | "escalated" | "dismissed";
 export type SubjectType = "entity" | "comment" | "message";
-export type CaseEventKind = "opened" | "note" | "state_change" | "assignment" | "asymmetry" | "outcome" | "escalation";
+export type CaseEventKind = "opened" | "note" | "state_change" | "assignment" | "asymmetry" | "outcome" | "escalation" | "mediation_opened" | "mediation_closed";
+
+export type MediationRole = "caucus" | "joint";
+
+// A mediation channel = a chat conversation linked to the case (steward.ts shapeChannel). Messaging
+// flows through the normal /chat routes; we just list + open from the steward surface.
+export interface MediationChannel {
+  id: string;
+  type: "direct" | "group";
+  name: string | null;
+  mediationRole: MediationRole | null;
+  mediationParty: string | null; // for caucus: the party's profile id (steward ↔ this party)
+  postingPermission: "members" | "admins" | null;
+  lastMessageAt: string | null;
+  createdAt: string;
+}
+
+export interface ChatMessage {
+  id: string;
+  conversationId: string;
+  userId: string | null;
+  content: string | null;
+  createdAt: string;
+  metadata?: Record<string, unknown> | null;
+}
 
 export interface CaseUser {
   id: string;
@@ -125,6 +149,8 @@ export function caseUserLabel(u: CaseUser | null | undefined): string {
 export const caseloadKey = (state: CaseState, page: number) => ["steward", "cases", state, page] as const;
 export const caseKey = (id: string) => ["steward", "case", id] as const;
 export const stewardsKey = () => ["steward", "stewards"] as const;
+export const channelsKey = (caseId: string) => ["steward", "case", caseId, "channels"] as const;
+export const channelMessagesKey = (conversationId: string) => ["steward", "channel", conversationId, "messages"] as const;
 
 // ── fetchers / mutations ───────────────────────────────────────────────────────
 export function listCases(state: CaseState, page: number) {
@@ -149,6 +175,24 @@ export function addCaseNote(id: string, text: string) {
 
 export function escalateCase(id: string, reason?: string) {
   return api<Case>(`/steward/cases/${id}/escalate`, { method: "POST", body: reason ? { reason } : {} });
+}
+
+// ── mediation channels ─────────────────────────────────────────────────────────
+export function listCaseChannels(id: string) {
+  return api<{ channels: MediationChannel[] }>(`/steward/cases/${id}/channels`);
+}
+
+export function openCaseChannels(id: string, kind: MediationRole) {
+  return api<{ channels: MediationChannel[] }>(`/steward/cases/${id}/channels`, { method: "POST", body: { kind } });
+}
+
+// Channel messaging reuses the normal chat routes (the steward is a member of the channel).
+export function listChannelMessages(conversationId: string) {
+  return api<{ messages: ChatMessage[]; hasMore: boolean }>(`/chat/conversations/${conversationId}/messages`, { query: { sort: "asc", limit: 100 } });
+}
+
+export function sendChannelMessage(conversationId: string, content: string) {
+  return api<ChatMessage>(`/chat/conversations/${conversationId}/messages`, { method: "POST", body: { content } });
 }
 
 // ── steward grant management (operator-only) ───────────────────────────────────

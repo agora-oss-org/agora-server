@@ -2,7 +2,10 @@
 // ⚠️ Asymmetric contract: GET returns tunables NESTED under `params`; PATCH takes them FLAT, and a
 // `null` value clears a key (resets it to the built-in default). The re-rank webhook secret is
 // write-only — GET exposes only `hasSecret`.
-import { REACTION_TYPES, STEWARD_NOTIFY_POLICIES, type StewardNotifyPolicy, type StewardConfigView } from "@agora/contract";
+import {
+  REACTION_TYPES, STEWARD_NOTIFY_POLICIES, STEWARD_MEDIATION_MODES, STEWARD_MEDIATION_ON_CLOSE,
+  type StewardNotifyPolicy, type StewardMediationMode, type StewardMediationOnClose, type StewardConfigView,
+} from "@agora/contract";
 import { api } from "./api";
 
 // KNOWN_ALGORITHMS lives in the API's lib/ranking.ts (not the shared contract), so it's mirrored here.
@@ -149,14 +152,17 @@ export function testModeratorWebhook(): Promise<WebhookTestResult> {
 }
 
 // ── Stewardship (GET/PATCH /settings/steward) ─────────────────────────────────────────────────────
-// The conflict-resolution case-notification policy — who gets told about a case, and when.
-export { STEWARD_NOTIFY_POLICIES };
-export type { StewardNotifyPolicy, StewardConfigView };
+// Two knobs: the case-notification policy (who's told about a case, and when) and the mediation policy
+// (how channels are run — caucus vs hybrid — and wound down on close).
+export { STEWARD_NOTIFY_POLICIES, STEWARD_MEDIATION_MODES, STEWARD_MEDIATION_ON_CLOSE };
+export type { StewardNotifyPolicy, StewardMediationMode, StewardMediationOnClose, StewardConfigView };
 
 export function getStewardSettings(signal?: AbortSignal): Promise<StewardConfigView> {
   return api<StewardConfigView>("/settings/steward", { signal });
 }
 
-export function updateStewardSettings(patch: { notifyPolicy: StewardNotifyPolicy }): Promise<StewardConfigView> {
+export function updateStewardSettings(
+  patch: Partial<{ notifyPolicy: StewardNotifyPolicy; mediationMode: StewardMediationMode; mediationOnClose: StewardMediationOnClose }>,
+): Promise<StewardConfigView> {
   return api<StewardConfigView>("/settings/steward", { method: "PATCH", body: patch });
 }

@@ -48,6 +48,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `apps/api/src/lib/ssrf.ts` (`isPrivateIp` / `assertPublicUrl` / `safeFetchText`) with unit coverage.
 
 ### Added
+- **Steward: mediation channels.** Stewards can now bring a case's parties into a private, async space
+  to talk it through — built on the existing chat (the channel is a `conversations` row linked via the new
+  `conversations.steward_case_id`; messaging flows through the normal `/chat` routes). Two shapes,
+  governed by a per-project **mediation mode** (admin Settings → Stewardship): **caucus** (steward ↔ each
+  party privately — always available, preserves respondent anonymity) and, in **hybrid** mode (default), an
+  optional **joint room** with both parties, offered only when both consent and the case isn't flagged
+  targeting. Channel wind-down on close is also configurable (**mediationOnClose**: archive-read-only /
+  lock-leave / leave-open). New migration `0030` (`steward_case_id` + `mediation_opened`/`mediation_closed`
+  event kinds), `lib/mediation.ts` (with the pure `canOpenJoint` guard), `notifyMediationInvite`,
+  `GET`+`POST /steward/cases/:id/channels`, and an admin case Mediation panel (open channels + inline
+  thread) plus the two new Settings controls.
 - **Steward: participant notifications (configurable policy).** The complainant/respondent in a
   conflict-resolution case are now told what's happening via in-app notifications, governed by a
   per-project **notify policy** (admin Settings → Stewardship): **power-aware** (default — complainant

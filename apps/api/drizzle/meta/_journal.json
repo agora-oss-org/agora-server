@@ -211,6 +211,13 @@
       "when": 1780719832729,
       "tag": "0029_next_dreadnoughts",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1780722136093,
+      "tag": "0030_friendly_old_lace",
+      "breakpoints": true
     }
   ]
 }
