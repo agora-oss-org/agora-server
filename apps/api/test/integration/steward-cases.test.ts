@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { and, eq } from "drizzle-orm";
 import { db } from "../../src/db/index.js";
-import { stewardCases, stewardCaseEvents, reports, entities, comments, chatMessages, projectStewards } from "../../src/db/schema/index.js";
+import { stewardCases, stewardCaseEvents, projectStewards } from "../../src/db/schema/index.js";
 import { api, signToken, createProject, createUser, deleteProject, base } from "./helpers.js";
 
 describe("Stewardship: Cases & Conflict Resolution", () => {
@@ -14,11 +14,11 @@ describe("Stewardship: Cases & Conflict Resolution", () => {
 
   beforeAll(async () => {
     projectId = await createProject();
-    steward = await createUser(projectId, "member");
-    operator = await createUser(projectId, "member");
-    complainant = await createUser(projectId, "member");
-    respondent = await createUser(projectId, "member");
-    member = await createUser(projectId, "member");
+    steward = await createUser(projectId);
+    operator = await createUser(projectId);
+    complainant = await createUser(projectId);
+    respondent = await createUser(projectId);
+    member = await createUser(projectId);
 
     // Grant steward role to steward user
     await db.insert(projectStewards).values({
@@ -28,8 +28,8 @@ describe("Stewardship: Cases & Conflict Resolution", () => {
     });
 
     // Re-mint tokens with steward/operator flags
-    steward.token = signToken(steward.id, "member", false, true);
-    operator.token = signToken(operator.id, "member", true, false);
+    steward.token = await signToken(steward.id, "visitor", false, true);
+    operator.token = await signToken(operator.id, "visitor", true, false);
   });
 
   afterAll(async () => {
@@ -60,7 +60,7 @@ describe("Stewardship: Cases & Conflict Resolution", () => {
       // Create an entity and a report against it
       const entityRes = await api("POST", `${base(projectId)}/entities`, {
         token: member.token,
-        body: { body: "Test entity" },
+        body: { content: "Test entity" },
       });
       const entityId = entityRes.body.id;
 
@@ -137,7 +137,7 @@ describe("Stewardship: Cases & Conflict Resolution", () => {
       // Create entity to remove
       const entityRes = await api("POST", `${base(projectId)}/entities`, {
         token: member.token,
-        body: { body: "Entity to remove" },
+        body: { content: "Entity to remove" },
       });
       const entityId = entityRes.body.id;
 
@@ -177,13 +177,13 @@ describe("Stewardship: Cases & Conflict Resolution", () => {
       // Create entity + comment
       const entityRes = await api("POST", `${base(projectId)}/entities`, {
         token: member.token,
-        body: { body: "Parent entity" },
+        body: { content: "Parent entity" },
       });
       const entityId = entityRes.body.id;
 
-      const commentRes = await api("POST", `${base(projectId)}/entities/${entityId}/comments`, {
+      const commentRes = await api("POST", `${base(projectId)}/comments`, {
         token: member.token,
-        body: { body: "Comment to remove" },
+        body: { entityId, content: "Comment to remove" },
       });
       const commentId = commentRes.body.id;
 
@@ -208,8 +208,8 @@ describe("Stewardship: Cases & Conflict Resolution", () => {
       expect(escalateRes.status).toBe(200);
       expect(escalateRes.body.outcome).toBe("escalated");
 
-      // Verify comment is removed
-      const readRes = await api("GET", `${base(projectId)}/entities/${entityId}/comments/${commentId}`, {
+      // Verify comment is removed (hidden from non-privileged on single read)
+      const readRes = await api("GET", `${base(projectId)}/comments/${commentId}`, {
         token: member.token,
       });
       expect(readRes.status).toBe(404);
@@ -242,14 +242,15 @@ describe("Stewardship: Cases & Conflict Resolution", () => {
     it("reassigns from userId → null (unassign for triage)", async () => {
       const openRes = await api("POST", `${base(projectId)}/steward/cases`, {
         token: steward.token,
-        body: {
-          complainantId: complainant.id,
-          respondentId: respondent.id,
-          summary: "Test",
-          assignedToId: steward.id,
-        },
+        body: { complainantId: complainant.id, respondentId: respondent.id, summary: "Test" },
       });
       const caseId = openRes.body.id;
+
+      // Assign (open doesn't take an assignee — it's a separate PATCH).
+      await api("PATCH", `${base(projectId)}/steward/cases/${caseId}`, {
+        token: steward.token,
+        body: { assignedToId: steward.id },
+      });
 
       const unassignRes = await api("PATCH", `${base(projectId)}/steward/cases/${caseId}`, {
         token: steward.token,
@@ -340,12 +341,14 @@ describe("Stewardship: Cases & Conflict Resolution", () => {
     it("filters by assignment (assigned to me, to specific user)", async () => {
       const openRes = await api("POST", `${base(projectId)}/steward/cases`, {
         token: steward.token,
-        body: {
-          complainantId: complainant.id,
-          respondentId: respondent.id,
-          summary: "Assigned to steward",
-          assignedToId: steward.id,
-        },
+        body: { complainantId: complainant.id, respondentId: respondent.id, summary: "Assigned to steward" },
+      });
+      const caseId = openRes.body.id;
+
+      // Assign to the steward (open doesn't accept an assignee).
+      await api("PATCH", `${base(projectId)}/steward/cases/${caseId}`, {
+        token: steward.token,
+        body: { assignedToId: steward.id },
       });
 
       // Filter by "me"
@@ -354,10 +357,10 @@ describe("Stewardship: Cases & Conflict Resolution", () => {
       });
       expect(meRes.status).toBe(200);
       const ids = meRes.body.data.map((c: any) => c.id);
-      expect(ids).toContain(openRes.body.id);
+      expect(ids).toContain(caseId);
     });
 
-    it("paginates cases with cursor consistency", async () => {
+    it("paginates cases (offset envelope: page/pageSize/totalItems/hasMore)", async () => {
       // Create multiple cases
       for (let i = 0; i < 5; i++) {
         await api("POST", `${base(projectId)}/steward/cases`, {
@@ -366,13 +369,18 @@ describe("Stewardship: Cases & Conflict Resolution", () => {
         });
       }
 
-      // First page
+      // First page — the list uses the standard offset envelope, not a cursor.
       const page1Res = await api("GET", `${base(projectId)}/steward/cases?limit=2`, {
         token: steward.token,
       });
       expect(page1Res.status).toBe(200);
-      expect(page1Res.body.data.length).toBeGreaterThan(0);
-      expect(page1Res.body.pagination).toHaveProperty("next");
+      expect(page1Res.body.data.length).toBe(2);
+      expect(page1Res.body.pagination).toMatchObject({
+        page: 1,
+        pageSize: 2,
+        hasMore: true,
+      });
+      expect(page1Res.body.pagination.totalItems).toBeGreaterThanOrEqual(5);
     });
   });
 
@@ -518,7 +526,7 @@ describe("Stewardship: Cases & Conflict Resolution", () => {
       // Create entity to remove
       const entityRes = await api("POST", `${base(projectId)}/entities`, {
         token: member.token,
-        body: { body: "Entity" },
+        body: { content: "Entity" },
       });
 
       const openRes = await api("POST", `${base(projectId)}/steward/cases`, {
@@ -562,7 +570,7 @@ describe("Stewardship: Cases & Conflict Resolution", () => {
     it("case opened with entity as subject (hydrated in detail)", async () => {
       const entityRes = await api("POST", `${base(projectId)}/entities`, {
         token: member.token,
-        body: { body: "Entity text" },
+        body: { content: "Entity text" },
       });
       const entityId = entityRes.body.id;
 
@@ -583,19 +591,19 @@ describe("Stewardship: Cases & Conflict Resolution", () => {
       expect(detailRes.body.subject).toMatchObject({
         type: "entity",
         id: entityId,
-        entity: expect.objectContaining({ id: entityId, body: "Entity text" }),
+        entity: expect.objectContaining({ id: entityId, content: "Entity text" }),
       });
     });
 
     it("case opened with comment as subject (hydrated in detail)", async () => {
       const entityRes = await api("POST", `${base(projectId)}/entities`, {
         token: member.token,
-        body: { body: "Parent" },
+        body: { content: "Parent" },
       });
 
-      const commentRes = await api("POST", `${base(projectId)}/entities/${entityRes.body.id}/comments`, {
+      const commentRes = await api("POST", `${base(projectId)}/comments`, {
         token: member.token,
-        body: { body: "Comment text" },
+        body: { entityId: entityRes.body.id, content: "Comment text" },
       });
       const commentId = commentRes.body.id;
 
@@ -616,7 +624,7 @@ describe("Stewardship: Cases & Conflict Resolution", () => {
       expect(detailRes.body.subject).toMatchObject({
         type: "comment",
         id: commentId,
-        comment: expect.objectContaining({ id: commentId, body: "Comment text" }),
+        comment: expect.objectContaining({ id: commentId, content: "Comment text" }),
       });
     });
   });

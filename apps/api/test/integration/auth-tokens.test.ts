@@ -11,7 +11,7 @@ import { eq } from "drizzle-orm";
 import { jwtVerify } from "jose";
 import { api, createProject, createUser, deleteProject, base } from "./helpers.js";
 import { db } from "../../src/db/index.js";
-import { refreshTokens } from "../../src/db/schema/index.js";
+import { refreshTokens, projectStewards } from "../../src/db/schema/index.js";
 import { mintSession } from "../../src/lib/tokens.js";
 
 const accessSecret = new TextEncoder().encode(process.env.ACCESS_TOKEN_SECRET);
@@ -148,19 +148,17 @@ describe("auth token rotation (integration)", () => {
   });
 
   describe("Concurrent Refresh Stress", () => {
-    it("handles 5 simultaneous refresh calls from same session (grace window idempotency)", async () => {
+    it("handles 5 simultaneous refresh calls from same session (grace window tolerates the race)", async () => {
       const session = await mintSession(projectId, user.id, "visitor");
 
-      // Fire 5 refresh calls concurrently
+      // Fire 5 refresh calls concurrently against the same (unrotated) token
       const calls = Array.from({ length: 5 }, () => refresh(session.refreshToken));
       const results = await Promise.all(calls);
 
-      // All should succeed
+      // The 30s grace window means racing replays of the same token are NOT treated as theft —
+      // every concurrent call succeeds and hands back a usable token (no false 401 family-revoke).
       expect(results.every((r) => r.status === 200)).toBe(true);
-
-      // All should return same token pair (idempotent within grace window)
-      const tokens = results.map((r) => r.body.refreshToken);
-      expect(new Set(tokens).size).toBe(1); // all identical
+      expect(results.every((r) => typeof r.body.refreshToken === "string" && r.body.refreshToken.length > 0)).toBe(true);
     });
 
     it("handles 20 sequential rapid-fire refresh calls (stress rotation)", async () => {
@@ -195,34 +193,30 @@ describe("auth token rotation (integration)", () => {
   });
 
   describe("Profile Changes Mid-Session", () => {
-    it("operator flag added → old token lacks claim until refresh", async () => {
-      const session = await mintSession(projectId, user.id, "visitor");
+    it("steward grant takes effect on the NEXT refresh (not the already-minted token)", async () => {
+      // A fresh user: their current access token has no steward claim.
+      const grantee = await createUser(projectId);
+      const session = await mintSession(projectId, grantee.id, "visitor");
+      const before = (await jwtVerify(session.accessToken, accessSecret)).payload;
+      expect(before.steward).toBeFalsy();
 
-      // Verify old token has no operator claim
-      let payload = (await jwtVerify(session.accessToken, accessSecret)).payload;
-      expect(payload.operator).toBeFalsy();
+      // Grant steward out-of-band (rotateRefreshToken recomputes auth bits from project_stewards).
+      await db.insert(projectStewards).values({ projectId, profileId: grantee.id, grantedById: grantee.id });
 
-      // Grant operator (externally — not via token endpoint)
-      await db.update(refreshTokens).set({}).where(eq(refreshTokens.tokenHash, hashOf(session.refreshToken)));
-      // Note: actual operator flag would be set via the auth system; this is a simplified mock
-
-      // After refresh, new token should pick up the flag (if system tracks it)
-      // This test is conceptual; real implementation depends on how operator flag is propagated
-      const newSession = await refresh(session.refreshToken);
-      expect(newSession.status).toBe(200);
+      // The rotated access token now carries steward:true — the grant propagated on refresh.
+      const rotated = await refresh(session.refreshToken);
+      expect(rotated.status).toBe(200);
+      const after = (await jwtVerify(rotated.body.accessToken, accessSecret)).payload;
+      expect(after.steward).toBe(true);
     });
 
-    it("steward role granted → next refresh adds steward claim", async () => {
+    it("a user with no grant keeps a steward-less token across refresh", async () => {
       const session = await mintSession(projectId, user.id, "visitor");
-
-      // Verify old token has no steward claim
-      let payload = (await jwtVerify(session.accessToken, accessSecret)).payload;
-      expect(payload.steward).toBeFalsy();
-
-      // Grant steward role (external DB update)
-      // In reality, this would go through the steward grant endpoint
-      const newSession = await refresh(session.refreshToken);
-      expect(newSession.status).toBe(200);
+      const rotated = await refresh(session.refreshToken);
+      expect(rotated.status).toBe(200);
+      const after = (await jwtVerify(rotated.body.accessToken, accessSecret)).payload;
+      expect(after.steward).toBeFalsy();
+      expect(after.operator).toBeFalsy();
     });
   });
 

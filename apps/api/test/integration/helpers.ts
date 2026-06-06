@@ -27,9 +27,10 @@ export async function api(method: string, path: string, init: Init = {}) {
   return { status: res.status, body: text ? JSON.parse(text) : null, headers: res.headers };
 }
 
-/** Mint an Agora access token the auth middleware will accept (HS256 over ACCESS_TOKEN_SECRET). */
-export function signToken(userId: string, role = "visitor", operator = false) {
-  return new SignJWT({ role, operator })
+/** Mint an Agora access token the auth middleware will accept (HS256 over ACCESS_TOKEN_SECRET).
+ *  `steward` stamps the `steward` claim the auth middleware reads back as `isSteward`. */
+export function signToken(userId: string, role = "visitor", operator = false, steward = false) {
+  return new SignJWT({ role, operator, steward })
     .setProtectedHeader({ alg: "HS256" })
     .setSubject(userId)
     .setExpirationTime("1h")

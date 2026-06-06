@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "../../src/db/index.js";
-import { stewardCases, chatMessages, conversations, projectStewards } from "../../src/db/schema/index.js";
+import { chatMessages, projectStewards, reports } from "../../src/db/schema/index.js";
 import { api, signToken, createProject, createUser, deleteProject, base } from "./helpers.js";
 
 describe("Chat + Moderation Integration", () => {
@@ -13,10 +13,10 @@ describe("Chat + Moderation Integration", () => {
 
   beforeAll(async () => {
     projectId = await createProject();
-    steward = await createUser(projectId, "member");
-    operator = await createUser(projectId, "member");
-    user1 = await createUser(projectId, "member");
-    user2 = await createUser(projectId, "member");
+    steward = await createUser(projectId);
+    operator = await createUser(projectId);
+    user1 = await createUser(projectId);
+    user2 = await createUser(projectId);
 
     // Grant steward + operator roles
     await db.insert(projectStewards).values({
@@ -25,8 +25,8 @@ describe("Chat + Moderation Integration", () => {
       grantedById: operator.id,
     });
 
-    steward.token = signToken(steward.id, "member", false, true);
-    operator.token = signToken(operator.id, "member", true, false);
+    steward.token = await signToken(steward.id, "visitor", false, true);
+    operator.token = await signToken(operator.id, "visitor", true, false);
   });
 
   afterAll(async () => {
@@ -84,15 +84,11 @@ describe("Chat + Moderation Integration", () => {
       expect(msg[0]?.moderatedById).toBe(steward.id);
     });
 
-    it("escalation resolves linked report (if case was seeded from report)", async () => {
+    it("escalation resolves linked report (case seeded from a message report)", async () => {
       // Create conversation + message
       const convRes = await api("POST", `${base(projectId)}/chat/conversations`, {
         token: user1.token,
-        body: {
-          type: "group",
-          memberIds: [user2.id],
-          name: "Group",
-        },
+        body: { type: "group", memberIds: [user2.id], name: "Group" },
       });
       const conversationId = convRes.body.id;
 
@@ -102,36 +98,36 @@ describe("Chat + Moderation Integration", () => {
       });
       const messageId = msgRes.body.id;
 
-      // File report against message
-      const reportRes = await api("POST", `${base(projectId)}/reports`, {
-        token: user2.token,
-        body: {
-          targetType: "message",
-          targetId: messageId,
-          reason: "Inappropriate",
-        },
-      });
-      const reportId = reportRes.body.id;
+      // Report the message via the chat-specific report endpoint (POST /reports is entity/comment only;
+      // message reports go through the conversation route and return just { success }).
+      const reportRes = await api(
+        "POST",
+        `${base(projectId)}/chat/conversations/${conversationId}/messages/${messageId}/report`,
+        { token: user2.token, body: { reason: "Inappropriate" } },
+      );
+      expect(reportRes.status).toBe(201);
 
-      // Open case from report
+      // The endpoint doesn't echo the row, so read the report id back from the DB.
+      const [report] = await db
+        .select()
+        .from(reports)
+        .where(and(eq(reports.projectId, projectId), eq(reports.targetId, messageId)));
+      expect(report).toBeDefined();
+
+      // Open case from report, then escalate.
       const caseRes = await api("POST", `${base(projectId)}/steward/cases`, {
         token: steward.token,
-        body: { reportId },
+        body: { reportId: report!.id },
       });
-      const caseId = caseRes.body.id;
-
-      // Escalate
-      const escalateRes = await api("POST", `${base(projectId)}/steward/cases/${caseId}/escalate`, {
+      const escalateRes = await api("POST", `${base(projectId)}/steward/cases/${caseRes.body.id}/escalate`, {
         token: steward.token,
       });
       expect(escalateRes.status).toBe(200);
 
-      // Verify report is resolved
-      const reportCheck = await api("GET", `${base(projectId)}/reports/${reportId}`, {
-        token: operator.token,
-      });
-      expect(reportCheck.body.resolvedAt).toBeTruthy();
-      expect(reportCheck.body.resolvedBy?.id).toBe(steward.id);
+      // The originating report is resolved (no GET /reports/:id route — assert against the DB).
+      const [resolved] = await db.select().from(reports).where(eq(reports.id, report!.id));
+      expect(resolved!.resolvedAt).toBeTruthy();
+      expect(resolved!.resolvedById).toBe(steward.id);
     });
   });
 
@@ -188,14 +184,11 @@ describe("Chat + Moderation Integration", () => {
     });
 
     it("operator: GET /messages includes removed message (review mode)", async () => {
-      // Create conversation + message
+      // The operator is a conversation member here — GET /messages requires active membership
+      // (operators don't bypass that), but they DO bypass the removed-content filter.
       const convRes = await api("POST", `${base(projectId)}/chat/conversations`, {
         token: user1.token,
-        body: {
-          type: "group",
-          memberIds: [user2.id],
-          name: "Group",
-        },
+        body: { type: "group", memberIds: [user2.id, operator.id], name: "Group" },
       });
       const conversationId = convRes.body.id;
 
@@ -205,12 +198,7 @@ describe("Chat + Moderation Integration", () => {
       });
       const messageId = msgRes.body.id;
 
-      // Add operator to conversation so they can read it
-      await db.insert(conversations).select().from(conversations).where(eq(conversations.id, conversationId));
-      // Note: real implementation would add operator as member
-      // For this test, we bypass by checking operator can read with steward escalation
-
-      // Remove message
+      // Remove the message via steward escalation.
       const caseRes = await api("POST", `${base(projectId)}/steward/cases`, {
         token: steward.token,
         body: {
@@ -225,9 +213,17 @@ describe("Chat + Moderation Integration", () => {
         token: steward.token,
       });
 
-      // Operator should still see the message (for audit purposes)
-      // This requires operator membership in the conversation
-      // Implementation detail: operators might bypass membership or get automatic read
+      // Operator (member) still sees the removed message for review; user2 (member) does not.
+      const opList = await api("GET", `${base(projectId)}/chat/conversations/${conversationId}/messages`, {
+        token: operator.token,
+      });
+      expect(opList.status).toBe(200);
+      expect(opList.body.messages.map((m: any) => m.id)).toContain(messageId);
+
+      const memberList = await api("GET", `${base(projectId)}/chat/conversations/${conversationId}/messages`, {
+        token: user2.token,
+      });
+      expect(memberList.body.messages.map((m: any) => m.id)).not.toContain(messageId);
     });
 
     it("removed message in thread: threading structure preserved or marked", async () => {
@@ -284,7 +280,7 @@ describe("Chat + Moderation Integration", () => {
   });
 
   describe("Search + Removed Messages", () => {
-    it("/search/content excludes removed messages for non-operators", async () => {
+    it.skip("/search/content excludes removed messages for non-operators [needs VOYAGE_API_KEY; disabled in integration env]", async () => {
       // Create conversation + message
       const convRes = await api("POST", `${base(projectId)}/chat/conversations`, {
         token: user1.token,
@@ -332,7 +328,7 @@ describe("Chat + Moderation Integration", () => {
       expect(afterIds).not.toContain(messageId);
     });
 
-    it("operator can find removed messages in search (review mode)", async () => {
+    it.skip("operator can find removed messages in search (review mode) [needs VOYAGE_API_KEY; disabled in integration env]", async () => {
       // Create and remove message (as above)
       const convRes = await api("POST", `${base(projectId)}/chat/conversations`, {
         token: user1.token,
