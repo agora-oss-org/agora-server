@@ -2,7 +2,7 @@
 // ⚠️ Asymmetric contract: GET returns tunables NESTED under `params`; PATCH takes them FLAT, and a
 // `null` value clears a key (resets it to the built-in default). The re-rank webhook secret is
 // write-only — GET exposes only `hasSecret`.
-import { REACTION_TYPES } from "@agora/contract";
+import { REACTION_TYPES, STEWARD_NOTIFY_POLICIES, type StewardNotifyPolicy, type StewardConfigView } from "@agora/contract";
 import { api } from "./api";
 
 // KNOWN_ALGORITHMS lives in the API's lib/ranking.ts (not the shared contract), so it's mirrored here.
@@ -146,4 +146,17 @@ export function updateModeratorConfig(patch: ModeratorConfigPatch): Promise<Mode
 // Pings the SAVED moderator URL. 400 if none is configured.
 export function testModeratorWebhook(): Promise<WebhookTestResult> {
   return api<WebhookTestResult>("/settings/moderator/test", { method: "POST" });
+}
+
+// ── Stewardship (GET/PATCH /settings/steward) ─────────────────────────────────────────────────────
+// The conflict-resolution case-notification policy — who gets told about a case, and when.
+export { STEWARD_NOTIFY_POLICIES };
+export type { StewardNotifyPolicy, StewardConfigView };
+
+export function getStewardSettings(signal?: AbortSignal): Promise<StewardConfigView> {
+  return api<StewardConfigView>("/settings/steward", { signal });
+}
+
+export function updateStewardSettings(patch: { notifyPolicy: StewardNotifyPolicy }): Promise<StewardConfigView> {
+  return api<StewardConfigView>("/settings/steward", { method: "PATCH", body: patch });
 }

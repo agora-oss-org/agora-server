@@ -48,6 +48,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `apps/api/src/lib/ssrf.ts` (`isPrivateIp` / `assertPublicUrl` / `safeFetchText`) with unit coverage.
 
 ### Added
+- **Steward: participant notifications (configurable policy).** The complainant/respondent in a
+  conflict-resolution case are now told what's happening via in-app notifications, governed by a
+  per-project **notify policy** (admin Settings → Stewardship): **power-aware** (default — complainant
+  every stage, respondent only when their content is removed, never told who raised it), **symmetric**
+  (both every stage), or **resolution-only** (close only). Respondent notifications never carry the
+  complainant's identity. New `projects.steward_config` (migration `0029`), `lib/steward-config.ts`,
+  `notifyStewardCaseEvent` + the pure `stewardCaseRecipients` matrix in `lib/notifications.ts` (fired at
+  open / in-mediation / close / escalate), `GET`+`PATCH /settings/steward`, and the admin Stewardship
+  settings panel. Notifications are polled (no realtime); the forked SDK renders the new types generically
+  until it adds them.
 - **Bundled TLS edge proxy (Caddy) — optional single front door.** A new `proxy` service in
   `docker-compose.yml`, gated behind the **`edge` profile** (`docker compose --profile edge up`), that
   terminates HTTPS with **automatic Let's Encrypt certs** (auto-renewed; internal CA for `localhost` so

@@ -33,6 +33,10 @@ export const projects = pgTable("projects", {
   // now ALWAYS hidden (filtered out / 404 for non-moderators) — see lib/moderation-visibility.ts.
   // Column kept to avoid a migration; safe to drop later.
   moderationConfig: jsonb("moderation_config").notNull().default(sql`'{}'::jsonb`),
+  // Steward (conflict-resolution) tuning. Currently `{ notifyPolicy }` — who gets notified about a case
+  // (power-aware | symmetric | resolution-only). Resolved via lib/steward-config.ts; edited in admin
+  // Settings → Stewardship. Empty = the power-aware default.
+  stewardConfig: jsonb("steward_config").notNull().default(sql`'{}'::jsonb`),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });

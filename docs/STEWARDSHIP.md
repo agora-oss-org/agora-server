@@ -160,8 +160,22 @@ Things we've designed for but haven't built yet — this section will grow:
   on a member who's been targeted so new hits surface immediately.
 - **💬 Mediation channels** — bringing the parties into a private, async space to actually talk it
   through (built on the existing chat), instead of coordinating out-of-band.
-- **📨 Participant notifications** — letting the people in a case know what's happening, with care.
 - *(more as we go)*
+
+## 🔔 Participant notifications *(live)*
+
+The people in a case are kept informed through their normal in-app notifications — **how much**, and
+**who**, is a per-deployment choice an operator sets in **Settings → Stewardship**:
+
+- **Power-aware** *(default)* — the complainant hears at every stage (a steward is reviewing →
+  in mediation → resolved); the respondent is told **only** when their content is actually removed (or a
+  protective action is taken), and is **never** told who raised the case. Honors privacy of the harmed
+  and doesn't tip off / pre-accuse.
+- **Symmetric** — both parties are notified at every stage (the respondent still never learns the
+  complainant's identity).
+- **Resolution-only** — quietest: notify only at close.
+
+A respondent notification **never** carries the complainant's identity, in any mode.
 
 ---
 

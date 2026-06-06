@@ -21,6 +21,7 @@ import { stewardCases, stewardCaseEvents, reports, entities, comments, chatMessa
 import { readPagination, paginate } from "../http/envelope.js";
 import { shapeCase, shapeCaseEvent, shapeEntity, shapeComment, shapeChatMessage, loadUsers } from "../lib/shape.js";
 import { emitToConversation } from "../realtime/socket.js";
+import { notifyStewardCaseEvent } from "../lib/notifications.js";
 import { listStewardIds, grantSteward, revokeSteward } from "../lib/stewards.js";
 import { parseBody } from "../lib/validation.js";
 import { Errors } from "../http/errors.js";
@@ -150,6 +151,10 @@ export const stewardRoutes = new Hono<{ Variables: Variables }>()
       openedById: c.var.auth!.userId,
     }).returning();
     await addEvent(row!.id, c.var.auth!.userId, "opened", summary ?? null, reportId ? { reportId } : null);
+    await notifyStewardCaseEvent(c.var.projectId, {
+      kind: "opened", caseId: row!.id, actorId: c.var.auth!.userId,
+      complainantId: row!.complainantId, respondentId: row!.respondentId, subjectType: row!.subjectType,
+    });
     logger.info({ projectId: c.var.projectId, caseId: row!.id, openedBy: c.var.auth!.userId, reportId: reportId ?? null }, "steward: case opened");
     const [shaped] = await hydrateCases(c.var.projectId, [row!]);
     return c.json(shaped, 201);
@@ -207,6 +212,18 @@ export const stewardRoutes = new Hono<{ Variables: Variables }>()
     const [updated] = await db.update(stewardCases).set(set)
       .where(and(eq(stewardCases.projectId, c.var.projectId), eq(stewardCases.id, row.id))).returning();
     for (const e of events) await addEvent(updated!.id, actor, e.kind, e.body, e.meta);
+    // Notify the parties per the project policy: a non-escalate close, or a move into mediation.
+    if (set.outcome) {
+      await notifyStewardCaseEvent(c.var.projectId, {
+        kind: "closed", caseId: row.id, actorId: actor, outcome: set.outcome,
+        complainantId: updated!.complainantId, respondentId: updated!.respondentId, subjectType: updated!.subjectType,
+      });
+    } else if (set.state === "in_mediation") {
+      await notifyStewardCaseEvent(c.var.projectId, {
+        kind: "in_mediation", caseId: row.id, actorId: actor,
+        complainantId: updated!.complainantId, respondentId: updated!.respondentId,
+      });
+    }
     logger.info({ projectId: c.var.projectId, caseId: row.id, actor, changes: Object.keys(set) }, "steward: case updated");
     const [shaped] = await hydrateCases(c.var.projectId, [updated!]);
     return c.json(shaped);
@@ -261,6 +278,10 @@ export const stewardRoutes = new Hono<{ Variables: Variables }>()
     }
     // Tell connected chat clients to drop the removed message live (entities/comments hide on next read).
     if (msgConversationId) emitToConversation(msgConversationId, "message:removed", { messageId: row.subjectId, conversationId: msgConversationId });
+    await notifyStewardCaseEvent(c.var.projectId, {
+      kind: "closed", caseId: row.id, actorId: c.var.auth!.userId, outcome: "escalated",
+      complainantId: row.complainantId, respondentId: row.respondentId, subjectType: row.subjectType,
+    });
     logger.info({ projectId: c.var.projectId, caseId: row.id, stewardId: c.var.auth!.userId, subjectType: row.subjectType, subjectId: row.subjectId }, "steward: case escalated → content removed");
     const [shaped] = await hydrateCases(c.var.projectId, [updated!]);
     return c.json(shaped);

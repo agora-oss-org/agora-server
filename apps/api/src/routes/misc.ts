@@ -14,8 +14,9 @@ import { env } from "../lib/env.js";
 import { mintSession } from "../lib/tokens.js";
 import * as webhooks from "../lib/webhooks.js";
 import { getFeedConfig, invalidateFeedConfig, feedConfigView } from "../lib/feed-config.js";
+import { getStewardConfig, invalidateStewardConfig, stewardConfigView } from "../lib/steward-config.js";
 import { safeFetchText } from "../lib/ssrf.js";
-import { parseBody, oauthAuthorizeSchema, signTestingJwtSchema, webhookConfigSchema, feedConfigSchema, moderatorConfigSchema, DEFAULT_MODERATION_CATEGORIES } from "../lib/validation.js";
+import { parseBody, oauthAuthorizeSchema, signTestingJwtSchema, webhookConfigSchema, feedConfigSchema, moderatorConfigSchema, stewardConfigSchema, DEFAULT_MODERATION_CATEGORIES } from "../lib/validation.js";
 
 type ProfileRow = typeof profiles.$inferSelect;
 
@@ -143,6 +144,21 @@ export const miscRoutes = new Hono<{ Variables: Variables }>()
     await db.update(projects).set({ feedConfig: next }).where(eq(projects.id, c.var.projectId));
     invalidateFeedConfig(c.var.projectId); // cached 30s — drop it now
     return c.json(feedConfigView(await getFeedConfig(c.var.projectId)));
+  })
+  // ── stewardship (conflict-resolution; project-admin only) ─────────────────────
+  // Currently just the case-notification policy (who gets told what — see lib/notifications.ts).
+  .get("/settings/steward", requireAuth, async (c) => {
+    await requireProjectAdmin(c);
+    return c.json(stewardConfigView(await getStewardConfig(c.var.projectId)));
+  })
+  .patch("/settings/steward", requireAuth, async (c) => {
+    await requireProjectAdmin(c);
+    const body = parseBody(stewardConfigSchema, await c.req.json().catch(() => ({})), "steward");
+    const [row] = await db.select({ stewardConfig: projects.stewardConfig }).from(projects).where(eq(projects.id, c.var.projectId)).limit(1);
+    const next = { ...((row?.stewardConfig && typeof row.stewardConfig === "object" ? row.stewardConfig : {}) as Record<string, unknown>), ...body };
+    await db.update(projects).set({ stewardConfig: next }).where(eq(projects.id, c.var.projectId));
+    invalidateStewardConfig(c.var.projectId);
+    return c.json(stewardConfigView(await getStewardConfig(c.var.projectId)));
   })
   // ── moderator integration (internal @agora/moderator service; project-admin only) ─
   // Everything about automated moderation for the project: the internal notifier (url + secret, the

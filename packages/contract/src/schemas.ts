@@ -95,6 +95,19 @@ export const feedConfigSchema = z
   })
   .partial();
 
+// ─── stewardship ──────────────────────────────────────────────────────────────
+// Who gets notified about a steward conflict-resolution case (project setting; admin Settings →
+// Stewardship). power-aware (default): complainant every stage, respondent only on content removal;
+// symmetric: both every stage; resolution-only: only at close. See lib/steward-config.ts.
+export const STEWARD_NOTIFY_POLICIES = ["power-aware", "symmetric", "resolution-only"] as const;
+export type StewardNotifyPolicy = (typeof STEWARD_NOTIFY_POLICIES)[number];
+export const stewardConfigSchema = z.object({
+  notifyPolicy: z.enum(STEWARD_NOTIFY_POLICIES),
+}).partial();
+export interface StewardConfigView {
+  notifyPolicy: StewardNotifyPolicy;
+}
+
 // ─── users / profiles ────────────────────────────────────────────────────────
 export const updateProfileSchema = z
   .object({

@@ -1,0 +1,1 @@
+ALTER TABLE "projects" ADD COLUMN "steward_config" jsonb DEFAULT '{}'::jsonb NOT NULL;

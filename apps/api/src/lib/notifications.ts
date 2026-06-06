@@ -14,9 +14,11 @@
 // Realtime: NOT delivered over socket.io — the SDK's socket contract (realtime/socket.ts
 // ServerToClientEvents) has only chat events, matching Replyke. Clients poll the inbox.
 import { and, desc, eq } from "drizzle-orm";
+import type { StewardNotifyPolicy } from "@agora/contract";
 import { db } from "../db/index.js";
 import { appNotifications, profiles, entities, comments, reactions } from "../db/schema/index.js";
 import { shapeNotification } from "./shape.js";
+import { getStewardConfig } from "./steward-config.js";
 import * as webhooks from "./webhooks.js";
 import { logger } from "./logger.js";
 
@@ -302,6 +304,78 @@ export async function notifyOnFollow(projectId: string, followerId: string, foll
     await insert(projectId, followedId, followerId, "new-follow", "open-profile", { ...actor });
   } catch (err) {
     logger.error({ err }, "[notifications] notifyOnFollow failed");
+  }
+}
+
+// ─── steward conflict-resolution notifications ───────────────────────────────
+// The case lifecycle stage being announced.
+export type StewardCaseKind = "opened" | "in_mediation" | "closed";
+// Outcomes that DID something to the respondent's content (so they're told, content-framed).
+const RESPONDENT_AFFECTING_OUTCOMES = new Set(["escalated", "protective_action"]);
+const CASE_TYPE: Record<StewardCaseKind, string> = {
+  opened: "steward-case-opened",
+  in_mediation: "steward-case-in-mediation",
+  closed: "steward-case-resolved",
+};
+
+export interface StewardCaseCtx {
+  caseId: string;
+  complainantId?: string | null;
+  respondentId?: string | null;
+  subjectType?: string | null;
+}
+interface StewardNote { recipientId: string; type: string; action: string; metadata: Record<string, unknown> }
+
+/**
+ * Pure policy matrix — the single place that decides who is notified about a steward case, with what,
+ * and when. Respondent notifications NEVER carry the complainant's identity. (Unit-tested.)
+ * - power-aware:     complainant every stage; respondent only on content-affecting outcomes (content-framed).
+ * - symmetric:       both parties every stage (respondent still case-framed, no complainant info).
+ * - resolution-only: complainant only at close; respondent only on content-affecting outcomes.
+ */
+export function stewardCaseRecipients(
+  policy: StewardNotifyPolicy,
+  kind: StewardCaseKind,
+  outcome: string | null | undefined,
+  ctx: StewardCaseCtx,
+): StewardNote[] {
+  const notes: StewardNote[] = [];
+  const caseMeta = { caseId: ctx.caseId, ...(outcome ? { outcome } : {}) };
+
+  // Complainant — case-framed.
+  const complainantStage = policy === "resolution-only" ? kind === "closed" : true;
+  if (ctx.complainantId && complainantStage) {
+    notes.push({ recipientId: ctx.complainantId, type: CASE_TYPE[kind], action: "steward-case", metadata: caseMeta });
+  }
+
+  // Respondent — symmetric mirrors the complainant (case-framed, no complainant info); otherwise only a
+  // content-framed notice when their content was actually removed / a protective action was taken.
+  if (ctx.respondentId) {
+    if (policy === "symmetric") {
+      notes.push({ recipientId: ctx.respondentId, type: CASE_TYPE[kind], action: "steward-case", metadata: caseMeta });
+    } else if (kind === "closed" && outcome && RESPONDENT_AFFECTING_OUTCOMES.has(outcome)) {
+      notes.push({
+        recipientId: ctx.respondentId,
+        type: "steward-content-removed",
+        action: "steward-content",
+        metadata: { outcome, ...(ctx.subjectType ? { subjectType: ctx.subjectType } : {}) }, // no caseId / complainant
+      });
+    }
+  }
+  return notes;
+}
+
+/** Fire steward-case notifications for a lifecycle event, honoring the project's notifyPolicy. */
+export async function notifyStewardCaseEvent(
+  projectId: string,
+  args: StewardCaseCtx & { kind: StewardCaseKind; actorId: string; outcome?: string | null },
+): Promise<void> {
+  try {
+    const { notifyPolicy } = await getStewardConfig(projectId);
+    const notes = stewardCaseRecipients(notifyPolicy, args.kind, args.outcome ?? null, args);
+    for (const n of notes) await insert(projectId, n.recipientId, args.actorId, n.type, n.action, n.metadata);
+  } catch (err) {
+    logger.error({ err }, "[notifications] notifyStewardCaseEvent failed");
   }
 }
 
