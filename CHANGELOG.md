@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **`pnpm db:migrate` now reads the correct journal.** `drizzle.config.ts` `migrations.schema` was
+  `public` while the runtime migrator (`scripts/migrate.mjs` / `db:migrate:run`) writes the journal in
+  the `drizzle` schema — so `db:migrate` saw an empty journal and tried to re-apply from `0000`. Pointed
+  drizzle-kit at the `drizzle` schema so both runners agree.
+
 ### Security
 - **Upload size + image-dimension caps.** Every upload path now enforces a `MAX_UPLOAD_BYTES` byte cap
   (default 25 MiB → `413 storage/file-too-large`) before buffering, plus a **50 MP** image limit
@@ -78,6 +84,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `docs/SCORER.md`, `docs/superpowers/specs/2026-06-05-scorer-architecture.md`. See `services/scorer/`.
 
 ### Changed
+- **Steward escalation now removes chat messages.** `POST /steward/cases/:id/escalate` previously rejected
+  `subjectType:"message"`; it now stamps the message `moderationStatus="removed"` (`moderatedByType="user"`)
+  like entities/comments, **hides removed messages** from conversation members on read
+  (`GET /chat/conversations/:id/messages` now applies the moderation gate; operators still see them), and
+  fans out the realtime `message:removed` event. Case detail (`GET /steward/cases/:id`) hydrates the
+  message subject so the steward sees what they're removing.
 - **Moderation enqueue moved from the HMAC webhook to a pgmq Postgres trigger** (migration `0027`). The
   `apps/api/src/lib/webhooks.ts` `MODERATION_EVENTS` notifier path is superseded (left in place for the
   external-webhook half; dead-after-cutover cleanup deferred).

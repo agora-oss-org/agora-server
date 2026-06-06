@@ -135,8 +135,8 @@ originating report is resolved. It's powerful and it's permanent-ish — reach f
 and protection first. Escalation is what you do when those aren't enough or aren't appropriate (e.g.
 clear, removable abuse).
 
-> 📝 *Note: today escalation handles **posts and comments**. Chat messages aren't removable from the
-> steward flow yet — **🔜 Coming**.*
+> 📝 *Escalation removes **posts, comments, and chat messages** — a removed chat message disappears for
+> everyone in the conversation (it stays visible to operators for review).*
 
 ---
 
