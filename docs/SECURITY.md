@@ -111,9 +111,12 @@ bound uploads and JSON bodies.
 ### 8. Operators, storage, and backups
 - **`OPERATOR_USER_IDS` / `OPERATOR_EMAILS`** grant a project-wide god-view. Keep the allowlist minimal;
   prefer the **steward** role (least-privilege, DB-granted) for day-to-day moderation/conflict work.
-- The Supabase Storage **`agora` bucket is public** (objects live under high-entropy
-  `projectId/.../fileId` UUID paths). Treat anything uploaded as world-readable-if-the-URL-leaks; don't
-  use it for private documents until signed-URL support lands (roadmap).
+- The Supabase Storage **`agora` bucket is public** — an **accepted design choice** (most media is
+  public by nature: post images, avatars, public-space content). Paths are random
+  `projectId/.../fileId` v4 UUIDs (~122 bits each), so objects **can't be enumerated/guessed** — the only
+  exposure is a **leaked URL** (a forwarded link, a referrer header, a log). So: **don't upload secrets**,
+  and be aware that a leaked URL to a **private** attachment (DM / private-space) is world-readable. If
+  that matters for your deployment, put private uploads behind your own signed-URL/download gate.
 - Verify Supabase **automated backups** (or your own `pg_dump` schedule) and test a restore.
 
 ### 9. Keep the stack patched
@@ -170,11 +173,11 @@ the areas we're actively looking into; contributions welcome.
 | **Link-preview SSRF (redirects + encodings)** | ✅ **Fixed.** `/utils/get-metadata` now validates the host on the initial URL **and every redirect hop** (manual redirect following via `lib/ssrf.ts`), resolves the host and rejects any private resolved IP, and covers IPv6 (incl. IPv4-mapped) + numeric-IP encodings (decimal/octal/hex). | **Residual:** a narrow DNS-rebinding TOCTOU between our resolve and `fetch`'s own resolution. Close it later by pinning the connection to the validated IP (a custom dispatcher/`lookup`). |
 | **User-suspension enforcement** | ✅ **Fixed.** `requireAuth` now rejects an actively-suspended user (`403 auth/suspended`) on every authed request, and suspending revokes the user's refresh families so the session can't be renewed. Operators bypass (they lift). Operator suspend/lift endpoints added (`/users/:id/suspend`). | **Follow-up:** an admin-app UI to view/manage suspensions. |
 | **Rate-limit durability + IP spoofing** | ✅ **Fixed.** The client IP is now read `RATE_LIMIT_TRUSTED_HOPS` hops from the **right** of `X-Forwarded-For` (was the spoofable left-most), and an **optional Redis store** (`REDIS_URL`, least-privilege ACL) holds the cap across replicas — fail-open to in-memory. Still off unless `RATE_LIMIT_MAX` is set. | Pair with proxy/WAF limits at very high scale; `cf-connecting-ip` support if Cloudflare-fronted. |
-| **Upload size / image bounds** | No explicit app-layer max upload size or image-dimension cap (risk: storage exhaustion, `sharp` OOM on pathological images). | Enforce a max byte size + max megapixels server-side; cap at the proxy in the meantime. |
-| **Public storage bucket** | The `agora` bucket is public; objects are URL-guessable only via high-entropy UUID paths. No signed URLs / per-user download checks. | Add signed-URL support or an auth-checked download endpoint for private content. |
-| **`ACCESS_TOKEN_SECRET` strength** | Validated as non-empty only (`min(1)`) — a weak secret would weaken every JWT. | Enforce `min(32)` in env validation; document `openssl rand` (done above). |
-| **JWT verify algorithm pinning** | `jwtVerify` relies on jose's defaults rather than explicitly passing `algorithms: ["HS256"]`. | Pin the algorithm list on verify (API + socket.io) — cheap hardening. |
-| **App-level security headers** | The API sets none (HSTS/CSP/nosniff) — relies on the proxy. | Documented as an operator responsibility above; could add a sane default header middleware. |
+| **Upload size / image bounds** | ✅ **Fixed.** App-layer cap `MAX_UPLOAD_BYTES` (default 25 MiB, `413`) on every upload path + a 50 MP image limit (`sharp limitInputPixels` + a metadata pre-check), in addition to the proxy's body cap. | — |
+| **Public storage bucket** | ✅ **Accepted (documented).** The `agora` bucket is public by design (most media is public); paths are unguessable v4-UUIDs so there's no enumeration — only leaked-URL exposure. Signing every URL would tax all media reads + break caching to protect mostly-public content (poor trade). | Residual: a leaked URL to a private attachment is world-readable — don't upload secrets; gate private uploads yourself if needed (see deploy checklist §8). |
+| **`ACCESS_TOKEN_SECRET` strength** | ✅ **Fixed.** Env validation now requires `min(32)` (was `min(1)`); `openssl rand -base64 48` documented above. | — |
+| **JWT verify algorithm pinning** | ✅ **Fixed.** `algorithms: ["HS256"]` pinned on the access-token + socket.io verifies (and the moderator's); the external-auth verify pins `["RS256"]`. | — |
+| **Security headers** | ✅ **Addressed at the edge.** The bundled Caddy proxy sends HSTS + `X-Content-Type-Options` + `Referrer-Policy` + `X-Frame-Options` (and strips `Server`). The API itself still sets none. | Bring-your-own proxy must add them; a strict app-specific CSP is the remaining tuning (commented starting point in the Caddyfile). |
 | **CORS default** | Defaults to `*` if unset. | Documented; consider failing/​warning loudly on a wildcard in production mode. |
 | **RLS write policies** | None by design (writes are server-only). Safe today, but means RLS offers no second line for writes if the app boundary is bypassed. | Tracked as a deliberate trade-off; revisit if direct-DB access patterns are ever introduced. |
 

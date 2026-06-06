@@ -122,8 +122,9 @@ SUPABASE_SERVICE_ROLE_KEY=sb_secret_...        # admin auth ops
 SUPABASE_ANON_KEY=sb_publishable_...           # user auth (signUp / signIn / reset)
 
 # Agora-issued tokens
-ACCESS_TOKEN_SECRET=<random>                   # required — signs Agora access tokens
+ACCESS_TOKEN_SECRET=<random>                   # required — signs Agora access tokens (≥ 32 chars; `openssl rand -base64 48`)
 ACCESS_TOKEN_TTL=1800                          # 30 m
+MAX_UPLOAD_BYTES=26214400                      # max accepted upload size (default 25 MiB; 413 over it)
 REFRESH_TOKEN_TTL=2592000                      # 30 d
 REFRESH_TOKEN_GRACE_SECONDS=30                 # racing-tabs reuse grace window
 
