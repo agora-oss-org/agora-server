@@ -1,4 +1,4 @@
-import { Activity, BarChart3, LayoutDashboard, Scale, ShieldAlert, Settings, type LucideIcon } from "lucide-react";
+import { Activity, BarChart3, LayoutDashboard, Scale, ShieldAlert, Settings, HelpCircle, type LucideIcon } from "lucide-react";
 
 export interface NavItem {
   to: string;
@@ -21,4 +21,5 @@ export const NAV_ITEMS: NavItem[] = [
   { to: "/moderation", label: "Moderation", icon: ShieldAlert },
   { to: "/steward", label: "Steward", icon: Scale, stewardOnly: true },
   { to: "/settings", label: "Settings", icon: Settings },
+  { to: "/help", label: "Help", icon: HelpCircle },
 ];

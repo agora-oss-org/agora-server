@@ -58,6 +58,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   open / in-mediation / close / escalate), `GET`+`PATCH /settings/steward`, and the admin Stewardship
   settings panel. Notifications are polled (no realtime); the forked SDK renders the new types generically
   until it adds them.
+- **Admin: Help & Resources page.** A new **Help** sidebar item and dedicated `/help` route shows
+  learning resources: a link to explore **books on building online communities** (Amazon search,
+  results unordered) and a placeholder for **online documentation** (coming soon).
 - **Bundled TLS edge proxy (Caddy) — optional single front door.** A new `proxy` service in
   `docker-compose.yml`, gated behind the **`edge` profile** (`docker compose --profile edge up`), that
   terminates HTTPS with **automatic Let's Encrypt certs** (auto-renewed; internal CA for `localhost` so

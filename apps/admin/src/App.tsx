@@ -8,6 +8,7 @@ import { AnalyticsPage } from "./routes/AnalyticsPage";
 import { ModerationPage } from "./routes/ModerationPage";
 import { StewardPage } from "./routes/StewardPage";
 import { SettingsPage } from "./routes/SettingsPage";
+import { HelpPage } from "./routes/HelpPage";
 import { NotFound } from "./routes/NotFound";
 
 export function App() {
@@ -23,6 +24,7 @@ export function App() {
           <Route path="/moderation" element={<ModerationPage />} />
           <Route path="/steward" element={<StewardPage />} />
           <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/help" element={<HelpPage />} />
         </Route>
       </Route>
       <Route path="*" element={<NotFound />} />
