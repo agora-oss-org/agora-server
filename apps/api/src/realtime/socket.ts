@@ -70,7 +70,7 @@ export function attachRealtime(httpServer: HttpServer) {
       const token = socket.handshake.auth?.token as string | undefined;
       const projectId = socket.handshake.query?.projectId as string | undefined;
       if (!token || !projectId) return next(new Error("unauthorized"));
-      const { payload } = await jwtVerify(token, accessSecret);
+      const { payload } = await jwtVerify(token, accessSecret, { algorithms: ["HS256"] });
       if (!payload.sub) return next(new Error("unauthorized"));
       socket.data.userId = payload.sub;
       socket.data.projectId = projectId;

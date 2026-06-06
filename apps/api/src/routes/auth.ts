@@ -189,7 +189,7 @@ export const authRoutes = new Hono<{ Variables: Variables }>()
     let payload: Record<string, any>;
     try {
       const publicKey = await importSPKI(project.key, "RS256");
-      ({ payload } = await jwtVerify(body.userJwt ?? body.token!, publicKey, { audience: "replyke.com", issuer: projectId }) as any);
+      ({ payload } = await jwtVerify(body.userJwt ?? body.token!, publicKey, { algorithms: ["RS256"], audience: "replyke.com", issuer: projectId }) as any);
     } catch (e: any) {
       logger.info({ projectId, err: e?.message }, "auth: external token verification failed");
       throw Errors.unauthorized("auth/external-invalid", `External token invalid: ${e?.message ?? "verification failed"}`);

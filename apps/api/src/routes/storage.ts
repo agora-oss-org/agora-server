@@ -6,7 +6,7 @@ import { Errors } from "../http/errors.js";
 import { requireAuth } from "../middleware/auth.js";
 import { db } from "../db/index.js";
 import { files } from "../db/schema/index.js";
-import { uploadBytes, inferFileType } from "../lib/storage.js";
+import { uploadBytes, inferFileType, assertUploadSize } from "../lib/storage.js";
 import { shapeFile } from "../lib/shape.js";
 import { storeImageFromUpload } from "../lib/images.js";
 
@@ -15,6 +15,7 @@ async function readUpload(c: any) {
   const body = await c.req.parseBody();
   const file = body["file"];
   if (!file || typeof file === "string") throw Errors.badRequest("storage/no-file", "Expected a multipart 'file' field", "file");
+  assertUploadSize(file as File);
   return {
     file: file as File,
     body,

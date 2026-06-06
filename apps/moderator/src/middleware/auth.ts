@@ -12,7 +12,7 @@ const secret = new TextEncoder().encode(env.ACCESS_TOKEN_SECRET);
 
 async function verify(token: string): Promise<AuthContext | null> {
   try {
-    const { payload } = await jwtVerify(token, secret);
+    const { payload } = await jwtVerify(token, secret, { algorithms: ["HS256"] });
     if (!payload.sub) return null;
     return {
       userId: payload.sub,

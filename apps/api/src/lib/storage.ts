@@ -1,8 +1,18 @@
 // Supabase Storage helpers. Bytes live in a public bucket; the `files` table holds metadata.
 import { getSupabase } from "./supabase.js";
+import { env } from "./env.js";
+import { Errors } from "../http/errors.js";
 
 const BUCKET = "agora";
 let bucketReady = false;
+
+/** Reject oversized uploads (413) before buffering/processing — app-level cap, defense-in-depth
+ *  behind the proxy's body limit. Uses File.size (no need to read the body first). */
+export function assertUploadSize(file: { size: number }): void {
+  if (file.size > env.MAX_UPLOAD_BYTES) {
+    throw Errors.tooLarge("storage/file-too-large", `File exceeds the ${Math.floor(env.MAX_UPLOAD_BYTES / 1_048_576)} MiB upload limit`, "file");
+  }
+}
 
 async function ensureBucket(): Promise<void> {
   if (bucketReady) return;

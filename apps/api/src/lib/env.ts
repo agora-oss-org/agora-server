@@ -13,7 +13,8 @@ const schema = z.object({
   SUPABASE_JWT_SECRET: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
   ACCESS_TOKEN_TTL: z.coerce.number().default(1800),
   REFRESH_TOKEN_TTL: z.coerce.number().default(2592000),
-  ACCESS_TOKEN_SECRET: z.string().min(1),
+  // HS256 signing key for access JWTs — must be high-entropy. Generate: `openssl rand -base64 48`.
+  ACCESS_TOKEN_SECRET: z.string().min(32, "ACCESS_TOKEN_SECRET must be at least 32 characters (use `openssl rand -base64 48`)"),
   REFRESH_TOKEN_GRACE_SECONDS: z.coerce.number().default(30),
   CORS_ORIGIN: z.string().default("*"),
   // Deployment-operator allowlist for the admin app. Comma-separated profile UUIDs and/or emails;
@@ -49,6 +50,9 @@ const schema = z.object({
   // cap holds across API replicas; unset → in-process (per-replica) limiting. The app fail-opens to
   // in-memory if Redis is unreachable. A single replica needs no Redis. e.g. redis://redis:6379
   REDIS_URL: z.preprocess((v) => (v === "" ? undefined : v), z.string().url().optional()),
+  // Max accepted upload size (bytes) for /storage + multipart image attachments. Defense-in-depth
+  // behind the proxy's body cap (the bundled Caddy edge caps at MAX_BODY_SIZE). Default 25 MiB.
+  MAX_UPLOAD_BYTES: z.coerce.number().int().positive().default(26_214_400),
   // Embeddings (Voyage AI). Optional until semantic search is used.
   VOYAGE_API_KEY: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
   VOYAGE_MODEL: z.string().default("voyage-3.5"),

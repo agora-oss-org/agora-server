@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { inferFileType } from "./storage.js";
+import { inferFileType, assertUploadSize } from "./storage.js";
 
 describe("inferFileType", () => {
   it("returns 'other' for a missing mime type", () => {
@@ -38,5 +38,18 @@ describe("inferFileType", () => {
   it("is case-sensitive on the mime prefix (matches the implementation's literal checks)", () => {
     // The shaper compares lowercase prefixes; uppercase input is treated as unknown.
     expect(inferFileType("IMAGE/PNG")).toBe("other");
+  });
+});
+
+describe("assertUploadSize", () => {
+  // Default cap is 25 MiB (MAX_UPLOAD_BYTES) when unset.
+  it("allows files at or under the cap", () => {
+    expect(() => assertUploadSize({ size: 1024 })).not.toThrow();
+    expect(() => assertUploadSize({ size: 26_214_400 })).not.toThrow(); // exactly 25 MiB
+  });
+  it("rejects oversized files with 413 storage/file-too-large", () => {
+    expect(() => assertUploadSize({ size: 26_214_401 })).toThrowError(
+      expect.objectContaining({ status: 413, code: "storage/file-too-large" }),
+    );
   });
 });

@@ -22,6 +22,7 @@ export const Errors = {
   forbidden: (code = "auth/forbidden", msg = "Forbidden") => new ApiError(403, code, msg),
   notFound: (code = "common/not-found", msg = "Not found") => new ApiError(404, code, msg),
   conflict: (code: string, msg: string, field?: string) => new ApiError(409, code, msg, field),
+  tooLarge: (code: string, msg: string, field?: string) => new ApiError(413, code, msg, field),
   rateLimited: (msg = "Too many requests") => new ApiError(429, "common/rate-limited", msg),
   notImplemented: (code = "common/not-implemented") =>
     new ApiError(501 as ContentfulStatusCode, code, "Endpoint not implemented yet"),

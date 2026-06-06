@@ -6,8 +6,11 @@ import sharp from "sharp";
 import { db } from "../db/index.js";
 import { files } from "../db/schema/index.js";
 import { Errors } from "../http/errors.js";
-import { uploadBytes, inferFileType } from "./storage.js";
+import { uploadBytes, inferFileType, assertUploadSize } from "./storage.js";
 import { parseImageOptions, computeVariants, resolveOutput, variantPath } from "./image-variants.js";
+
+// Reject decompression-bomb / OOM-inducing images (sharp also enforces this via limitInputPixels).
+const MAX_IMAGE_PIXELS = 50_000_000; // 50 MP
 
 export interface ImageAssoc {
   entityId?: string | null;
@@ -33,14 +36,18 @@ export async function storeImageFromUpload(args: {
   if (!file.type.startsWith("image/")) {
     throw Errors.badRequest("storage/not-an-image", "File is not an image", "file");
   }
+  assertUploadSize(file);
   const input = Buffer.from(await file.arrayBuffer());
   const fileId = randomUUID();
 
   let meta: sharp.Metadata;
   try {
-    meta = await sharp(input).metadata();
+    meta = await sharp(input, { limitInputPixels: MAX_IMAGE_PIXELS }).metadata();
   } catch {
     throw Errors.badRequest("storage/bad-image", "Could not read image");
+  }
+  if (meta.width && meta.height && meta.width * meta.height > MAX_IMAGE_PIXELS) {
+    throw Errors.tooLarge("storage/image-too-large", `Image exceeds ${Math.floor(MAX_IMAGE_PIXELS / 1_000_000)} MP`, "file");
   }
 
   // SDK UploadImageOptions: mode (exact-dimensions | aspect-ratio-* | original-aspect |
@@ -51,7 +58,7 @@ export async function storeImageFromUpload(args: {
   const specs = computeVariants(opts);
 
   const make = async (name: string, spec?: { width?: number; height?: number; fit?: string }) => {
-    let pipeline = sharp(input).rotate(); // applies + strips EXIF orientation
+    let pipeline = sharp(input, { limitInputPixels: MAX_IMAGE_PIXELS }).rotate(); // applies + strips EXIF orientation
     if (!stripExif) pipeline = pipeline.withMetadata();
     if (spec && (spec.width || spec.height)) {
       const noEnlarge = !spec.height || spec.fit === "inside" || spec.fit === "outside";
@@ -104,6 +111,7 @@ export async function storeFileFromUpload(args: {
   assoc?: ImageAssoc;
 }) {
   const { projectId, userId, file, assoc = {} } = args;
+  assertUploadSize(file);
   const bytes = new Uint8Array(await file.arrayBuffer());
   const fileId = randomUUID();
   const ext = file.name.includes(".") ? "." + file.name.split(".").pop() : "";
