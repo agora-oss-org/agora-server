@@ -39,6 +39,31 @@ infrastructure, and pgvector. The other ~60% — the social schema, the denormal
 permission model, and the opinionated endpoints that sit in front of all of it — is what makes
 Replyke worth using. **That 60% is what Agora builds**, and it's the part you'd otherwise rent.
 
+## Governance is first-class, not a bolt-on
+
+Most community backends — Replyke included — ship content and social primitives and leave *governance*
+to you: you build the reporting flow, the moderation dashboard, and any conflict-resolution process
+yourself, against whatever the hosted API exposes. A real community can't run without these, so Agora
+makes them **core surface area** — endpoints, schema, and admin UI in the box, enforced at the server
+trust boundary rather than reconstructed per app:
+
+- **Moderation** — report queues for entities, comments, and chat messages; server-enforced
+  removed-content hiding (a removed row is omitted from every list, 404'd on single reads, and filtered
+  inside the semantic-search RPC — operators bypass to review); space-scoped moderator roles plus a
+  project-wide operator god-view; and optional LLM auto-moderation via
+  [`@agora/moderator`](apps/moderator).
+- **Stewardship** — a distinct **conflict-resolution** layer: moderation judges *content*; stewardship
+  tends *people and relationships*. A DB-granted **steward** role between member and operator; a
+  **caseload** that moves a dispute (complainant ↔ respondent over some content) through
+  `open → in_mediation → closed` with **transformative-ordered outcomes** (repair → separation →
+  protection → escalation); an **asymmetry / "targeting"** flag for power-aware, anti-false-balance
+  handling; an append-only case timeline; and **escalate-to-removal** that takes the subject content
+  (post, comment, or chat message) down through the moderation path. See
+  [`docs/STEWARDSHIP.md`](docs/STEWARDSHIP.md).
+
+Both live behind the same `/v7/:projectId/...` contract and in the Postgres schema, so they're available
+to every client from day one — not gated behind an external service's limits.
+
 ## The contract is the constraint
 
 Agora's whole reason to exist is that the forked SDK's typed hooks work **unchanged**. So the
@@ -151,7 +176,8 @@ complete** — no stubbed endpoints remain.
 | **search** | semantic content search across entities/comments/messages (Voyage + pgvector), RAG `/ask` (Anthropic, SSE), text search for spaces/users |
 | **storage** | file uploads + image variants (sharp → webp, 5 sizing modes) |
 | **webhooks** | project webhooks (HMAC validation gates + `*.complete` broadcasts) + per-space digests |
-| **moderation** | per-project removed-content visibility (hide / placeholder) + optional LLM auto-moderation via [`@agora/moderator`](apps/moderator) |
+| **moderation** | report resolution + server-enforced removed-content hiding (lists, single reads, **and** the search RPC); space-moderator + operator roles; optional LLM auto-moderation via [`@agora/moderator`](apps/moderator) |
+| **stewardship** | first-class **conflict resolution** — a DB-granted steward role (between member and operator), a caseload (`open → in_mediation → closed`), transformative outcomes, a "targeting" power-imbalance flag, append-only timeline, and escalate-to-removal for posts/comments/chat messages ([`docs/STEWARDSHIP.md`](docs/STEWARDSHIP.md)) |
 
 Denormalized counts (reaction counts, reply counts, member counts, thread counts, reputation) are
 maintained atomically by Postgres **triggers** — never recomputed per request.
@@ -169,8 +195,11 @@ every read/write rule in the handlers, with RLS underneath as a verified backsto
   reads, reactions, comment creation, semantic search).
 - **Private chat** — conversation messages are readable only by active members, enforced on the REST
   routes *and* inside the search RPC.
-- **Moderation visibility** — removed content is configurable per project: **hide** or **placeholder**.
-- **Operators** — a deployment-operator allowlist grants a project-wide moderation/admin god-view.
+- **Moderation visibility** — removed content is always hidden from non-privileged readers (omitted from
+  lists, 404'd on single reads, filtered in the search RPC); operators bypass to review.
+- **Operators & stewards** — a deployment-operator allowlist grants a project-wide moderation/admin
+  god-view; a DB-granted **steward** role (between member and operator) is route-scoped to the
+  conflict-resolution caseload.
 - **RLS backstop** — denies `anon`/`authenticated` any private-space, removed, or draft row directly.
 
 Full detail (including the OAuth callback setup) lives in
