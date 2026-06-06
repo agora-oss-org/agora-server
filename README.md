@@ -7,8 +7,9 @@
 <p align="center"><em>The open social layer. Own your community.</em></p>
 
 <p align="center">
+  <a href="https://github.com/jenova-marie/agora-server/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/jenova-marie/agora-server/ci.yml?label=ci&logo=github&logoColor=white" alt="CI Status" /></a>
   <a href="https://demo.agora-oss.org"><img src="https://img.shields.io/badge/▶_live_demo-demo.agora--oss.org-7C3AED.svg" alt="Live demo" /></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg" alt="License: Apache-2.0" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-AGPL_v3-7C3AED.svg" alt="License: AGPL-3.0-only" /></a>
   <a href="https://supabase.com"><img src="https://img.shields.io/badge/built%20on-Supabase-3ECF8E.svg" alt="Built on Supabase" /></a>
   <a href="#status"><img src="https://img.shields.io/badge/backend-feature--complete-success.svg" alt="Status: feature-complete" /></a>
 </p>
@@ -28,9 +29,14 @@ Replyke is a hosted backend for community & social features. Agora reimplements 
 to **your** server instead of `api.replyke.com` — byte-for-byte the same REST paths, response shapes,
 auth semantics, and socket.io events. You keep Replyke's opinionated feature set (posts, threaded
 comments, reactions & feeds, follows & connections, nested spaces, real-time chat, notifications,
-moderation, semantic search) and run it all on infrastructure you control, under a permissive license.
+moderation & stewardship, semantic search) and run it all on infrastructure you control, under a
+genuinely open license.
 
-Apache-2.0, like Replyke. No vendor lock-in, no per-seat pricing, no data leaving your project.
+**AGPL-3.0 — and that's the whole point.** Replyke open-sources its *SDK* (Apache-2.0) but keeps the
+backend you'd actually depend on closed and hosted. Agora is the entire backend, in the open, under a
+license with teeth: self-host it freely, forever — but anyone who runs a modified Agora as a service
+has to share their changes back. No vendor lock-in, no per-seat pricing, no data leaving your project,
+and no "open-source" asterisk. **The community edition is AGPL-3.0 and always will be.**
 
 ## Why
 
@@ -59,8 +65,12 @@ trust boundary rather than reconstructed per app:
   **caseload** that moves a dispute (complainant ↔ respondent over some content) through
   `open → in_mediation → closed` with **transformative-ordered outcomes** (repair → separation →
   protection → escalation); an **asymmetry / "targeting"** flag for power-aware, anti-false-balance
-  handling; an append-only case timeline; and **escalate-to-removal** that takes the subject content
-  (post, comment, or chat message) down through the moderation path. See
+  handling; **private mediation channels** — built on the existing chat — to actually talk a conflict
+  through (1:1 *caucus* with each party, or a consensual *joint room* in hybrid mode, never for a
+  targeting case); **configurable participant notifications** (power-aware / symmetric / resolution-only)
+  that keep the parties informed without ever leaking who raised a case; an append-only case timeline;
+  and **escalate-to-removal** that takes the subject content (post, comment, or chat message) down
+  through the moderation path. All of it operator-tunable per project. See
   [`docs/STEWARDSHIP.md`](docs/STEWARDSHIP.md).
 
 Both live behind the same `/v7/:projectId/...` contract and in the Postgres schema, so they're available
@@ -87,7 +97,7 @@ with setup, configuration, and development details:
 | Package | What it is | Docs |
 |---|---|---|
 | **[`@agora/api`](apps/api)** | The backend — Hono + Supabase + socket.io. Every endpoint, permission check, and bit of business logic. The reference package. | [apps/api/README.md](apps/api/README.md) |
-| **[`@agora/admin`](apps/admin)** | The admin dashboard — Vite + React. Moderation queue, feed tuning, webhook config, project health. | [apps/admin/README.md](apps/admin/README.md) |
+| **[`@agora/admin`](apps/admin)** | The admin dashboard — Vite + React. Moderation queue + AI queue, the **stewardship caseload** (cases, mediation channels, steward grants), feed & moderator tuning, webhook config, community & analytics dashboards. | [apps/admin/README.md](apps/admin/README.md) |
 | **[`@agora/moderator`](apps/moderator)** | Optional LLM content moderation — a standalone service that assesses content via webhooks and feeds the admin's AI queue. | [apps/moderator/README.md](apps/moderator/README.md) |
 | **`@agora/contract`** | Shared API types + zod request schemas (no hono/drizzle). Built first; consumed by all three apps so wire shapes never drift. | — |
 
@@ -179,7 +189,7 @@ complete** — no stubbed endpoints remain.
 | **storage** | file uploads + image variants (sharp → webp, 5 sizing modes) |
 | **webhooks** | project webhooks (HMAC validation gates + `*.complete` broadcasts) + per-space digests |
 | **moderation** | report resolution + server-enforced removed-content hiding (lists, single reads, **and** the search RPC); space-moderator + operator roles; **AI Agent Moderator** that flags inappropriate content on post — configurable violation categories, confidence thresholds, and auto-actions (immediate hide or human review) — tunable per-project in Settings; escalation to Stewards for conflict resolution |
-| **stewardship** | first-class **conflict resolution** — a DB-granted steward role (between member and operator), a caseload (`open → in_mediation → closed`), transformative outcomes, a "targeting" power-imbalance flag, append-only timeline, and escalate-to-removal for posts/comments/chat messages ([`docs/STEWARDSHIP.md`](docs/STEWARDSHIP.md)) |
+| **stewardship** | first-class **conflict resolution** — a DB-granted steward role (between member and operator), a caseload (`open → in_mediation → closed`), transformative outcomes, a "targeting" power-imbalance flag, **private mediation channels** (caucus + consensual joint room, built on chat), **configurable participant notifications** (power-aware/symmetric/resolution-only, never leaking who raised a case), append-only timeline, and escalate-to-removal for posts/comments/chat messages ([`docs/STEWARDSHIP.md`](docs/STEWARDSHIP.md)) |
 
 Denormalized counts (reaction counts, reply counts, member counts, thread counts, reputation) are
 maintained atomically by Postgres **triggers** — never recomputed per request.
@@ -264,10 +274,12 @@ pass a `projectId` + a signed user token to the provider; the SDK's typed hooks 
 - ✅ Realtime chat, semantic + RAG search, auth (token rotation + external RS256 + OAuth), storage,
   project webhooks, space digests, and RLS (public-read + authenticated self-access) verified end-to-end.
 - ✅ **Access control** — space read/post privacy, private-chat membership gating (incl. search),
-  configurable moderation-removal visibility, and the operator god-view, all enforced server-side.
-- ✅ **Admin + moderation** — the admin dashboard and the optional LLM moderation service are wired
-  and operator-gated.
-- ✅ Idempotent Drizzle migrations `0000`–`0019`; unit + integration test suites green.
+  server-enforced removed-content hiding, the operator god-view, and the route-scoped steward role,
+  all enforced server-side.
+- ✅ **Governance** — moderation (report queues + optional LLM auto-moderation) and the stewardship
+  caseload (cases, private mediation channels, participant notifications) are wired and operator-gated
+  in the admin dashboard.
+- ✅ Idempotent Drizzle migrations `0000`–`0030`; unit + integration test suites green.
 - ✅ Client SDK published + repointed — validated 1:1 by the
   [`agora-demo`](https://github.com/jenova-marie/agora-demo) compatibility harness.
 - ⬜ Ops backlog: deployment guides, and RLS write policies (only needed if the Supabase Data API is
@@ -295,5 +307,17 @@ be kind, assume good faith, and build something we'd all want to use. 💜
 
 ## License
 
-[Apache-2.0](LICENSE) — matching Replyke. By contributing, you agree your contributions are licensed
-under the same terms.
+**[AGPL-3.0-only](LICENSE)** for the server (`@agora/api`, `@agora/admin`, `@agora/moderator`) — you
+can self-host forever, but running a *modified* Agora as a network service means sharing your changes
+back. The shared wire contract ([`@agora/contract`](packages/contract)) stays **Apache-2.0** so the
+[`agora-sdk`](https://github.com/jenova-marie/agora-sdk) and any third-party client can build against
+it freely. **The community edition is AGPL-3.0 and always will be.**
+
+Contributions are accepted under the **[Developer Certificate of Origin](https://developercertificate.org/)** —
+sign off your commits with `git commit -s`. There is **no CLA**: your contributions stay yours,
+licensed AGPL-3.0, and they can't be relicensed out from under you. See
+[CONTRIBUTING.md](CONTRIBUTING.md#licensing).
+
+> **AGPL §13 note for operators:** because users interact with Agora over a network, your deployment
+> must offer them its corresponding source. Agora surfaces a source link by default — keep it pointing
+> at your fork.
