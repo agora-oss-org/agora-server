@@ -50,8 +50,10 @@ trust boundary rather than reconstructed per app:
 - **Moderation** — report queues for entities, comments, and chat messages; server-enforced
   removed-content hiding (a removed row is omitted from every list, 404'd on single reads, and filtered
   inside the semantic-search RPC — operators bypass to review); space-scoped moderator roles plus a
-  project-wide operator god-view; and optional LLM auto-moderation via
-  [`@agora/moderator`](apps/moderator).
+  project-wide operator god-view; and **AI Agent Moderator** that assesses all new content for
+  inappropriate violations (configurable categories, confidence thresholds) and either **auto-hides** or
+  **flags for human review** depending on the AI score (tunable per-project in Settings) — escalates to
+  the Stewardship caseload for conflict resolution.
 - **Stewardship** — a distinct **conflict-resolution** layer: moderation judges *content*; stewardship
   tends *people and relationships*. A DB-granted **steward** role between member and operator; a
   **caseload** that moves a dispute (complainant ↔ respondent over some content) through
@@ -176,7 +178,7 @@ complete** — no stubbed endpoints remain.
 | **search** | semantic content search across entities/comments/messages (Voyage + pgvector), RAG `/ask` (Anthropic, SSE), text search for spaces/users |
 | **storage** | file uploads + image variants (sharp → webp, 5 sizing modes) |
 | **webhooks** | project webhooks (HMAC validation gates + `*.complete` broadcasts) + per-space digests |
-| **moderation** | report resolution + server-enforced removed-content hiding (lists, single reads, **and** the search RPC); space-moderator + operator roles; optional LLM auto-moderation via [`@agora/moderator`](apps/moderator) |
+| **moderation** | report resolution + server-enforced removed-content hiding (lists, single reads, **and** the search RPC); space-moderator + operator roles; **AI Agent Moderator** that flags inappropriate content on post — configurable violation categories, confidence thresholds, and auto-actions (immediate hide or human review) — tunable per-project in Settings; escalation to Stewards for conflict resolution |
 | **stewardship** | first-class **conflict resolution** — a DB-granted steward role (between member and operator), a caseload (`open → in_mediation → closed`), transformative outcomes, a "targeting" power-imbalance flag, append-only timeline, and escalate-to-removal for posts/comments/chat messages ([`docs/STEWARDSHIP.md`](docs/STEWARDSHIP.md)) |
 
 Denormalized counts (reaction counts, reply counts, member counts, thread counts, reputation) are
