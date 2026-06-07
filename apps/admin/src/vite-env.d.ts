@@ -8,6 +8,8 @@ interface ImportMetaEnv {
   /** Dev-only: prefill the login form with seeded demo credentials. Leave unset in real deployments. */
   readonly VITE_DEMO_EMAIL?: string;
   readonly VITE_DEMO_PASSWORD?: string;
+  /** When "true", the Settings page is view-only — all Save controls are disabled. UI guard only. */
+  readonly VITE_SETTINGS_READ_ONLY?: string;
 }
 
 interface ImportMeta {

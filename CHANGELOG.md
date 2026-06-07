@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Admin: view-only Settings mode (`VITE_SETTINGS_READ_ONLY`).** Set to `true` to disable every Save
+  control on the admin Settings page (feed ranking, moderator, stewardship, webhooks) and block submits
+  client-side, plus a "view-only" banner — so the admin can be deployed for viewing/operation without
+  allowing settings changes. UI guard only (the API still authorizes writes by operator token), not a
+  security boundary. New `SETTINGS_READ_ONLY` in `apps/admin/src/config.ts`.
+
 ### Fixed
 - **`pnpm db:migrate` now reads the correct journal.** `drizzle.config.ts` `migrations.schema` was
   `public` while the runtime migrator (`scripts/migrate.mjs` / `db:migrate:run`) writes the journal in

@@ -20,3 +20,10 @@ export const DEMO_PASSWORD = import.meta.env.VITE_DEMO_PASSWORD || "";
 // reported entity/comment (the demo reads ?entity=&comment= off its URL). Defaults to the local demo
 // dev server; set to your deployed app origin in prod.
 export const DEMO_URL = import.meta.env.VITE_DEMO_URL || "http://localhost:5174/";
+
+// When VITE_SETTINGS_READ_ONLY=true, the Settings page renders view-only: every Save control is
+// disabled and submits are blocked client-side. Lets you deploy the admin for viewing/operation
+// without allowing settings changes. NOTE: this is a UI guard only — the API still authorizes writes
+// by operator token, so it is NOT a security boundary; lock writes down at the server/token level for
+// real enforcement.
+export const SETTINGS_READ_ONLY = String(import.meta.env.VITE_SETTINGS_READ_ONLY ?? "").toLowerCase() === "true";

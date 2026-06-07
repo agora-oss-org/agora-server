@@ -7,6 +7,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card } from "../../components/ui/Card";
 import { LoadingPanel } from "../../components/ui/Spinner";
 import { useToast } from "../../components/ui/Toast";
+import { SETTINGS_READ_ONLY } from "../../config";
 import { ApiError } from "../../lib/api";
 import {
   getStewardSettings, updateStewardSettings,
@@ -91,9 +92,10 @@ export function StewardPanel() {
   }
 
   const cfg = data!;
-  const disabled = mutation.isPending;
+  const disabled = mutation.isPending || SETTINGS_READ_ONLY;
   return (
     <div className="space-y-4">
+      {SETTINGS_READ_ONLY ? <p className="text-xs text-faint">View-only — these settings can’t be changed on this deployment.</p> : null}
       <RadioCard<StewardNotifyPolicy>
         title="Case notifications"
         hint="Who gets notified about a conflict-resolution case, and when. Respondents are never told who raised a case."

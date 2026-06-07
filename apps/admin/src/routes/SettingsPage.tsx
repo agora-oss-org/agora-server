@@ -1,4 +1,5 @@
 import { PageHeader } from "../components/ui/PageHeader";
+import { SETTINGS_READ_ONLY } from "../config";
 import { FeedRankingPanel } from "./settings/FeedRankingPanel";
 import { WebhooksPanel } from "./settings/WebhooksPanel";
 import { ModeratorPanel } from "./settings/ModeratorPanel";
@@ -9,6 +10,11 @@ export function SettingsPage() {
   return (
     <div className="space-y-8">
       <PageHeader title="Settings" description="Configure how your project ranks and runs." />
+      {SETTINGS_READ_ONLY && (
+        <div className="rounded-lg border border-border bg-surface-2 px-4 py-3 text-sm text-muted">
+          View-only mode — settings changes are disabled on this deployment.
+        </div>
+      )}
       <section className="space-y-3">
         <h2 className="text-sm font-semibold text-fg">Feed ranking</h2>
         <FeedRankingPanel />

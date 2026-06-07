@@ -10,6 +10,7 @@ import { Button } from "../../components/ui/Button";
 import { Input, Label } from "../../components/ui/Input";
 import { LoadingPanel } from "../../components/ui/Spinner";
 import { useToast } from "../../components/ui/Toast";
+import { SETTINGS_READ_ONLY } from "../../config";
 import { ApiError } from "../../lib/api";
 import { track } from "../../lib/analytics";
 import {
@@ -109,6 +110,7 @@ function FeedForm({ initial }: { initial: FeedConfigView }) {
 
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (SETTINGS_READ_ONLY) return;
     const patch: FeedConfigPatch = {
       defaultAlgorithm: s.defaultAlgorithm,
       decayMode: s.decayMode,
@@ -244,8 +246,9 @@ function FeedForm({ initial }: { initial: FeedConfigView }) {
       </Card>
 
       <div className="flex items-center justify-end gap-3">
+        {SETTINGS_READ_ONLY ? <span className="text-xs text-faint">View-only — saving disabled</span> : null}
         {mutation.isError ? <span className="text-xs text-danger">Not saved</span> : null}
-        <Button type="submit" disabled={mutation.isPending}>
+        <Button type="submit" disabled={mutation.isPending || SETTINGS_READ_ONLY}>
           <Save />
           {mutation.isPending ? "Saving…" : "Save changes"}
         </Button>

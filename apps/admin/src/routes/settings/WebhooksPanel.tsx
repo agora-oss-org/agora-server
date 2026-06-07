@@ -10,6 +10,7 @@ import { Button } from "../../components/ui/Button";
 import { Input, Label } from "../../components/ui/Input";
 import { LoadingPanel } from "../../components/ui/Spinner";
 import { useToast } from "../../components/ui/Toast";
+import { SETTINGS_READ_ONLY } from "../../config";
 import { ApiError } from "../../lib/api";
 import { track } from "../../lib/analytics";
 import {
@@ -79,6 +80,7 @@ function WebhookForm({ initial }: { initial: WebhookConfigView }) {
 
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (SETTINGS_READ_ONLY) return;
     const trimmed = url.trim();
     const patch: WebhookConfigPatch = {
       url: trimmed ? trimmed : null, // empty → clear the webhook
@@ -129,6 +131,7 @@ function WebhookForm({ initial }: { initial: WebhookConfigView }) {
       </Card>
 
       <div className="flex items-center justify-end gap-3">
+        {SETTINGS_READ_ONLY ? <span className="text-xs text-faint">View-only — saving disabled</span> : null}
         <Button
           type="button"
           variant="outline"
@@ -139,7 +142,7 @@ function WebhookForm({ initial }: { initial: WebhookConfigView }) {
           <Send />
           {test.isPending ? "Pinging…" : "Send test ping"}
         </Button>
-        <Button type="submit" disabled={save.isPending}>
+        <Button type="submit" disabled={save.isPending || SETTINGS_READ_ONLY}>
           <Save />
           {save.isPending ? "Saving…" : "Save changes"}
         </Button>
