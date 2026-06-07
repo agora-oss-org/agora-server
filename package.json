@@ -1,6 +1,6 @@
 {
   "name": "agora-monorepo",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "private": true,
   "type": "module",
   "description": "Agora monorepo — Replyke-compatible backend API, shared contract, and admin frontend.",

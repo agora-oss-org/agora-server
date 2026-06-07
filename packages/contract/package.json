@@ -1,6 +1,6 @@
 {
   "name": "@agora/contract",
-  "version": "0.0.0",
+  "version": "0.8.0",
   "private": true,
   "type": "module",
   "description": "Shared Agora API contract — response-model types + zod request schemas (no hono/drizzle).",

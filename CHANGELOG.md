@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-06-06
+
 ### Added
 - **Admin: view-only Settings mode (`VITE_SETTINGS_READ_ONLY`).** Set to `true` to disable every Save
   control on the admin Settings page (feed ranking, moderator, stewardship, webhooks) and block submits
@@ -803,7 +805,8 @@ cloud Supabase — no stubbed endpoints remain.
   (`@agora/*`), a repointed fork of `@replyke/core`.
 - Backlog: rate limiting, refresh-token cleanup sweep, RLS write policies, turnkey deploy guide.
 
-[Unreleased]: https://github.com/jenova-marie/agora/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/jenova-marie/agora/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/jenova-marie/agora/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/jenova-marie/agora/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/jenova-marie/agora/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/jenova-marie/agora/compare/v0.4.0...v0.5.0
