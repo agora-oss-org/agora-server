@@ -9,6 +9,47 @@ Agora is a self-hosted, **Replyke-API-compatible** community/social backend. Goa
 server. **The contract is the constraint** — match `docs/MANIFEST.md` (REST paths, envelopes,
 socket.io events) and `docs/MODELS.md` (response shapes) exactly, or the SDK's typed hooks break.
 
+## Engineering principles (NON-NEGOTIABLE)
+
+These override convenience, brevity, and "just make it work." If a change can't satisfy both, stop
+and raise it — don't ship the insecure or untested version.
+
+### 🔒 Security first — ALWAYS
+
+**Every line of code is written security-first. No exceptions.** When there's a tension between the
+easy path and the safe path, take the safe path. Default to the secure choice and fail **closed**.
+
+- **The server is the trust boundary.** Never trust client input — validate **and authorize** on the
+  server for every request. The API runs as the RLS-bypassing owner role, so a missing handler check
+  is a real hole; RLS is only defense-in-depth, never the primary gate.
+- **Wire every gate on every new path.** A new endpoint/read/write MUST apply the matching checks:
+  `requireAuth`, ownership (`ownedEntity`/…), space access (`lib/space-access.ts` read/post), and
+  moderation visibility (`removedPolicy(c)` — never return raw `removed` rows). Adding a route without
+  its gates is a defect, not a TODO.
+- **Validate input with zod** (`parseBody` + contract schemas) at the boundary; reject, don't coerce.
+- **Parameterize all SQL** through Drizzle/`sql` tags with explicit casts — never string-interpolate
+  user input. Guard outbound fetches against SSRF (`lib/ssrf.ts`).
+- **Least privilege & no leaks.** Never expose secrets, tokens, internal ids, or another user's PII in
+  responses, logs, or errors (e.g. a steward respondent notification must never carry the complainant's
+  identity). Don't print `.env` secrets — `grep` to the var and report status/length only.
+- **Auth/crypto stays in the vetted libs** (`lib/tokens.ts`, jose, pinned alg) — don't hand-roll.
+- See **`SECURITY.md`** for the full posture; new work must not regress anything documented there.
+
+### 🧪 Test what deserves testing
+
+**New code that would benefit from testing gets tests, in the same change — not "later."**
+
+- **Pure/branching logic MUST ship with unit tests** (`src/**/*.test.ts`, vitest, no DB): policy
+  matrices, guards, shapers, ranking, validation, envelopes. Examples to mirror:
+  `lib/steward-notify.test.ts` (the notify matrix), `lib/mediation.test.ts` (`canOpenJoint`). If you
+  add a pure function with real branches and don't test it, that's incomplete work.
+- **Cross-cutting / DB-backed behavior** (handlers, permission gates, RPC visibility) gets an
+  **integration test** under `test/integration/**` (real Postgres, isolated by `project_id`).
+- **Security-relevant logic is the highest testing priority** — assert the *negative* cases too (the
+  unauthorized caller is blocked, the removed row is hidden, the other party's id never leaks).
+- **Before considering any work done:** `pnpm -r typecheck` **and** `pnpm test` must pass. Don't claim
+  completion otherwise.
+
 ## Changelog (keep current)
 
 `CHANGELOG.md` (repo root) MUST stay current. After any change that affects behavior, the API
