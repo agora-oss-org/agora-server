@@ -1,6 +1,6 @@
 {
   "name": "@agora/admin",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "private": true,
   "type": "module",
   "description": "Agora admin frontend (Vite + React + TS), consuming @agora/contract.",

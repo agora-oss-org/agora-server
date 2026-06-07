@@ -1,6 +1,6 @@
 {
   "name": "@agora/secure-chat-core",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "private": true,
   "type": "module",
   "description": "Secure-chat client crypto seam — the SecureChatCrypto interface + a deterministic mock impl. The concrete MLS core (ts-mls / OpenMLS-WASM) plugs in behind this. The server depends on NONE of it.",
