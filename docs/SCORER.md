@@ -208,6 +208,56 @@ cd services/scorer && pip install -r requirements-dev.txt && pytest
 - **Image size:** the real (un-stubbed) model server adds the CPU `torch` wheel, which is large; slimming
   it is later work.
 
+## Smoke test (manual)
+
+The unit suite covers the pure logic + HTTP paths via mocks; this proves the pipeline **end-to-end against
+real infra** — the cheapest way to catch the bugs mocks can't (model label names, pgmq/asyncpg quirks,
+Neo4j, NOTIFY). Run it once after any infra change.
+
+**1. Bring up** (from repo root):
+```bash
+docker compose build agora scorer-toxicity scorer-relationship scorer-worker neo4j
+docker compose up -d agora scorer-toxicity scorer-relationship scorer-worker neo4j
+```
+`.env` needs `DATABASE_URL` (pooler :6543) + `ACCESS_TOKEN_SECRET` + `MODERATION_SERVICE_SECRET`; optional
+`SCORER_LISTEN_DATABASE_URL` (:5432, for the NOTIFY wake-up), `ANTHROPIC_API_KEY` (else gray-zone → review),
+`NEO4J_*`.
+
+**2. Migrate** (idempotent; applies `0027`/`0028`/`0033`):
+```bash
+docker compose run --rm agora node scripts/migrate.mjs
+```
+
+**3. Create content** (fires the enqueue trigger). Direct SQL is simplest:
+```bash
+psql "$DATABASE_URL" -c "insert into entities (id, project_id, user_id, title, content)
+  values (gen_random_uuid(), '11111111-1111-1111-1111-111111111111', '<user-uuid>',
+          'smoke', 'you are an idiot and everyone hates you') returning id;"
+```
+…or via the API (`node apps/api/scripts/seeds/seed-demo-user.mjs` → sign in → `POST /v7/<projectId>/entities`).
+
+**4. Observe** (should land within ~1s, or instantly with the NOTIFY listener):
+```bash
+docker compose logs -f scorer-worker            # "job processed" verdict=…
+psql "$DATABASE_URL" -c "select target_type, verdict, confidence, model, source_msg_id
+  from moderation_analyses order by created_at desc limit 5;"
+psql "$DATABASE_URL" -c "select count(*) from pgmq.q_scorer_jobs;"   # drains to ~0
+# admin queue (operator JWT — see CLAUDE.md mint snippet, claim {operator:true}):
+curl -s localhost:4001/v1/11111111-1111-1111-1111-111111111111/moderation/queue \
+  -H "Authorization: Bearer $TOK" | jq
+# Neo4j (if NEO4J_* set): http://localhost:7474 →
+#   MATCH (u:User)-[:AUTHORED]->(c:Content) RETURN u.id, c.id, c.relationshipScore LIMIT 10;
+```
+
+**5. ⚠️ Watch for the real-infra bugs** (fix before trusting it):
+- **Model label names** — confirm the toxicity model emits `toxic`/`neutral` and the sentiment model
+  `negative`/`neutral`/`positive`. If they're `LABEL_0`/`LABEL_1`, the P(toxic) gate + signed-quality
+  mapping silently misfire → fix the label keys (or map id2label) in `model_server`/`pipeline.py`.
+- **pgmq function signatures** match your Supabase pgmq version (`read`/`delete`/`archive` arg order).
+- **asyncpg jsonb** returns `dict` vs `str` (db.py coerces `str` — confirm).
+- **NOTIFY** only fires on the **`:5432`** listen connection (not the `:6543` pooler).
+- **Neo4j** auth + that `ensure_constraints` ran (worker startup log).
+
 ## Roadmap
 
 **Done** (implemented, unit-tested where feasible): ✅ RoBERTa `/score` · ✅ asyncpg db layer (content
