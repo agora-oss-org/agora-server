@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Secure chat (end-to-end-encrypted, MLS/RFC-9420) — Phase 1: the blind Delivery Service.** A brand
+  new, separate path from the Replyke-compatible plaintext chat (which is untouched), where the server
+  **cannot read messages** — it stores/relays only opaque ciphertext and learns social-graph + timing
+  metadata (the Signal-server model). No LLM moderation, embeddings, or search run over secure chat,
+  by design. New surface (all crypto is client-side; the server depends on no crypto library):
+  - **REST** `/v7/:projectId/secure-chat/*` (`routes/secure-chat.ts`): device registration + public
+    device directory; one-time MLS KeyPackage publish/count/**atomic claim** (`409
+    secure-chat/key-packages-exhausted` when depleted); create conversation (`dm`/`group`/`channel`,
+    channels gated by space membership); add/remove member with **optimistic epoch linearization**
+    (`409 secure-chat/epoch-conflict`); send/list opaque ciphertext messages; per-device
+    Welcome/Commit handshake inbox (monotonic `seq` cursor); and a passphrase-encrypted **key backup**
+    the server can't decrypt (history restore on a new browser).
+  - **Realtime** a separate socket.io `/secure` namespace (`realtime/secure-socket.ts`) for
+    ciphertext-only fan-out — `secure:message`, broadcast `secure:handshake`, device-targeted
+    `secure:welcome`, plus member/typing/key-package-low signals.
+  - **Schema** seven `bytea`-backed tables (`db/schema/secure-chat.ts`, migrations `0031`/`0032`),
+    multi-device-ready (a device = an MLS leaf) and **RLS deny-all** (no `authenticated` SELECT grant).
+  - **Contract** new `@agora/contract` `secure-chat` module (base64 binary, string epochs); new
+    workspace package **`@agora/secure-chat-core`** holding the `SecureChatCrypto` seam (so ts-mls vs
+    OpenMLS-WASM is a deferred, swappable choice) + a deterministic mock used by the integration suite
+    (which asserts the stored ciphertext never contains the plaintext). See `CHAT_TODO.md` for Phase 2
+    (web client crypto + IndexedDB + passphrase UX) and Phase 3 (React Native/Expo + full multi-device).
+
 ### Fixed
 - **Scorer: gate on P(toxic), not the top label.** The `services/scorer` cascade compared the toxicity
   classifier's *top-label* probability to the gray-zone thresholds, so clean content whose top label was

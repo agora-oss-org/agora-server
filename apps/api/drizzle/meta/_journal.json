@@ -218,6 +218,20 @@
       "when": 1780722136093,
       "tag": "0030_friendly_old_lace",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1780798235179,
+      "tag": "0031_magical_madame_masque",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1780798300000,
+      "tag": "0032_secure_chat_rls_triggers",
+      "breakpoints": true
     }
   ]
 }

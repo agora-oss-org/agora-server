@@ -34,5 +34,11 @@ export const stewardCaseOutcome = pgEnum("steward_case_outcome", ["repaired", "s
 // Timeline event kinds (append-only audit trail — nothing on a case is silently mutated).
 export const stewardCaseEventKind = pgEnum("steward_case_event_kind", ["opened", "note", "state_change", "assignment", "asymmetry", "outcome", "escalation", "mediation_opened", "mediation_closed"]);
 
+// ─── Secure chat (E2E, MLS/RFC-9420) ────────────────────────────────────────
+// Distinct from the plaintext-chat enums above — the secure surface is a separate path.
+export const secureConversationType = pgEnum("secure_conversation_type", ["dm", "group", "channel"]);
+export const secureMemberRole = pgEnum("secure_member_role", ["admin", "member"]);
+export const secureHandshakeKind = pgEnum("secure_handshake_kind", ["welcome", "commit", "proposal"]);
+
 // ─── Reusable jsonb default: the 8 v7 reaction counts, all zero ──────────────
 export const zeroReactionCounts = sql`'{"upvote":0,"downvote":0,"like":0,"love":0,"wow":0,"sad":0,"angry":0,"funny":0}'::jsonb`;

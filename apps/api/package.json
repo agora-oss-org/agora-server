@@ -38,6 +38,7 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
+    "@agora/secure-chat-core": "workspace:*",
     "@types/node": "^22.10.2",
     "@vitest/coverage-v8": "^4.1.7",
     "drizzle-kit": "^0.31.10",

@@ -53,6 +53,11 @@ const schema = z.object({
   // Max accepted upload size (bytes) for /storage + multipart image attachments. Defense-in-depth
   // behind the proxy's body cap (the bundled Caddy edge caps at MAX_BODY_SIZE). Default 25 MiB.
   MAX_UPLOAD_BYTES: z.coerce.number().int().positive().default(26_214_400),
+  // Secure-chat (E2E) ciphertext caps, enforced on the DECODED byte length. Deliberately NOT the
+  // 25 MiB upload cap — that would invite DoS. App messages are small (default 256 KiB); MLS
+  // handshakes (Welcome/Commit) scale with group size so they get a larger, separate cap (4 MiB).
+  MAX_SECURE_MESSAGE_BYTES: z.coerce.number().int().positive().default(262_144),
+  MAX_SECURE_HANDSHAKE_BYTES: z.coerce.number().int().positive().default(4_194_304),
   // Embeddings (Voyage AI). Optional until semantic search is used.
   VOYAGE_API_KEY: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
   VOYAGE_MODEL: z.string().default("voyage-3.5"),
