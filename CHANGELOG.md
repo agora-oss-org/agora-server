@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.9.1] - 2026-06-07
+## [0.9.2] - 2026-06-07
 
 ### Added
 - **Scorer: LISTEN/NOTIFY wake-up + operator-complete admin surface.** The `services/scorer` worker now
@@ -39,7 +39,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (Apache-2.0) to npm on a `v*` tag (or manual dispatch) — idempotent (skips if the version is already
   published), with npm provenance. Requires an `NPM_TOKEN` repo secret. The AGPL apps stay `private`.
 
-## [0.9.0] - 2026-06-06
+### Fixed
+- **Docker builds: drop the deleted `secure-chat-core`, repoint the renamed contract.** `apps/api/Dockerfile`
+  no longer `COPY`s / builds `packages/secure-chat-core` (it was moved to the SDK repo as the published
+  `@agora-sdk/secure-chat-crypto` devDep), which had broken `build-and-push` at the COPY step. The api,
+  moderator, and admin Dockerfiles now build the renamed `@agora-server/contract` workspace package (the
+  stale `@agora/contract` filter would no longer match). Contract is still built from in-image workspace
+  source (`workspace:*` → `link:`), never pulled from npm — so the image build is independent of the
+  `npm-publish` workflow (no ordering/race between them).
+- **`@agora-server/contract` npm publish: add the `repository` field.** npm provenance (`--provenance`)
+  rejects a bundle whose `package.json` lacks a `repository.url` matching the source repo (`422
+  Unprocessable Entity`), which silently no-op'd the publish on the `v0.9.1` tag. Added `repository`
+  (+ `homepage`) so the provenance attestation validates and the package publishes. (`v0.9.1` was tagged
+  but produced no npm artifact; `0.9.2` is the first published release of the contract.)
 
 ### Added
 - **Secure chat (end-to-end-encrypted, MLS/RFC-9420) — Phase 1: the blind Delivery Service.** A brand
@@ -871,8 +883,8 @@ cloud Supabase — no stubbed endpoints remain.
   (`@agora/*`), a repointed fork of `@replyke/core`.
 - Backlog: rate limiting, refresh-token cleanup sweep, RLS write policies, turnkey deploy guide.
 
-[Unreleased]: https://github.com/jenova-marie/agora/compare/v0.9.1...HEAD
-[0.9.1]: https://github.com/jenova-marie/agora/compare/v0.9.0...v0.9.1
+[Unreleased]: https://github.com/jenova-marie/agora/compare/v0.9.2...HEAD
+[0.9.2]: https://github.com/jenova-marie/agora/compare/v0.9.0...v0.9.2
 [0.9.0]: https://github.com/jenova-marie/agora/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/jenova-marie/agora/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/jenova-marie/agora/compare/v0.6.0...v0.7.0
