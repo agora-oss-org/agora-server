@@ -69,6 +69,57 @@ migration.
    drop/replay/reorder via MLS generation counters — verify the chosen core enforces this.
 4. **Metadata leakage is accepted** (social graph + timing + sizes), the Signal-server model.
    `secure_conversations.name` is the one deliberate plaintext concession — prefer `null` and carry the
-   display name inside an E2EE group-info message.
+   display name inside an E2EE group-info message. **Network-layer** metadata (client IP, geolocation,
+   ISP traffic correlation) is *not* addressed by E2E at all — see "Future exploration: Tor" below.
 5. **`secure_handshake_receipts`** (per-device ack table) was left out — Phase 1 is cursor-only. Add it
    only if server-side handshake GC needs it.
+
+---
+
+## Future exploration — network-layer privacy (Tor / onion routing)
+
+E2E hides message *content*; it does nothing about the *network* metadata the server and any on-path
+observer still see — **client IP / geolocation, connection timing, and traffic-volume correlation**.
+For a threat model that includes "don't even reveal *who is talking to this server from where*," the
+complement to MLS is **onion routing**. Worth investigating (not committed):
+
+- [ ] **Serve the API as a Tor hidden service (`.onion`).** Clients reach `@agora/api` over Tor, so the
+      server never learns a real client IP and there's no exit node — end-to-end inside the Tor network.
+      Applies to **both** secure chat *and* normal browsing/REST traffic. Mostly an ops/deploy concern
+      (a `tor` sidecar publishing the onion address); the app is transport-agnostic.
+- [ ] **Client-side: route the SDK/socket.io transport through Tor** (native Tor, Orbot on Android, or
+      Arti) for clients that opt in — independent of whether the server runs a hidden service.
+- [ ] **socket.io over Tor.** Confirm long-lived realtime connections behave under Tor's added latency
+      (reconnection/backoff, handshake timeouts).
+- [ ] **Pairs with** client-side ciphertext **size-bucket padding** (Phase 2) — onion routing hides the
+      endpoints, padding blunts traffic-shape fingerprinting; together they close most of the metadata gap.
+
+This is **orthogonal to the MLS work** and needs no schema/contract changes — it's a transport/deploy
+hardening track that can land any time after Phase 1.
+
+### Anti-abuse without IP — the real work (feasible, not a blocker)
+
+Behind a single `.onion` every request arrives from the local Tor daemon, so the IP-keyed limiter
+(`lib/rate-limit.ts`, keyed via `RATE_LIMIT_TRUSTED_HOPS` / `X-Forwarded-For`) degenerates — one
+abuser looks like everyone. That does **not** kill Tor support; IP limiting was already a weak heuristic
+(CGNAT/corporate NAT share one IP; mobile IPs rotate; VPNs are cheap). The fix is to **swap the key, not
+drop the control:**
+
+- [ ] **Authenticated routes → key on the account/token (`sub`), not the IP.** Every mutation is
+      `requireAuth`, so the abuse-sensitive write surface keys cleanly on identity — *strictly better*
+      than IP (an attacker can't escape it by switching networks). Localized change; the limiter store is
+      already pluggable (in-process / Redis).
+- [ ] **Unauthenticated surface is the hard part** — `/auth/*` (login brute-force, signup spam, the
+      stricter `RATE_LIMIT_AUTH_MAX`) and anonymous reads. Mitigations (standard for Tor/VPN-facing
+      services): a **proof-of-work or CAPTCHA challenge** on signup/login; **account/email-keyed** limits
+      + email-confirmation gating; **global/endpoint caps** on the onion ingress as a blast-radius
+      backstop; or simply **keep signup/login on clearnet** and use the `.onion` for the authenticated app.
+- [ ] **Two ingresses, two policies.** Don't apply one limiter to both doors: clearnet keeps the IP-keyed
+      limiter as-is; the `.onion` gets an account-keyed + challenge policy. Additive "onion mode," not a
+      rearchitecture.
+
+**Honest cost:** you trade IP heuristics for **account-level controls + challenges**. A determined
+abuser who farms many accounts is harder to stop than one you could IP-ban — but that's inherent to
+offering anonymity (the same trade every privacy service makes), and the account-level **stewardship**
+layer is already the right lever for it. Feasible: yes. Free: no — Tor promotes account/challenge-based
+anti-abuse from nice-to-have to **required** for the onion's unauthenticated endpoints.

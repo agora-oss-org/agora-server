@@ -76,6 +76,31 @@ trust boundary rather than reconstructed per app:
 Both live behind the same `/v7/:projectId/...` contract and in the Postgres schema, so they're available
 to every client from day one — not gated behind an external service's limits.
 
+## Private means private — end-to-end-encrypted chat
+
+A community backend that keeps everyone's direct messages in **readable plaintext** is a breach waiting
+to happen: one database leak, one subpoena, one over-broad admin, one "smart" feature that quietly reads
+DMs, and the trust is gone. Storing readable private messages is the bad default we refuse to ship — so
+Agora's **secure chat** is genuinely **end-to-end encrypted**, and the server *cannot read it*.
+
+It's built as a **blind delivery service** on **MLS (RFC 9420)** — the IETF messaging-layer-security
+standard, the same family of guarantees as Signal but designed for large, dynamic groups:
+
+- **The server is blind.** It stores and relays only **opaque ciphertext**. It enforces *who* may post
+  and the *order* of group changes, but never sees *what* — it learns social-graph + timing metadata
+  only (the Signal-server model). All cryptography is client-side; the server depends on no crypto library.
+- **No AI in your DMs — on purpose.** Secure chat runs **no** LLM moderation, embeddings, or semantic
+  search. Those features require reading content, which is exactly the thing we're refusing to do. That
+  trade is the point, not a limitation.
+- **A separate path, zero contract drift.** Secure chat lives at `/v7/:projectId/secure-chat/*`, entirely
+  apart from the Replyke-compatible plaintext chat (which is untouched). Use whichever a conversation needs.
+- **Your keys, your history.** Keys live on the client; an optional **passphrase-encrypted backup** (which
+  the server also can't decrypt) restores history on a new device. The schema is multi-device-ready.
+- **The crypto stays swappable.** All MLS lives behind a small `SecureChatCrypto` interface, so the
+  concrete core (ts-mls vs OpenMLS-WASM) is a deferred, reversible choice — the server never changes.
+
+Full design, threat model, schema, endpoints, and roadmap: **[`docs/SECURE_CHAT.md`](docs/SECURE_CHAT.md)**.
+
 ## The contract is the constraint
 
 Agora's whole reason to exist is that the forked SDK's typed hooks work **unchanged**. So the
@@ -91,27 +116,28 @@ Match these exactly or the SDK's hooks break — that discipline is what makes t
 
 ## What's inside
 
-Agora is a **pnpm monorepo** — three apps and one shared contract package. Each has its own README
+Agora is a **pnpm monorepo** — two apps and two shared packages. Each has its own README
 with setup, configuration, and development details:
 
 | Package | What it is | Docs |
 |---|---|---|
 | **[`@agora/api`](apps/api)** | The backend — Hono + Supabase + socket.io. Every endpoint, permission check, and bit of business logic. The reference package. | [apps/api/README.md](apps/api/README.md) |
-| **[`@agora/admin`](apps/admin)** | The admin dashboard — Vite + React. Moderation queue + AI queue, the **stewardship caseload** (cases, mediation channels, steward grants), feed & moderator tuning, webhook config, community & analytics dashboards. | [apps/admin/README.md](apps/admin/README.md) |
-| **[`@agora/moderator`](apps/moderator)** | Optional LLM content moderation — a standalone service that assesses content via webhooks and feeds the admin's AI queue. | [apps/moderator/README.md](apps/moderator/README.md) |
-| **`@agora/contract`** | Shared API types + zod request schemas (no hono/drizzle). Built first; consumed by all three apps so wire shapes never drift. | — |
+| **[`@agora/admin`](apps/admin)** | The admin dashboard — Vite + React. Moderation queue + AI queue, the **stewardship caseload** (cases, mediation channels, steward grants), feed tuning, webhook config, community & analytics dashboards. | [apps/admin/README.md](apps/admin/README.md) |
+| **`@agora/contract`** | Shared API types + zod request schemas (no hono/drizzle). Built first; consumed across the workspace so wire shapes never drift. | — |
+| **`@agora/secure-chat-core`** | The client crypto seam for **end-to-end-encrypted chat** — the `SecureChatCrypto` interface (ts-mls / OpenMLS-WASM swappable) + a deterministic mock. The server depends on none of it. | [docs/SECURE_CHAT.md](docs/SECURE_CHAT.md) |
 
 ```
 agora/
 ├── docs/
-│   ├── MANIFEST.md      # the exact REST + socket.io contract (SDK-confirmed vs inferred)
-│   └── MODELS.md        # field-level response shapes (drive both the API and the schema)
+│   ├── MANIFEST.md          # the exact REST + socket.io contract (SDK-confirmed vs inferred)
+│   ├── MODELS.md            # field-level response shapes (drive both the API and the schema)
+│   └── SECURE_CHAT.md       # the end-to-end-encrypted chat design + reference
 ├── packages/
-│   └── contract/        # @agora/contract — shared API types + zod schemas
+│   ├── contract/            # @agora/contract         — shared API types + zod schemas
+│   └── secure-chat-core/    # @agora/secure-chat-core — client crypto seam (E2E chat)
 └── apps/
-    ├── api/             # @agora/api       — the backend
-    ├── admin/           # @agora/admin     — the admin frontend
-    └── moderator/       # @agora/moderator — the LLM moderation service
+    ├── api/                 # @agora/api   — the backend
+    └── admin/               # @agora/admin — the admin frontend
 ```
 
 The client SDK lives in a **separate** companion repository,
@@ -132,9 +158,6 @@ pnpm dev                  # http://localhost:4000/v7   (GET /health to verify)
 
 # Admin dashboard (optional)
 cd ../admin && pnpm dev   # http://localhost:5173
-
-# LLM moderation (optional)
-cd ../moderator && pnpm dev   # http://localhost:4001
 ```
 
 Each app's README covers its own configuration, commands, and Docker image. Start with
@@ -154,7 +177,7 @@ Supabase Postgres   schema · triggers · RPC · pgvector · PostGIS · RLS
         └── Supabase Storage  (file/image bytes)
         Voyage AI ──▶ embeddings        Anthropic ──▶ /search/ask answers
 
-@agora/admin ─(operator JWT)─▶ @agora/api          @agora/moderator ─(webhooks + write-back)─▶ @agora/api
+@agora/admin ─(operator JWT)─▶ @agora/api
 ```
 
 - **Drizzle owns all DB access** via a direct `postgres.js` connection. The Supabase JS client is
@@ -185,6 +208,7 @@ complete** — no stubbed endpoints remain.
 | **reports** | report queue + resolution (entities, comments, chat messages) |
 | **auth** | sign-up/in/out, refresh rotation + reuse-detection, change/reset password, email verify, external RS256, OAuth provider sign-in/link |
 | **chat** | conversations (direct/group/space), members, messages, reactions, typing, read state — **socket.io realtime** |
+| **secure chat** | **end-to-end-encrypted** chat (MLS / RFC 9420) on a separate path — the server stores/relays only ciphertext and never reads content; 1:1 + groups + space channels, one-time key packages, passphrase key backup, a dedicated `/secure` socket.io namespace ([`docs/SECURE_CHAT.md`](docs/SECURE_CHAT.md)) |
 | **search** | semantic content search across entities/comments/messages (Voyage + pgvector), RAG `/ask` (Anthropic, SSE), text search for spaces/users |
 | **storage** | file uploads + image variants (sharp → webp, 5 sizing modes) |
 | **webhooks** | project webhooks (HMAC validation gates + `*.complete` broadcasts) + per-space digests |
@@ -207,6 +231,9 @@ every read/write rule in the handlers, with RLS underneath as a verified backsto
   reads, reactions, comment creation, semantic search).
 - **Private chat** — conversation messages are readable only by active members, enforced on the REST
   routes *and* inside the search RPC.
+- **End-to-end-encrypted secure chat** — an optional, separate chat surface where the server stores only
+  **ciphertext** and *cannot* read messages at all (MLS / RFC 9420; deny-all RLS on every secure table).
+  See [`docs/SECURE_CHAT.md`](docs/SECURE_CHAT.md).
 - **Moderation visibility** — removed content is always hidden from non-privileged readers (omitted from
   lists, 404'd on single reads, filtered in the search RPC); operators bypass to review.
 - **Operators & stewards** — a deployment-operator allowlist grants a project-wide moderation/admin
@@ -219,17 +246,16 @@ Full detail (including the OAuth callback setup) lives in
 
 ## Docker
 
-The repo's `docker-compose.yml` builds and wires the whole stack — api (`:4000`), admin (`:8080`),
-and moderator (`:4001`). Postgres/Auth/Storage are on Supabase, so there's no local DB to run.
+The repo's `docker-compose.yml` builds and wires the whole stack — api (`:4000`) and admin (`:8080`).
+Postgres/Auth/Storage are on Supabase, so there's no local DB to run.
 
 ```bash
 docker compose up --build                               # from the repo root
 docker compose run --rm agora node scripts/migrate.mjs  # apply migrations (one-off, drizzle-kit-free)
 ```
 
-The admin service is the Vite SPA on nginx, reverse-proxying `/v7` + `/socket.io` to the api and
-`/moderator` to the moderator (same origin, no CORS). Each app's README documents building and
-running its image standalone.
+The admin service is the Vite SPA on nginx, reverse-proxying `/v7` + `/socket.io` to the api
+(same origin, no CORS). Each app's README documents building and running its image standalone.
 
 For production, an **optional TLS edge proxy** (Caddy) gives the stack a single HTTPS front door with
 **automatic Let's Encrypt certs**, HSTS + security headers, a body-size cap, and an authoritative
@@ -247,7 +273,7 @@ cross-replica rate limiting.)
 
 Agora is **three separate repos** — kept separate on purpose, *not* one monorepo:
 
-- **`agora-server`** (this repo) — the backend + admin + moderator. The contract's server side.
+- **`agora-server`** (this repo) — the backend + admin. The contract's server side.
 - **[`agora-sdk`](https://github.com/jenova-marie/agora-sdk)** — the forked, repointed Replyke SDK,
   published as `@agora-sdk/*` (`core` / `react-js` / `react-native` / `expo`). The base URL flows in
   via the provider prop; no `api.replyke.com` left. Its own release cycle.
@@ -307,7 +333,7 @@ be kind, assume good faith, and build something we'd all want to use. 💜
 
 ## License
 
-**[AGPL-3.0-only](LICENSE)** for the server (`@agora/api`, `@agora/admin`, `@agora/moderator`) — you
+**[AGPL-3.0-only](LICENSE)** for the server (`@agora/api`, `@agora/admin`) — you
 can self-host forever, but running a *modified* Agora as a network service means sharing your changes
 back. The shared wire contract ([`@agora/contract`](packages/contract)) stays **Apache-2.0** so the
 [`agora-sdk`](https://github.com/jenova-marie/agora-sdk) and any third-party client can build against
