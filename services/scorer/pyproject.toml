@@ -31,5 +31,9 @@ testpaths = ["tests"]
 asyncio_mode = "auto"
 pythonpath = ["."]
 
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true  # asyncpg/neo4j/transformers/torch ship partial or no stubs
+
 [tool.setuptools.packages.find]
 include = ["scorer*", "model_server*", "worker*"]

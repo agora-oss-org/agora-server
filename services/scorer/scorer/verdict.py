@@ -11,7 +11,7 @@ import json
 import math
 import re
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import Literal, cast
 
 ModerationVerdict = Literal["allow", "block", "review"]
 _VERDICTS: tuple[ModerationVerdict, ...] = ("allow", "block", "review")
@@ -40,8 +40,8 @@ def parse_verdict(raw: str) -> ParsedVerdict:
     if not isinstance(obj, dict):
         raise ValueError(f"LLM output not a JSON object: {raw[:200]}")
 
-    verdict = obj.get("verdict")
-    verdict = verdict if verdict in _VERDICTS else "review"
+    raw_verdict = obj.get("verdict")
+    verdict: ModerationVerdict = cast(ModerationVerdict, raw_verdict) if raw_verdict in _VERDICTS else "review"
 
     raw_categories = obj.get("categories")
     categories = (

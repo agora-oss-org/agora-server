@@ -17,7 +17,9 @@ shape is exercisable; the scoring→verdict mapping details are finalized in the
 
 from __future__ import annotations
 
-from scorer.auto_action import AutoActionThresholds, decide_auto_action
+from typing import cast
+
+from scorer.auto_action import AutoActionThresholds, ModerationVerdict, decide_auto_action
 from scorer.config import Settings
 from scorer.db import fetch_content, get_moderator_config
 from scorer.haiku import assess as haiku_assess
@@ -43,7 +45,10 @@ async def process_job(settings: Settings, job: ScoreJob, msg_id: int | None = No
     cfg = await get_moderator_config(settings, job.project_id)
 
     # ── gray-zone cascade ──────────────────────────────────────────────────────
-    tox = toxicity.score
+    # Gate on P(toxic) specifically — NOT toxicity.score, which is the *top* label's probability and
+    # could be "neutral" (a clean post with neutral=0.95 must not trip the block gate). The toxicity
+    # model must expose a "toxic" label; fall back to the top score only if it doesn't.
+    tox = toxicity.scores.get("toxic", toxicity.score)
     verdict, categories, confidence, reason, model = "allow", [], tox, "", "roberta:toxicity"
     prompt_tokens = completion_tokens = 0
     if tox >= settings.grayzone_high:
@@ -60,7 +65,7 @@ async def process_job(settings: Settings, job: ScoreJob, msg_id: int | None = No
 
     # ── decide + apply auto-action (entity/comment only) ───────────────────────
     trigger = decide_auto_action(
-        verdict, confidence, job.target_type,
+        cast(ModerationVerdict, verdict), confidence, job.target_type,
         AutoActionThresholds(cfg.block_auto_action_threshold, cfg.review_auto_action_threshold),
     )
     auto_actioned = False
