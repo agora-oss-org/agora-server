@@ -1,4 +1,4 @@
-# Typecheck, build, and unit-test every workspace on push / PR.
+# Typecheck, build, and test every workspace on push / PR.
 name: ci
 
 on:
@@ -31,5 +31,44 @@ jobs:
       - name: Typecheck
         run: pnpm -r typecheck
 
-      - name: Unit tests
-        run: pnpm --filter @agora/api test
+      - name: Unit tests (all packages)
+        run: pnpm -r test
+
+  # Integration suite — runs against a real Postgres (TEST_DATABASE_URL, the dedicated cloud
+  # Supabase test project; pgvector/PostGIS/pgmq + all extensions). The suite is hermetic for
+  # external APIs (it forces VOYAGE_API_KEY/ANTHROPIC_API_KEY empty) and isolates by project_id.
+  # Serialized via `concurrency` so two runs never hit the shared test DB at once; skipped (green)
+  # when the secret isn't configured, so forks/contributors without DB access aren't blocked.
+  integration:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: integration-test-db
+      cancel-in-progress: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Build contract (the api suite imports its built dist)
+        run: pnpm --filter @agora/contract build
+
+      - name: Integration tests
+        env:
+          TEST_DATABASE_URL: ${{ secrets.TEST_DATABASE_URL }}
+        run: |
+          if [ -z "$TEST_DATABASE_URL" ]; then
+            echo "::notice::TEST_DATABASE_URL not configured — skipping integration tests"
+            exit 0
+          fi
+          pnpm test:integration
