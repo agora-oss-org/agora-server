@@ -95,7 +95,7 @@ the published contract — defeating the point. Its `vite.config.ts` auto-aliase
 `../agora-sdk/packages/*/dist` build when present, so SDK-fork dev still works without publishing.
 
 **Run all three locally:** start the server (`cd apps/api && pnpm dev` → `:4000`), seed a confirmed
-demo user (`node scripts/seeds/seed-demo-user.mjs` → `agora-demo@gmail.com` / `DemoPass123!`), then run the
+demo user (`node scripts/seeds/seed-demo-user.mjs` → `agora-admin@gmail.com` / `DemoPass123!`), then run the
 demo (`cd ../agora-demo && npm run dev` → `:5173`, points at the server via `VITE_API_BASE_URL`).
 Project id is the seed UUID `11111111-1111-1111-1111-111111111111`.
 
