@@ -50,6 +50,9 @@ class Settings:
 
     # Reused from the moderator contract.
     database_url: str | None = field(default_factory=lambda: _env_str("DATABASE_URL"))
+    # A DIRECT/session DSN (:5432) for the LISTEN/NOTIFY wake-up — LISTEN doesn't work over the
+    # transaction pooler (:6543). Unset → no wake-up, the consumer just polls.
+    listen_database_url: str | None = field(default_factory=lambda: _env_str("SCORER_LISTEN_DATABASE_URL"))
     access_token_secret: str | None = field(default_factory=lambda: _env_str("ACCESS_TOKEN_SECRET"))
     api_base_url: str | None = field(default_factory=lambda: _env_str("API_BASE_URL"))
     moderation_service_secret: str | None = field(default_factory=lambda: _env_str("MODERATION_SERVICE_SECRET"))
@@ -88,6 +91,9 @@ class Settings:
 
     def neo4j_enabled(self) -> bool:
         return bool(self.neo4j_uri and self.neo4j_user and self.neo4j_password)
+
+    def notify_enabled(self) -> bool:
+        return bool(self.listen_database_url)
 
 
 @dataclass(frozen=True)

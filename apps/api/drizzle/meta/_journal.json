@@ -232,6 +232,13 @@
       "when": 1780798300000,
       "tag": "0032_secure_chat_rls_triggers",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1780798400000,
+      "tag": "0033_scorer_notify",
+      "breakpoints": true
     }
   ]
 }

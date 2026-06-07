@@ -17,6 +17,7 @@ from fastapi import FastAPI
 from scorer import db, neo4j
 from scorer.config import get_settings
 from scorer.logging import get_logger, log
+from scorer.notify import NotifyListener
 
 from .admin_api import router as admin_router
 from .consumer import run_consumer
@@ -28,7 +29,9 @@ def create_app() -> FastAPI:
     app = FastAPI(title="agora-scorer-worker")
     app.include_router(admin_router)
     stop = asyncio.Event()
+    wake = asyncio.Event()
     consumer_task: asyncio.Task | None = None
+    listener: NotifyListener | None = None
 
     @app.get("/health")
     def health() -> dict[str, str]:
@@ -36,15 +39,19 @@ def create_app() -> FastAPI:
 
     @app.on_event("startup")
     async def _startup() -> None:
-        nonlocal consumer_task
+        nonlocal consumer_task, listener
         settings = get_settings()
         await neo4j.ensure_constraints(settings)  # best-effort; no-op when NEO4J_* unset
-        consumer_task = asyncio.create_task(run_consumer(settings, stop))
+        listener = NotifyListener(settings, wake)
+        await listener.start()  # no-op when SCORER_LISTEN_DATABASE_URL unset
+        consumer_task = asyncio.create_task(run_consumer(settings, stop, wake))
         log(logger, "info", "worker started", admin_port=settings.admin_port)
 
     @app.on_event("shutdown")
     async def _shutdown() -> None:
         stop.set()
+        if listener is not None:
+            await listener.stop()
         if consumer_task is not None:
             with contextlib.suppress(asyncio.CancelledError):
                 await consumer_task
