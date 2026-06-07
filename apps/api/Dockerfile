@@ -11,11 +11,12 @@ WORKDIR /repo
 # Source is copied BEFORE install so pnpm links @agora/contract into apps/api/node_modules.
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json .npmrc ./
 COPY packages/contract ./packages/contract
+COPY packages/secure-chat-core ./packages/secure-chat-core
 COPY apps/api ./apps/api
 RUN pnpm install --frozen-lockfile --filter @agora/api...
 
-# Build contract before the api (topological).
-RUN pnpm --filter @agora/contract build && pnpm --filter @agora/api build
+# Build the workspace lib deps before the api (topological).
+RUN pnpm --filter @agora/contract build && pnpm --filter @agora/secure-chat-core build && pnpm --filter @agora/api build
 
 # Self-contained, prod-only deployment for the api (flattens the workspace:* @agora/contract
 # dependency into real files — no pnpm store / symlinks at runtime).
