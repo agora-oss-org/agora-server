@@ -1,0 +1,59 @@
+# Publish the public npm package(s) — currently just @agora-server/contract (Apache-2.0), the wire-contract
+# surface the SDK builds on. The AGPL apps (@agora/api, @agora/admin) are `private: true` and never
+# published. Fires on a version tag (e.g. `v0.9.0`) or manual dispatch.
+#
+# Idempotent: it publishes only when package.json's version isn't already on npm, so it's safe to run
+# on every `v*` tag even when the contract version didn't change.
+#
+# Requires an `NPM_TOKEN` repo secret (an npm automation token with publish rights to the @agora-server scope).
+# Publishes with npm provenance (needs `id-token: write` + a public repo).
+name: npm-publish
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  publish-contract:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # npm provenance attestation
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4 # reads the pinned version from package.json "packageManager"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          registry-url: "https://registry.npmjs.org" # writes the auth-aware .npmrc
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Build contract (produces the published dist/)
+        run: pnpm --filter @agora-server/contract build
+
+      - name: Publish @agora-server/contract (skip if version already on npm)
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_PROVENANCE: "true"
+        run: |
+          if [ -z "$NODE_AUTH_TOKEN" ]; then
+            echo "::notice::NPM_TOKEN not configured — skipping publish"
+            exit 0
+          fi
+          name=$(node -p "require('./packages/contract/package.json').name")
+          version=$(node -p "require('./packages/contract/package.json').version")
+          if npm view "$name@$version" version >/dev/null 2>&1; then
+            echo "::notice::$name@$version is already published — skipping"
+            exit 0
+          fi
+          echo "Publishing $name@$version"
+          pnpm --filter @agora-server/contract publish --access public --no-git-checks --provenance

@@ -34,6 +34,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `@agora-server` npm scope (matches the repo + the scope it publishes under). All workspace importers and
   the publish workflow were repointed; the AGPL apps keep their `@agora/*` names (private, never published).
 
+### Added
+- **`npm-publish` CI workflow.** `.github/workflows/npm-publish.yml` publishes `@agora-server/contract`
+  (Apache-2.0) to npm on a `v*` tag (or manual dispatch) — idempotent (skips if the version is already
+  published), with npm provenance. Requires an `NPM_TOKEN` repo secret. The AGPL apps stay `private`.
+
 ## [0.9.0] - 2026-06-06
 
 ### Added
