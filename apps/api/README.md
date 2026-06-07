@@ -73,7 +73,7 @@ apps/api/
 
 ## Getting started
 
-From the **repo root** (the api depends on the built `@agora/contract` package):
+From the **repo root** (the api depends on the built `@agora-server/contract` package):
 
 ```bash
 corepack enable          # activate the pinned pnpm
@@ -342,7 +342,7 @@ default user — fine for a trusted internal network; add the ACL when Redis is 
 ## Docker
 
 The api ships a multi-stage `Dockerfile` (`node:22-slim`; **built from the repo root** since it
-depends on the `@agora/contract` workspace package — `pnpm deploy` bundles a prod-only standalone,
+depends on the `@agora-server/contract` workspace package — `pnpm deploy` bundles a prod-only standalone,
 run as a non-root user with a `/health` healthcheck). Postgres/Auth/Storage are on Supabase, so
 there's no local DB to run — the container just needs your `.env`.
 

@@ -9,7 +9,7 @@ import type {
 import type {
   SecureDeviceModel, SecureConversationModel, SecureConversationMemberModel,
   SecureMessageModel, SecureHandshakeModel, SecureKeyBackupModel, SecureKeyPackageClaim,
-} from "@agora/contract";
+} from "@agora-server/contract";
 
 const iso = (d: Date | null | undefined): string | null => (d instanceof Date ? d.toISOString() : null);
 const b64 = (buf: Buffer): string => Buffer.from(buf).toString("base64");

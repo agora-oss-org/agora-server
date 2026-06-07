@@ -2,7 +2,7 @@
 // name. Returns a map keyed by targetId so the queue can attach each flag's poster. Message targets
 // aren't resolved here (graceful null). One round of batched lookups, no N+1.
 import { inArray } from "drizzle-orm";
-import type { UserSummary } from "@agora/contract";
+import type { UserSummary } from "@agora-server/contract";
 import { db } from "../db/index.js";
 import { entities, comments, profiles } from "../db/schema.js";
 

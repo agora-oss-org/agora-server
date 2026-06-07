@@ -2,7 +2,7 @@
 // these tests drive a real client crypto — the deterministic MockSecureChatCrypto — to produce
 // the opaque blobs the API stores, proving the round-trip works without the server ever seeing
 // plaintext.
-import { MockSecureChatCrypto } from "@agora/secure-chat-core";
+import { MockSecureChatCrypto } from "@agora-sdk/secure-chat-crypto/testing";
 import { api, base } from "./helpers.js";
 
 export const b64e = (u8: Uint8Array): string => Buffer.from(u8).toString("base64");

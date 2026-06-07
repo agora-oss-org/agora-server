@@ -116,15 +116,14 @@ Match these exactly or the SDK's hooks break — that discipline is what makes t
 
 ## What's inside
 
-Agora is a **pnpm monorepo** — two apps and two shared packages. Each has its own README
+Agora is a **pnpm monorepo** — two apps and one shared contract package. Each has its own README
 with setup, configuration, and development details:
 
 | Package | What it is | Docs |
 |---|---|---|
 | **[`@agora/api`](apps/api)** | The backend — Hono + Supabase + socket.io. Every endpoint, permission check, and bit of business logic. The reference package. | [apps/api/README.md](apps/api/README.md) |
 | **[`@agora/admin`](apps/admin)** | The admin dashboard — Vite + React. Moderation queue + AI queue, the **stewardship caseload** (cases, mediation channels, steward grants), feed tuning, webhook config, community & analytics dashboards. | [apps/admin/README.md](apps/admin/README.md) |
-| **`@agora/contract`** | Shared API types + zod request schemas (no hono/drizzle). Built first; consumed across the workspace so wire shapes never drift. | — |
-| **`@agora/secure-chat-core`** | The client crypto seam for **end-to-end-encrypted chat** — the `SecureChatCrypto` interface (ts-mls / OpenMLS-WASM swappable) + a deterministic mock. The server depends on none of it. | [docs/SECURE_CHAT.md](docs/SECURE_CHAT.md) |
+| **`@agora-server/contract`** | Shared API types + zod request schemas (no hono/drizzle). Built first; consumed across the workspace — and the permissive (Apache-2.0) wire surface the SDK builds on. | — |
 
 ```
 agora/
@@ -133,12 +132,16 @@ agora/
 │   ├── MODELS.md            # field-level response shapes (drive both the API and the schema)
 │   └── SECURE_CHAT.md       # the end-to-end-encrypted chat design + reference
 ├── packages/
-│   ├── contract/            # @agora/contract         — shared API types + zod schemas
-│   └── secure-chat-core/    # @agora/secure-chat-core — client crypto seam (E2E chat)
+│   └── contract/            # @agora-server/contract — shared API types + zod schemas
 └── apps/
     ├── api/                 # @agora/api   — the backend
     └── admin/               # @agora/admin — the admin frontend
 ```
+
+> The **client** secure-chat packages (`@agora-sdk/secure-chat-crypto` — the `SecureChatCrypto` seam +
+> mock, with the real ts-mls/OpenMLS core to come) live in the separate **`agora-sdk-plus`** repo, not
+> here; this repo only devDepends on the mock for tests. See [Ecosystem](#ecosystem) and
+> [`docs/SECURE_CHAT.md`](docs/SECURE_CHAT.md).
 
 The client SDK lives in a **separate** companion repository,
 [`jenova-marie/agora-sdk`](https://github.com/jenova-marie/agora-sdk) (see [Ecosystem](#ecosystem)).
@@ -277,6 +280,10 @@ Agora is **three separate repos** — kept separate on purpose, *not* one monore
 - **[`agora-sdk`](https://github.com/jenova-marie/agora-sdk)** — the forked, repointed Replyke SDK,
   published as `@agora-sdk/*` (`core` / `react-js` / `react-native` / `expo`). The base URL flows in
   via the provider prop; no `api.replyke.com` left. Its own release cycle.
+- **`agora-sdk-plus`** — additive, Agora-only SDK features built on `@agora-sdk/*` (kept out of the
+  Replyke fork so that stays a tiny, documented divergence). Home of **end-to-end-encrypted chat**:
+  `@agora-sdk/secure-chat-crypto` (the `SecureChatCrypto` seam + mock; real ts-mls/OpenMLS core to come)
+  and the transport/provider/hooks. Depends on `@agora-server/contract` for the wire types — never the reverse.
 - **[`agora-demo`](https://github.com/jenova-marie/agora-demo)** — a standalone Vite + React app: the
   **1:1 compatibility harness** (and what powers the [live demo](https://demo.agora-oss.org)). Eight
   tabs, each exercising one SDK surface against a running server. It installs the **published**
@@ -335,7 +342,7 @@ be kind, assume good faith, and build something we'd all want to use. 💜
 
 **[AGPL-3.0-only](LICENSE)** for the server (`@agora/api`, `@agora/admin`) — you
 can self-host forever, but running a *modified* Agora as a network service means sharing your changes
-back. The shared wire contract ([`@agora/contract`](packages/contract)) stays **Apache-2.0** so the
+back. The shared wire contract ([`@agora-server/contract`](packages/contract)) stays **Apache-2.0** so the
 [`agora-sdk`](https://github.com/jenova-marie/agora-sdk) and any third-party client can build against
 it freely. **The community edition is AGPL-3.0 and always will be.**
 

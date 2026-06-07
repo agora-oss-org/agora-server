@@ -61,7 +61,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build contract (the api suite imports its built dist)
-        run: pnpm --filter @agora/contract build
+        run: pnpm --filter @agora-server/contract build
 
       - name: Integration tests
         env:

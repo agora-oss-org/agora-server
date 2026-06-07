@@ -76,7 +76,7 @@ apps/moderator/src/
 
 ## Getting started
 
-From the **repo root** (depends on the built `@agora/contract` package):
+From the **repo root** (depends on the built `@agora-server/contract` package):
 
 ```bash
 corepack enable
@@ -136,7 +136,7 @@ but no assessment happens — useful for wiring up the webhook plumbing before a
 ## Docker
 
 Ships a multi-stage `Dockerfile` (`node:22-slim`, built from the repo root since it depends on the
-`@agora/contract` workspace package).
+`@agora-server/contract` workspace package).
 
 ```bash
 # build context = repo root

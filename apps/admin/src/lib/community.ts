@@ -3,7 +3,7 @@
 // 24h deltas, a per-hour growth/moderation series, and the latest leaderboard + top-post snapshot
 // (ranking ids stored in the rollup; the API hydrates display fields). `configured:false` until the
 // first rollup cron has run.
-import type { User } from "@agora/contract";
+import type { User } from "@agora-server/contract";
 import { api } from "./api";
 
 export interface CommunitySeriesPoint {

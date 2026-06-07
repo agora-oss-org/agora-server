@@ -1,6 +1,6 @@
 // Moderation data access. Listing the queues uses the role-scoped /reports endpoints; taking action
 // uses the space-scoped moderation + report-resolution endpoints (so a report must carry a spaceId).
-import type { PaginatedResponse, Report, Entity, Comment, ReportTargetType, UserSummary } from "@agora/contract";
+import type { PaginatedResponse, Report, Entity, Comment, ReportTargetType, UserSummary } from "@agora-server/contract";
 import { api } from "./api";
 import { DEMO_URL } from "../config";
 

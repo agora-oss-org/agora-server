@@ -99,7 +99,7 @@ pnpm workspaces (corepack-pinned `pnpm@10.14.0`). Four packages:
   `moderation_analyses`) + `ACCESS_TOKEN_SECRET`; **all content mutations go through the API over
   HTTP** (the API stays the trust boundary). See its `apps/moderator/src` and the moderation note in
   Handler conventions.
-- `packages/contract` — `@agora/contract`, the **shared API contract**: response-model TS types
+- `packages/contract` — `@agora-server/contract`, the **shared API contract**: response-model TS types
   (`User`/`Entity`/`Comment`/`AuthUser`/`AuthContext`/`ModerationAnalysis`), the reaction taxonomy,
   the pagination envelope + `paginate()`, the error-envelope shape, and the zod request schemas. Pure
   types + zod, **no hono/drizzle**. Built to `dist/` and consumed via its `exports` map by api,
@@ -145,7 +145,7 @@ Project id is the seed UUID `11111111-1111-1111-1111-111111111111`.
 - `docs/MANIFEST.md` — **the contract**: every REST endpoint (method+path, ✅SDK-confirmed vs
   🔶inferred), socket.io event names, auth/pagination/error envelopes, SDK fork points.
 - `docs/MODELS.md` — field-level response shapes (source of truth for API output + schema).
-- `packages/contract/src/*.ts` — shared types + zod schemas (`@agora/contract`); 1:1 with the docs above.
+- `packages/contract/src/*.ts` — shared types + zod schemas (`@agora-server/contract`); 1:1 with the docs above.
 - `apps/api/src/db/schema/*.ts` — Drizzle schema, the **single source of truth** for the DB.
 - `apps/api/drizzle/` — generated + custom SQL migrations (see DB section).
 - `apps/api/src/lib/shape.ts` — row → camelCase API model shapers + batchers (`attachUserReactions`,
@@ -164,7 +164,7 @@ Project id is the seed UUID `11111111-1111-1111-1111-111111111111`.
 pnpm install                 # install all workspaces
 pnpm -r build                # build every package (contract first, topologically)
 pnpm -r typecheck            # ALWAYS run before considering work done
-pnpm --filter @agora/contract build   # rebuild the shared contract after editing it
+pnpm --filter @agora-server/contract build   # rebuild the shared contract after editing it
 
 cd apps/api                  # the backend lives here
 pnpm dev             # tsx watch -> http://localhost:4000/v7  (loads .env via dotenv)
@@ -183,8 +183,8 @@ pnpm db:migrate      # apply migrations (idempotent: journal skips applied; safe
 url=$(grep '^DATABASE_URL=' .env | cut -d= -f2-); psql "$url" -v ON_ERROR_STOP=1 -f scripts/seeds/seed.sql
 ```
 
-> ⚠️ `@agora/api` depends on `@agora/contract`'s built `dist/` (consumed via its `exports` map), so
-> run `pnpm --filter @agora/contract build` (or `pnpm -r build`) before typechecking the api from a
+> ⚠️ `@agora/api` depends on `@agora-server/contract`'s built `dist/` (consumed via its `exports` map), so
+> run `pnpm --filter @agora-server/contract build` (or `pnpm -r build`) before typechecking the api from a
 > clean checkout.
 
 **Env:** the root `.env` is the single source (direnv `dotenv`), symlinked from
@@ -381,5 +381,5 @@ migrator the container uses; its journal is the `drizzle` schema.)
 `apps/api/src/routes/entities.ts` is the reference for a fully-built domain router.
 
 License: **AGPL-3.0-only** for the server (`@agora/api`/`admin`/`moderator` + `services/*`);
-`@agora/contract` stays **Apache-2.0** as the permissive wire-contract surface the SDK builds on.
+`@agora-server/contract` stays **Apache-2.0** as the permissive wire-contract surface the SDK builds on.
 Contributions are DCO-signed (`git commit -s`), no CLA. Community edition is AGPL-3.0 forever.

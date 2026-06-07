@@ -1,7 +1,7 @@
 // Authed fetch client for @agora/api. Prefixes the multi-tenant base (/v7/:projectId), attaches the
 // Bearer access token, and transparently rotates it on a 401 (single-flight) using the refresh token
 // — mirroring the SDK's auto-refresh contract (MANIFEST §1). Errors surface as typed ApiError.
-import type { ErrorEnvelope } from "@agora/contract";
+import type { ErrorEnvelope } from "@agora-server/contract";
 import { API_BASE, ENV_PROJECT_ID } from "../config";
 import { getSession, patchTokens, setSession } from "../auth/session";
 

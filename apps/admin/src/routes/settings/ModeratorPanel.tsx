@@ -13,7 +13,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { RotateCcw, Save, Send, ShieldCheck, Sparkles, X } from "lucide-react";
-import { DEFAULT_MODERATION_CATEGORIES } from "@agora/contract";
+import { DEFAULT_MODERATION_CATEGORIES } from "@agora-server/contract";
 import {
   Card, CardHeader, CardTitle, CardDescription, CardContent,
 } from "../../components/ui/Card";

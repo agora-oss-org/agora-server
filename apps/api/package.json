@@ -1,6 +1,6 @@
 {
   "name": "@agora/api",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "private": true,
   "type": "module",
   "description": "Replyke-compatible community backend API (Hono + Supabase + socket.io)",
@@ -23,7 +23,7 @@
     "seed": "node scripts/seeds/seed.mjs"
   },
   "dependencies": {
-    "@agora/contract": "workspace:*",
+    "@agora-server/contract": "workspace:*",
     "@hono/node-server": "^1.13.7",
     "@jenova-marie/wonder-logger": "^2.0.18",
     "@supabase/supabase-js": "^2.47.10",
@@ -38,7 +38,7 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
-    "@agora/secure-chat-core": "workspace:*",
+    "@agora-sdk/secure-chat-crypto": "^0.1.2",
     "@types/node": "^22.10.2",
     "@vitest/coverage-v8": "^4.1.7",
     "drizzle-kit": "^0.31.10",

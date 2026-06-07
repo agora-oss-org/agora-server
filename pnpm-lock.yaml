@@ -10,7 +10,7 @@ importers:
 
   apps/admin:
     dependencies:
-      '@agora/contract':
+      '@agora-server/contract':
         specifier: workspace:*
         version: link:../../packages/contract
       '@radix-ui/react-avatar':
@@ -95,7 +95,7 @@ importers:
 
   apps/api:
     dependencies:
-      '@agora/contract':
+      '@agora-server/contract':
         specifier: workspace:*
         version: link:../../packages/contract
       '@hono/node-server':
@@ -135,9 +135,9 @@ importers:
         specifier: ^3.24.1
         version: 3.25.76
     devDependencies:
-      '@agora/secure-chat-core':
-        specifier: workspace:*
-        version: link:../../packages/secure-chat-core
+      '@agora-sdk/secure-chat-crypto':
+        specifier: ^0.1.2
+        version: 0.1.2
       '@types/node':
         specifier: ^22.10.2
         version: 22.19.20
@@ -162,7 +162,7 @@ importers:
 
   apps/moderator:
     dependencies:
-      '@agora/contract':
+      '@agora-server/contract':
         specifier: workspace:*
         version: link:../../packages/contract
       '@hono/node-server':
@@ -216,20 +216,10 @@ importers:
         specifier: ^4.1.7
         version: 4.1.8(@opentelemetry/api@1.9.1)(@types/node@22.19.20)(@vitest/coverage-v8@4.1.8)(jsdom@26.1.0)(vite@6.4.3(@types/node@22.19.20)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
 
-  packages/secure-chat-core:
-    dependencies:
-      '@agora/contract':
-        specifier: workspace:*
-        version: link:../contract
-    devDependencies:
-      typescript:
-        specifier: ^5.7.2
-        version: 5.9.3
-      vitest:
-        specifier: ^4.1.7
-        version: 4.1.8(@opentelemetry/api@1.9.1)(@types/node@22.19.20)(@vitest/coverage-v8@4.1.8)(jsdom@26.1.0)(vite@6.4.3(@types/node@22.19.20)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
-
 packages:
+
+  '@agora-sdk/secure-chat-crypto@0.1.2':
+    resolution: {integrity: sha512-iJ7AW6uuuYhE70H/mIeKLoq9YkkH7QWecO0Vrfm28cwWC5HUk6IIq9bPWocpe3hyUZGdBB5/js7skXTnbd8sgg==}
 
   '@asamuzakjp/css-color@3.2.0':
     resolution: {integrity: sha512-K1A6z8tS3XsmCMM86xoWdn7Fkdn9m6RSVtocUrJYIwZnFVkng/PvkEoWtOWmP+Scc6saYWHWZYbndEEXxl24jw==}
@@ -3482,6 +3472,8 @@ packages:
     resolution: {integrity: sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ==}
 
 snapshots:
+
+  '@agora-sdk/secure-chat-crypto@0.1.2': {}
 
   '@asamuzakjp/css-color@3.2.0':
     dependencies:

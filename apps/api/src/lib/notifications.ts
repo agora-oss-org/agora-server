@@ -14,7 +14,7 @@
 // Realtime: NOT delivered over socket.io — the SDK's socket contract (realtime/socket.ts
 // ServerToClientEvents) has only chat events, matching Replyke. Clients poll the inbox.
 import { and, desc, eq } from "drizzle-orm";
-import type { StewardNotifyPolicy } from "@agora/contract";
+import type { StewardNotifyPolicy } from "@agora-server/contract";
 import { db } from "../db/index.js";
 import { appNotifications, profiles, entities, comments, reactions } from "../db/schema/index.js";
 import { shapeNotification } from "./shape.js";

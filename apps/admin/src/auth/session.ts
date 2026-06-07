@@ -1,7 +1,7 @@
 // Reactive session store — the single source of truth for the signed-in operator/moderator. Backed
 // by localStorage (survives reload) and exposed to React via useSyncExternalStore (auth/AuthContext).
 // The API client (lib/api.ts) reads tokens from here and writes rotated ones back after a refresh.
-import type { AuthUser } from "@agora/contract";
+import type { AuthUser } from "@agora-server/contract";
 
 export interface Session {
   user: AuthUser;

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Ban, Bot, Check, Flag, Scale, Sparkles } from "lucide-react";
-import type { Comment, Entity, ModerationVerdict, Report } from "@agora/contract";
+import type { Comment, Entity, ModerationVerdict, Report } from "@agora-server/contract";
 import { actOnReport, displayName, getReportTarget, reportDeepLink, type ModerationDecision } from "../../lib/moderation";
 import { openCase } from "../../lib/steward";
 import { aiAnalysisKey, analyzeTarget, getAnalysis, targetText } from "../../lib/moderation-ai";

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Bot, ChevronLeft, ChevronRight, Inbox, ShieldCheck } from "lucide-react";
-import type { ModerationAnalysis, ModerationVerdict, Report } from "@agora/contract";
+import type { ModerationAnalysis, ModerationVerdict, Report } from "@agora-server/contract";
 import { useAuth } from "../auth/AuthContext";
 import { displayName, listReports, reportsKey, type ReportStatus } from "../lib/moderation";
 import { aiQueueKey, listAiQueue } from "../lib/moderation-ai";

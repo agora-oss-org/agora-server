@@ -1,7 +1,7 @@
 // Auth context: exposes the reactive session (via useSyncExternalStore over the session store) plus
 // sign-in / sign-out. `isOperator` drives the role-aware UI (operator god-view vs space-scoped).
 import { createContext, useContext, useMemo, useSyncExternalStore, type ReactNode } from "react";
-import type { AuthUser } from "@agora/contract";
+import type { AuthUser } from "@agora-server/contract";
 import { api } from "../lib/api";
 import { track } from "../lib/analytics";
 import { getSession, setSession, subscribe, type Session } from "./session";

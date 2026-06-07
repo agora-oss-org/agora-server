@@ -7,7 +7,7 @@
 //   anthropic → POST {base}/v1/messages
 //
 // Both are coerced to the same { verdict, categories, confidence, reason } shape via policy.ts.
-import type { ModerationVerdict } from "@agora/contract";
+import type { ModerationVerdict } from "@agora-server/contract";
 import { env } from "./env.js";
 import { logger } from "./logger.js";
 import { buildSystemPrompt, buildUserPrompt, DEFAULT_MODERATION_CATEGORIES } from "./policy.js";

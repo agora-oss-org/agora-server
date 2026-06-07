@@ -4,7 +4,7 @@
 //      clears the (opt-in) review threshold (decideAutoAction), and write-back is wired
 //      → POST the removal back to the API (moderatedByType="client")
 //   3. persist one moderation_analyses row (the audit trail + AI-flag queue)
-import type { ModerationAnalysis, ReportTargetType } from "@agora/contract";
+import type { ModerationAnalysis, ReportTargetType } from "@agora-server/contract";
 import { db } from "../db/index.js";
 import { moderationAnalyses } from "../db/schema.js";
 import { logger } from "./logger.js";

@@ -9,7 +9,7 @@ import { projects } from "../db/schema/index.js";
 import {
   STEWARD_NOTIFY_POLICIES, STEWARD_MEDIATION_MODES, STEWARD_MEDIATION_ON_CLOSE,
   type StewardNotifyPolicy, type StewardMediationMode, type StewardMediationOnClose, type StewardConfigView,
-} from "@agora/contract";
+} from "@agora-server/contract";
 
 export interface ResolvedStewardConfig {
   notifyPolicy: StewardNotifyPolicy;

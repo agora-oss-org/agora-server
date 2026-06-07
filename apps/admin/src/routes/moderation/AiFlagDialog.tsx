@@ -5,7 +5,7 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Ban, Bot, Sparkles } from "lucide-react";
-import type { Comment, Entity, ModerationAnalysis, ModerationVerdict } from "@agora/contract";
+import type { Comment, Entity, ModerationAnalysis, ModerationVerdict } from "@agora-server/contract";
 import { contentDeepLink, getTargetContent } from "../../lib/moderation";
 import { analyzeTarget, dismissAnalysis, removeFlagged, targetText } from "../../lib/moderation-ai";
 import { ApiError } from "../../lib/api";

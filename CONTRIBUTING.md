@@ -49,7 +49,7 @@ non-negotiable:
 **Before changing any request/response shape, REST path, or socket event:** confirm it against these
 docs, and update them in the same PR if the contract legitimately changes. A change that breaks the
 SDK's hooks is a regression, not a feature. Shared request/response types and zod schemas live in
-**`packages/contract`** (`@agora/contract`) — never redefine a contract type locally.
+**`packages/contract`** (`@agora-server/contract`) — never redefine a contract type locally.
 
 ---
 
@@ -72,8 +72,8 @@ pnpm dev                        # http://localhost:4000/v7   (GET /health to ver
 Admin app: `cd apps/admin && pnpm dev` (`:5173`; set `VITE_API_BASE_URL`). Demo harness lives in the
 separate `agora-demo` repo.
 
-> ⚠️ `@agora/api` consumes `@agora/contract`'s built `dist/`. From a clean checkout, run
-> `pnpm --filter @agora/contract build` (or `pnpm -r build`) before typechecking the API.
+> ⚠️ `@agora/api` consumes `@agora-server/contract`'s built `dist/`. From a clean checkout, run
+> `pnpm --filter @agora-server/contract build` (or `pnpm -r build`) before typechecking the API.
 
 ---
 
@@ -83,7 +83,7 @@ See the [README → Layout](README.md#layout) for the full tree. The essentials:
 
 - `apps/api` — `@agora/api`, the Hono backend. `routes/entities.ts` is the reference domain router.
 - `apps/admin` — `@agora/admin`, the Vite + React + Tailwind admin frontend.
-- `packages/contract` — `@agora/contract`, shared types + zod schemas (no hono/drizzle).
+- `packages/contract` — `@agora-server/contract`, shared types + zod schemas (no hono/drizzle).
 - `apps/api/src/db/schema/*.ts` — Drizzle schema, the single source of truth for the DB.
 - `apps/api/drizzle/` — SQL migrations (generated + hand-written custom).
 
@@ -100,7 +100,7 @@ Match the surrounding code's style — comment density, naming, idiom. Beyond th
   Errors → throw `Errors.*` (→ `{ error, code, field? }`), never bare strings.
 - **Shape every row** through `lib/shape.ts` (camelCase, Date→ISO, derived fields) — never return
   raw Drizzle rows.
-- **Validate input** with the zod schemas via `parseBody()` (schemas live in `@agora/contract`).
+- **Validate input** with the zod schemas via `parseBody()` (schemas live in `@agora-server/contract`).
 
 **Data**
 - **Drizzle owns all DB access** via the direct `postgres.js` connection. `@supabase/supabase-js`
@@ -199,7 +199,7 @@ We'll review as promptly as we can. Thanks for helping build the open social lay
 ## Licensing
 
 Agora's server is **[AGPL-3.0-only](LICENSE)** — `@agora/api`, `@agora/admin`, `@agora/moderator`
-(and the `services/*` workers). The shared wire contract, [`@agora/contract`](packages/contract),
+(and the `services/*` workers). The shared wire contract, [`@agora-server/contract`](packages/contract),
 stays **Apache-2.0** so the [`agora-sdk`](https://github.com/jenova-marie/agora-sdk) and third-party
 clients can build against it freely. **The community edition is AGPL-3.0 and always will be** — that's
 a promise, not a placeholder.

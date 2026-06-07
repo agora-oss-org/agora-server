@@ -3,8 +3,11 @@
 Secure chat is end-to-end-encrypted group messaging built on **MLS (RFC 9420)**, on a path entirely
 separate from the Replyke-compatible plaintext chat. **Phase 1 is done** (this repo): the server is a
 blind MLS *Delivery Service* — it stores/relays opaque ciphertext, enforces membership + commit
-ordering, and never reads content. All crypto is client-side behind the `SecureChatCrypto` seam
-(`@agora/secure-chat-core`); the concrete MLS core (ts-mls vs OpenMLS-WASM) is **deliberately deferred**.
+ordering, and never reads content. All crypto is client-side behind the `SecureChatCrypto` seam; the
+concrete MLS core (ts-mls vs OpenMLS-WASM) is **deliberately deferred**. **The seam itself now lives
+in the client SDK** (`@agora-sdk/secure-chat-crypto`, in the `agora-sdk-plus` repo) — *not* here; this
+repo consumes it as a test devDependency. See [Client SDK & cross-repo
+architecture](#client-sdk--cross-repo-architecture-the-corrected-model) below.
 
 Design doc: `docs/superpowers/specs/` / the approved plan. Server reference: `apps/api/src/routes/secure-chat.ts`,
 `apps/api/src/db/schema/secure-chat.ts`, `apps/api/src/realtime/secure-socket.ts`.
@@ -17,8 +20,64 @@ Design doc: `docs/superpowers/specs/` / the approved plan. Server reference: `ap
       `secure_conversation_members`, `secure_messages`, `secure_handshake_messages` (`seq` cursor),
       `secure_key_backups` — `bytea`, multi-device-ready, RLS deny-all (migrations `0031`/`0032`).
 - [x] REST delivery service (`/v7/:projectId/secure-chat/*`) + `/secure` socket.io namespace.
-- [x] Contract wire types (`@agora/contract` `secure-chat`) + `@agora/secure-chat-core` (interface + mock).
+- [x] Contract wire types (`@agora-server/contract` `secure-chat`) + the `SecureChatCrypto` seam (interface +
+      mock). *(The seam has moved to the SDK — `@agora-sdk/secure-chat-crypto`; this repo deleted its
+      in-repo copy and now consumes the mock from `@agora-sdk/secure-chat-crypto/testing` as a test
+      devDependency. See the next section.)*
 - [x] Integration tests with the mock crypto (incl. the server-never-stores-plaintext assertion).
+
+---
+
+## Client SDK & cross-repo architecture (the corrected model)
+
+The client lives in its own repo, **[`agora-sdk-plus`](../agora-sdk-plus)** — additive, Agora-only SDK
+features built on `@agora-sdk/*`, kept out of the Replyke-fork (`agora-sdk`) so that fork stays a tiny,
+documented divergence. Secure chat is its first feature. Packages:
+
+| Package | Role |
+|---|---|
+| `@agora-sdk/secure-chat-crypto` | **The `SecureChatCrypto` seam** — interface (main entry) + `MockSecureChatCrypto` (`./testing` subpath). Apache-2.0, dependency-free. The real ts-mls/OpenMLS cores land here in Phase 2. |
+| `@agora-sdk/secure-chat-core` | Platform-agnostic transport (REST + `/secure` socket) + `SecureChatProvider` + hooks; crypto injected. |
+| `@agora-sdk/secure-chat-react-js` | Web (Phase 2): real crypto + IndexedDB. |
+| `@agora-sdk/secure-chat-react-native` / `-expo` | Native (Phase 3 stubs). |
+
+### The decision
+
+An earlier plan would have published `@agora-sdk/secure-chat-contract` + `@agora-sdk/secure-chat-crypto`
+**from this server repo**. That was wrong on two counts, and we reversed it:
+
+1. **Dependency inversion.** Having `@agora-server/contract` re-export an `@agora-sdk/*` package points the
+   arrow backwards (server contract → SDK). The correct arrow is **SDK → contract**.
+2. **License.** `@agora/secure-chat-core` is AGPL-3.0 (it lives in this AGPL server). SDK-consumed
+   crypto **cannot** be AGPL — third parties couldn't build on it. The seam is client code that was
+   only ever a **test-only** dependency here (the sole importers are
+   `test/integration/secure-helpers.ts` + `secure-chat-backup.test.ts`, using the mock to *play a
+   client*). So it belongs in the SDK; moving it into the Apache-2.0 `agora-sdk-plus` repo (sole-author
+   relicense) dissolves the license question.
+
+**The rule going forward:** the crypto seam lives in the SDK; the wire contract stays here in
+`@agora-server/contract`; the SDK depends on `@agora-server/contract`. Never the reverse.
+
+### Server-side action items (this repo) — DONE
+
+- [x] **Retired `packages/secure-chat-core/`.** Deleted; the two test importers
+      (`test/integration/secure-helpers.ts`, `secure-chat-backup.test.ts`) now import the mock from
+      **`@agora-sdk/secure-chat-crypto/testing`**, pinned as a test devDependency (`^0.1.2`) in
+      `apps/api/package.json`. The **interface is the SDK's to evolve** now — mirror, don't fork.
+- [x] **Made `@agora-server/contract` publishable** (removed `private: true`; Apache-2.0 + `publishConfig`).
+      Publishing is **automated**: `.github/workflows/npm-publish.yml` publishes it on a `v*` tag
+      (idempotent — skips if the version is already on npm; needs an `NPM_TOKEN` repo secret with publish
+      rights to the `@agora-server` scope; publishes with provenance). Until it's live on npm the SDK carries a
+      byte-faithful **stand-in** copy of the `secure-chat` types — `@agora-server/contract` stays the source of
+      truth; avoid drift.
+- [x] **DS, routes, schema, socket, and `@agora-server/contract` secure-chat types unchanged** — the split
+      touched no server runtime surface.
+
+> ✅ **Resolved:** `@agora-sdk/secure-chat-crypto@0.1.1` shipped a broken ESM build (`dist/esm/testing.js`
+> did `export … from "./mock-crypto"` with no `.js` extension, which Node's native ESM resolver rejects).
+> Fixed upstream in `agora-sdk-plus` and republished as **`0.1.2`** (explicit `.js` extensions in source
+> relative imports). The server now pins `^0.1.2` and the secure-chat integration suite passes
+> (5 files / 20 tests green).
 
 ---
 
@@ -28,8 +87,10 @@ The server is expected to need **no changes** (the DS is complete); any gap feed
 migration.
 
 - [ ] **Pick + implement a real `SecureChatCrypto`.** Decide ts-mls (pure TS, same JS on web/RN/Expo,
-      younger/less-audited) vs OpenMLS→WASM (audited, but RN/Expo need a native bridge). Implement it as
-      a new module in `packages/secure-chat-core` behind the existing interface; the mock stays for tests.
+      younger/less-audited) vs OpenMLS→WASM (audited, but RN/Expo need a native bridge). Implement it in
+      the SDK's **`@agora-sdk/secure-chat-crypto`** package behind the existing interface (likely a new
+      opt-in subpath so the heavy core isn't pulled in by default); the mock stays on `./testing` for
+      tests. *(This work happens in the `agora-sdk-plus` repo, not here.)*
 - [ ] **Key storage (IndexedDB).** Persist device identity + per-group MLS state via
       `exportGroupState`/`importGroupState`. Handle Safari/`clear browsing data` eviction gracefully.
 - [ ] **KeyPackage replenishment loop.** Publish a batch on registration; top up on the
@@ -57,11 +118,11 @@ migration.
 
 ## Open decisions / risks (flagged in Phase 1, resolve before the relevant phase)
 
-1. **Channel committer strategy (biggest open question).** The server can't add anyone to an MLS group
-   (no keys). DMs + small groups work via admin-driven Adds today. Large `channel`s need a committer
-   when a space member joins — recommended path is **MLS External Commits** (newly-authorized user
-   self-adds, relayed by the blind DS). Decide before shipping Phase 2 channels. The schema is
-   channel-ready now.
+1. **Channel committer strategy — ✅ DECIDED.** **Channels are deferred** (ship DM + small groups via
+   admin-driven Adds in Phase 2); when channels come, the committer design is **MLS External Commits** —
+   a newly-authorized space member self-adds, relayed by the blind DS (the server holds no keys, so it
+   can't add anyone). Rejected: an always-on "management bot" holding a leaf — it could *decrypt* the
+   channel, handing the operator read access and breaking E2E. The schema is already channel-ready.
 2. **No last-resort KeyPackage in v1** (it weakens initial-Welcome forward secrecy) — clients must
    replenish; the DS returns `409 key-packages-exhausted` when depleted. Revisit if depletion bites.
 3. **Epoch validation is lenient.** The DS isn't running MLS, so it only sanity-bounds message epochs
@@ -77,6 +138,10 @@ migration.
 ---
 
 ## Future exploration — network-layer privacy (Tor / onion routing)
+
+> **Status: exploratory (decided).** Not a committed phase — revisit *after* the Phase 2 web client
+> ships, since Tor around a chat with no working encryption client buys little. Documented here so the
+> path (and its anti-abuse implications) is captured, not lost.
 
 E2E hides message *content*; it does nothing about the *network* metadata the server and any on-path
 observer still see — **client IP / geolocation, connection timing, and traffic-volume correlation**.

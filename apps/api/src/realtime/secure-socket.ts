@@ -13,7 +13,7 @@ import { db } from "../db/index.js";
 import { secureConversationMembers, secureDevices } from "../db/schema/index.js";
 import { jwtVerify } from "jose";
 import { env } from "../lib/env.js";
-import type { SecureMessageModel, SecureHandshakeModel } from "@agora/contract";
+import type { SecureMessageModel, SecureHandshakeModel } from "@agora-server/contract";
 
 export interface SecureServerToClientEvents {
   "secure:message": (p: SecureMessageModel) => void;

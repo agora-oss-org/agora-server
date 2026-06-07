@@ -1,9 +1,9 @@
 {
   "name": "@agora/admin",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "private": true,
   "type": "module",
-  "description": "Agora admin frontend (Vite + React + TS), consuming @agora/contract.",
+  "description": "Agora admin frontend (Vite + React + TS), consuming @agora-server/contract.",
   "license": "AGPL-3.0-only",
   "scripts": {
     "dev": "vite",
@@ -14,7 +14,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@agora/contract": "workspace:*",
+    "@agora-server/contract": "workspace:*",
     "@radix-ui/react-avatar": "^1.1.11",
     "@radix-ui/react-dialog": "^1.1.15",
     "@radix-ui/react-dropdown-menu": "^2.1.16",

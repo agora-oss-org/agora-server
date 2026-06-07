@@ -1,8 +1,8 @@
 // Replyke error envelope: { error, code, field? } with a matching HTTP status.
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 
-// The wire shape ({ error, code, field? }) lives in @agora/contract; re-exported for reference.
-export type { ErrorEnvelope } from "@agora/contract";
+// The wire shape ({ error, code, field? }) lives in @agora-server/contract; re-exported for reference.
+export type { ErrorEnvelope } from "@agora-server/contract";
 
 export class ApiError extends Error {
   constructor(

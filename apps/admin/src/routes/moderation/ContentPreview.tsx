@@ -2,7 +2,7 @@
 // flagged content renders identically however it surfaced. Shows the title, text, any media
 // (entity images/files, comment gif), author, moderation status, and a deep link into the demo app.
 import { ExternalLink, Paperclip } from "lucide-react";
-import type { Comment, Entity, ReportTargetType } from "@agora/contract";
+import type { Comment, Entity, ReportTargetType } from "@agora-server/contract";
 import { Badge } from "../../components/ui/Badge";
 import { shortId } from "../../lib/time";
 

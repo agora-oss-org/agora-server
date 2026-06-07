@@ -3,7 +3,7 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import path from "node:path";
 
-// @agora/contract resolves through the pnpm workspace symlink + its `exports` map (built dist/).
+// @agora-server/contract resolves through the pnpm workspace symlink + its `exports` map (built dist/).
 // Tailwind v4 is wired via its Vite plugin (CSS-first config lives in src/index.css `@theme`).
 export default defineConfig(({ mode }) => {
   // The root .env (direnv-managed, ../../) holds AGORA_UMAMI_* — read it at build time to inject the

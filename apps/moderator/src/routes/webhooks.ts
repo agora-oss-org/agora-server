@@ -5,7 +5,7 @@
 // Broadcasts are fire-and-forget: we verify the signature, ACK 200 immediately, then assess + record
 // asynchronously (the API never waits on the LLM). A webhook.test ping just ACKs.
 import { Hono } from "hono";
-import type { ReportTargetType } from "@agora/contract";
+import type { ReportTargetType } from "@agora-server/contract";
 import type { Variables } from "../http/context.js";
 import { logger } from "../lib/logger.js";
 import { getProjectSecret, verifySignature } from "../lib/webhook-verify.js";

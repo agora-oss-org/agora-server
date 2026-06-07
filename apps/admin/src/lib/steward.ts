@@ -1,7 +1,7 @@
 // Steward (conflict-resolution) data access. Cases are admin-only — these shapes mirror the server's
 // routes/steward.ts JSON, not an SDK-contract type. Lists use the standard { data, pagination }
 // envelope; mutations return the shaped case. Steward grant management is operator-only.
-import type { Comment, Entity, PaginatedResponse, User } from "@agora/contract";
+import type { Comment, Entity, PaginatedResponse, User } from "@agora-server/contract";
 import { api } from "./api";
 
 export type CaseState = "open" | "in_mediation" | "closed";

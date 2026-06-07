@@ -1,6 +1,6 @@
 // Row → API model shaper (camelCase, Date→ISO), mirroring @agora/api's lib/shape.ts convention so
 // the admin app receives the same envelope shape from either service.
-import type { ModerationAnalysis, ModerationVerdict, ReportTargetType, UserSummary } from "@agora/contract";
+import type { ModerationAnalysis, ModerationVerdict, ReportTargetType, UserSummary } from "@agora-server/contract";
 import type { moderationAnalyses } from "../db/schema.js";
 
 type AnalysisRow = typeof moderationAnalyses.$inferSelect;

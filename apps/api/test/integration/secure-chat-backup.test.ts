@@ -3,7 +3,7 @@
 // fails client-side.
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { eq } from "drizzle-orm";
-import { MockSecureChatCrypto } from "@agora/secure-chat-core";
+import { MockSecureChatCrypto } from "@agora-sdk/secure-chat-crypto/testing";
 import { db } from "../../src/db/index.js";
 import { secureKeyBackups } from "../../src/db/schema/index.js";
 import { api, createProject, createUser, deleteProject, base } from "./helpers.js";

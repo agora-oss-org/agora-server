@@ -8,7 +8,7 @@ import {
   Ban, CheckCircle2, Crosshair, FileText, Handshake, Lock, MessageSquarePlus, MessagesSquare,
   RotateCcw, Send, UserCheck, UserMinus, Users,
 } from "lucide-react";
-import type { Comment, Entity } from "@agora/contract";
+import type { Comment, Entity } from "@agora-server/contract";
 import {
   addCaseNote, caseKey, caseUserLabel, escalateCase, getCase, patchCase,
   listCaseChannels, openCaseChannels, listChannelMessages, sendChannelMessage,

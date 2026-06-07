@@ -10,7 +10,7 @@ import {
   Activity, BarChart3, FileText, Flag, Heart, MessageSquare, PenLine, ThumbsUp,
   TrendingUp, Trophy, UserPlus, Users, type LucideIcon,
 } from "lucide-react";
-import type { User } from "@agora/contract";
+import type { User } from "@agora-server/contract";
 import { useAuth } from "../auth/AuthContext";
 import { PageHeader } from "../components/ui/PageHeader";
 import { Card } from "../components/ui/Card";

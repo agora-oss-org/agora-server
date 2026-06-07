@@ -3,10 +3,10 @@
 // adapters, and so it's trivially unit-testable.
 //
 // Categories are PER-PROJECT now: the starting list is DEFAULT_MODERATION_CATEGORIES (shared in
-// @agora/contract), seeded into projects.moderator_config.categories and editable in admin Settings →
+// @agora-server/contract), seeded into projects.moderator_config.categories and editable in admin Settings →
 // Agent moderation. The moderator resolves the project's list (lib/project-config.ts) and passes it to
 // buildSystemPrompt(), so the prompt lists exactly the categories the operator configured.
-import { DEFAULT_MODERATION_CATEGORIES } from "@agora/contract";
+import { DEFAULT_MODERATION_CATEGORIES } from "@agora-server/contract";
 
 // Re-export the seed list so the rest of the moderator (and the project-config fallback) has one source.
 export { DEFAULT_MODERATION_CATEGORIES };

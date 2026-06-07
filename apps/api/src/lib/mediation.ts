@@ -8,7 +8,7 @@
 // Parties read/post through their normal client chat (they're members); the steward does too (admin member).
 // Wind-down on case close is governed by the project's mediationOnClose (see lib/steward-config.ts).
 import { and, eq, ne, sql } from "drizzle-orm";
-import type { StewardMediationMode, StewardMediationOnClose } from "@agora/contract";
+import type { StewardMediationMode, StewardMediationOnClose } from "@agora-server/contract";
 import { db } from "../db/index.js";
 import { conversations, conversationMembers, chatMessages } from "../db/schema/index.js";
 import { emitToConversation } from "../realtime/socket.js";

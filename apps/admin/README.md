@@ -15,7 +15,7 @@ For the project overview, see the [root README](../../README.md).
   in `src/components/ui/` wrapped with `class-variance-authority`
 - **TanStack Query** — server-state cache for the API
 - **react-router v7** — routing + the operator auth gate
-- **`@agora/contract`** — shares the API's response types + zod schemas, so the admin never
+- **`@agora-server/contract`** — shares the API's response types + zod schemas, so the admin never
   redefines a wire shape
 
 ## Layout
@@ -49,7 +49,7 @@ apps/admin/src/
 
 ## Getting started
 
-From the **repo root** (the admin depends on the built `@agora/contract` package):
+From the **repo root** (the admin depends on the built `@agora-server/contract` package):
 
 ```bash
 corepack enable
@@ -111,7 +111,7 @@ reverse-proxying `/v7` + `/socket.io` to the api container and `/moderator` to t
 container (same origin, no CORS).
 
 ```bash
-# build context = repo root (depends on the @agora/contract workspace package)
+# build context = repo root (depends on the @agora-server/contract workspace package)
 docker build -f apps/admin/Dockerfile -t agora-admin .
 docker run  --rm \
   -e API_UPSTREAM=http://<api-host>:4000 \

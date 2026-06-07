@@ -8,7 +8,7 @@
 //   POST /:id/resolve                        → mark an analysis human-resolved (clears it from queue)
 import { Hono } from "hono";
 import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
-import { moderationAnalyzeSchema, paginate } from "@agora/contract";
+import { moderationAnalyzeSchema, paginate } from "@agora-server/contract";
 import type { Variables } from "../http/context.js";
 import { Errors } from "../http/errors.js";
 import { requireOperator } from "../middleware/auth.js";

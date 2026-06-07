@@ -2,7 +2,7 @@
 
 **Date:** 2026-05-31
 **Status:** Approved (design)
-**Scope:** `@agora/moderator`, `@agora/contract`, `@agora/api`, `@agora/admin`
+**Scope:** `@agora/moderator`, `@agora-server/contract`, `@agora/api`, `@agora/admin`
 
 ## Problem
 
@@ -80,7 +80,7 @@ The "moderation: verdict" log line carries both thresholds and which one fired:
 - Unit: `running-config.test.ts` updated for both defaults + no-secret-leak.
 - Unit: extend/add a test asserting the `blockEligible || reviewEligible` decision table
   (block≥/<, review≥/< with review-threshold 0 vs >0, non-removable target).
-- `pnpm --filter @agora/contract build` then `pnpm -r typecheck` must pass.
+- `pnpm --filter @agora-server/contract build` then `pnpm -r typecheck` must pass.
 - Manual: admin Settings → Moderator shows both fields + effective values; setting the review
   threshold and posting borderline content auto-removes it.
 

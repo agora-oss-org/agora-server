@@ -91,8 +91,9 @@ linearizes group state changes, and enforces *authorization* (who may relay thro
 ```
 
 Because the DS is crypto-agnostic, the **entire server side is buildable and testable without choosing
-an MLS library.** A deterministic mock (`@agora/secure-chat-core` `MockSecureChatCrypto`) stands in for
-real crypto in the integration suite, which asserts the stored bytes never contain the plaintext.
+an MLS library.** A deterministic mock (`@agora-sdk/secure-chat-crypto` `MockSecureChatCrypto`, consumed
+as a test devDependency from its `/testing` subpath) stands in for real crypto in the integration suite,
+which asserts the stored bytes never contain the plaintext.
 
 **Key principle:** any future change must preserve "the server cannot read content." No endpoint
 accepts or returns plaintext; no column stores it.
@@ -129,7 +130,7 @@ every one of them as an opaque blob.
 | Row → API shapers (bytea→base64) | [`apps/api/src/lib/secure-chat-shape.ts`](../apps/api/src/lib/secure-chat-shape.ts) |
 | Migrations | `apps/api/drizzle/0031_*.sql` (tables) + `0032_secure_chat_rls_triggers.sql` (RLS + trigger) |
 | Wire contract (zod + types) | [`packages/contract/src/secure-chat.ts`](../packages/contract/src/secure-chat.ts) |
-| Crypto seam (interface + mock) | `packages/secure-chat-core/src/{interface,mock-crypto}.ts` |
+| Crypto seam (interface + mock) | **`@agora-sdk/secure-chat-crypto`** — in the `agora-sdk-plus` repo, *not* here (this repo devDepends on its `/testing` mock for tests) |
 | Integration tests | `apps/api/test/integration/secure-chat-*.test.ts` |
 
 ---
@@ -195,12 +196,12 @@ cursor), `SecureKeyBackupModel`.
 
 ## 8. The `SecureChatCrypto` seam
 
-All MLS crypto lives **client-side** behind one interface in
-`packages/secure-chat-core/src/interface.ts`. This is the abstraction that lets the concrete core —
-**ts-mls** (pure TS, runs the same on web/RN/Expo, younger) vs **OpenMLS→WASM** (audited, needs a
+All MLS crypto lives **client-side** behind one interface, owned by the SDK in the **`agora-sdk-plus`**
+repo as **`@agora-sdk/secure-chat-crypto`** (Apache-2.0). This is the abstraction that lets the concrete
+core — **ts-mls** (pure TS, runs the same on web/RN/Expo, younger) vs **OpenMLS→WASM** (audited, needs a
 native bridge for RN/Expo) — be a **deferred, swappable** decision. **The server depends on none of
-it.** Binary is `Uint8Array` in memory; the network layer base64-encodes at the boundary; epochs are
-`bigint`.
+it** (only the integration tests devDepend on its `/testing` mock). Binary is `Uint8Array` in memory;
+the network layer base64-encodes at the boundary; epochs are `bigint`.
 
 ```ts
 interface SecureChatCrypto {
@@ -224,8 +225,8 @@ interface SecureChatCrypto {
 }
 ```
 
-`MockSecureChatCrypto` (same package) is a deterministic, **plaintext-hiding** implementation used by
-tests and as a placeholder for early client work: it XORs plaintext with a per-group keystream so the
+`MockSecureChatCrypto` (the package's `/testing` subpath) is a deterministic, **plaintext-hiding**
+implementation used by tests and as a placeholder for early client work: it XORs plaintext with a per-group keystream so the
 wrapped bytes never contain the plaintext, conveys the group secret inside the Welcome (so a second mock
 instance can decrypt), and round-trips the passphrase backup (wrong passphrase throws). It is **not**
 secure — it exists to exercise the relay.
@@ -374,9 +375,10 @@ Unit + integration suites (vitest):
 - **Contract** `packages/contract/src/secure-chat.test.ts` — zod accept/reject.
 - **Shapers** `apps/api/src/lib/secure-chat-shape.test.ts` — bytea→base64, no private-column leak,
   bigint→string epochs.
-- **Mock crypto** `packages/secure-chat-core/src/mock-crypto.test.ts` — cross-device round-trip +
-  plaintext-hiding + passphrase backup.
-- **Integration** `apps/api/test/integration/secure-chat-*.test.ts` (real Postgres, project-scoped):
+- **Mock crypto** — lives with the seam in the SDK (`@agora-sdk/secure-chat-crypto`): cross-device
+  round-trip + plaintext-hiding + passphrase backup. The server consumes it via the `/testing` subpath.
+- **Integration** `apps/api/test/integration/secure-chat-*.test.ts` (real Postgres, project-scoped;
+  import the mock from `@agora-sdk/secure-chat-crypto/testing`):
   - `devices` — register, public-fields-only listing, publish/count/claim, exhaustion `409`, revoke,
     cross-user publish refusal.
   - `flow` — full round-trip (register → claim → create group + targeted Welcome → relay → decrypt),
@@ -429,10 +431,11 @@ See [`CHAT_TODO.md`](../CHAT_TODO.md) for the live checklist.
 
 ## 16. Open decisions & risks
 
-1. **Channel committer strategy (biggest open question).** The server can't add anyone to an MLS group
-   (no keys). DMs + small groups work via admin-driven Adds today. Large `channel`s need a committer
-   when a space member joins — recommended path is **MLS External Commits** (a newly-authorized user
-   self-adds, relayed by the blind DS). The schema is channel-ready now; decide before Phase 2 channels.
+1. **Channel committer strategy — ✅ DECIDED.** The server can't add anyone to an MLS group (no keys).
+   **Channels are deferred** (DM + small groups via admin-driven Adds first); when channels land, the
+   design is **MLS External Commits** (a newly-authorized member self-adds, relayed by the blind DS).
+   Rejected: an always-on "management bot" holding a leaf — it could decrypt the channel, breaking E2E.
+   The schema is channel-ready now.
 2. **No last-resort KeyPackage in v1** (it weakens initial-Welcome forward secrecy). Clients replenish;
    the DS returns `409 key-packages-exhausted` when depleted.
 3. **Lenient epoch validation.** The DS isn't running MLS, so it only sanity-bounds message epochs and

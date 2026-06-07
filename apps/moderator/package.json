@@ -1,6 +1,6 @@
 {
   "name": "@agora/moderator",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "private": true,
   "type": "module",
   "description": "LLM-backed content moderation service for Agora (webhook receiver + admin-facing review aids)",
@@ -14,7 +14,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@agora/contract": "workspace:*",
+    "@agora-server/contract": "workspace:*",
     "@hono/node-server": "^1.13.7",
     "@jenova-marie/wonder-logger": "^2.0.18",
     "dotenv": "^17.4.2",

@@ -2,7 +2,7 @@
 //
 // SEPARATE from the Replyke-compatible plaintext chat (chat.ts). The server stores/relays OPAQUE
 // bytes only and never reads content; it enforces membership/authorization + commit ordering on
-// those bytes. All crypto is client-side (see @agora/secure-chat-core). Binary crosses the wire as
+// those bytes. All crypto is client-side (see @agora-sdk/secure-chat-crypto). Binary crosses the wire as
 // base64 and is stored as bytea; MLS epochs are decimal strings on the wire / bigint in the DB.
 //
 // NOTE: deliberately no umami/embedding/moderation calls here — secure chat is private by design.

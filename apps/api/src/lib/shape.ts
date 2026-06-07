@@ -11,11 +11,11 @@ import {
   conversations, conversationMembers, chatMessages, files, entities, comments,
   stewardCases, stewardCaseEvents, userSuspensions,
 } from "../db/schema/index.js";
-import { REACTION_TYPES } from "@agora/contract";
-import type { ReactionType, ReactionCounts, User, Entity, Comment, AuthUser, Report } from "@agora/contract";
+import { REACTION_TYPES } from "@agora-server/contract";
+import type { ReactionType, ReactionCounts, User, Entity, Comment, AuthUser, Report } from "@agora-server/contract";
 
-// ─── Shared contract surface (re-exported from @agora/contract) ──────────────
-// The reaction taxonomy + API model interfaces now live in @agora/contract (shared with the
+// ─── Shared contract surface (re-exported from @agora-server/contract) ──────────────
+// The reaction taxonomy + API model interfaces now live in @agora-server/contract (shared with the
 // admin frontend). Re-exported here so existing `./shape.js` importers keep working unchanged.
 export { REACTION_TYPES };
 export type { ReactionType, ReactionCounts, User, Entity, Comment, AuthUser, Report };
@@ -298,7 +298,7 @@ export function shapeNotification(row: NotificationRow) {
 
 // AuthUser = UserFull minus secureMetadata, plus suspensions[] + authMethods[] (MODELS.md).
 // Returned only to the authenticated user themselves (includes email/isVerified/lastActive).
-// (interface imported + re-exported from @agora/contract at the top of this file)
+// (interface imported + re-exported from @agora-server/contract at the top of this file)
 export function shapeAuthUser(
   row: ProfileRow,
   suspensions: { reason: string | null; startDate: Date; endDate: Date | null }[] = [],

@@ -1,7 +1,7 @@
 // Data access for the @agora/moderator service (LLM moderation). Reuses the shared api() client with
 // a base override (MODERATOR_BASE) so the operator's Bearer token + single-flight refresh come along
 // for free. Endpoints mirror the moderator's /v7/:projectId/moderation/* routes.
-import type { Entity, Comment, ModerationAnalysis, PaginatedResponse, ReportTargetType } from "@agora/contract";
+import type { Entity, Comment, ModerationAnalysis, PaginatedResponse, ReportTargetType } from "@agora-server/contract";
 import { api } from "./api";
 import { MODERATOR_BASE } from "../config";
 

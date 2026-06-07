@@ -7,17 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-06-07
+
 ### Added
 - **Scorer: LISTEN/NOTIFY wake-up + operator-complete admin surface.** The `services/scorer` worker now
   wakes instantly on a `pg_notify('scorer_jobs')` from the enqueue trigger (migration `0033`) — via a
   dedicated LISTEN connection on a direct/session DSN (`SCORER_LISTEN_DATABASE_URL`; LISTEN doesn't work
   over the `:6543` transaction pooler) — with the pgmq poll retained as the durability backstop. The
   admin AI-flag surface is now contract-complete with `apps/admin`: the queue populates `author` (batched,
-  incl. chat messages), pagination matches `@agora/contract` (`pageSize`/`totalItems`/`hasMore`),
+  incl. chat messages), pagination matches `@agora-server/contract` (`pageSize`/`totalItems`/`hasMore`),
   `/analysis` returns `{analysis}`, `/analyze` + `/{id}/remove` are implemented (a reusable
   `assess_and_record` cascade core; remove writes back through the API), `resolve`/`remove` return the
   updated `ModerationAnalysis`, and `/config` returns the full running-config shape. A manual end-to-end
   **smoke recipe** is documented in `docs/SCORER.md` (the live smoke is the remaining gate).
+
+### Changed
+- **Secure chat: the `SecureChatCrypto` seam moved to the SDK.** It's client code (the server's only
+  users were two integration tests), so it now lives in the `agora-sdk-plus` repo as
+  `@agora-sdk/secure-chat-crypto` (Apache-2.0); this repo deleted `packages/secure-chat-core/` and
+  devDepends on its `/testing` mock instead. `@agora-server/contract` is now **publishable** (dropped
+  `private: true`) as the Apache-2.0 wire-contract source of truth the SDK builds on — the dependency
+  arrow is SDK → contract, never the reverse. No server runtime change (DS, routes, schema, socket, and
+  the contract `secure-chat` types are untouched). Channel committer **decided**: channels deferred, MLS
+  External Commits is the design when they land.
+- **Renamed `@agora/contract` → `@agora-server/contract`.** The shared wire-contract package moved to the
+  `@agora-server` npm scope (matches the repo + the scope it publishes under). All workspace importers and
+  the publish workflow were repointed; the AGPL apps keep their `@agora/*` names (private, never published).
 
 ## [0.9.0] - 2026-06-06
 
@@ -851,7 +866,8 @@ cloud Supabase — no stubbed endpoints remain.
   (`@agora/*`), a repointed fork of `@replyke/core`.
 - Backlog: rate limiting, refresh-token cleanup sweep, RLS write policies, turnkey deploy guide.
 
-[Unreleased]: https://github.com/jenova-marie/agora/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/jenova-marie/agora/compare/v0.9.1...HEAD
+[0.9.1]: https://github.com/jenova-marie/agora/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/jenova-marie/agora/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/jenova-marie/agora/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/jenova-marie/agora/compare/v0.6.0...v0.7.0

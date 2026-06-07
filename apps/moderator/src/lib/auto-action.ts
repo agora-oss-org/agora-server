@@ -7,7 +7,7 @@
 //   - reviewAutoActionThreshold — auto-remove a "review" verdict at/above this confidence
 // A floor of 0 disables that path entirely (the verdict routes to the human AI-flag queue instead).
 // Only entity/comment are removable through the API write-back; messages always queue.
-import type { ModerationVerdict, ReportTargetType } from "@agora/contract";
+import type { ModerationVerdict, ReportTargetType } from "@agora-server/contract";
 
 export interface AutoActionThresholds {
   blockAutoActionThreshold: number;
