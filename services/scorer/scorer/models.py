@@ -1,7 +1,7 @@
 """Pydantic models shared across the worker + admin API.
 
 ``ModerationAnalysis`` and the pagination envelope are the PRESERVED admin contract — their
-field names + casing must match ``@agora/contract``'s ``ModerationAnalysis`` and the API's
+field names + casing must match ``@agora-server/contract``'s ``ModerationAnalysis`` and the API's
 ``{ data, pagination }`` envelope exactly, or the admin UI breaks. Port of the shapes from
 ``apps/moderator/src/lib/shape.ts`` + ``packages/contract``.
 """
@@ -43,7 +43,7 @@ class UserSummary(CamelModel):
 
 
 class ModerationAnalysis(CamelModel):
-    """PRESERVED admin contract — must match @agora/contract ModerationAnalysis."""
+    """PRESERVED admin contract — must match @agora-server/contract ModerationAnalysis."""
 
     id: str
     project_id: str
@@ -62,7 +62,7 @@ class ModerationAnalysis(CamelModel):
 
 
 class Pagination(CamelModel):
-    # Matches @agora/contract PaginationMeta: { page, pageSize, totalPages, totalItems, hasMore }.
+    # Matches @agora-server/contract PaginationMeta: { page, pageSize, totalPages, totalItems, hasMore }.
     page: int
     page_size: int
     total_pages: int

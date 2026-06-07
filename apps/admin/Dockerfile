@@ -1,8 +1,8 @@
 # syntax=docker/dockerfile:1
-# Built from the REPO ROOT as context (admin depends on the @agora/contract workspace package):
+# Built from the REPO ROOT as context (admin depends on the @agora-server/contract workspace package):
 #   docker build -f apps/admin/Dockerfile -t agora-admin .
 
-# ── Builder: build @agora/contract, then the admin SPA (Vite → static dist) ────
+# ── Builder: build @agora-server/contract, then the admin SPA (Vite → static dist) ────
 FROM node:22-slim AS builder
 RUN corepack enable
 WORKDIR /repo
@@ -17,7 +17,7 @@ RUN pnpm install --frozen-lockfile --filter @agora/admin...
 # cross-origin URL (then the API must allow CORS).
 ARG VITE_API_BASE_URL=/v7
 ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
-RUN pnpm --filter @agora/contract build && pnpm --filter @agora/admin build
+RUN pnpm --filter @agora-server/contract build && pnpm --filter @agora/admin build
 
 # ── Runtime: nginx serving the static build + reverse-proxying the API ─────────
 FROM nginx:1.27-alpine AS runtime

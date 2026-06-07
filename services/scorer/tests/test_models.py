@@ -1,4 +1,4 @@
-"""Response-model shapes must match @agora/contract (camelCase aliases)."""
+"""Response-model shapes must match @agora-server/contract (camelCase aliases)."""
 
 from __future__ import annotations
 

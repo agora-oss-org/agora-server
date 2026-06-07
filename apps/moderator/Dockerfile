@@ -1,23 +1,23 @@
 # syntax=docker/dockerfile:1
-# Built from the REPO ROOT as context (the moderator depends on the @agora/contract workspace pkg):
+# Built from the REPO ROOT as context (the moderator depends on the @agora-server/contract workspace pkg):
 #   docker build -f apps/moderator/Dockerfile -t agora-moderator .
 
-# ── Builder: install workspace deps, build @agora/contract then @agora/moderator ─────
+# ── Builder: install workspace deps, build @agora-server/contract then @agora/moderator ─────
 FROM node:22-slim AS builder
 RUN corepack enable
 WORKDIR /repo
 
-# Root manifests + lockfile, then full source for the moderator + its @agora/contract workspace dep.
-# Source is copied BEFORE install so pnpm links @agora/contract into apps/moderator/node_modules.
+# Root manifests + lockfile, then full source for the moderator + its @agora-server/contract workspace dep.
+# Source is copied BEFORE install so pnpm links @agora-server/contract into apps/moderator/node_modules.
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json .npmrc ./
 COPY packages/contract ./packages/contract
 COPY apps/moderator ./apps/moderator
 RUN pnpm install --frozen-lockfile --filter @agora/moderator...
 
 # Build contract before the moderator (topological).
-RUN pnpm --filter @agora/contract build && pnpm --filter @agora/moderator build
+RUN pnpm --filter @agora-server/contract build && pnpm --filter @agora/moderator build
 
-# Self-contained, prod-only deployment (flattens the workspace:* @agora/contract dependency into
+# Self-contained, prod-only deployment (flattens the workspace:* @agora-server/contract dependency into
 # real files — no pnpm store / symlinks at runtime). --legacy: pnpm v10 gates non-injected deploys.
 RUN pnpm deploy --filter=@agora/moderator --legacy --prod /out
 
@@ -31,7 +31,7 @@ ENV LOG_LEVEL=info
 # deployment, or OTEL_SDK_DISABLED=true to turn telemetry off. Prometheus metrics are on :9465.
 WORKDIR /app
 
-# /out carries package.json, dist/, node_modules/ (incl. @agora/contract).
+# /out carries package.json, dist/, node_modules/ (incl. @agora-server/contract).
 COPY --from=builder /out ./
 # Guarantee the logging config is present (lives at the app root, outside dist/). lib/logger.ts
 # resolves it module-relative → /app/wonder-logger.yaml.

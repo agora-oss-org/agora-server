@@ -1,27 +1,26 @@
 # syntax=docker/dockerfile:1
-# Built from the REPO ROOT as context (the api depends on the @agora/contract workspace package):
+# Built from the REPO ROOT as context (the api depends on the @agora-server/contract workspace package):
 #   docker build -f apps/api/Dockerfile -t agora-api .
 
-# ── Builder: install workspace deps, build @agora/contract then @agora/api ─────
+# ── Builder: install workspace deps, build @agora-server/contract then @agora/api ─────
 FROM node:22-slim AS builder
 RUN corepack enable
 WORKDIR /repo
 
-# Root manifests + lockfile, then full source for the api + its @agora/contract workspace dep.
-# Source is copied BEFORE install so pnpm links @agora/contract into apps/api/node_modules.
+# Root manifests + lockfile, then full source for the api + its @agora-server/contract workspace dep.
+# Source is copied BEFORE install so pnpm links @agora-server/contract into apps/api/node_modules.
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json .npmrc ./
 COPY packages/contract ./packages/contract
-COPY packages/secure-chat-core ./packages/secure-chat-core
 COPY apps/api ./apps/api
 RUN pnpm install --frozen-lockfile --filter @agora/api...
 
 # Build the workspace lib deps before the api (topological).
-RUN pnpm --filter @agora/contract build && pnpm --filter @agora/secure-chat-core build && pnpm --filter @agora/api build
+RUN pnpm --filter @agora-server/contract build && pnpm --filter @agora/api build
 
-# Self-contained, prod-only deployment for the api (flattens the workspace:* @agora/contract
+# Self-contained, prod-only deployment for the api (flattens the workspace:* @agora-server/contract
 # dependency into real files — no pnpm store / symlinks at runtime).
 # --legacy: pnpm v10 gates non-injected deploys behind this flag (flattens the workspace
-# @agora/contract dep into /out/node_modules as real files — exactly what a standalone image needs).
+# @agora-server/contract dep into /out/node_modules as real files — exactly what a standalone image needs).
 RUN pnpm deploy --filter=@agora/api --legacy --prod /out
 
 # ── Runtime: the pruned standalone only ────────────────────────────────────────
@@ -34,7 +33,7 @@ ENV LOG_LEVEL=info
 # deployment, or OTEL_SDK_DISABLED=true to turn telemetry off. Prometheus metrics are on :9464.
 WORKDIR /app
 
-# /out carries package.json, dist/, node_modules/ (incl. @agora/contract), drizzle/ + scripts/.
+# /out carries package.json, dist/, node_modules/ (incl. @agora-server/contract), drizzle/ + scripts/.
 COPY --from=builder /out ./
 # Guarantee the logging config is present (lives at the app root, outside dist/). lib/logger.ts
 # resolves it module-relative → /app/wonder-logger.yaml.

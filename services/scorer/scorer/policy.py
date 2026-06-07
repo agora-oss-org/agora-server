@@ -12,7 +12,7 @@ verdict semantics:
   block  — clearly violates policy (eligible for auto-removal above the confidence threshold)
   review — uncertain or context-dependent; always routes to a human
 
-NOTE: ``DEFAULT_MODERATION_CATEGORIES`` lives in ``@agora/contract`` on the TS side. There
+NOTE: ``DEFAULT_MODERATION_CATEGORIES`` lives in ``@agora-server/contract`` on the TS side. There
 is no Python build of the contract, so the list is mirrored here. If the contract's default
 taxonomy changes, update this constant to match (covered by ``tests/test_policy.py``).
 """
@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-# Mirror of @agora/contract DEFAULT_MODERATION_CATEGORIES (packages/contract/src/schemas.ts),
+# Mirror of @agora-server/contract DEFAULT_MODERATION_CATEGORIES (packages/contract/src/schemas.ts),
 # copied VERBATIM. There is no Python build of the contract, so keep this in sync by hand if the
 # contract's list changes — it seeds projects.moderator_config.categories and is admin-editable, so
 # the strings must match exactly.
