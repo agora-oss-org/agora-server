@@ -1,25 +1,20 @@
 """The cascade — the heart of the worker. Shape-port of ``apps/moderator/src/lib/assess-and-record.ts``.
 
-Per job (after the worker fetches the content text by id):
-
-  1. score_both()         → toxicity + relationship RoBERTa scores, in parallel
-  2. gray-zone gate       → if toxicity in [grayzone_low, grayzone_high], escalate to Claude Haiku
-                            (salvaged policy prompt + verdict schema). Below low → allow; above
-                            high → block (high-confidence); Haiku may override within the band.
-  3. decide_auto_action() → salvaged pure fn over the verdict + per-project thresholds
-  4. apply_moderation()   → write-back through the API (entity/comment only; messages queue)
-  5. upsert_analysis()    → idempotent moderation_analyses row (the admin queue source)
-  6. write_relationship_edge() → idempotent Neo4j MERGE (graph schema out of scope)
-
-STUB: the control flow is laid out with real calls into the (stubbed) collaborators so the
-shape is exercisable; the scoring→verdict mapping details are finalized in the impl pass.
+``assess_and_record`` is the reusable core (given the text): score both models in parallel → gray-zone
+gate on **P(toxic)** → escalate borderline to Claude Haiku → decide auto-action → write-back removal
+(entity/comment only) → record the (deduped) ``moderation_analyses`` row → MERGE the Neo4j relationship
+edge → return the inserted row. ``process_job`` fetches the content text by id then calls the core (with
+the pgmq ``msg_id`` for dedup); the admin ``/analyze`` endpoint calls the core with operator-provided text
+(no pgmq message → ``source_msg_id=None``).
 """
 
 from __future__ import annotations
 
-from typing import cast
+from typing import Optional, cast
 
-from scorer.auto_action import AutoActionThresholds, ModerationVerdict, decide_auto_action
+import asyncpg
+
+from scorer.auto_action import AutoActionThresholds, ModerationVerdict, ReportTargetType, decide_auto_action
 from scorer.config import Settings
 from scorer.db import fetch_content, get_moderator_config
 from scorer.haiku import assess as haiku_assess
@@ -32,30 +27,31 @@ from . import analyses, model_clients, neo4j_writer, writeback
 logger = get_logger("scorer.worker.pipeline")
 
 
-async def process_job(settings: Settings, job: ScoreJob, msg_id: int | None = None) -> None:
-    """Run one job through the full cascade. Idempotent end-to-end (pgmq is at-least-once):
-    the analysis insert dedups on ``msg_id``, and the write-back + Neo4j MERGE are idempotent."""
-    content = await fetch_content(settings, job.target_type, job.target_id)
-    if content is None or not content.text:
-        log(logger, "warn", "no content text for job (skipping)", target_id=job.target_id)
-        return
-    text = content.text
+async def assess_and_record(
+    settings: Settings,
+    *,
+    project_id: str,
+    target_type: str,
+    target_id: str,
+    space_id: Optional[str],
+    text: str,
+    context: Optional[str] = None,
+    author_id: Optional[str] = None,
+    source_msg_id: Optional[int] = None,
+) -> Optional[asyncpg.Record]:
+    """Run the full cascade over ``text`` and record one analysis. Returns the inserted row (None on a
+    dedup conflict). Idempotent: the insert dedups on ``source_msg_id``; write-back + MERGE are idempotent."""
+    toxicity, relationship = await model_clients.score_both(settings, text, context)
+    cfg = await get_moderator_config(settings, project_id)
 
-    toxicity, relationship = await model_clients.score_both(settings, text)
-    cfg = await get_moderator_config(settings, job.project_id)
-
-    # ── gray-zone cascade ──────────────────────────────────────────────────────
-    # Gate on P(toxic) specifically — NOT toxicity.score, which is the *top* label's probability and
-    # could be "neutral" (a clean post with neutral=0.95 must not trip the block gate). The toxicity
-    # model must expose a "toxic" label; fall back to the top score only if it doesn't.
+    # ── gray-zone cascade (gate on P(toxic), not the top label) ─────────────────
     tox = toxicity.scores.get("toxic", toxicity.score)
     verdict, categories, confidence, reason, model = "allow", [], tox, "", "roberta:toxicity"
     prompt_tokens = completion_tokens = 0
     if tox >= settings.grayzone_high:
         verdict, confidence, reason = "block", tox, "High toxicity score"
     elif tox >= settings.grayzone_low:
-        # Borderline → ask Haiku for a nuanced verdict (None when disabled or errored → human review).
-        result = await haiku_assess(settings, text, cfg.categories) if settings.haiku_enabled() else None
+        result = await haiku_assess(settings, text, cfg.categories, context) if settings.haiku_enabled() else None
         if result is not None:
             verdict, categories, confidence, reason = result.verdict, result.categories, result.confidence, result.reason
             model = result.model
@@ -65,28 +61,28 @@ async def process_job(settings: Settings, job: ScoreJob, msg_id: int | None = No
 
     # ── decide + apply auto-action (entity/comment only) ───────────────────────
     trigger = decide_auto_action(
-        cast(ModerationVerdict, verdict), confidence, job.target_type,
+        cast(ModerationVerdict, verdict), confidence, cast(ReportTargetType, target_type),
         AutoActionThresholds(cfg.block_auto_action_threshold, cfg.review_auto_action_threshold),
     )
     auto_actioned = False
-    if trigger is not None and job.target_type in ("entity", "comment"):
+    if trigger is not None and target_type in ("entity", "comment"):
         auto_actioned = await writeback.apply_moderation(
             settings,
-            project_id=job.project_id,
-            target_type=job.target_type,  # type: ignore[arg-type]
-            target_id=job.target_id,
+            project_id=project_id,
+            target_type=target_type,  # type: ignore[arg-type]
+            target_id=target_id,
             status="removed",
             reason=moderation_reason_text(verdict, confidence, reason),
         )
 
     # ── record the audit row (admin queue source), deduped on the pgmq msg_id ───
-    await analyses.record_analysis(
+    row = await analyses.record_analysis(
         settings,
         analyses.AnalysisInput(
-            project_id=job.project_id,
-            target_type=job.target_type,
-            target_id=job.target_id,
-            space_id=content.space_id,
+            project_id=project_id,
+            target_type=target_type,
+            target_id=target_id,
+            space_id=space_id,
             verdict=verdict,
             categories=categories,
             confidence=confidence,
@@ -95,22 +91,40 @@ async def process_job(settings: Settings, job: ScoreJob, msg_id: int | None = No
             auto_actioned=auto_actioned,
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
-            source_msg_id=msg_id,
+            source_msg_id=source_msg_id,
         ),
     )
 
     # ── relationship edge → Neo4j ──────────────────────────────────────────────
-    # Map the sentiment distribution to a signed quality in [-1, 1] (P(positive) - P(negative));
-    # fall back to the top-label score if the model isn't a 3-way sentiment classifier.
+    # Signed quality in [-1, 1] (P(positive) - P(negative)); fall back to top score for non-sentiment models.
     rel = relationship.scores
     rel_quality = (rel.get("positive", 0.0) - rel.get("negative", 0.0)) if rel else relationship.score
     await neo4j_writer.write_relationship_edge(
         settings,
-        project_id=job.project_id,
-        target_type=job.target_type,
-        target_id=job.target_id,
-        author_id=content.author_id,
+        project_id=project_id,
+        target_type=target_type,
+        target_id=target_id,
+        author_id=author_id,
         relationship_score=rel_quality,
     )
 
-    log(logger, "info", "job processed", target_id=job.target_id, verdict=verdict, auto_actioned=auto_actioned)
+    log(logger, "info", "assessed", target_id=target_id, verdict=verdict, auto_actioned=auto_actioned)
+    return row
+
+
+async def process_job(settings: Settings, job: ScoreJob, msg_id: int | None = None) -> None:
+    """Consume one pgmq job: fetch the content text by id, then run the cascade core."""
+    content = await fetch_content(settings, job.target_type, job.target_id)
+    if content is None or not content.text:
+        log(logger, "warn", "no content text for job (skipping)", target_id=job.target_id)
+        return
+    await assess_and_record(
+        settings,
+        project_id=job.project_id,
+        target_type=job.target_type,
+        target_id=job.target_id,
+        space_id=content.space_id,
+        text=content.text,
+        author_id=content.author_id,
+        source_msg_id=msg_id,
+    )

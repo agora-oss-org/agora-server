@@ -23,7 +23,7 @@ from typing import Any, Optional
 from scorer import db
 from scorer.config import Settings
 from scorer.logging import get_logger
-from scorer.models import ModerationAnalysis
+from scorer.models import ModerationAnalysis, UserSummary
 
 logger = get_logger("scorer.worker.analyses")
 
@@ -46,9 +46,10 @@ class AnalysisInput:
     source_msg_id: int | None = None
 
 
-async def record_analysis(settings: Settings, data: AnalysisInput) -> None:
-    """Append one analysis row, deduped on the pgmq message id (ON CONFLICT DO NOTHING)."""
-    await db.insert_analysis(
+async def record_analysis(settings: Settings, data: AnalysisInput) -> Any:
+    """Append one analysis row, deduped on the pgmq message id (ON CONFLICT DO NOTHING). Returns the
+    inserted row (None on a dedup conflict)."""
+    return await db.insert_analysis(
         settings,
         project_id=data.project_id,
         target_type=data.target_type,
@@ -75,11 +76,11 @@ def _iso(value: Any) -> Optional[str]:
     return value.isoformat() if value is not None else None
 
 
-def shape_analysis(row: Any) -> ModerationAnalysis:
+def shape_analysis(row: Any, author: UserSummary | None = None) -> ModerationAnalysis:
     """asyncpg row → ModerationAnalysis envelope (camelCase out, Date→ISO). shape.ts shapeAnalysis.
 
-    ``author`` is left None for now — resolving the target's author (entity/comment/message → profile)
-    is a batched display enrichment deferred to a follow-up; the contract field is optional.
+    ``author`` (the target's poster) is resolved + batched by the queue handler via
+    ``db.fetch_authors``; the admin AI-flag table renders it.
     """
     space_id = row["space_id"]
     return ModerationAnalysis(
@@ -96,5 +97,5 @@ def shape_analysis(row: Any) -> ModerationAnalysis:
         auto_actioned=bool(row["auto_actioned"]),
         human_resolved_at=_iso(row["human_resolved_at"]),
         created_at=_iso(row["created_at"]) or "",
-        author=None,
+        author=author,
     )

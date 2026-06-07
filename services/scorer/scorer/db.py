@@ -21,6 +21,7 @@ import asyncpg
 
 from .config import ResolvedModeratorConfig, Settings, resolve
 from .logging import get_logger, log
+from .models import UserSummary
 from .policy import DEFAULT_MODERATION_CATEGORIES
 
 logger = get_logger("scorer.db")
@@ -96,6 +97,7 @@ insert into moderation_analyses
 values
   ($1, $2::reaction_target, $3, $4, $5::moderation_verdict, $6, $7, $8, $9, $10, $11, $12, $13)
 on conflict (source_msg_id) do nothing
+returning *
 """
 
 
@@ -115,9 +117,10 @@ async def insert_analysis(
     prompt_tokens: int,
     completion_tokens: int,
     source_msg_id: Optional[int],
-) -> None:
+) -> Optional[asyncpg.Record]:
+    """Insert the analysis row, returning it. None on a dedup conflict (redelivered msg already recorded)."""
     pool = await get_pool(settings)
-    await pool.execute(
+    return await pool.fetchrow(
         _INSERT_ANALYSIS, project_id, target_type, target_id, space_id, verdict, categories,
         confidence, reason, model, auto_actioned, prompt_tokens, completion_tokens, source_msg_id,
     )
@@ -223,13 +226,66 @@ async def fetch_latest_analysis(
     )
 
 
-async def resolve_analysis(settings: Settings, project_id: str, analysis_id: str) -> bool:
-    """Mark an analysis human-resolved (clears it from the queue). Returns True if a row matched."""
+_AUTHOR_SQL = {
+    "entity": "select id, user_id from entities where id = any($1::uuid[])",
+    "comment": "select id, user_id from comments where id = any($1::uuid[])",
+    "message": "select id, user_id from chat_messages where id = any($1::uuid[])",
+}
+
+
+async def fetch_authors(settings: Settings, targets: list[tuple[str, str]]) -> dict[str, UserSummary]:
+    """Resolve (targetType, targetId) → author UserSummary for the admin queue (port of authors.ts,
+    extended to chat_messages). Batched: one query per target table + one profiles query (no N+1)."""
     pool = await get_pool(settings)
-    status = await pool.execute(
+    target_to_user: dict[str, str] = {}
+    for kind, sql in _AUTHOR_SQL.items():
+        ids = [tid for tt, tid in targets if tt == kind]
+        if not ids:
+            continue
+        for row in await pool.fetch(sql, ids):
+            if row["user_id"] is not None:
+                target_to_user[str(row["id"])] = str(row["user_id"])
+    user_ids = list(set(target_to_user.values()))
+    profiles: dict[str, UserSummary] = {}
+    if user_ids:
+        for row in await pool.fetch(
+            "select id, username, name, reputation from profiles where id = any($1::uuid[])", user_ids
+        ):
+            profiles[str(row["id"])] = UserSummary(
+                id=str(row["id"]), username=row["username"], name=row["name"],
+                reputation=int(row["reputation"] or 0),
+            )
+    return {tid: profiles[uid] for tid, uid in target_to_user.items() if uid in profiles}
+
+
+async def fetch_analysis_by_id(
+    settings: Settings, project_id: str, analysis_id: str
+) -> Optional[asyncpg.Record]:
+    pool = await get_pool(settings)
+    return await pool.fetchrow(
+        "select * from moderation_analyses where id = $1 and project_id = $2", analysis_id, project_id
+    )
+
+
+async def resolve_analysis(
+    settings: Settings, project_id: str, analysis_id: str
+) -> Optional[asyncpg.Record]:
+    """Mark an analysis human-resolved (clears it from the queue); returns the updated row, None if absent."""
+    pool = await get_pool(settings)
+    return await pool.fetchrow(
         "update moderation_analyses set human_resolved_at = now() "
-        "where id = $1 and project_id = $2 and human_resolved_at is null",
+        "where id = $1 and project_id = $2 returning *",
         analysis_id, project_id,
     )
-    # asyncpg returns e.g. "UPDATE 1"
-    return status.rsplit(" ", 1)[-1] != "0"
+
+
+async def mark_removed(
+    settings: Settings, project_id: str, analysis_id: str
+) -> Optional[asyncpg.Record]:
+    """After a successful write-back removal: resolve + flag auto_actioned; returns the updated row."""
+    pool = await get_pool(settings)
+    return await pool.fetchrow(
+        "update moderation_analyses set human_resolved_at = now(), auto_actioned = true "
+        "where id = $1 and project_id = $2 returning *",
+        analysis_id, project_id,
+    )

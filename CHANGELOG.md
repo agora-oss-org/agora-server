@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Scorer: LISTEN/NOTIFY wake-up + operator-complete admin surface.** The `services/scorer` worker now
+  wakes instantly on a `pg_notify('scorer_jobs')` from the enqueue trigger (migration `0033`) — via a
+  dedicated LISTEN connection on a direct/session DSN (`SCORER_LISTEN_DATABASE_URL`; LISTEN doesn't work
+  over the `:6543` transaction pooler) — with the pgmq poll retained as the durability backstop. The
+  admin AI-flag surface is now contract-complete with `apps/admin`: the queue populates `author` (batched,
+  incl. chat messages), pagination matches `@agora/contract` (`pageSize`/`totalItems`/`hasMore`),
+  `/analysis` returns `{analysis}`, `/analyze` + `/{id}/remove` are implemented (a reusable
+  `assess_and_record` cascade core; remove writes back through the API), `resolve`/`remove` return the
+  updated `ModerationAnalysis`, and `/config` returns the full running-config shape. A manual end-to-end
+  **smoke recipe** is documented in `docs/SCORER.md` (the live smoke is the remaining gate).
+
 ## [0.9.0] - 2026-06-06
 
 ### Added

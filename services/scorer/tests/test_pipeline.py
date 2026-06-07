@@ -27,13 +27,14 @@ def _patch(monkeypatch: pytest.MonkeyPatch, *, tox_scores: dict[str, float]) -> 
             block_auto_action_threshold=0.85, review_auto_action_threshold=0.0, categories=["spam"]
         )
 
-    async def fake_score_both(settings, text):  # noqa: ANN001
+    async def fake_score_both(settings, text, context=None):  # noqa: ANN001
         tox = ModelScore(label=max(tox_scores, key=lambda k: tox_scores[k]), score=max(tox_scores.values()), scores=tox_scores)
         rel = ModelScore(label="neutral", score=0.6, scores=rel_scores)
         return tox, rel
 
     async def fake_record(settings, data):  # noqa: ANN001
         recorded["data"] = data
+        return data  # stands in for the inserted row (what assess_and_record returns)
 
     async def fake_writeback(settings, **kw):  # noqa: ANN001
         recorded["writeback"] = kw
@@ -76,3 +77,13 @@ async def test_grayzone_without_haiku_routes_to_review(monkeypatch: pytest.Monke
     await pipeline.process_job(Settings(), _job(), msg_id=3)
     assert rec["data"].verdict == "review"
     assert rec["data"].source_msg_id == 3
+
+
+async def test_assess_and_record_returns_the_row(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The /analyze path calls the core directly with operator-provided text and returns the recorded row.
+    rec = _patch(monkeypatch, tox_scores={"toxic": 0.9, "neutral": 0.1})
+    row = await pipeline.assess_and_record(
+        Settings(), project_id="p1", target_type="entity", target_id="t1", space_id=None, text="x"
+    )
+    assert row is rec["data"]
+    assert row.source_msg_id is None  # on-demand → no pgmq message

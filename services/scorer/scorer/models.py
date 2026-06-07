@@ -39,7 +39,7 @@ class UserSummary(CamelModel):
     id: str
     username: Optional[str] = None
     name: Optional[str] = None
-    reputation: Optional[int] = None
+    reputation: int = 0
 
 
 class ModerationAnalysis(CamelModel):
@@ -62,11 +62,12 @@ class ModerationAnalysis(CamelModel):
 
 
 class Pagination(CamelModel):
+    # Matches @agora/contract PaginationMeta: { page, pageSize, totalPages, totalItems, hasMore }.
     page: int
-    limit: int
-    total: int
+    page_size: int
     total_pages: int
-    has_next_page: bool
+    total_items: int
+    has_more: bool
 
 
 class Page(CamelModel, Generic[T]):
