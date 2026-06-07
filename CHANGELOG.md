@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Scorer: gate on P(toxic), not the top label.** The `services/scorer` cascade compared the toxicity
+  classifier's *top-label* probability to the gray-zone thresholds, so clean content whose top label was
+  `neutral` (e.g. 0.95) wrongly tripped the block gate. It now keys on **P(toxic)** specifically (falling
+  back to the top score only if a model lacks a `toxic` label), covered by `worker/pipeline.py` cascade
+  tests (clean→allow / toxic→block / gray-zone→review). Also made the scorer **mypy-clean** (added
+  `[tool.mypy]` + Literal-narrowing fixes in `verdict.py` / `neo4j.py` / `pipeline.py`).
+
 ## [0.8.0] - 2026-06-06
 
 ### Added
