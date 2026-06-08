@@ -3,6 +3,7 @@
 // own access/refresh tokens on top (lib/tokens.ts) and keeps a `profiles` row per auth user.
 // verify-external-user bypasses Supabase: RS256 verify against the project's public key.
 import { Hono } from "hono";
+import { createPublicKey } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { importSPKI, jwtVerify } from "jose";
 import type { Variables } from "../http/context.js";
@@ -188,6 +189,14 @@ export const authRoutes = new Hono<{ Variables: Variables }>()
 
     let payload: Record<string, any>;
     try {
+      // Defense-in-depth: the key is operator-configured out-of-band, but reject a weak/wrong-type key
+      // before trusting any token signed by it — a sub-2048-bit RSA (or non-RSA) key under RS256 must
+      // never gate identity. createPublicKey parses the same PEM jose's importSPKI consumes.
+      const details = createPublicKey(project.key);
+      const modulusLength = (details.asymmetricKeyDetails?.modulusLength ?? 0);
+      if (details.asymmetricKeyType !== "rsa" || modulusLength < 2048) {
+        throw new Error("external auth key must be RSA ≥2048-bit");
+      }
       const publicKey = await importSPKI(project.key, "RS256");
       ({ payload } = await jwtVerify(body.userJwt ?? body.token!, publicKey, { algorithms: ["RS256"], audience: "replyke.com", issuer: projectId }) as any);
     } catch (e: any) {
