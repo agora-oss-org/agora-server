@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import traceback
 from typing import Optional
 
 from scorer import pgmq
@@ -66,8 +67,9 @@ async def run_consumer(settings: Settings, stop: asyncio.Event, wake: Optional[a
                 try:
                     await process_job(settings, ScoreJob(**msg.message), msg_id=msg.msg_id)
                     await pgmq.delete(settings, msg.msg_id)
-                except Exception:  # noqa: BLE001 — keep the loop alive; message redelivers after vt
-                    log(logger, "error", "job failed; will redeliver", msg_id=msg.msg_id)
+                except Exception as exc:  # noqa: BLE001 — keep the loop alive; message redelivers after vt
+                    log(logger, "error", "job failed; will redeliver", msg_id=msg.msg_id,
+                        err=repr(exc), trace=traceback.format_exc())
         except Exception:  # noqa: BLE001
             log(logger, "error", "consumer poll failed")
         # Sleep up to one interval, but wake immediately on stop or a NOTIFY.
