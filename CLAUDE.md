@@ -249,6 +249,12 @@ shared DB) and `globalSetup` applies migrations on first run. The integration en
 `VOYAGE_API_KEY`/`ANTHROPIC_API_KEY` empty** so embed/LLM write paths are no-ops (hermetic — no real
 Voyage/Anthropic calls); `match_content` is covered offline with synthetic vectors.
 
+> ⚠️ **Temp-fs fill (`ENOSPC` on `/private/tmp`).** A full integration run (vitest reporter +
+> per-worker temp files) can exhaust the small macOS `/private/tmp` volume and abort mid-suite with
+> `ENOSPC`. Redirect temp output to a roomier dir for the run:
+> `mkdir -p "$HOME/.cache/agora-tmp"` once, then prefix with `TMPDIR="$HOME/.cache/agora-tmp"`
+> (e.g. `TMPDIR="$HOME/.cache/agora-tmp" pnpm test:integration`).
+
 ## Database migrations (Drizzle)
 
 Schema lives in `apps/api/src/db/schema/*.ts`. `drizzle-kit generate` produces table DDL; anything
