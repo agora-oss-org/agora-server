@@ -15,16 +15,10 @@ export const projects = pgTable("projects", {
   webhookUrl: text("webhook_url"),
   webhookSecret: text("webhook_secret"),
   webhookEvents: text("webhook_events").array().notNull().default(sql`'{}'`),
-  // Internal moderation notifier — the @agora/moderator service's webhook destination + its own
-  // HMAC secret. Distinct from the (external) webhook above: the API fans content `*.complete`
-  // events here regardless of webhookEvents, so automated moderation runs independently of any
-  // external integration. The moderator verifies inbound signatures against this secret.
-  moderationWebhookUrl: text("moderation_webhook_url"),
-  moderationWebhookSecret: text("moderation_webhook_secret"),
-  // Per-project moderator tuning the @agora/moderator service overlays on its own env defaults:
+  // Per-project moderator tuning the services/scorer subsystem overlays on its own env defaults:
   // `blockAutoActionThreshold` + `reviewAutoActionThreshold` (0..1 auto-remove cutoffs) + LLM
   // provider config (`llmProvider`, `llmBaseUrl`, `llmApiKey`, `llmModel`, `llmMaxTokens`). Any unset key falls back to the
-  // moderator's env. Edited via admin Settings → Moderator; `llmApiKey` is write-only in the view.
+  // scorer's env. Edited via admin Settings → Moderator; `llmApiKey` is write-only in the view.
   moderatorConfig: jsonb("moderator_config").notNull().default(sql`'{}'::jsonb`),
   // Per-project feed ranking config (algorithm + tunables + optional re-rank webhook). See
   // lib/feed-config.ts for the resolved shape + defaults; backs the admin Feed settings UI.

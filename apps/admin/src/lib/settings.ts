@@ -102,17 +102,14 @@ export function testWebhook(): Promise<WebhookTestResult> {
   return api<WebhookTestResult>("/webhooks/test", { method: "POST" });
 }
 
-// ── Moderator integration (GET/PATCH /settings/moderator, POST …/test) ────────────────────────────
-// Everything about the @agora/moderator service for this project: the INTERNAL notifier the API fans
-// content `*.complete` events to (distinct from the external project webhook above) + the auto-action
-// threshold and LLM tuning the moderator overlays on its env defaults. The two secrets (notifier
-// secret + LLM API key) are write-only — GET exposes only hasSecret / hasLlmApiKey. Tuning fields are
-// null when unset (the moderator falls back to its server env).
+// ── Moderator integration (GET/PATCH /settings/moderator) ────────────────────────────────────────
+// Per-project tuning for the services/scorer subsystem: the auto-action thresholds + LLM tuning +
+// moderation categories the scorer overlays on its env defaults. The LLM API key is write-only — GET
+// exposes only hasLlmApiKey. Tuning fields are null when unset (the scorer falls back to its server
+// env). (Scoring transport is the scorer's pgmq enqueue — there is no per-project notifier URL.)
 export type LlmProvider = "openai" | "anthropic";
 
 export interface ModeratorConfigView {
-  url: string | null;
-  hasSecret: boolean;
   blockAutoActionThreshold: number | null;
   reviewAutoActionThreshold: number | null;
   llmProvider: LlmProvider | null;
@@ -123,11 +120,9 @@ export interface ModeratorConfigView {
   categories: string[]; // effective taxonomy (stored, or the seed defaults)
 }
 
-// PATCH body: omit a key to leave it unchanged, null to clear it (→ the moderator's env default).
-// url:null disables the notifier. secret/llmApiKey are write-only (send only when (re)entered).
+// PATCH body: omit a key to leave it unchanged, null to clear it (→ the scorer's env default).
+// llmApiKey is write-only (send only when (re)entered).
 export interface ModeratorConfigPatch {
-  url?: string | null;
-  secret?: string | null;
   blockAutoActionThreshold?: number | null;
   reviewAutoActionThreshold?: number | null;
   llmProvider?: LlmProvider | null;
@@ -144,11 +139,6 @@ export function getModeratorConfig(signal?: AbortSignal): Promise<ModeratorConfi
 
 export function updateModeratorConfig(patch: ModeratorConfigPatch): Promise<ModeratorConfigView> {
   return api<ModeratorConfigView>("/settings/moderator", { method: "PATCH", body: patch });
-}
-
-// Pings the SAVED moderator URL. 400 if none is configured.
-export function testModeratorWebhook(): Promise<WebhookTestResult> {
-  return api<WebhookTestResult>("/settings/moderator/test", { method: "POST" });
 }
 
 // ── Stewardship (GET/PATCH /settings/steward) ─────────────────────────────────────────────────────

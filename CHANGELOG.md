@@ -27,6 +27,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   powers chat-message *reports*, a separate feature.
 
 ### Removed
+- **Dead moderation-notifier path removed.** The `services/scorer` cutover left the old internal
+  moderation webhook notifier dormant; it's now fully removed. Gone: `lib/webhooks.ts`
+  `MODERATION_EVENTS` + the `broadcast()` moderation fan-out + `sendModerationTest`; the
+  `projects.moderation_webhook_url` / `moderation_webhook_secret` columns (migration `0035` drops them);
+  the `POST /settings/moderator/test` endpoint; the `url` / `secret` fields on `moderatorConfigSchema`;
+  and the admin **Settings → Moderator** webhook card. Automated moderation runs entirely off the
+  scorer's pgmq enqueue — admin **Settings → Moderator** now tunes only `projects.moderator_config`
+  (auto-action thresholds + LLM config + categories). The external project webhook + sign-up validation
+  webhook are untouched.
+
+## [0.10.0] - 2026-06-08
+
+### Removed
 - **`apps/moderator` retired.** The Node/Hono LLM-moderation service is fully replaced by the proven
   `services/scorer` subsystem (live-validated end-to-end) — its source is deleted and the `dev:moderator`
   script + workspace/lockfile entries removed. Its prompts, thresholds, verdict parsing, and the

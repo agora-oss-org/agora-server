@@ -246,6 +246,13 @@
       "when": 1780798500000,
       "tag": "0034_collection_entity_same_project",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1780911112412,
+      "tag": "0035_drop_moderation_webhook_cols",
+      "breakpoints": true
     }
   ]
 }

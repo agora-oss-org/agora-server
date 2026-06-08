@@ -273,8 +273,11 @@ source retired**.
 1. **Relationship graph v2** — the user→user `INTERACTED` edge (reactions trigger + a `reaction` job type
    + resolving the recipient of replies via parent-content author). Chat/DMs are out of scope — secure
    chat is E2E-encrypted, so the server has no message plaintext to derive a sentiment edge from.
-2. **Clean the dead moderation-notifier path** — `apps/api/src/lib/webhooks.ts` `MODERATION_EVENTS` +
-   `projects.moderation_webhook_url/secret` are dormant now (the scorer uses pgmq); repoint/trim the admin
-   Settings→Moderator webhook panel.
-3. **Ops polish** — Python CI job (ruff/mypy/pytest), scorer images in the docker-publish matrix, torch
+2. **Ops polish** — Python CI job (ruff/mypy/pytest), scorer images in the docker-publish matrix, torch
    image slimming, a HF cache volume.
+
+**Recently done:** ✅ **dead moderation-notifier path removed** — `lib/webhooks.ts` `MODERATION_EVENTS`
++ the internal notifier, the `projects.moderation_webhook_url/secret` columns (dropped by migration
+`0035`), the `/settings/moderator/test` endpoint, and the admin Settings → Moderator webhook card are
+all gone. The scorer drives moderation entirely off pgmq; admin Settings → Moderator now tunes only the
+auto-action thresholds + LLM config + categories (`projects.moderator_config`).

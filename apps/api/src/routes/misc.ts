@@ -160,10 +160,10 @@ export const miscRoutes = new Hono<{ Variables: Variables }>()
     invalidateStewardConfig(c.var.projectId);
     return c.json(stewardConfigView(await getStewardConfig(c.var.projectId)));
   })
-  // ── moderator integration (internal @agora/moderator service; project-admin only) ─
-  // Everything about automated moderation for the project: the internal notifier (url + secret, the
-  // API fans content `*.complete` events here, separate from /webhooks/config) plus the auto-action
-  // threshold + LLM tuning the moderator overlays on its env. `secret`/`llmApiKey` are write-only.
+  // ── moderator integration (services/scorer tuning; project-admin only) ─
+  // Per-project tuning the scorer overlays on its env defaults: the auto-action thresholds, the LLM
+  // provider config, and the moderation category list. `llmApiKey` is write-only. (Scoring transport
+  // is the scorer's pgmq enqueue — no per-project notifier URL; see docs/SCORER.md.)
   .get("/settings/moderator", requireAuth, async (c) => {
     await requireProjectAdmin(c);
     return c.json(await moderatorView(c.var.projectId));
@@ -171,31 +171,19 @@ export const miscRoutes = new Hono<{ Variables: Variables }>()
   .patch("/settings/moderator", requireAuth, async (c) => {
     await requireProjectAdmin(c);
     const body = parseBody(moderatorConfigSchema, await c.req.json().catch(() => ({})), "moderator");
-    // The notifier transport lives in dedicated columns; the tuning lives in the moderator_config
-    // JSONB (merge-on-write: null clears a key → the moderator falls back to its env default).
-    const cols: Record<string, unknown> = {};
-    if (body.url !== undefined) cols.moderationWebhookUrl = body.url; // null clears (disables it)
-    if (body.secret !== undefined) cols.moderationWebhookSecret = body.secret;
+    // The tuning lives in the moderator_config JSONB (merge-on-write: null clears a key → the scorer
+    // falls back to its env default).
     const [row] = await db.select({ moderatorConfig: projects.moderatorConfig }).from(projects).where(eq(projects.id, c.var.projectId)).limit(1);
     const current = (row?.moderatorConfig && typeof row.moderatorConfig === "object" ? row.moderatorConfig : {}) as Record<string, any>;
     const next: Record<string, any> = { ...current };
     for (const k of ["blockAutoActionThreshold", "reviewAutoActionThreshold", "llmProvider", "llmBaseUrl", "llmApiKey", "llmModel", "llmMaxTokens", "categories"] as const) {
       const v = (body as Record<string, unknown>)[k];
       if (v === undefined) continue;
-      if (v === null) delete next[k]; // clear → moderator env default
+      if (v === null) delete next[k]; // clear → scorer env default
       else next[k] = v;
     }
-    cols.moderatorConfig = next;
-    await db.update(projects).set(cols).where(eq(projects.id, c.var.projectId));
-    webhooks.invalidateConfig(c.var.projectId); // notifier config is cached 30s — drop it now
+    await db.update(projects).set({ moderatorConfig: next }).where(eq(projects.id, c.var.projectId));
     return c.json(await moderatorView(c.var.projectId));
-  })
-  // Send a signed test ping to the configured moderator URL and report the delivery result.
-  .post("/settings/moderator/test", requireAuth, async (c) => {
-    await requireProjectAdmin(c);
-    const result = await webhooks.sendModerationTest(c.var.projectId);
-    if (!result.configured) throw Errors.badRequest("moderator/not-configured", "No moderator URL configured for this project");
-    return c.json(result);
   })
   // ── lean project info ───────────────────────────────────────────────────────
   .get("/projects/lean", async (c) => {
@@ -260,17 +248,14 @@ async function webhookConfigView(projectId: string) {
   return { url: p?.url ?? null, events: p?.events ?? [], hasSecret: !!p?.secret };
 }
 
-// Safe view of the moderator integration. The two write-only secrets (notifier secret + LLM API
-// key) are redacted to hasSecret / hasLlmApiKey; tuning fields echo the stored per-project override
-// (null = unset → the moderator uses its env default).
+// Safe view of the moderator integration. The write-only LLM API key is redacted to hasLlmApiKey;
+// tuning fields echo the stored per-project override (null = unset → the scorer uses its env default).
 async function moderatorView(projectId: string) {
   const [p] = await db
-    .select({ url: projects.moderationWebhookUrl, secret: projects.moderationWebhookSecret, cfg: projects.moderatorConfig })
+    .select({ cfg: projects.moderatorConfig })
     .from(projects).where(eq(projects.id, projectId)).limit(1);
   const cfg = (p?.cfg && typeof p.cfg === "object" ? p.cfg : {}) as Record<string, any>;
   return {
-    url: p?.url ?? null,
-    hasSecret: !!p?.secret,
     blockAutoActionThreshold: typeof cfg.blockAutoActionThreshold === "number" ? cfg.blockAutoActionThreshold : null,
     reviewAutoActionThreshold: typeof cfg.reviewAutoActionThreshold === "number" ? cfg.reviewAutoActionThreshold : null,
     llmProvider: cfg.llmProvider ?? null,

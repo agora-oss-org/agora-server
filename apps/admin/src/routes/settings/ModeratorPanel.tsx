@@ -1,18 +1,17 @@
-// Moderator integration — everything about the @agora/moderator service for this project:
-//   • the INTERNAL notifier the API fans content events to (separate from the external Project
-//     webhook; no event list, no blocking — fire-and-forget internal monitoring), and
-//   • the auto-action threshold + LLM-provider tuning the moderator overlays on its env defaults.
-// GET/PATCH /settings/moderator + POST …/test. Project-admin / operator only on the server. The two
-// secrets (notifier secret + LLM API key) are write-only — blank keeps the stored value unchanged.
-// Tuning fields left blank are sent as null = "use the moderator's own server default".
+// Moderator integration — per-project tuning for the services/scorer subsystem: the auto-action
+// thresholds + LLM-provider config + moderation categories the scorer overlays on its env defaults.
+// GET/PATCH /settings/moderator. Project-admin / operator only on the server. The LLM API key is
+// write-only — blank keeps the stored value unchanged. Tuning fields left blank are sent as
+// null = "use the scorer's own server default". (Scoring transport is the scorer's pgmq enqueue —
+// there is no per-project notifier URL.)
 //
-// The .env-vs-admin model: the moderator ships env DEFAULTS; the admin writes per-project OVERRIDES.
+// The .env-vs-admin model: the scorer ships env DEFAULTS; the admin writes per-project OVERRIDES.
 // We fetch the moderator's running config (GET /moderation/config) to show the effective value behind
 // each field (override ?? default) and surface the real default in every placeholder — so an operator
 // sees what's running and only overrides what differs.
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { RotateCcw, Save, Send, ShieldCheck, Sparkles, X } from "lucide-react";
+import { RotateCcw, Save, Sparkles, X } from "lucide-react";
 import { DEFAULT_MODERATION_CATEGORIES } from "@agora-server/contract";
 import {
   Card, CardHeader, CardTitle, CardDescription, CardContent,
@@ -25,7 +24,7 @@ import { SETTINGS_READ_ONLY } from "../../config";
 import { ApiError } from "../../lib/api";
 import { track } from "../../lib/analytics";
 import {
-  getModeratorConfig, updateModeratorConfig, testModeratorWebhook,
+  getModeratorConfig, updateModeratorConfig,
   type ModeratorConfigView, type ModeratorConfigPatch, type LlmProvider,
 } from "../../lib/settings";
 import {
@@ -79,9 +78,6 @@ function ModeratorForm({
   const defaults: Defaults | null = running?.config.defaults ?? null;
   const qc = useQueryClient();
   const toast = useToast();
-  const [url, setUrl] = useState(initial.url ?? "");
-  const [secret, setSecret] = useState(""); // write-only; blank = unchanged
-  const [hasSecret, setHasSecret] = useState(initial.hasSecret);
   const [blockThreshold, setBlockThreshold] = useState(str(initial.blockAutoActionThreshold));
   const [reviewThreshold, setReviewThreshold] = useState(str(initial.reviewAutoActionThreshold));
   const [provider, setProvider] = useState<"" | LlmProvider>(initial.llmProvider ?? "");
@@ -97,27 +93,13 @@ function ModeratorForm({
     mutationFn: (patch: ModeratorConfigPatch) => updateModeratorConfig(patch),
     onSuccess: (view) => {
       track("admin-settings-save", { panel: "moderator" });
-      setHasSecret(view.hasSecret);
       setHasLlmApiKey(view.hasLlmApiKey);
-      setSecret("");
       setApiKey("");
       qc.setQueryData(["settings", "moderator"], view);
       toast({ title: "Moderator settings saved", variant: "success" });
     },
     onError: (e) =>
       toast({ title: "Save failed", description: e instanceof ApiError || e instanceof Error ? e.message : undefined, variant: "danger" }),
-  });
-
-  const test = useMutation({
-    mutationFn: () => testModeratorWebhook(),
-    onSuccess: (r) => {
-      track("admin-settings-test", { target: "moderator", ok: !!r.ok });
-      return r.ok
-        ? toast({ title: "Test ping delivered", description: `HTTP ${r.status}`, variant: "success" })
-        : toast({ title: "Test ping failed", description: r.error ?? `HTTP ${r.status}`, variant: "danger" });
-    },
-    onError: (e) =>
-      toast({ title: "Test ping failed", description: e instanceof ApiError || e instanceof Error ? e.message : undefined, variant: "danger" }),
   });
 
   function onSubmit(e: React.FormEvent) {
@@ -127,7 +109,6 @@ function ModeratorForm({
     const rt = reviewThreshold.trim();
     const mt = maxTokens.trim();
     const patch: ModeratorConfigPatch = {
-      url: url.trim() ? url.trim() : null,          // empty → disable the notifier
       blockAutoActionThreshold: bt === "" ? null : Number(bt),
       reviewAutoActionThreshold: rt === "" ? null : Number(rt),
       llmProvider: provider || null,                // "" → use env default
@@ -136,7 +117,6 @@ function ModeratorForm({
       llmMaxTokens: mt === "" ? null : Number(mt),
       categories,                                   // [] resets to the seed defaults server-side
     };
-    if (secret.trim()) patch.secret = secret;       // write-only: only send when (re)entered
     if (apiKey.trim()) patch.llmApiKey = apiKey;
     save.mutate(patch);
   }
@@ -148,8 +128,6 @@ function ModeratorForm({
     setNewCategory("");
   }
   const removeCategory = (c: string) => setCategories(categories.filter((x) => x !== c));
-
-  const enabled = !!url.trim();
 
   // Effective value (override ?? server default) + its source, computed live from the form state so
   // the summary updates as you type. `null` default means the moderator's running config is
@@ -181,33 +159,6 @@ function ModeratorForm({
 
   return (
     <form onSubmit={onSubmit} className="space-y-5">
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <ShieldCheck className="size-4 text-muted" />
-            Moderator endpoint
-          </CardTitle>
-          <CardDescription>
-            The API fans every content event (<code>entity</code>/<code>comment</code>/<code>message</code>{" "}
-            <code>*.complete</code>) here for the <strong>@agora/moderator</strong> service to assess.
-            This is an <strong>internal</strong> notifier — separate from Project webhooks, with no event
-            list and no blocking. Point it at the moderator’s <code>/webhooks/agora</code> route. Clear
-            the URL to disable automated moderation.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-4">
-          <Field label="Moderator webhook URL">
-            <Input type="url" placeholder="http://localhost:4001/webhooks/agora" value={url} onChange={(e) => setUrl(e.target.value)} />
-          </Field>
-          <Field
-            label="Signing secret"
-            hint={hasSecret ? "Leave blank to keep the current secret." : "Required — the moderator only fires once a secret is set."}
-          >
-            <Input type="password" placeholder={hasSecret ? "•••••••• (unchanged)" : "shared HMAC secret"} value={secret} onChange={(e) => setSecret(e.target.value)} />
-          </Field>
-        </CardContent>
-      </Card>
-
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -307,16 +258,6 @@ function ModeratorForm({
 
       <div className="flex items-center justify-end gap-3">
         {SETTINGS_READ_ONLY ? <span className="text-xs text-faint">View-only — saving disabled</span> : null}
-        <Button
-          type="button"
-          variant="outline"
-          disabled={!enabled || test.isPending || save.isPending}
-          onClick={() => test.mutate()}
-          title={enabled ? "Ping the saved moderator URL" : "Set and save a URL first"}
-        >
-          <Send />
-          {test.isPending ? "Pinging…" : "Send test ping"}
-        </Button>
         <Button type="submit" disabled={save.isPending || SETTINGS_READ_ONLY}>
           <Save />
           {save.isPending ? "Saving…" : "Save changes"}

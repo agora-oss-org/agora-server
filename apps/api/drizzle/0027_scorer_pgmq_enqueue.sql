@@ -13,9 +13,9 @@
 -- separate triggers because a WHEN clause referencing OLD is invalid on an INSERT trigger.
 --
 -- Payload is id-only {targetType, targetId, projectId}; the worker fetches text / space / author by id.
--- This supersedes the moderation half of apps/api/src/lib/webhooks.ts (MODERATION_EVENTS +
--- projects.moderation_webhook_url/secret) — that code is left in place (external webhooks still use
--- broadcast()) and is dead-after-cutover for a later cleanup pass.
+-- This superseded the moderation half of apps/api/src/lib/webhooks.ts (MODERATION_EVENTS +
+-- projects.moderation_webhook_url/secret), which has since been removed (migration 0035 drops the
+-- columns); webhooks.ts now serves only the external project webhook + sign-up validation.
 
 create extension if not exists pgmq;
 --> statement-breakpoint

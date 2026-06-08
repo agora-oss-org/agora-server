@@ -105,13 +105,12 @@ pnpm workspaces (corepack-pinned `pnpm@10.14.0`). Four packages:
   content via a generic LLM provider (OpenAI-compatible *or* Anthropic — `lib/llm-provider.ts`),
   auto-acts above a confidence threshold by writing the removal back to the API (`moderatedByType=
   "client"`), and serves operator-gated review aids at `/v1/:projectId/moderation/*` (the admin's AI
-  queue). The API fans content `*.complete` events to the moderator via a **dedicated internal
-  notifier** (`projects.moderation_webhook_url` + `moderation_webhook_secret`, configured in admin
-  Settings → Moderator), independent of the external project webhook. **Per-project tuning** lives in
+  queue). The API enqueues content scoring jobs via **pgmq** (the `services/scorer` enqueue triggers —
+  see `docs/SCORER.md`); there is **no** per-project moderation webhook. **Per-project tuning** lives in
   `projects.moderator_config` (jsonb: `autoActionThreshold` + LLM provider config), which the
   moderator overlays on its env defaults per assessment (`lib/project-config.ts`, cached 30s) — so a
   deployment runs on env alone, or tunes each project from the admin. Shares the API's Postgres
-  (reads `projects.moderation_webhook_secret` (→ `webhook_secret` fallback) + `moderator_config`; R/W
+  (reads `projects.moderator_config`; R/W
   `moderation_analyses`) + `ACCESS_TOKEN_SECRET`; **all content mutations go through the API over
   HTTP** (the API stays the trust boundary). See its `apps/moderator/src` and the moderation note in
   Handler conventions.
@@ -301,10 +300,11 @@ journal order and written **idempotently** (`create extension if not exists`, `c
   search hits by space-readability + chat membership + moderation status (operators bypass).
 - `0020_…` — `moderation_analyses` table + `moderation_verdict` enum (allow/block/review): the
   `@agora/moderator` service's automated-moderation audit trail + AI-flag queue.
-- `0021_…` — `projects.moderation_webhook_url` + `moderation_webhook_secret`: the per-project
-  internal moderation notifier (admin Settings → Moderator), separate from the external webhook.
+- `0021_…` — (added `projects.moderation_webhook_url` + `moderation_webhook_secret` for the old
+  per-project moderation notifier; **dropped again by `0035`** — `services/scorer` uses pgmq, not a
+  webhook, so the columns are dead. See `docs/SCORER.md`.)
 - `0022_…` — `projects.moderator_config` jsonb: per-project moderator tuning (`autoActionThreshold`
-  + LLM provider config) the `@agora/moderator` overlays on its env defaults (admin Settings → Moderator).
+  + LLM provider config) that `services/scorer` overlays on its env defaults (admin Settings → Moderator).
 - `0023_…` — `moderation_analyses.prompt_tokens` + `completion_tokens`: per-assessment LLM token usage,
   summed by the moderator's `GET /moderation/stats` for the dashboard's automated-moderation metrics.
 - `0024_…` — `community_stats_hourly`: hourly community-health rollup (one row/project/hour) powering

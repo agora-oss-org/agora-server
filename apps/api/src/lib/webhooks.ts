@@ -19,18 +19,9 @@ import { logger } from "./logger.js";
 const TIMEOUT_MS = 4000;
 const CONFIG_TTL_MS = 30_000;
 
-// Content events the internal moderation notifier always receives (independent of the external
-// webhook's subscribed-events list). The @agora/moderator service assesses these for violations.
-const MODERATION_EVENTS = new Set([
-  "entity.created.complete", "entity.updated.complete",
-  "comment.created.complete", "comment.updated.complete",
-  "message.created.complete",
-]);
-
 type WebhookTarget = { url: string; secret: string };
 type WebhookConfig = {
   external: (WebhookTarget & { events: string[] }) | null; // the (external) webhook notifier
-  moderation: WebhookTarget | null;                         // the internal @agora/moderator notifier
 };
 const cache = new Map<string, { cfg: WebhookConfig; at: number }>();
 
@@ -38,14 +29,10 @@ async function getConfig(projectId: string): Promise<WebhookConfig> {
   const hit = cache.get(projectId);
   if (hit && Date.now() - hit.at < CONFIG_TTL_MS) return hit.cfg;
   const [p] = await db
-    .select({
-      url: projects.webhookUrl, secret: projects.webhookSecret, events: projects.webhookEvents,
-      modUrl: projects.moderationWebhookUrl, modSecret: projects.moderationWebhookSecret,
-    })
+    .select({ url: projects.webhookUrl, secret: projects.webhookSecret, events: projects.webhookEvents })
     .from(projects).where(eq(projects.id, projectId)).limit(1);
   const cfg: WebhookConfig = {
     external: p?.url && p?.secret ? { url: p.url, secret: p.secret, events: p.events ?? [] } : null,
-    moderation: p?.modUrl && p?.modSecret ? { url: p.modUrl, secret: p.modSecret } : null,
   };
   cache.set(projectId, { cfg, at: Date.now() });
   return cfg;
@@ -86,11 +73,6 @@ async function pingTarget(target: WebhookTarget | null, projectId: string): Prom
 /** Send a signed test ping to the external webhook URL (ignores the subscribed-events list). */
 export async function sendTest(projectId: string): Promise<TestResult> {
   return pingTarget((await getConfig(projectId)).external, projectId);
-}
-
-/** Send a signed test ping to the internal moderation-notifier URL. */
-export async function sendModerationTest(projectId: string): Promise<TestResult> {
-  return pingTarget((await getConfig(projectId)).moderation, projectId);
 }
 
 function timingSafeEqualHex(a: string, b: string): boolean {
@@ -142,24 +124,17 @@ export async function validate(projectId: string, type: string, data: unknown): 
 }
 
 /**
- * Fire-and-forget broadcast (never blocks or throws). Fans out to two independent destinations:
- *   - the external webhook notifier — only when the event is in the project's subscribed list;
- *   - the internal @agora/moderator notifier — for content `*.complete` events, regardless of the
- *     external subscription (so automated moderation runs even with no external integration).
+ * Fire-and-forget broadcast (never blocks or throws) to the external webhook notifier — only when
+ * the event is in the project's subscribed list. (Automated moderation no longer rides this path:
+ * content scoring is driven by `services/scorer`'s pgmq enqueue triggers — see docs/SCORER.md.)
  */
 export function broadcast(projectId: string, type: string, data: unknown): void {
   void (async () => {
     const cfg = await getConfig(projectId).catch(() => null);
-    if (!cfg) return;
-    const toExternal = !!(cfg.external && cfg.external.events.includes(type));
-    const toModeration = !!(cfg.moderation && MODERATION_EVENTS.has(type));
-    if (!toExternal && !toModeration) return;
-    const sends: Promise<unknown>[] = [];
-    if (toExternal) sends.push(post(cfg.external!, projectId, type, "complete", data));
-    if (toModeration) sends.push(post(cfg.moderation!, projectId, type, "complete", data));
-    logger.debug({ projectId, type, toExternal, toModeration }, "webhook: broadcasting");
+    if (!cfg?.external || !cfg.external.events.includes(type)) return;
+    logger.debug({ projectId, type }, "webhook: broadcasting");
     try {
-      await Promise.allSettled(sends);
+      await post(cfg.external, projectId, type, "complete", data);
     } catch {
       /* broadcast is best-effort */
     }

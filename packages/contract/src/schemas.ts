@@ -282,17 +282,14 @@ export const DEFAULT_MODERATION_CATEGORIES = [
   "pii",
 ] as const;
 
-// The @agora/moderator integration (PATCH /settings/moderator). Groups everything about automated
-// moderation for one project:
-//   - the internal notifier the API fans content `*.complete` events to (url + write-only secret) —
-//     separate from the project's (external) webhook notifier;
-//   - the block/review auto-action thresholds + LLM-provider tuning the moderator overlays on its env defaults;
+// The services/scorer integration (PATCH /settings/moderator). Per-project tuning the scorer overlays
+// on its env defaults:
+//   - the block/review auto-action thresholds + LLM-provider tuning;
 //   - the per-project moderation category list (`categories`).
-// Every field is nullish: omit to leave unchanged, null to clear (→ the moderator's env default /
-// the seed categories). `secret` and `llmApiKey` are write-only (GET exposes only hasSecret / hasLlmApiKey).
+// (Scoring transport is the scorer's pgmq enqueue — there is no per-project notifier URL/secret.)
+// Every field is nullish: omit to leave unchanged, null to clear (→ the scorer's env default /
+// the seed categories). `llmApiKey` is write-only (GET exposes only hasLlmApiKey).
 export const moderatorConfigSchema = z.object({
-  url: z.string().url().nullish(),
-  secret: z.string().min(1).nullish(),
   blockAutoActionThreshold: z.number().min(0).max(1).nullish(),
   reviewAutoActionThreshold: z.number().min(0).max(1).nullish(),
   llmProvider: z.enum(["openai", "anthropic"]).nullish(),
