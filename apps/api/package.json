@@ -40,7 +40,7 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
-    "@agora-sdk/secure-chat-crypto": "^0.3.0",
+    "@agora-sdk/secure-chat-crypto": "^0.4.0",
     "@types/node": "^22.19.20",
     "@vitest/coverage-v8": "^4.1.8",
     "drizzle-kit": "^0.31.10",

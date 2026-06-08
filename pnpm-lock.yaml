@@ -136,8 +136,8 @@ importers:
         version: 3.25.76
     devDependencies:
       '@agora-sdk/secure-chat-crypto':
-        specifier: ^0.3.0
-        version: 0.3.0
+        specifier: ^0.4.0
+        version: 0.4.0
       '@types/node':
         specifier: ^22.19.20
         version: 22.19.20
@@ -218,8 +218,8 @@ importers:
 
 packages:
 
-  '@agora-sdk/secure-chat-crypto@0.3.0':
-    resolution: {integrity: sha512-htqyEKL5Swr2qHRN9mKO4mDlHRez80e2GaVaYqt/5KGd2M2ohpoYwLALZMIKzs4rgiEZDi+yznnizPVWOJTp9g==}
+  '@agora-sdk/secure-chat-crypto@0.4.0':
+    resolution: {integrity: sha512-0+LG88D/3OtGpEbmiSLELNW5MM2NMNwqCI6rVdwRrHynu63eWYrU3BRgWrBEKDq7G8ToI17RtNdVN/PyN+6ixQ==}
 
   '@asamuzakjp/css-color@3.2.0':
     resolution: {integrity: sha512-K1A6z8tS3XsmCMM86xoWdn7Fkdn9m6RSVtocUrJYIwZnFVkng/PvkEoWtOWmP+Scc6saYWHWZYbndEEXxl24jw==}
@@ -827,6 +827,14 @@ packages:
     peerDependencies:
       hono: ^4
 
+  '@hpke/common@1.10.1':
+    resolution: {integrity: sha512-moJwhmtLtuxiUzzNp1jpfBfx8yefKoO9D/RCR9dmwrnc7qjJqId1rEtQz+lSlU5cabX8daToMSx/7HayXOiaFw==}
+    engines: {node: '>=16.0.0'}
+
+  '@hpke/core@1.8.0':
+    resolution: {integrity: sha512-yHuo+2q4HSPUFuxcg87Kiy7QZRk4IeR+cwBB0qW8fHnr71bnRCArM39Cq1bWHBt75gTyeERGD/v1H14yPB2wyw==}
+    engines: {node: '>=16.0.0'}
+
   '@img/colour@1.1.0':
     resolution: {integrity: sha512-Td76q7j57o/tLVdgS746cYARfSyxk8iEfRxewL9h4OMzYhbW4TAcppl0mT4eyqXddh6L/jwoM75mo7ixa/pCeQ==}
     engines: {node: '>=18'}
@@ -997,6 +1005,18 @@ packages:
 
   '@js-sdsl/ordered-map@4.4.2':
     resolution: {integrity: sha512-iUKgm52T8HOE/makSxjqoWhe95ZJA1/G1sYsGev2JDKUSS14KAgg1LHb+Ba+IPow0xflbnSkOsZcO08C7w1gYw==}
+
+  '@noble/ciphers@2.1.1':
+    resolution: {integrity: sha512-bysYuiVfhxNJuldNXlFEitTVdNnYUc+XNJZd7Qm2a5j1vZHgY+fazadNFWFaMK/2vye0JVlxV3gHmC0WDfAOQw==}
+    engines: {node: '>= 20.19.0'}
+
+  '@noble/curves@2.0.1':
+    resolution: {integrity: sha512-vs1Az2OOTBiP4q0pwjW5aF0xp9n4MxVrmkFBxc6EKZc6ddYx5gaZiAsZoq0uRRXWbi3AT/sBqn05eRPtn1JCPw==}
+    engines: {node: '>= 20.19.0'}
+
+  '@noble/hashes@2.0.1':
+    resolution: {integrity: sha512-XlOlEbQcE9fmuXxrVTXCTlG2nlRXa9Rj3rr5Ue/+tX+nmkgbX720YHh0VR3hBF9xDvwnb8D2shVGOwNx+ulArw==}
+    engines: {node: '>= 20.19.0'}
 
   '@opentelemetry/api-logs@0.206.0':
     resolution: {integrity: sha512-yIVDu9jX//nV5wSMLZLdHdb1SKHIMj9k+wQVFtln5Flcgdldz9BkHtavvExQiJqBZg2OpEEJEZmzQazYztdz2A==}
@@ -3239,6 +3259,30 @@ packages:
     resolution: {integrity: sha512-hdF5ZgjTqgAntKkklYw0R03MG2x/bSzTtkxmIRw/sTNV8YXsCJ1tfLAX23lhxhHJlEf3CRCOCGGWw3vI3GaSPw==}
     engines: {node: '>=18'}
 
+  ts-mls@1.6.2:
+    resolution: {integrity: sha512-Li0Ow/IkcV3x2Jk9zi7QaQlqPIegOFUtM1mfBvvJdCysU/byifYFKWpCkKfKpu2wRa9/RH8MaT+rq/JSheUYTQ==}
+    peerDependencies:
+      '@hpke/chacha20poly1305': 1.7.1
+      '@hpke/dhkem-x448': 1.7.0
+      '@hpke/hybridkem-x-wing': 0.6.1
+      '@hpke/ml-kem': 0.2.1
+      '@noble/ciphers': 2.1.1
+      '@noble/curves': 2.0.1
+      '@noble/post-quantum': 0.5.2
+    peerDependenciesMeta:
+      '@hpke/chacha20poly1305':
+        optional: true
+      '@hpke/dhkem-x448':
+        optional: true
+      '@hpke/hybridkem-x-wing':
+        optional: true
+      '@hpke/ml-kem':
+        optional: true
+      '@noble/curves':
+        optional: true
+      '@noble/post-quantum':
+        optional: true
+
   tslib@2.8.1:
     resolution: {integrity: sha512-oJFu94HQb+KVduSUQL7wnpmqnfmLsOA/nAh6b6EH0wCEoK0/mPeXU6c3wKDV83MkOuHPRHtSXKKU99IBazS/2w==}
 
@@ -3485,7 +3529,18 @@ packages:
 
 snapshots:
 
-  '@agora-sdk/secure-chat-crypto@0.3.0': {}
+  '@agora-sdk/secure-chat-crypto@0.4.0':
+    dependencies:
+      '@noble/ciphers': 2.1.1
+      '@noble/curves': 2.0.1
+      '@noble/hashes': 2.0.1
+      ts-mls: 1.6.2(@noble/ciphers@2.1.1)(@noble/curves@2.0.1)
+    transitivePeerDependencies:
+      - '@hpke/chacha20poly1305'
+      - '@hpke/dhkem-x448'
+      - '@hpke/hybridkem-x-wing'
+      - '@hpke/ml-kem'
+      - '@noble/post-quantum'
 
   '@asamuzakjp/css-color@3.2.0':
     dependencies:
@@ -3901,6 +3956,12 @@ snapshots:
     dependencies:
       hono: 4.12.23
 
+  '@hpke/common@1.10.1': {}
+
+  '@hpke/core@1.8.0':
+    dependencies:
+      '@hpke/common': 1.10.1
+
   '@img/colour@1.1.0': {}
 
   '@img/sharp-darwin-arm64@0.34.5':
@@ -4048,6 +4109,14 @@ snapshots:
       '@jridgewell/sourcemap-codec': 1.5.5
 
   '@js-sdsl/ordered-map@4.4.2': {}
+
+  '@noble/ciphers@2.1.1': {}
+
+  '@noble/curves@2.0.1':
+    dependencies:
+      '@noble/hashes': 2.0.1
+
+  '@noble/hashes@2.0.1': {}
 
   '@opentelemetry/api-logs@0.206.0':
     dependencies:
@@ -6452,6 +6521,13 @@ snapshots:
   tr46@5.1.1:
     dependencies:
       punycode: 2.3.1
+
+  ts-mls@1.6.2(@noble/ciphers@2.1.1)(@noble/curves@2.0.1):
+    dependencies:
+      '@hpke/core': 1.8.0
+      '@noble/ciphers': 2.1.1
+    optionalDependencies:
+      '@noble/curves': 2.0.1
 
   tslib@2.8.1: {}
 
