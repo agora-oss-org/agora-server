@@ -33,7 +33,8 @@ def create_app() -> FastAPI:
     @contextlib.asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         settings = get_settings()
-        await neo4j.ensure_constraints(settings)  # best-effort; no-op when NEO4J_* unset
+        # Background (retries until Neo4j is up) so a cold-start race doesn't block the worker.
+        constraints_task = asyncio.create_task(neo4j.ensure_constraints(settings))
         listener = NotifyListener(settings, wake)
         await listener.start()  # no-op when SCORER_LISTEN_DATABASE_URL unset
         consumer_task = asyncio.create_task(run_consumer(settings, stop, wake))
@@ -42,9 +43,11 @@ def create_app() -> FastAPI:
             yield
         finally:
             stop.set()
+            constraints_task.cancel()
             await listener.stop()
-            with contextlib.suppress(asyncio.CancelledError):
-                await consumer_task
+            for task in (constraints_task, consumer_task):
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task
             await db.close_pool()
             await neo4j.close_driver()
 

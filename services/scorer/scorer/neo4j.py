@@ -11,12 +11,16 @@ supporting indexes). ``ensure_constraints`` is called once on worker startup.
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any, Optional
 
 from .config import Settings
 from .logging import get_logger, log
 
 logger = get_logger("scorer.neo4j")
+
+_CONSTRAINT_ATTEMPTS = 15
+_CONSTRAINT_BACKOFF_S = 2.0
 
 _driver: Optional[Any] = None  # neo4j.AsyncDriver
 
@@ -46,14 +50,23 @@ async def close_driver() -> None:
 
 
 async def ensure_constraints(settings: Settings) -> None:
-    """Create the uniqueness constraints the MERGE relies on (idempotent). Best-effort."""
+    """Create the uniqueness constraints the MERGE relies on (idempotent). Best-effort, with retry —
+    on a cold ``docker compose up`` the worker usually beats Neo4j to ready, so we back off and retry
+    until Bolt is up (or give up after ~30s and let the consumer run without the constraints)."""
+    if not settings.neo4j_enabled():
+        return
     driver = await get_driver(settings)
     if driver is None:
         return
-    try:
-        async with driver.session() as session:
-            await session.run("create constraint scorer_user_id if not exists for (u:User) require u.id is unique")
-            await session.run("create constraint scorer_content_id if not exists for (c:Content) require c.id is unique")
-        log(logger, "info", "neo4j constraints ensured")
-    except Exception as exc:  # noqa: BLE001 — non-fatal; the worker can run without the graph
-        log(logger, "error", "failed to ensure neo4j constraints", err=str(exc))
+    for attempt in range(1, _CONSTRAINT_ATTEMPTS + 1):
+        try:
+            async with driver.session() as session:
+                await session.run("create constraint scorer_user_id if not exists for (u:User) require u.id is unique")
+                await session.run("create constraint scorer_content_id if not exists for (c:Content) require c.id is unique")
+            log(logger, "info", "neo4j constraints ensured", attempt=attempt)
+            return
+        except Exception as exc:  # noqa: BLE001 — Neo4j may still be booting; retry
+            if attempt == _CONSTRAINT_ATTEMPTS:
+                log(logger, "error", "failed to ensure neo4j constraints (gave up)", err=str(exc))
+                return
+            await asyncio.sleep(_CONSTRAINT_BACKOFF_S)
