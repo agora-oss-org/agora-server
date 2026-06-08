@@ -2,6 +2,8 @@
 // trigger, the is-entity-saved lookup (on the entities route), nesting, and ownership scoping.
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { api, createProject, createUser, deleteProject, base } from "./helpers.js";
+import { db } from "../../src/db/index.js";
+import { collectionEntities } from "../../src/db/schema/index.js";
 
 describe("collections (integration)", () => {
   let projectId: string;
@@ -105,5 +107,67 @@ describe("collections (integration)", () => {
 
     const add = await api("POST", `${B}/collections/${col.id}/entities`, { token: other.token, body: { entityId } });
     expect(add.status).toBe(403);
+  });
+});
+
+// Security regression: a collection in project A must never be able to reference an entity from
+// project B. The handler rejects a foreign entityId with 404, and the DB trigger
+// (0034_collection_entity_same_project) is the last-line backstop if a handler check is ever missed.
+describe("collections cross-tenant isolation (security)", () => {
+  let projectA: string;
+  let projectB: string;
+  let A: string;
+  let owner: { id: string; token: string };
+  let collectionId: string;
+  let foreignEntityId: string; // an entity that lives in project B
+  let nativeEntityId: string; // an entity that lives in project A
+
+  beforeAll(async () => {
+    [projectA, projectB] = await Promise.all([createProject(), createProject()]);
+    A = base(projectA);
+    owner = await createUser(projectA);
+    const ownerB = await createUser(projectB);
+
+    const col = await api("POST", `${A}/collections`, { token: owner.token, body: { name: "A-faves" } });
+    collectionId = col.body.id;
+    nativeEntityId = (await api("POST", `${A}/entities`, { token: owner.token, body: { title: "native" } })).body.id;
+    // Created in project B by a project-B user — must be invisible/untouchable from project A.
+    foreignEntityId = (await api("POST", `${base(projectB)}/entities`, { token: ownerB.token, body: { title: "foreign" } })).body.id;
+  });
+
+  afterAll(async () => {
+    await Promise.all([deleteProject(projectA), deleteProject(projectB)].map((p) => p.catch(() => {})));
+  });
+
+  it("POST /:id/entities rejects a foreign-project entity with 404 (no cross-tenant link)", async () => {
+    const add = await api("POST", `${A}/collections/${collectionId}/entities`, { token: owner.token, body: { entityId: foreignEntityId } });
+    expect(add.status).toBe(404);
+    expect(add.body.code).toBe("entity/not-found");
+
+    // and nothing was linked
+    const list = await api("GET", `${A}/collections/${collectionId}/entities`, { token: owner.token });
+    expect(list.body.data.map((e: any) => e.id)).not.toContain(foreignEntityId);
+    expect(list.body.pagination.totalItems).toBe(0);
+  });
+
+  it("DELETE /:id/entities/:entityId rejects a foreign-project entity with 404", async () => {
+    const del = await api("DELETE", `${A}/collections/${collectionId}/entities/${foreignEntityId}`, { token: owner.token });
+    expect(del.status).toBe(404);
+    expect(del.body.code).toBe("entity/not-found");
+  });
+
+  it("DB trigger blocks a cross-project collection_entities row even bypassing the handler", async () => {
+    // Direct insert (no handler) — the BEFORE INSERT trigger must raise on the project_id mismatch.
+    await expect(
+      db.insert(collectionEntities).values({ collectionId, entityId: foreignEntityId }),
+    ).rejects.toThrow();
+  });
+
+  it("a same-project entity still links normally (no false positives)", async () => {
+    const add = await api("POST", `${A}/collections/${collectionId}/entities`, { token: owner.token, body: { entityId: nativeEntityId } });
+    expect(add.status).toBe(201);
+    const list = await api("GET", `${A}/collections/${collectionId}/entities`, { token: owner.token });
+    expect(list.body.data.map((e: any) => e.id)).toContain(nativeEntityId);
+    expect(list.body.pagination.totalItems).toBe(1);
   });
 });

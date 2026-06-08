@@ -239,6 +239,13 @@
       "when": 1780798400000,
       "tag": "0033_scorer_notify",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1780798500000,
+      "tag": "0034_collection_entity_same_project",
+      "breakpoints": true
     }
   ]
 }

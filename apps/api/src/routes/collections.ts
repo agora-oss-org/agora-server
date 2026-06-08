@@ -55,13 +55,21 @@ export const collectionRoutes = new Hono<{ Variables: Variables }>()
     await ownedCollection(c);
     const { page, limit, offset } = readPagination(c);
     const id = c.req.param("id");
+    // Scope to the current project on the JOIN so a cross-project entity reference (defence in depth)
+    // never leaks into this project's collection view — count and rows use the same predicate.
+    const inProject = and(
+      eq(collectionEntities.collectionId, id),
+      eq(entities.projectId, c.var.projectId),
+      isNull(entities.deletedAt),
+    );
     const [{ n } = { n: 0 }] = await db.select({ n: count() }).from(collectionEntities)
-      .where(eq(collectionEntities.collectionId, id));
+      .innerJoin(entities, eq(entities.id, collectionEntities.entityId))
+      .where(inProject);
     const rows = await db
       .select({ e: entities })
       .from(collectionEntities)
       .innerJoin(entities, eq(entities.id, collectionEntities.entityId))
-      .where(and(eq(collectionEntities.collectionId, id), isNull(entities.deletedAt)))
+      .where(inProject)
       .orderBy(desc(collectionEntities.createdAt))
       .limit(limit).offset(offset);
     return c.json(paginate(rows.map((r) => shapeEntity(r.e)), n, page, limit));
@@ -69,6 +77,10 @@ export const collectionRoutes = new Hono<{ Variables: Variables }>()
   .post("/:id/entities", requireAuth, async (c) => {
     await ownedCollection(c);
     const body = parseBody(addEntitySchema, await c.req.json().catch(() => ({})), "collections");
+    const [entity] = await db.select({ id: entities.id }).from(entities)
+      .where(and(eq(entities.projectId, c.var.projectId), eq(entities.id, body.entityId)))
+      .limit(1);
+    if (!entity) throw Errors.notFound("entity/not-found", "Entity not found in this project");
     await db.insert(collectionEntities)
       .values({ collectionId: c.req.param("id"), entityId: body.entityId })
       .onConflictDoNothing();
@@ -76,6 +88,10 @@ export const collectionRoutes = new Hono<{ Variables: Variables }>()
   })
   .delete("/:id/entities/:entityId", requireAuth, async (c) => {
     await ownedCollection(c);
+    const [entity] = await db.select({ id: entities.id }).from(entities)
+      .where(and(eq(entities.projectId, c.var.projectId), eq(entities.id, c.req.param("entityId"))))
+      .limit(1);
+    if (!entity) throw Errors.notFound("entity/not-found", "Entity not found in this project");
     await db.delete(collectionEntities).where(and(
       eq(collectionEntities.collectionId, c.req.param("id")),
       eq(collectionEntities.entityId, c.req.param("entityId"))
