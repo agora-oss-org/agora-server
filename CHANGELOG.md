@@ -25,6 +25,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   it, so a weak/wrong-type key can never gate identity (`routes/auth.ts`).
 
 ### Added
+- **`@agora-server/contract` exports secure-chat request-body types.** `packages/contract/src/secure-chat.ts`
+  now exports `RegisterDeviceBody`, `PublishKeyPackagesBody`, `CreateSecureConversationBody`,
+  `AddSecureMemberBody`, `RemoveSecureMemberBody`, `SendSecureMessageBody`, `UploadKeyBackupBody`,
+  `WelcomeEnvelope`, and `HandshakeBlob` (`z.input` of the existing schemas, so `.default()`/`.nullish()`
+  fields are optional client-side) — so SDK/client code can type secure-chat request payloads without
+  redeclaring the shapes. Contract bumped to 0.9.3.
 - **`genesis` / `genesis:test` scripts — one-command DB reset-and-seed.** `apps/api/scripts/genesis.mjs`
   chains drop → migrate → `seed.sql` (tenant fixtures + trigger/RPC asserts) for a from-nothing rebuild.
   `pnpm genesis` targets `DATABASE_URL`; `pnpm genesis:test` targets `TEST_DATABASE_URL` (override applied

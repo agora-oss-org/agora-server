@@ -97,6 +97,17 @@ export const uploadKeyBackupSchema = z.object({
   version: z.number().int().positive(),
 });
 
+// ─── request body types (z.input: .default()/.nullish() fields are optional client-side) ─
+export type RegisterDeviceBody = z.input<typeof registerDeviceSchema>;
+export type PublishKeyPackagesBody = z.input<typeof publishKeyPackagesSchema>;
+export type CreateSecureConversationBody = z.input<typeof createSecureConversationSchema>;
+export type AddSecureMemberBody = z.input<typeof addSecureMemberSchema>;
+export type RemoveSecureMemberBody = z.input<typeof removeSecureMemberSchema>;
+export type SendSecureMessageBody = z.input<typeof sendSecureMessageSchema>;
+export type UploadKeyBackupBody = z.input<typeof uploadKeyBackupSchema>;
+export type WelcomeEnvelope = z.input<typeof welcomeSchema>;
+export type HandshakeBlob = z.input<typeof handshakeBlobSchema>;
+
 // ─── response models (route shapers emit these; base64 binary, string epochs) ─
 export interface SecureDeviceModel {
   id: string;
