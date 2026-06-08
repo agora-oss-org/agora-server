@@ -48,10 +48,11 @@ async def write_relationship_edge(
     async with driver.session() as session:
         await session.run(
             _MERGE,
-            author_id=author_id,
-            target_id=target_id,
+            # str() the ids — they may arrive as asyncpg pgproto.UUID, which the Neo4j driver can't pack.
+            author_id=str(author_id),
+            target_id=str(target_id),
             target_type=target_type,
-            project_id=project_id,
-            score=relationship_score,
+            project_id=str(project_id),
+            score=float(relationship_score),
         )
     log(logger, "info", "neo4j relationship edge merged", target_id=target_id, score=relationship_score)

@@ -67,6 +67,7 @@ async def ensure_constraints(settings: Settings) -> None:
             return
         except Exception as exc:  # noqa: BLE001 — Neo4j may still be booting; retry
             if attempt == _CONSTRAINT_ATTEMPTS:
-                log(logger, "error", "failed to ensure neo4j constraints (gave up)", err=str(exc))
+                log(logger, "error", "failed to ensure neo4j constraints (gave up)")
+                log(logger, "debug", "neo4j constraints error", err=str(exc))
                 return
             await asyncio.sleep(_CONSTRAINT_BACKOFF_S)

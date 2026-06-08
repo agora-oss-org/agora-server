@@ -1,9 +1,9 @@
 """Async HTTP clients for the two RoBERTa model servers.
 
 The worker calls toxicity + relationship IN PARALLEL (``asyncio.gather``) so total latency is
-``max(t_tox, t_rel)`` rather than the sum — see ``pipeline.py``.
-
-STUB: the httpx POST is sketched; returns placeholder scores until wired.
+``max(t_tox, t_rel)`` rather than the sum — see ``pipeline.py``. Each ``/score`` returns
+``{label, score, scores, model, kind}``; we keep the full ``scores`` distribution (the pipeline gates
+on ``P(toxic)`` and derives the signed relationship quality from it).
 """
 
 from __future__ import annotations
@@ -11,10 +11,11 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 
-from scorer.config import Settings
-from scorer.logging import get_logger, log
+import httpx
 
-logger = get_logger("scorer.worker.model_clients")
+from scorer.config import Settings
+
+_TIMEOUT_S = 10.0
 
 
 @dataclass
@@ -25,15 +26,19 @@ class ModelScore:
 
 
 async def _post_score(url: str, text: str, context: str | None) -> ModelScore:
-    # TODO(scorer): async with httpx.AsyncClient() as c:
-    #   r = await c.post(f"{url}/score", json={"text": text, "context": context}, timeout=5)
-    #   data = r.json(); return ModelScore(data["label"], data["score"], data["scores"])
-    log(logger, "debug", "model POST /score (stub)", url=url)
-    return ModelScore(label="stub", score=0.0, scores={})
+    async with httpx.AsyncClient(timeout=_TIMEOUT_S) as client:
+        res = await client.post(f"{url}/score", json={"text": text, "context": context})
+        res.raise_for_status()
+        data = res.json()
+    return ModelScore(
+        label=str(data["label"]),
+        score=float(data["score"]),
+        scores={str(k): float(v) for k, v in (data.get("scores") or {}).items()},
+    )
 
 
 async def score_both(settings: Settings, text: str, context: str | None = None) -> tuple[ModelScore, ModelScore]:
-    """Call toxicity + relationship model servers concurrently."""
+    """Call the toxicity + relationship model servers concurrently."""
     toxicity, relationship = await asyncio.gather(
         _post_score(settings.toxicity_url, text, context),
         _post_score(settings.relationship_url, text, context),

@@ -56,7 +56,8 @@ class NotifyListener:
                     with contextlib.suppress(asyncio.TimeoutError):
                         await asyncio.wait_for(self._stop.wait(), timeout=_LIVENESS_CHECK_S)
             except Exception as exc:  # noqa: BLE001 — keep trying; the poll loop covers the gap
-                log(logger, "error", "listener error; reconnecting", err=str(exc))
+                log(logger, "error", "listener error; reconnecting")
+                log(logger, "debug", "listener error detail", err=str(exc))
             finally:
                 if conn is not None:
                     with contextlib.suppress(Exception):

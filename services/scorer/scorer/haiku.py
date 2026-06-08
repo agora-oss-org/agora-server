@@ -83,5 +83,6 @@ async def assess(
             completion_tokens=int(usage.get("output_tokens") or 0),
         )
     except (httpx.HTTPError, ValueError, KeyError) as exc:
-        log(logger, "error", "haiku call failed; routing to human review", err=str(exc))
+        log(logger, "error", "haiku call failed; routing to human review")
+        log(logger, "debug", "haiku error detail", err=str(exc))
         return None

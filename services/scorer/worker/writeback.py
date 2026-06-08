@@ -50,5 +50,6 @@ async def apply_moderation(
         log(logger, "info", "write-back applied", target_type=target_type, target_id=target_id, status=status)
         return True
     except httpx.HTTPError as exc:
-        log(logger, "error", "write-back failed", err=str(exc), target_id=target_id)
+        log(logger, "error", "write-back failed", target_id=target_id)
+        log(logger, "debug", "write-back error detail", target_id=target_id, err=str(exc))
         return False
