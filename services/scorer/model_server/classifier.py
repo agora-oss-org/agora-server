@@ -19,6 +19,11 @@ from .config import ModelServerConfig
 # tokens; characters are a cheap pre-bound so we never hand the tokenizer a megabyte of text).
 _MAX_CHARS = 4000
 
+# RoBERTa caps at 512 tokens (514 position embeddings). Many of these models ship a tokenizer with
+# model_max_length unset (a huge sentinel), so `truncation=True` alone never truncates and long inputs
+# overflow the position embeddings ("index 514 is out of bounds"). We pin model_max_length to this.
+_MODEL_MAX_TOKENS = 512
+
 # A "pipe" is any callable text -> list[{"label","score"}] (the HF pipeline, or a fake in tests).
 Pipe = Callable[[str], list]
 
@@ -33,13 +38,17 @@ class Classifier:
 
     def _load(self) -> None:
         # Lazy: torch is only needed here, at startup, inside the model-server container.
-        from transformers import pipeline  # type: ignore[import-untyped]
+        from transformers import AutoTokenizer, pipeline  # type: ignore[import-untyped]
 
+        # Pin model_max_length so truncation=True actually truncates at 512 (see _MODEL_MAX_TOKENS).
+        tokenizer = AutoTokenizer.from_pretrained(self.config.model, model_max_length=_MODEL_MAX_TOKENS)
         self._pipe = pipeline(
             "text-classification",
             model=self.config.model,
+            tokenizer=tokenizer,
             top_k=None,  # return all labels, not just the argmax
             truncation=True,
+            max_length=_MODEL_MAX_TOKENS,
         )
         self._loaded = True
 
