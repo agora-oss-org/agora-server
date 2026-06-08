@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- **Suspended users are now cut off from realtime (socket.io).** Both the plaintext (`realtime/socket.ts`)
+  and the E2E `/secure` (`realtime/secure-socket.ts`) namespaces verified the access JWT but skipped the
+  suspension check, so a suspended user with a still-valid token kept receiving live chat events. Both
+  handshakes now call `hasActiveSuspension()` after JWT verification and reject with `"suspended"`
+  (operators bypass, mirroring `middleware/auth.ts` `requireAuth`).
+- **Collections entity endpoints are now project-scoped (cross-tenant isolation).** `POST`/`DELETE`
+  `/:id/entities` verify the target entity belongs to the request's project before mutating the join,
+  and `GET /:id/entities` filters its count + rows by `entities.project_id`. Previously a foreign
+  `entityId` could be linked into a same-owner collection and read back, leaking another project's
+  entity (`routes/collections.ts`). Backed by a DB trigger (`0034_collection_entity_same_project`)
+  that rejects any `collection_entities` row whose collection and entity differ in `project_id` — a
+  last-line backstop independent of the handler checks.
+- **External-auth public key is strength-validated before use.** `verify-external-user` now rejects a
+  configured `external_auth_public_key` that isn't RSA ≥2048-bit before verifying any token signed by
+  it, so a weak/wrong-type key can never gate identity (`routes/auth.ts`).
+
 ### Added
 - **`genesis` / `genesis:test` scripts — one-command DB reset-and-seed.** `apps/api/scripts/genesis.mjs`
   chains drop → migrate → `seed.sql` (tenant fixtures + trigger/RPC asserts) for a from-nothing rebuild.
