@@ -48,6 +48,7 @@ services:
       SCORER_MODEL_KIND: toxicity
       SCORER_PORT: "8001"
       OMP_NUM_THREADS: "2"
+      LOG_LEVEL: ${LOG_LEVEL:-info}
     cpuset: "0,1"
     init: true
     restart: unless-stopped
@@ -64,6 +65,7 @@ services:
       SCORER_MODEL_KIND: relationship
       SCORER_PORT: "8002"
       OMP_NUM_THREADS: "2"
+      LOG_LEVEL: ${LOG_LEVEL:-info}
     cpuset: "2,3"
     init: true
     restart: unless-stopped
@@ -82,6 +84,7 @@ services:
       SCORER_TOXICITY_URL: http://scorer-toxicity:8001
       SCORER_RELATIONSHIP_URL: http://scorer-relationship:8002
       SCORER_ADMIN_PORT: "4001"
+      LOG_LEVEL: ${LOG_LEVEL:-info}
     ports:
       - "${SCORER_ADMIN_PORT:-4001}:4001"
     depends_on:

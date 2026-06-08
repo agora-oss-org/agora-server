@@ -50,6 +50,22 @@ easy path and the safe path, take the safe path. Default to the secure choice an
 - **Before considering any work done:** `pnpm -r typecheck` **and** `pnpm test` must pass. Don't claim
   completion otherwise.
 
+### 🪵 Log with intent
+
+**Every failure path and operationally-significant event gets a log line — at the right level.** Use the
+shared `logger` (`lib/logger.ts`; mechanics + Pino arg order in Handler conventions), never `console.*`.
+
+- **`info` / `error` carry a MESSAGE ONLY** — a human-readable string, no raw error objects, stack
+  traces, request bodies, or other payloads. These levels ship to aggregators by default, so they must
+  stay leak-free: a stack or `err` object can carry secrets, tokens, or another user's PII (fails the
+  Security-first rule). Make the message say *what* failed and *where*, not dump the exception.
+- **`debug` carries the raw error / exception / context** — `logger.debug({ err, … }, "…")` is the *only*
+  place the full object, stack, and diagnostic payload go. `debug` is off in production, so it's the safe
+  home for detail when reproducing locally.
+- **Pattern on a caught failure:** `logger.error("creating entity failed")` for the alertable signal,
+  plus `logger.debug({ err }, "creating entity failed")` for the detail. Never put `{ err }` (or any
+  raw payload) on an `info`/`error` call.
+
 ## Changelog (keep current)
 
 `CHANGELOG.md` (repo root) MUST stay current. After any change that affects behavior, the API
@@ -342,9 +358,10 @@ migrator the container uses; its journal is the `drizzle` schema.)
 - **Realtime is socket.io** — event names in `realtime/socket.ts` must stay byte-identical to
   `@replyke/core/types/socket.ts`; REST handlers fan out via `emitToConversation()` after writing.
 - **Logging:** use the shared `logger` (`lib/logger.ts`, Pino via `@jenova-marie/wonder-logger`),
-  never `console.*`. **Pino arg order is data-object-FIRST:** `logger.error({ err }, "msg")` — a
-  message-first call silently drops the data. Request logging is the `requestLog` middleware. Config
-  is `wonder-logger.yaml`; `LOG_LEVEL`/`LOG_CONSOLE` (`aligned`|`json`) tune it.
+  never `console.*`. **Level policy (Engineering principles → Log with intent):** `info`/`error` are
+  message-only; raw errors/exceptions/context go on `debug`. **Pino arg order is data-object-FIRST:**
+  `logger.debug({ err }, "msg")` — a message-first call silently drops the data. Request logging is the
+  `requestLog` middleware. Config is `wonder-logger.yaml`; `LOG_LEVEL`/`LOG_CONSOLE` (`aligned`|`json`) tune it.
 - **Observability (OTel):** `src/instrument.ts` (the **first** import in `index.ts`, before
   http/db load) starts traces + metrics from `wonder-logger.yaml`. Two metrics worlds, kept separate:
   `lib/metrics.ts`/`api_usage` is per-project **product** metering (admin dashboard); OTel is the
