@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+- **`apps/moderator` retired.** The Node/Hono LLM-moderation service is fully replaced by the proven
+  `services/scorer` subsystem (live-validated end-to-end) — its source is deleted and the `dev:moderator`
+  script + workspace/lockfile entries removed. Its prompts, thresholds, verdict parsing, and the
+  `moderation_analyses` + admin `/v1/:projectId/moderation/*` contracts live on, ported into the scorer.
+  (The dormant `webhooks.ts` moderation-notifier path + the admin Settings→Moderator webhook panel are a
+  follow-up cleanup.)
+
 ### Security
 - **Suspended users are now cut off from realtime (socket.io).** Both the plaintext (`realtime/socket.ts`)
   and the E2E `/secure` (`realtime/secure-socket.ts`) namespaces verified the access JWT but skipped the

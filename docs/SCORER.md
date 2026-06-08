@@ -1,10 +1,10 @@
 # `services/scorer` — content scoring & moderation 🧪💞
 
-> **Status: IMPLEMENTED — pending live integration verification.** The RoBERTa model server, asyncpg
-> db layer, pgmq consumer, Claude Haiku adjudication + API write-back, and the Neo4j relationship graph
-> are all wired (with unit tests for the pure logic + the HTTP paths via mocks). What remains is an
-> end-to-end smoke against real infra (Supabase pgmq, HF weights, Neo4j, Anthropic) and the deferred
-> cleanup (retire `apps/moderator`, author-enrichment, the user→user graph v2). See the roadmap.
+> **Status: LIVE — validated end-to-end.** The RoBERTa model servers, asyncpg db layer, pgmq consumer
+> (+ LISTEN/NOTIFY), Claude Haiku adjudication + API write-back, the operator-complete admin surface, and
+> the Neo4j relationship graph all run against real infra: a toxic comment was scored `block`, auto-removed
+> through the API, and recorded; a benign one `allow`ed; both wrote signed sentiment edges to Neo4j. The
+> old `apps/moderator` is retired. Remaining is the user→user graph **v2** + ops polish — see the roadmap.
 
 `services/scorer` is Agora's content scoring + moderation subsystem. It **replaces `apps/moderator`**
 (the Node/Hono LLM-over-webhooks service) with an **async, post-publish** Python pipeline: content
@@ -260,19 +260,17 @@ curl -s localhost:4001/v1/11111111-1111-1111-1111-111111111111/moderation/queue 
 
 ## Roadmap
 
-**Done** (implemented, unit-tested where feasible): ✅ RoBERTa `/score` · ✅ asyncpg db layer (content
-fetch, dedup insert, config, admin reads) · ✅ pgmq read/delete/archive · ✅ LISTEN/NOTIFY wake-up ·
-✅ Haiku adjudication + API write-back · ✅ Neo4j v1 graph (author→content + sentiment) · ✅ full admin
-surface (queue w/ **author enrichment**, stats, analysis, **`/analyze`**, resolve, **`/{id}/remove`**,
-config — contract-aligned shapes).
+**Done**: ✅ RoBERTa `/score` · ✅ asyncpg db layer · ✅ pgmq read/delete/archive · ✅ LISTEN/NOTIFY
+wake-up · ✅ Haiku adjudication + API write-back · ✅ Neo4j v1 graph (author→content + sentiment) ·
+✅ full admin surface (queue w/ **author enrichment**, stats, analysis, **`/analyze`**, resolve,
+**`/{id}/remove`**, config — contract-aligned) · ✅ **live end-to-end smoke validated** · ✅ **`apps/moderator`
+source retired**.
 
 **Remaining:**
-1. **Live integration smoke** — against real Supabase pgmq + HF weights + Neo4j + Anthropic: insert a
-   post → see a `moderation_analyses` row + a graph edge; verify the admin `/queue` shape end-to-end.
-   (The manual recipe is above; it's the last gate before trusting the subsystem.)
-2. **Relationship graph v2** — the user→user `INTERACTED` edge (reactions trigger + a `reaction` job type
+1. **Relationship graph v2** — the user→user `INTERACTED` edge (reactions trigger + a `reaction` job type
    + resolving the recipient of replies/DMs).
-3. **Retire `apps/moderator`** source + clean the dead `webhooks.ts` moderation path; repoint admin
-   Settings→Moderator.
-4. **Ops polish** — Python CI job (ruff/mypy/pytest), scorer images in the docker-publish matrix, torch
+2. **Clean the dead moderation-notifier path** — `apps/api/src/lib/webhooks.ts` `MODERATION_EVENTS` +
+   `projects.moderation_webhook_url/secret` are dormant now (the scorer uses pgmq); repoint/trim the admin
+   Settings→Moderator webhook panel.
+3. **Ops polish** — Python CI job (ruff/mypy/pytest), scorer images in the docker-publish matrix, torch
    image slimming, a HF cache volume.
