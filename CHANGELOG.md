@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-06-08
+
 ### Removed
 - **`apps/moderator` retired.** The Node/Hono LLM-moderation service is fully replaced by the proven
   `services/scorer` subsystem (live-validated end-to-end) — its source is deleted and the `dev:moderator`
@@ -930,7 +932,8 @@ cloud Supabase — no stubbed endpoints remain.
   (`@agora/*`), a repointed fork of `@replyke/core`.
 - Backlog: rate limiting, refresh-token cleanup sweep, RLS write policies, turnkey deploy guide.
 
-[Unreleased]: https://github.com/jenova-marie/agora/compare/v0.9.2...HEAD
+[Unreleased]: https://github.com/jenova-marie/agora/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/jenova-marie/agora/compare/v0.9.2...v0.10.0
 [0.9.2]: https://github.com/jenova-marie/agora/compare/v0.9.0...v0.9.2
 [0.9.0]: https://github.com/jenova-marie/agora/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/jenova-marie/agora/compare/v0.7.0...v0.8.0
