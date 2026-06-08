@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Seed post scripts honor `API_BASE_URL` without a `/v7` suffix.** The 13 `scripts/seeds/seed-*-post.mjs`
+  scripts treated `API_BASE_URL` as if it included the `/v7` version prefix (their default was
+  `http://localhost:4000/v7`), so a root-form `API_BASE_URL=http://localhost:4000` (the form the
+  `services/scorer` write-back + cron `/internal/*` endpoints require) produced `/<projectId>/…` URLs
+  that matched no route → `common/not-found` (404) on sign-in, failing every post seed. The scripts now
+  treat `API_BASE_URL` as the host root and append `/v7` themselves, tolerating either form — so
+  `genesis && seed` works with the canonical root-form `API_BASE_URL`.
+
 ### Changed
 - **`services/scorer` no longer scores chat messages.** Agora has moved to an end-to-end-encrypted
   secure-chat platform, so the server never sees message plaintext — RoBERTa/Haiku scoring of

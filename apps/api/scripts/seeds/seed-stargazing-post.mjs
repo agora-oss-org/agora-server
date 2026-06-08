@@ -3,11 +3,11 @@
 // creation if a post with the same title already exists. Run from agora/server:
 //   node scripts/seeds/seed-stargazing-post.mjs
 // Requires the seed auth user (node scripts/seeds/seed-demo-user.mjs) and a reachable Agora server. Env
-// (all optional): API_BASE_URL (default http://localhost:4000/v7), PROJECT_ID (default 11111111-…),
+// (all optional): API_BASE_URL (default http://localhost:4000), PROJECT_ID (default 11111111-…),
 // DEMO_EMAIL / DEMO_PASSWORD, STARGAZING_IMAGE_URL.
 import "dotenv/config";
 
-const BASE = (process.env.API_BASE_URL || "http://localhost:4000/v7").replace(/\/$/, "");
+const BASE = (process.env.API_BASE_URL || "http://localhost:4000").replace(/\/$/, "").replace(/\/v7$/, "");
 const PROJECT_ID = process.env.PROJECT_ID || "11111111-1111-1111-1111-111111111111";
 const EMAIL = process.env.DEMO_EMAIL || "agora-admin@gmail.com";
 const PASSWORD = process.env.DEMO_PASSWORD || "DemoPass123!";
@@ -21,7 +21,7 @@ const CONTENT =
   "no phone, no porch light. Caught four of Jupiter's moons in a neat little row and the rings of " +
   "Saturn looked impossibly crisp. A paper star chart beats any app once you're dark-adapted. 🌌";
 
-const api = (path) => `${BASE}/${PROJECT_ID}${path}`;
+const api = (path) => `${BASE}/v7/${PROJECT_ID}${path}`;
 
 // 1. Sign in as the seed user → access token.
 const signIn = await fetch(api("/auth/sign-in"), {

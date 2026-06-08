@@ -3,11 +3,11 @@
 // post with the same title already exists. Run from agora/server:
 //   node scripts/seeds/seed-bikecommute-post.mjs
 // Requires the seed auth user (node scripts/seeds/seed-demo-user.mjs) and a reachable Agora server. Env
-// (all optional): API_BASE_URL (default http://localhost:4000/v7), PROJECT_ID (default 11111111-…),
+// (all optional): API_BASE_URL (default http://localhost:4000), PROJECT_ID (default 11111111-…),
 // DEMO_EMAIL / DEMO_PASSWORD, BIKECOMMUTE_IMAGE_URL.
 import "dotenv/config";
 
-const BASE = (process.env.API_BASE_URL || "http://localhost:4000/v7").replace(/\/$/, "");
+const BASE = (process.env.API_BASE_URL || "http://localhost:4000").replace(/\/$/, "").replace(/\/v7$/, "");
 const PROJECT_ID = process.env.PROJECT_ID || "11111111-1111-1111-1111-111111111111";
 const EMAIL = process.env.DEMO_EMAIL || "agora-admin@gmail.com";
 const PASSWORD = process.env.DEMO_PASSWORD || "DemoPass123!";
@@ -19,7 +19,7 @@ const TITLE = "Two weeks of bike commuting 🚲";
 const CONTENT =
   "Swapped the morning traffic crawl for a river-path ride and I arrive awake instead of frazzled. Panniers carry the laptop, lights handle the gray mornings, and the protected lane downtown makes the whole thing feel safe. Cheaper than the gym and twice the view. 🚴";
 
-const api = (path) => `${BASE}/${PROJECT_ID}${path}`;
+const api = (path) => `${BASE}/v7/${PROJECT_ID}${path}`;
 
 // 1. Sign in as the seed user → access token.
 const signIn = await fetch(api("/auth/sign-in"), {

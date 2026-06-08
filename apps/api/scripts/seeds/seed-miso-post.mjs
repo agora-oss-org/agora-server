@@ -3,11 +3,11 @@
 // skips creation if the demo user already has a post with the same title. Run from agora/server:
 //   node scripts/seeds/seed-miso-post.mjs
 // Requires the demo auth user to exist first (node scripts/seeds/seed-demo-user.mjs) and a reachable
-// Agora server. Env (all optional): API_BASE_URL (default http://localhost:4000/v7),
+// Agora server. Env (all optional): API_BASE_URL (default http://localhost:4000),
 // PROJECT_ID (default 11111111-…), DEMO_EMAIL / DEMO_PASSWORD, MISO_IMAGE_URL.
 import "dotenv/config";
 
-const BASE = (process.env.API_BASE_URL || "http://localhost:4000/v7").replace(/\/$/, "");
+const BASE = (process.env.API_BASE_URL || "http://localhost:4000").replace(/\/$/, "").replace(/\/v7$/, "");
 const PROJECT_ID = process.env.PROJECT_ID || "11111111-1111-1111-1111-111111111111";
 const EMAIL = process.env.DEMO_EMAIL || "agora-admin@gmail.com";
 const PASSWORD = process.env.DEMO_PASSWORD || "DemoPass123!";
@@ -20,7 +20,7 @@ const CONTENT =
   "whisked in off the heat so it stays silky — never let it boil. Finished with a big handful of " +
   "green onions. Savory, cozy, and done before the rice cooker even beeps. 🥢";
 
-const api = (path) => `${BASE}/${PROJECT_ID}${path}`;
+const api = (path) => `${BASE}/v7/${PROJECT_ID}${path}`;
 
 // 1. Sign in as the demo user → access token.
 const signIn = await fetch(api("/auth/sign-in"), {
