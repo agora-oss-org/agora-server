@@ -14,7 +14,9 @@ from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
 
 ModerationVerdict = Literal["allow", "block", "review"]
-ReportTargetType = Literal["entity", "comment", "message"]
+# Scored target types. (No "message": chat is end-to-end-encrypted secure chat — never scored. The
+# reaction_target DB enum still carries `message` for chat-message *reports*, a separate feature.)
+ReportTargetType = Literal["entity", "comment"]
 
 T = TypeVar("T")
 

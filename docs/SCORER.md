@@ -44,7 +44,7 @@ compose DNS (`http://scorer-toxicity:8001`).
 ## Data flow
 
 ```
-entity / comment / chat_message  INSERT  (or content-changing UPDATE)
+entity / comment  INSERT  (or content-changing UPDATE)
    │  Postgres trigger "Trigger A" → pgmq.send('scorer_jobs', {targetType,targetId,projectId})
    │  (atomic with the write — a job exists only if the row committed)
    ▼
@@ -70,11 +70,13 @@ scorer-worker ── poll pgmq.read() ──► per job:
 - **Atomic enqueue.** Migration `apps/api/drizzle/0027_scorer_pgmq_enqueue.sql` enables `pgmq`, creates
   the `scorer_jobs` queue, and attaches triggers that `pgmq.send()` a job in the **same transaction** as
   the content write. No lossy webhook hop — the job is committed iff the content is.
-- **Full parity, loop-safe.** Triggers fire on `entities`, `comments`, and `chat_messages`, on **INSERT**
-  and on **content-changing UPDATE**. INSERT and UPDATE are *separate* triggers, and the UPDATE trigger
-  is **gated** (`when old.content is distinct from new.content`, plus `title` for entities) so the
-  moderation write-back itself (which only touches `moderation_status`) and trigger-maintained
-  count/reaction bumps do **not** re-enqueue. This is what prevents a write-back → re-score loop.
+- **Loop-safe.** Triggers fire on `entities` and `comments`, on **INSERT** and on **content-changing
+  UPDATE**. (Chat messages are **not** scored — Agora uses end-to-end-encrypted secure chat, so the
+  server never sees message plaintext; there's nothing to classify.) INSERT and UPDATE are *separate*
+  triggers, and the UPDATE trigger is **gated** (`when old.content is distinct from new.content`, plus
+  `title` for entities) so the moderation write-back itself (which only touches `moderation_status`) and
+  trigger-maintained count/reaction bumps do **not** re-enqueue. This is what prevents a write-back →
+  re-score loop.
 - **At-least-once → idempotency contract.** pgmq redelivers a message if the worker dies before
   `pgmq.delete` (visibility-timeout). So every downstream write is idempotent: the `moderation_analyses`
   insert is stamped with the pgmq **`source_msg_id`** and uses `ON CONFLICT (source_msg_id) DO NOTHING`
@@ -120,7 +122,7 @@ The toxicity RoBERTa runs on **everything** and its score drives a gray-zone gat
   reason}` using the **salvaged** `policy.build_system_prompt` + the tolerant `verdict.parse_verdict`.
 
 The verdict then flows through the **salvaged** `auto_action.decide_auto_action` against the project's
-two confidence floors (block/review), and — for `entity`/`comment` only (messages always queue) — a
+two confidence floors (block/review), and — for `entity`/`comment` (the only scored types) — a
 triggered removal is applied via the API write-back. Every assessment records one `moderation_analyses`
 row (the admin queue). The **relationship** RoBERTa score is written to the Neo4j graph in parallel.
 
@@ -144,8 +146,9 @@ MERGE (u)-[:AUTHORED]->(c)
 
 ⚠️ **v1 captures "who authored what, and how positive/negative it reads."** The richer **user→user
 interaction graph** — `(:User)-[:INTERACTED {sentiment}]->(:User)` weighted by how warmly A engages B,
-which needs resolving the *recipient* of a reply/DM (parent-content author / conversation members) — is
-**v2** (see the roadmap). The v1 schema is a deliberate, easily-revised starting point.
+which needs resolving the *recipient* of a comment (parent-content author) — is **v2** (see the roadmap).
+(Chat/DMs can't feed this graph: secure chat is end-to-end-encrypted, so the server has no message
+plaintext to score.) The v1 schema is a deliberate, easily-revised starting point.
 
 ## Preserved contracts (so the admin keeps working)
 
@@ -268,7 +271,8 @@ source retired**.
 
 **Remaining:**
 1. **Relationship graph v2** — the user→user `INTERACTED` edge (reactions trigger + a `reaction` job type
-   + resolving the recipient of replies/DMs).
+   + resolving the recipient of replies via parent-content author). Chat/DMs are out of scope — secure
+   chat is E2E-encrypted, so the server has no message plaintext to derive a sentiment edge from.
 2. **Clean the dead moderation-notifier path** — `apps/api/src/lib/webhooks.ts` `MODERATION_EVENTS` +
    `projects.moderation_webhook_url/secret` are dormant now (the scorer uses pgmq); repoint/trim the admin
    Settings→Moderator webhook panel.

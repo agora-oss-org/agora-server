@@ -4,8 +4,10 @@
 -- exists; create or replace; drop trigger if exists before create). pgmq is AT-LEAST-ONCE, so the
 -- worker's downstream writes (moderation_analyses upsert, Neo4j MERGE) are idempotent.
 --
--- Full parity: fires on entities, comments, and chat_messages — on INSERT and on content-changing
--- UPDATEs. The UPDATE trigger is GATED on the text column(s) actually changing, so the moderation
+-- Fires on entities and comments — on INSERT and on content-changing
+-- UPDATEs. (chat_messages are NOT scored: Agora uses end-to-end-encrypted secure chat, so the server
+-- never sees message plaintext — RoBERTa/Haiku scoring is impossible and meaningless there.)
+-- The UPDATE trigger is GATED on the text column(s) actually changing, so the moderation
 -- write-back itself (which only updates moderation_status) and trigger-maintained count/reaction
 -- bumps do NOT re-enqueue (this is what prevents a write-back → re-score loop). INSERT and UPDATE are
 -- separate triggers because a WHEN clause referencing OLD is invalid on an INSERT trigger.
@@ -63,18 +65,3 @@ create trigger trg_scorer_enqueue_upd_comments
   for each row
   when (old.content is distinct from new.content)
   execute function enqueue_scorer_job('comment');
---> statement-breakpoint
--- chat_messages: insert always; update only when content changed.
-drop trigger if exists trg_scorer_enqueue_ins_chat_messages on chat_messages;
---> statement-breakpoint
-create trigger trg_scorer_enqueue_ins_chat_messages
-  after insert on chat_messages
-  for each row execute function enqueue_scorer_job('message');
---> statement-breakpoint
-drop trigger if exists trg_scorer_enqueue_upd_chat_messages on chat_messages;
---> statement-breakpoint
-create trigger trg_scorer_enqueue_upd_chat_messages
-  after update on chat_messages
-  for each row
-  when (old.content is distinct from new.content)
-  execute function enqueue_scorer_job('message');

@@ -315,8 +315,9 @@ journal order and written **idempotently** (`create extension if not exists`, `c
   on every authenticated request (`lib/suspensions.ts` `hasActiveSuspension`).
 - `0027_…` — **`services/scorer` pgmq enqueue**: `create extension pgmq` + the `scorer_jobs` queue +
   `enqueue_scorer_job()` trigger fn, attached as AFTER INSERT / **content-gated** UPDATE triggers on
-  `entities`/`comments`/`chat_messages` (the UPDATE gate skips moderation/count writes so the write-back
-  doesn't re-enqueue). Replaces the moderation webhook notifier; see `docs/SCORER.md`.
+  `entities`/`comments` (the UPDATE gate skips moderation/count writes so the write-back
+  doesn't re-enqueue). Replaces the moderation webhook notifier; see `docs/SCORER.md`. (Chat messages are
+  **not** scored — secure chat is E2E-encrypted, so the server has no plaintext to classify.)
 - `0028_…` — **`services/scorer` analysis dedup**: `moderation_analyses.source_msg_id` (bigint) + a
   partial unique index. The worker stamps the pgmq message id and inserts `ON CONFLICT (source_msg_id)
   DO NOTHING`, so pgmq's at-least-once redelivery can't create duplicate analysis rows (kept out of the

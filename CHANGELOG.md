@@ -7,7 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.10.0] - 2026-06-08
+### Changed
+- **`services/scorer` no longer scores chat messages.** Agora has moved to an end-to-end-encrypted
+  secure-chat platform, so the server never sees message plaintext — RoBERTa/Haiku scoring of
+  `chat_messages` is impossible and meaningless. The two `chat_messages` enqueue triggers were removed
+  from migration `0027_scorer_pgmq_enqueue.sql` (edited in place + re-`genesis`'d, pre-release), and the
+  worker's `message`/`chat_messages` code paths were dropped (`scorer/db.py` content + author fetch,
+  `ReportTargetType` narrowed to `entity`/`comment` in `models.py` + `auto_action.py`). The
+  `chat_messages` table and the `reaction_target` enum's `message` value are **kept** — the latter still
+  powers chat-message *reports*, a separate feature.
 
 ### Removed
 - **`apps/moderator` retired.** The Node/Hono LLM-moderation service is fully replaced by the proven

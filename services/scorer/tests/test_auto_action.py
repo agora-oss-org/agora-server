@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from scorer.auto_action import AutoActionThresholds, decide_auto_action
 
 T = AutoActionThresholds(block_auto_action_threshold=0.85, review_auto_action_threshold=0.6)
@@ -34,8 +32,3 @@ def test_zero_threshold_disables_path() -> None:
 
 def test_allow_never_triggers() -> None:
     assert decide_auto_action("allow", 1.0, "entity", T) is None
-
-
-@pytest.mark.parametrize("target", ["message"])
-def test_non_removable_targets_always_queue(target: str) -> None:
-    assert decide_auto_action("block", 1.0, target, T) is None  # type: ignore[arg-type]

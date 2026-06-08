@@ -8,7 +8,8 @@ Two independent floors let an operator tune block and review separately:
   - block_auto_action_threshold  — auto-remove a "block" verdict at/above this confidence
   - review_auto_action_threshold — auto-remove a "review" verdict at/above this confidence
 A floor of 0 disables that path entirely (the verdict routes to the human AI-flag queue).
-Only entity/comment are removable through the API write-back; messages always queue.
+Only entity/comment are scored + removable through the API write-back (chat is end-to-end-encrypted
+secure chat — never scored); the `removable` guard stays as defense-in-depth.
 """
 
 from __future__ import annotations
@@ -17,7 +18,7 @@ from dataclasses import dataclass
 from typing import Literal, Optional
 
 ModerationVerdict = Literal["allow", "block", "review"]
-ReportTargetType = Literal["entity", "comment", "message"]
+ReportTargetType = Literal["entity", "comment"]
 # Which floor fired — surfaced in the verdict log + carried into the write-back reason; None = queue.
 AutoActionTrigger = Optional[Literal["block", "review"]]
 

@@ -61,15 +61,15 @@ class ContentRow:
 
 
 # Each query returns (title?, content, space_id?, user_id). Entities carry title+content + their own
-# space; comments inherit the space from their parent entity; chat messages are conversation-scoped
-# (no space). Removed/deleted handling is left to the worker — we score whatever text exists.
+# space; comments inherit the space from their parent entity. (Chat messages are NOT scored — Agora uses
+# end-to-end-encrypted secure chat, so the server never sees message plaintext.) Removed/deleted handling
+# is left to the worker — we score whatever text exists.
 _CONTENT_SQL = {
     "entity": "select title, content, space_id, user_id from entities where id = $1",
     "comment": (
         "select c.content, e.space_id, c.user_id "
         "from comments c join entities e on e.id = c.entity_id where c.id = $1"
     ),
-    "message": "select content, user_id from chat_messages where id = $1",
 }
 
 
@@ -84,9 +84,8 @@ async def fetch_content(settings: Settings, target_type: str, target_id: str) ->
     if target_type == "entity":
         text = "\n\n".join(p for p in (row["title"], row["content"]) if p)
         return ContentRow(text=text, space_id=row["space_id"], author_id=row["user_id"])
-    if target_type == "comment":
-        return ContentRow(text=row["content"] or "", space_id=row["space_id"], author_id=row["user_id"])
-    return ContentRow(text=row["content"] or "", space_id=None, author_id=row["user_id"])
+    # comment (the only other key in _CONTENT_SQL)
+    return ContentRow(text=row["content"] or "", space_id=row["space_id"], author_id=row["user_id"])
 
 
 # ── moderation_analyses: deduped append + redelivery pre-check ────────────────
@@ -231,13 +230,12 @@ async def fetch_latest_analysis(
 _AUTHOR_SQL = {
     "entity": "select id, user_id from entities where id = any($1::uuid[])",
     "comment": "select id, user_id from comments where id = any($1::uuid[])",
-    "message": "select id, user_id from chat_messages where id = any($1::uuid[])",
 }
 
 
 async def fetch_authors(settings: Settings, targets: list[tuple[str, str]]) -> dict[str, UserSummary]:
-    """Resolve (targetType, targetId) → author UserSummary for the admin queue (port of authors.ts,
-    extended to chat_messages). Batched: one query per target table + one profiles query (no N+1)."""
+    """Resolve (targetType, targetId) → author UserSummary for the admin queue (port of authors.ts).
+    Batched: one query per target table + one profiles query (no N+1)."""
     pool = await get_pool(settings)
     target_to_user: dict[str, str] = {}
     for kind, sql in _AUTHOR_SQL.items():
