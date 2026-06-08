@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`services/scorer` CI + multi-arch images (ops polish).** A `scorer` job in
+  `.github/workflows/ci.yml` lints (ruff), type-checks (mypy), and unit-tests (pytest) the Python
+  subsystem on every push/PR — hermetic (pure/mocked, no torch/DB/network), installing only the dev
+  deps. The scorer images (`agora-scorer-worker` + `agora-scorer-model-server`) are added to
+  `docker-publish.yml`, which is rewritten to **native-runner multi-arch** (amd64 on `ubuntu-latest`,
+  arm64 on `ubuntu-24.04-arm`, no QEMU): each arch builds + pushes by digest, then a merge job stitches
+  per-arch digests into one manifest per tag on both GHCR + Docker Hub — so the torch-heavy model server
+  builds fast on both architectures.
+
 ### Fixed
 - **Seed post scripts honor `API_BASE_URL` without a `/v7` suffix.** The 13 `scripts/seeds/seed-*-post.mjs`
   scripts treated `API_BASE_URL` as if it included the `/v7` version prefix (their default was
@@ -15,6 +25,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that matched no route → `common/not-found` (404) on sign-in, failing every post seed. The scripts now
   treat `API_BASE_URL` as the host root and append `/v7` themselves, tolerating either form — so
   `genesis && seed` works with the canonical root-form `API_BASE_URL`.
+- **`services/scorer` test suite is hermetic + mypy-clean (CI prerequisite).** `tests/conftest.py` now
+  **force-empties** `ANTHROPIC_API_KEY` (was `setdefault`, which a real key leaked via direnv/.env
+  defeated → a real Haiku call → flaky gray-zone tests). Added the previously-undeclared `respx` test
+  dep to `requirements-dev.txt` + `pyproject` `dev` extras. Fixed 8 mypy errors (`_settings(**over:
+  object)` → `Any` in `test_haiku.py`/`test_writeback.py`) so the suite is mypy-clean across all source
+  dirs.
 
 ### Changed
 - **`services/scorer` no longer scores chat messages.** Agora has moved to an end-to-end-encrypted
@@ -25,6 +41,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ReportTargetType` narrowed to `entity`/`comment` in `models.py` + `auto_action.py`). The
   `chat_messages` table and the `reaction_target` enum's `message` value are **kept** — the latter still
   powers chat-message *reports*, a separate feature.
+- **`Dockerfile.model-server`: arch-aware CPU-torch install + slim + HF cache.** Torch now installs the
+  correct CPU wheel per arch (`TARGETARCH`: amd64 → pytorch `/whl/cpu` index; arm64 → PyPI default, since
+  the cpu index has no aarch64 wheels), trims bytecode caches + torch's bundled tests, and sets `HF_HOME`
+  to a pre-created (scorer-owned) dir. `docker-compose.yml` adds a shared `scorer-hf-cache` volume on
+  both model servers so downloaded models survive a container recreate.
 
 ### Removed
 - **Dead moderation-notifier path removed.** The `services/scorer` cutover left the old internal

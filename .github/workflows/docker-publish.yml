@@ -1,7 +1,14 @@
-# Build the Agora images (@agora/api + @agora/admin) and publish multi-arch (amd64 + arm64) to
-# GHCR + Docker Hub. Fires on a version tag (e.g. `v0.1.1`) or manual dispatch. Public images at:
-#   ghcr.io/jenova-marie/{agora-api,agora-admin}  and  docker.io/agoraserver/{agora-api,agora-admin}
+# Build the Agora images and publish multi-arch (amd64 + arm64) to GHCR + Docker Hub. Fires on a
+# version tag (e.g. `v0.1.1`) or manual dispatch. Public images at:
+#   ghcr.io/jenova-marie/{agora-api,agora-admin,agora-scorer-worker,agora-scorer-model-server}
+#   docker.io/agoraserver/{…same…}
 # Docker Hub needs DOCKERHUB_USERNAME + DOCKERHUB_TOKEN repo secrets (a Read/Write access token).
+#
+# Multi-arch the FAST way — native runners, NOT QEMU. Each arch builds on its own native runner
+# (ubuntu-latest = amd64, ubuntu-24.04-arm = arm64) and pushes the single-arch image BY DIGEST to
+# GHCR; a `merge` job then stitches the per-arch digests into one multi-arch manifest per tag and
+# pushes that to both registries. This matters for `agora-scorer-model-server`, which bundles the
+# CPU torch wheel — building arm64 under QEMU emulation would be painfully slow / fragile.
 name: docker-publish
 
 on:
@@ -13,25 +20,93 @@ env:
   REGISTRY: ghcr.io
 
 jobs:
-  build-and-push:
-    runs-on: ubuntu-latest
+  # ── per-arch build (native runner per platform), pushed BY DIGEST to GHCR ──────────────────────
+  build:
+    runs-on: ${{ matrix.platform.runner }}
     permissions:
       contents: read
       packages: write # push to GHCR with the built-in GITHUB_TOKEN
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - image: agora-api
+        image:
+          - name: agora-api
             dockerfile: ./apps/api/Dockerfile
-          - image: agora-admin
+          - name: agora-admin
             dockerfile: ./apps/admin/Dockerfile
+          - name: agora-scorer-worker
+            dockerfile: ./services/scorer/Dockerfile.worker
+          - name: agora-scorer-model-server
+            dockerfile: ./services/scorer/Dockerfile.model-server
+        platform:
+          - runner: ubuntu-latest
+            arch: amd64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up QEMU (for arm64 emulation)
-        uses: docker/setup-qemu-action@v3
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Labels
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.image.name }}
+
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.image.dockerfile }}
+          platforms: linux/${{ matrix.platform.arch }}
+          labels: ${{ steps.meta.outputs.labels }}
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.image.name }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=${{ matrix.image.name }}-${{ matrix.platform.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image.name }}-${{ matrix.platform.arch }}
+
+      - name: Export digest
+        run: |
+          mkdir -p /tmp/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+
+      - name: Upload digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ matrix.image.name }}-${{ matrix.platform.arch }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  # ── merge per-arch digests → one multi-arch manifest per tag, pushed to BOTH registries ────────
+  merge:
+    runs-on: ubuntu-latest
+    needs: build
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [agora-api, agora-admin, agora-scorer-worker, agora-scorer-model-server]
+    steps:
+      - name: Download this image's per-arch digests
+        uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests
+          pattern: digests-${{ matrix.image }}-*
+          merge-multiple: true
 
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v3
@@ -63,14 +138,16 @@ jobs:
             type=semver,pattern={{major}}
             type=sha
 
-      - name: Build and push
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: ${{ matrix.dockerfile }}
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=${{ matrix.image }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+      # Assemble the manifest list from the GHCR per-arch digests and push it to every derived tag
+      # (on both registries — imagetools copies the platform images to Docker Hub as needed).
+      - name: Create + push multi-arch manifests
+        working-directory: /tmp/digests
+        run: |
+          docker buildx imagetools create \
+            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf '${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.image }}@sha256:%s ' *)
+
+      - name: Inspect
+        run: |
+          docker buildx imagetools inspect \
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.image }}:${{ steps.meta.outputs.version }}

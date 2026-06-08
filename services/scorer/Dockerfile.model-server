@@ -1,6 +1,6 @@
 # Shared RoBERTa model server (runs as both scorer-toxicity and scorer-relationship; the model is
 # chosen by SCORER_MODEL / SCORER_MODEL_KIND env). Build context is the REPO ROOT (matches the api/
-# moderator images), so paths below are repo-relative.
+# admin images), so paths below are repo-relative.
 #
 # Multi-stage: a builder installs deps into a venv, the runtime stage copies only the venv + source.
 #
@@ -9,6 +9,8 @@
 # container recreate.
 
 FROM python:3.11-slim AS builder
+# TARGETARCH is auto-populated by buildx (amd64 | arm64) — used to pick the right CPU torch wheel.
+ARG TARGETARCH
 WORKDIR /app
 ENV PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1
 RUN python -m venv /opt/venv
@@ -16,9 +18,19 @@ ENV PATH="/opt/venv/bin:$PATH"
 # Deps before source for layer caching.
 COPY services/scorer/requirements.txt ./requirements.txt
 RUN pip install -r requirements.txt
-# Model deps: CPU-only torch from the pytorch index, then transformers from PyPI.
-RUN pip install --no-cache-dir "torch>=2.2" --index-url https://download.pytorch.org/whl/cpu
+# Model deps: CPU-only torch. On amd64 the pytorch CPU index avoids pulling the (huge) CUDA build; on
+# arm64 Linux the CPU wheel ships on PyPI's DEFAULT index (the /whl/cpu index has no aarch64 wheels),
+# so install from PyPI there. Then transformers from PyPI.
+RUN if [ "$TARGETARCH" = "arm64" ]; then \
+      pip install --no-cache-dir "torch>=2.2"; \
+    else \
+      pip install --no-cache-dir "torch>=2.2" --index-url https://download.pytorch.org/whl/cpu; \
+    fi
 RUN pip install --no-cache-dir "transformers>=4.40"
+# Slim the venv: drop bytecode caches + torch's bundled test trees (never needed at runtime).
+RUN find /opt/venv -depth -type d -name '__pycache__' -exec rm -rf {} + ; \
+    find /opt/venv -depth -type d \( -name 'test' -o -name 'tests' \) -path '*/torch/*' -exec rm -rf {} + ; \
+    rm -rf /root/.cache
 
 FROM python:3.11-slim AS runtime
 WORKDIR /app
@@ -27,6 +39,10 @@ COPY --from=builder /opt/venv /opt/venv
 COPY services/scorer/model_server ./model_server
 # Non-root.
 RUN useradd --create-home --uid 10001 scorer && chown -R scorer /app
+# HF model cache — pre-create it owned by `scorer` so a fresh named volume mounted here (see
+# docker-compose.yml) inherits that ownership and persists downloaded models across container recreate.
+ENV HF_HOME=/home/scorer/.cache/huggingface
+RUN mkdir -p "$HF_HOME" && chown -R scorer /home/scorer/.cache
 USER scorer
 EXPOSE 8001
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \

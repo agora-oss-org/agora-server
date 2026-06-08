@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+from typing import Any
 
 import httpx
 import respx
@@ -11,7 +12,7 @@ from scorer import haiku
 from scorer.config import Settings
 
 
-def _settings(**over: object) -> Settings:
+def _settings(**over: Any) -> Settings:
     return dataclasses.replace(Settings(), **over)
 
 

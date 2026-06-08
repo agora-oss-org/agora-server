@@ -4,7 +4,7 @@
 > (+ LISTEN/NOTIFY), Claude Haiku adjudication + API write-back, the operator-complete admin surface, and
 > the Neo4j relationship graph all run against real infra: a toxic comment was scored `block`, auto-removed
 > through the API, and recorded; a benign one `allow`ed; both wrote signed sentiment edges to Neo4j. The
-> old `apps/moderator` is retired. Remaining is the user→user graph **v2** + ops polish — see the roadmap.
+> old `apps/moderator` is retired. Remaining is the user→user graph **v2** — see the roadmap.
 
 `services/scorer` is Agora's content scoring + moderation subsystem. It **replaces `apps/moderator`**
 (the Node/Hono LLM-over-webhooks service) with an **async, post-publish** Python pipeline: content
@@ -208,8 +208,14 @@ cd services/scorer && pip install -r requirements-dev.txt && pytest
   servers own disjoint cores.
 - **Verify pgmq first:** confirm `create extension if not exists pgmq;` succeeds on your Supabase plan —
   it's the entire transport.
-- **Image size:** the real (un-stubbed) model server adds the CPU `torch` wheel, which is large; slimming
-  it is later work.
+- **Image size:** the model server bundles the CPU `torch` wheel (large). The Dockerfile installs the
+  right CPU wheel per arch (`TARGETARCH`: amd64 → pytorch `/whl/cpu` index; arm64 → PyPI default) and
+  trims bytecode caches + torch's bundled tests. Further slimming is possible but low-priority.
+- **Multi-arch images:** `docker-publish.yml` builds **amd64 + arm64** on native runners (no QEMU) and
+  merges per-arch digests into one manifest per tag — so the torch-heavy model server builds fast on
+  both. Published as `{ghcr.io/jenova-marie,docker.io/agoraserver}/agora-scorer-{worker,model-server}`.
+- **HF cache:** mount the `scorer-hf-cache` volume (wired in `docker-compose.yml`, `HF_HOME` set in the
+  image) so the model download survives a container recreate.
 
 ## Smoke test (manual)
 
@@ -273,10 +279,13 @@ source retired**.
 1. **Relationship graph v2** — the user→user `INTERACTED` edge (reactions trigger + a `reaction` job type
    + resolving the recipient of replies via parent-content author). Chat/DMs are out of scope — secure
    chat is E2E-encrypted, so the server has no message plaintext to derive a sentiment edge from.
-2. **Ops polish** — Python CI job (ruff/mypy/pytest), scorer images in the docker-publish matrix, torch
-   image slimming, a HF cache volume.
 
-**Recently done:** ✅ **dead moderation-notifier path removed** — `lib/webhooks.ts` `MODERATION_EVENTS`
+**Recently done:** ✅ **ops polish** — a Python CI job (ruff + mypy + pytest) in `.github/workflows/ci.yml`;
+the scorer images (`agora-scorer-worker` + `agora-scorer-model-server`) added to `docker-publish.yml` as
+**native-runner multi-arch** (amd64 + arm64, no QEMU — fast even for the torch-heavy model server);
+arch-aware CPU-torch install (`TARGETARCH`) + image slim + an `HF_HOME` cache volume; and the test-suite
+debt cleared (conftest force-empties `ANTHROPIC_API_KEY` for hermeticity, `respx` added to dev deps,
+suite is mypy-clean across all source dirs). · ✅ **dead moderation-notifier path removed** — `lib/webhooks.ts` `MODERATION_EVENTS`
 + the internal notifier, the `projects.moderation_webhook_url/secret` columns (dropped by migration
 `0035`), the `/settings/moderator/test` endpoint, and the admin Settings → Moderator webhook card are
 all gone. The scorer drives moderation entirely off pgmq; admin Settings → Moderator now tunes only the

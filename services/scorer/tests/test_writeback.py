@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+from typing import Any
 
 import httpx
 import respx
@@ -12,7 +13,7 @@ from scorer.config import Settings
 from worker import writeback
 
 
-def _settings(**over: object) -> Settings:
+def _settings(**over: Any) -> Settings:
     return dataclasses.replace(Settings(), **over)
 
 

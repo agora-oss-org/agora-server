@@ -1,5 +1,5 @@
 # The scorer worker: pgmq consumer + cascade orchestrator + operator-gated admin API. Build context
-# is the REPO ROOT (matches the api/moderator images), so paths below are repo-relative.
+# is the REPO ROOT (matches the api/admin images), so paths below are repo-relative.
 
 FROM python:3.11-slim AS builder
 WORKDIR /app

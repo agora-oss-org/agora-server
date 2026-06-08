@@ -52,6 +52,10 @@ services:
     cpuset: "0,1"
     init: true
     restart: unless-stopped
+    # Persist the HF model download (HF_HOME, set in the image) so a container recreate doesn't
+    # re-download. Shared with scorer-relationship — HF caches per model repo, so no collision.
+    volumes:
+      - scorer-hf-cache:/home/scorer/.cache/huggingface
 
   # RoBERTa relationship-quality (sentiment) classifier — same image, different model + cores.
   scorer-relationship:
@@ -69,6 +73,8 @@ services:
     cpuset: "2,3"
     init: true
     restart: unless-stopped
+    volumes:
+      - scorer-hf-cache:/home/scorer/.cache/huggingface
 
   # Orchestrator: pgmq consumer + cascade + write-back + Neo4j + the operator-gated admin API. Serves
   # /v1/:projectId/moderation/* on :4001 (the admin upstream). Shares DATABASE_URL + ACCESS_TOKEN_SECRET
@@ -172,3 +178,4 @@ volumes:
   neo4j-data:
   caddy-data:
   caddy-config:
+  scorer-hf-cache: # HF model downloads for the two scorer model servers (persist across recreate)

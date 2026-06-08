@@ -12,7 +12,10 @@ import pytest
 
 os.environ.setdefault("DATABASE_URL", "postgresql://test:test@localhost:5432/test")
 os.environ.setdefault("ACCESS_TOKEN_SECRET", "test-secret")
-os.environ.setdefault("ANTHROPIC_API_KEY", "")
+# FORCE empty (not setdefault): direnv/.env may export a real key into the shell, and a real key
+# makes Settings().haiku_enabled() true → the gray-zone cascade fires a *real* Haiku call in tests
+# (non-hermetic, flaky). Tests that need Haiku enabled set it per-Settings via dataclasses.replace.
+os.environ["ANTHROPIC_API_KEY"] = ""
 
 
 @pytest.fixture
