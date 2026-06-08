@@ -20,7 +20,9 @@
     "dev:admin": "pnpm --filter @agora/admin dev",
     "contract:build": "pnpm --filter @agora-server/contract build",
     "db:migrate": "pnpm --filter @agora/api db:migrate:run",
-    "db:generate": "pnpm --filter @agora/api db:generate"
+    "db:generate": "pnpm --filter @agora/api db:generate",
+    "genesis": "pnpm --filter @agora/api genesis",
+    "genesis:test": "pnpm --filter @agora/api genesis:test"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

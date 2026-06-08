@@ -20,6 +20,8 @@
     "db:studio": "drizzle-kit studio",
     "db:wipe": "node scripts/wipe.mjs",
     "db:drop": "node scripts/drop.mjs",
+    "genesis": "node scripts/genesis.mjs",
+    "genesis:test": "node scripts/genesis.mjs --test",
     "seed": "node scripts/seeds/seed.mjs"
   },
   "dependencies": {

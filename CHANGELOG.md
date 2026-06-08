@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`genesis` / `genesis:test` scripts — one-command DB reset-and-seed.** `apps/api/scripts/genesis.mjs`
+  chains drop → migrate → `seed.sql` (tenant fixtures + trigger/RPC asserts) for a from-nothing rebuild.
+  `pnpm genesis` targets `DATABASE_URL`; `pnpm genesis:test` targets `TEST_DATABASE_URL` (override applied
+  to the child so it can never touch the dev DB). DESTRUCTIVE: keeps `drop.mjs`'s type-the-ref confirm by
+  default; pass `--force` for non-interactive/CI. Seeds DB-level fixtures only — the demo content posts
+  (`seed-*-post.mjs`, need a running server) stay behind `pnpm seed`.
+
 ### Fixed
 - **`scripts/drop.mjs` now drops the `drizzle` migration ledger too.** The script dropped only `private`
   + `public`, but drizzle-orm's `__drizzle_migrations` ledger lives in its default `drizzle` schema —
