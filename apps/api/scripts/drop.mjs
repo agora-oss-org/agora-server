@@ -2,9 +2,13 @@
 //
 // Where `wipe.mjs` TRUNCATEs rows but keeps the tables, this nukes the schema OBJECTS themselves:
 //   • DROP SCHEMA private CASCADE  — the SECURITY DEFINER helpers (migration 0017).
-//   • DROP SCHEMA public  CASCADE  — every table, enum, function, trigger, the `__drizzle_migrations`
-//                                     ledger, AND the public-installed extensions (pgcrypto/vector/
-//                                     postgis). `migrate.mjs` recreates all of it from 0000.
+//   • DROP SCHEMA public  CASCADE  — every table, enum, function, trigger, AND the public-installed
+//                                     extensions (pgcrypto/vector/postgis). `migrate.mjs` recreates
+//                                     all of it from 0000.
+//   • DROP SCHEMA drizzle CASCADE  — the `drizzle.__drizzle_migrations` ledger (drizzle-orm's DEFAULT
+//                                     migrationsSchema — NOT public). MUST be dropped too: a surviving
+//                                     ledger makes the subsequent migrate a silent no-op against the
+//                                     emptied schema, leaving an empty DB that *looks* fully migrated.
 //   • CREATE SCHEMA public + restore the baseline Supabase schema grants, so the migrations'
 //     per-table `GRANT … TO anon, authenticated` (0008/0017) land on a reachable schema.
 //
@@ -36,8 +40,9 @@ const EXECUTE = args.has("--yes") || args.has("-y");
 const FORCE = args.has("--force");
 const RUN_MIGRATE = args.has("--migrate");
 
-// Schemas this app owns end-to-end (the migrations create both). `auth` is intentionally absent.
-const SCHEMAS = ["private", "public"];
+// Schemas this app owns end-to-end: migrations create `public` + the `drizzle` ledger; 0017 creates
+// `private`. The ledger MUST be dropped alongside public or the rebuild no-ops. `auth` is intentionally absent.
+const SCHEMAS = ["private", "drizzle", "public"];
 
 // ── env / target ──────────────────────────────────────────────────────────────
 const dbUrl = process.env.DATABASE_URL;
@@ -87,6 +92,9 @@ try {
   // One transaction: if any step fails, the schema is left intact rather than half-dropped.
   await sql.begin((tx) => [
     tx`drop schema if exists private cascade`,
+    // The drizzle-orm migration ledger lives here (default migrationsSchema). Dropping it resets the
+    // high-water mark so the follow-up migrate actually re-applies 0000…N instead of no-opping.
+    tx`drop schema if exists drizzle cascade`,
     tx`drop schema if exists public cascade`,
     tx`create schema public`,
     // Baseline Supabase schema grants (a fresh project ships these). Per-table grants live in the
@@ -94,7 +102,7 @@ try {
     tx`grant usage on schema public to anon, authenticated, service_role`,
     tx`grant all on schema public to postgres, service_role`,
   ]);
-  console.log("✓ dropped private + public; recreated empty public with baseline grants");
+  console.log("✓ dropped private + drizzle + public; recreated empty public with baseline grants");
 
   // ── optional rebuild ──────────────────────────────────────────────────────────
   if (RUN_MIGRATE) {

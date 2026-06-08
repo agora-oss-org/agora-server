@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **`scripts/drop.mjs` now drops the `drizzle` migration ledger too.** The script dropped only `private`
+  + `public`, but drizzle-orm's `__drizzle_migrations` ledger lives in its default `drizzle` schema —
+  which survived the drop. The follow-up `--migrate` then read the stale full ledger, saw the high-water
+  mark already at the latest migration, and **silently no-op'd**, leaving an empty schema that *looked*
+  fully migrated. The drop transaction now also `DROP SCHEMA IF EXISTS drizzle CASCADE` so the ledger
+  resets and the rebuild actually re-applies `0000…N` (comment/banner corrected to match).
+
 ## [0.9.2] - 2026-06-07
 
 ### Added
