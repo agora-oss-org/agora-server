@@ -3,7 +3,7 @@
 > The Agora admin frontend — a role-aware dashboard for operators and moderators.
 
 A Vite + React + TypeScript single-page app that consumes [`@agora/api`](../api) (and, for AI
-moderation aids, [`@agora/moderator`](../moderator)). It's how you run a deployment day-to-day:
+moderation aids, [`services/scorer`](../../services/scorer)). It's how you run a deployment day-to-day:
 review the moderation queue, tune the feed, configure webhooks, and watch project health.
 
 For the project overview, see the [root README](../../README.md).
@@ -42,7 +42,7 @@ apps/admin/src/
 - **Dashboard** — project health and per-project usage metering (the API's `api_usage` product
   metrics) plus infra figures (e.g. `pg_database_size`).
 - **Moderation** — the report queue with per-item resolution, plus an **AI-flag queue** and an
-  **AI assessment** panel in the report `ReviewDialog` (both backed by `@agora/moderator`). Reports
+  **AI assessment** panel in the report `ReviewDialog` (both backed by `services/scorer`). Reports
   deep-link into the consumer app ("Open in app") via `VITE_DEMO_URL`.
 - **Settings** — feed-ranking config (`GET`/`PATCH /settings/feed`), project webhooks, and
   per-project moderation visibility (**hide** vs **placeholder** for removed content).
@@ -88,8 +88,8 @@ defaults work behind the bundled nginx image (and the dev proxy).
 # nginx image both forward /v7 to the API). Override for a cross-origin API.
 # VITE_API_BASE_URL=/v7
 
-# Base URL of the @agora/moderator service (AI-flag queue + per-item analysis). Defaults to
-# "/moderator" (same-origin; forwarded, prefix stripped). Override for a cross-origin moderator.
+# Base URL of the services/scorer moderation service (AI-flag queue + per-item analysis). Defaults to
+# "/moderator" (same-origin; forwarded, prefix stripped). Override for a cross-origin scorer.
 # VITE_MODERATOR_BASE_URL=/moderator
 
 # The project this admin manages (the API is multi-tenant). For a single-project deployment, bake it

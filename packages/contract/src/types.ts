@@ -141,7 +141,7 @@ export interface AuthContext {
   isSteward: boolean; // conflict-resolution steward (DB grant) — gates the Steward routes/tab
 }
 
-// ─── automated moderation (@agora/moderator) ───────────────────────────────
+// ─── automated moderation (services/scorer) ───────────────────────────────
 // The LLM's structured judgement of a piece of content. "allow" = clean; "block" = clearly
 // violates policy; "review" = uncertain, route to a human. `confidence` is 0..1.
 export type ModerationVerdict = "allow" | "block" | "review";

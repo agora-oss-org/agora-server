@@ -1,4 +1,4 @@
-// Review dialog for an AI flag (a @agora/moderator verdict awaiting human disposition) — the AI-tab
+// Review dialog for an AI flag (a services/scorer verdict awaiting human disposition) — the AI-tab
 // counterpart to the report ReviewDialog. Loads + shows the flagged content (shared ContentPreview),
 // the AI verdict (with on-demand re-analysis), and lets the human Remove (write-back to the API, with
 // an optional reason) or Dismiss (false positive — clear the flag, leave the content).

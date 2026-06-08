@@ -300,7 +300,7 @@ export const moderatorConfigSchema = z.object({
   categories: z.array(z.string().trim().min(1).max(64)).max(100).nullish(),
 });
 
-// ─── automated moderation (@agora/moderator) ────────────────────────────────
+// ─── automated moderation (services/scorer) ────────────────────────────────
 // Body for the moderator's on-demand POST /moderation/analyze (admin "Re-analyze"). The admin
 // already has the content loaded, so it passes the text directly along with what's being judged.
 export const moderationAnalyzeSchema = z.object({

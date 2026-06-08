@@ -88,7 +88,7 @@ export function createApp() {
     return c.json(result);
   });
 
-  // Automated-moderation write-back: the @agora/moderator service applies a "client" decision
+  // Automated-moderation write-back: the services/scorer service applies a "client" decision
   // (moderationStatus + moderatedByType="client"). Secret-gated like cron; 503 until configured.
   app.post("/internal/moderation/apply", async (c) => {
     const secret = env.MODERATION_SERVICE_SECRET;

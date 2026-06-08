@@ -2,7 +2,7 @@
 // client). Same-origin by default: in dev the vite proxy forwards /v7 to :4000, in prod nginx does.
 export const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? "/v7").replace(/\/+$/, "");
 
-// Base of the @agora/moderator service (LLM moderation: the AI-flag queue + per-item analysis).
+// Base of the services/scorer service (LLM moderation: the AI-flag queue + per-item analysis).
 // Same-origin by default: the dev vite proxy (and prod nginx) forwards /moderator → the moderator
 // host, stripping the prefix so it lands on the moderator's own /v7/:projectId/moderation/* routes.
 export const MODERATOR_BASE = (import.meta.env.VITE_MODERATOR_BASE_URL ?? "/moderator").replace(/\/+$/, "");

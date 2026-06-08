@@ -165,7 +165,7 @@ function ReportsTable({ status, onReview }: { status: ReportStatus; onReview?: (
   );
 }
 
-// The AI-flag queue: content the @agora/moderator service flagged (block/review) that no human has
+// The AI-flag queue: content the services/scorer service flagged (block/review) that no human has
 // dispositioned yet. Reviewing a row opens the AI-flag dialog (content + verdict + Remove/Dismiss).
 function AiFlagsTable({ onReview }: { onReview: (a: ModerationAnalysis) => void }) {
   const [page, setPage] = useState(1);

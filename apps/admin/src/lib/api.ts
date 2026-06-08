@@ -25,7 +25,7 @@ export interface ApiOptions {
   projectId?: string;
   /** Send the Bearer token (default true). Set false for public/auth-bootstrap calls. */
   auth?: boolean;
-  /** Override the service base (default API_BASE). Used to target the @agora/moderator service,
+  /** Override the service base (default API_BASE). Used to target the services/scorer service,
    *  reusing this client's Bearer + single-flight refresh. Token refresh always uses API_BASE. */
   base?: string;
   signal?: AbortSignal;

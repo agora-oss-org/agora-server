@@ -198,8 +198,8 @@ We'll review as promptly as we can. Thanks for helping build the open social lay
 
 ## Licensing
 
-Agora's server is **[AGPL-3.0-only](LICENSE)** — `@agora/api`, `@agora/admin`, `@agora/moderator`
-(and the `services/*` workers). The shared wire contract, [`@agora-server/contract`](packages/contract),
+Agora's server is **[AGPL-3.0-only](LICENSE)** — `@agora/api`, `@agora/admin`, and the `services/*`
+workers (e.g. `services/scorer`). The shared wire contract, [`@agora-server/contract`](packages/contract),
 stays **Apache-2.0** so the [`agora-sdk`](https://github.com/jenova-marie/agora-sdk) and third-party
 clients can build against it freely. **The community edition is AGPL-3.0 and always will be** — that's
 a promise, not a placeholder.

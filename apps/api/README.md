@@ -163,9 +163,9 @@ ANTHROPIC_API_KEY=sk-ant-...
 ANTHROPIC_MODEL=claude-haiku-4-5-20251001
 ANTHROPIC_MAX_TOKENS=64000
 
-# Automated moderation (the @agora/moderator service; optional). Gates POST /internal/moderation/apply,
-# which the moderator calls to write back removals. See apps/moderator/README.md.
-MODERATION_SERVICE_SECRET=<random>             # shared secret for the moderator's write-back
+# Automated moderation (the services/scorer subsystem; optional). Gates POST /internal/moderation/apply,
+# which the scorer calls to write back removals. See services/scorer/README.md.
+MODERATION_SERVICE_SECRET=<random>             # shared secret for the scorer's write-back
 ```
 
 ### OAuth providers (Supabase Redirect URLs)

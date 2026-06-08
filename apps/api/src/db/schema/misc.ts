@@ -84,7 +84,7 @@ export const reports = pgTable("reports", {
   index("reports_target_idx").on(t.targetType, t.targetId),
 ]);
 
-// Automated-moderation audit trail (@agora/moderator). One row per LLM assessment: the verdict, the
+// Automated-moderation audit trail (services/scorer). One row per LLM assessment: the verdict, the
 // reason, and whether the moderator auto-acted (wrote a removal back to the API). The DDL lives here
 // because apps/api owns the schema (single source of truth); the moderator service binds a thin copy
 // for its reads/writes. `humanResolvedAt` clears an item from the admin AI-flag queue once a human

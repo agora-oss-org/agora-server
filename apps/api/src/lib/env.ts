@@ -31,7 +31,7 @@ const schema = z.object({
   // for external schedulers. Optional: when unset those endpoints are disabled (503) and the work
   // runs only via the standalone scripts/*.mjs.
   CRON_SECRET: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
-  // Shared secret gating POST /internal/moderation/apply — the write-back the @agora/moderator
+  // Shared secret gating POST /internal/moderation/apply — the write-back the services/scorer
   // service calls to apply an automated decision (moderationStatus, moderatedByType="client").
   // Optional: when unset the endpoint is disabled (503) and no service can auto-moderate.
   MODERATION_SERVICE_SECRET: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),

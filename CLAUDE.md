@@ -96,24 +96,21 @@ Supabase Postgres   schema + triggers + RPC + pgvector + PostGIS
 
 ## Monorepo
 
-pnpm workspaces (corepack-pinned `pnpm@10.14.0`). Four packages:
+pnpm workspaces (corepack-pinned `pnpm@10.14.0`). Three pnpm packages — plus the `services/scorer`
+Python sibling:
 
 - `apps/api` — `@agora/api`, the Hono backend (everything below; the reference package).
 - `apps/admin` — `@agora/admin`, a Vite + React + TS admin frontend that consumes the API.
-- `apps/moderator` — `@agora/moderator`, a standalone Hono service (default :4001) for **LLM content
-  moderation**: receives the API's signed broadcast webhooks (`POST /webhooks/agora`), assesses
-  content via a generic LLM provider (OpenAI-compatible *or* Anthropic — `lib/llm-provider.ts`),
-  auto-acts above a confidence threshold by writing the removal back to the API (`moderatedByType=
-  "client"`), and serves operator-gated review aids at `/v1/:projectId/moderation/*` (the admin's AI
-  queue). The API enqueues content scoring jobs via **pgmq** (the `services/scorer` enqueue triggers —
-  see `docs/SCORER.md`); there is **no** per-project moderation webhook. **Per-project tuning** lives in
-  `projects.moderator_config` (jsonb: `autoActionThreshold` + LLM provider config), which the
-  moderator overlays on its env defaults per assessment (`lib/project-config.ts`, cached 30s) — so a
-  deployment runs on env alone, or tunes each project from the admin. Shares the API's Postgres
-  (reads `projects.moderator_config`; R/W
-  `moderation_analyses`) + `ACCESS_TOKEN_SECRET`; **all content mutations go through the API over
-  HTTP** (the API stays the trust boundary). See its `apps/moderator/src` and the moderation note in
-  Handler conventions.
+- `services/scorer` — the Python **content-moderation subsystem** (NOT a pnpm package), which
+  **replaces the retired `apps/moderator`**. An async, post-publish pipeline: scoring runs off a **pgmq**
+  queue (the API's enqueue triggers — migration `0027`), two RoBERTa classifiers gate a Claude Haiku
+  adjudication, and removals are written back to the API (`POST /internal/moderation/apply`,
+  `moderatedByType="client"`). It records the `moderation_analyses` audit trail and serves the
+  operator-gated AI-flag queue at `/v1/:projectId/moderation/*` (the admin's AI tab; nginx upstream
+  `MODERATOR_UPSTREAM → scorer-worker:4001`). **Per-project tuning** lives in `projects.moderator_config`
+  (auto-action thresholds + LLM-provider config; admin Settings → Moderator), overlaid on the scorer's
+  env defaults. Shares the API's Postgres (R/W `moderation_analyses`) + `ACCESS_TOKEN_SECRET`; **all
+  content mutations go through the API over HTTP** (the API stays the trust boundary). See `docs/SCORER.md`.
 - `packages/contract` — `@agora-server/contract`, the **shared API contract**: response-model TS types
   (`User`/`Entity`/`Comment`/`AuthUser`/`AuthContext`/`ModerationAnalysis`), the reaction taxonomy,
   the pagination envelope + `paginate()`, the error-envelope shape, and the zod request schemas. Pure
@@ -237,7 +234,7 @@ trailing 25h window each run so a missed run self-heals — `lib/community-stats
 operator-only `GET /admin/community/overview` powering the admin **Community** dashboard).
 Each also runs standalone via `scripts/*.mjs`. **Moderation write-back** (`app.ts`,
 `MODERATION_SERVICE_SECRET`-gated, 503 until set): `POST /internal/moderation/apply` lets the
-`@agora/moderator` service stamp `moderationStatus` + `moderatedByType="client"` on an entity/comment
+`services/scorer` service stamp `moderationStatus` + `moderatedByType="client"` on an entity/comment
 (`lib/client-moderation.ts`). **Rate limiting** (`lib/rate-limit.ts` + `middleware/rate-limit.ts`,
 mounted on `/v7/*`; stricter cap on `/auth/*`) keys on the real client IP read `RATE_LIMIT_TRUSTED_HOPS`
 hops from the right of `X-Forwarded-For` (spoof-resistant), via a pluggable store: in-process by
@@ -299,7 +296,7 @@ journal order and written **idempotently** (`create extension if not exists`, `c
   in the recursive CTE; `match_content(…, p_viewer, p_privileged, p_hide_removed)` filters semantic-
   search hits by space-readability + chat membership + moderation status (operators bypass).
 - `0020_…` — `moderation_analyses` table + `moderation_verdict` enum (allow/block/review): the
-  `@agora/moderator` service's automated-moderation audit trail + AI-flag queue.
+  `services/scorer` service's automated-moderation audit trail + AI-flag queue.
 - `0021_…` — (added `projects.moderation_webhook_url` + `moderation_webhook_secret` for the old
   per-project moderation notifier; **dropped again by `0035`** — `services/scorer` uses pgmq, not a
   webhook, so the columns are dead. See `docs/SCORER.md`.)
@@ -404,6 +401,6 @@ migrator the container uses; its journal is the `drizzle` schema.)
 
 `apps/api/src/routes/entities.ts` is the reference for a fully-built domain router.
 
-License: **AGPL-3.0-only** for the server (`@agora/api`/`admin`/`moderator` + `services/*`);
+License: **AGPL-3.0-only** for the server (`@agora/api`/`admin` + `services/*`, e.g. `services/scorer`);
 `@agora-server/contract` stays **Apache-2.0** as the permissive wire-contract surface the SDK builds on.
 Contributions are DCO-signed (`git commit -s`), no CLA. Community edition is AGPL-3.0 forever.

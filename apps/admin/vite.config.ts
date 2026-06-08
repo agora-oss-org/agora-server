@@ -39,7 +39,7 @@ export default defineConfig(({ mode }) => {
       proxy: {
         "/v7": { target: "http://localhost:4000", changeOrigin: true },
         "/socket.io": { target: "http://localhost:4000", ws: true, changeOrigin: true },
-        // The @agora/moderator service (default :4001). Rewrite the /moderator prefix to /v1 so it
+        // The services/scorer service (default :4001). Rewrite the /moderator prefix to /v1 so it
         // lands on the moderator's own /v1/:projectId/moderation/* routes (the admin client builds
         // /moderator/:projectId/...). In prod, point this at the moderator host.
         "/moderator": {

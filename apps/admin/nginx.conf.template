@@ -33,7 +33,7 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
-    # Reverse-proxy the @agora/moderator service. Rewrite /moderator → /v1 so it lands on the
+    # Reverse-proxy the services/scorer service. Rewrite /moderator → /v1 so it lands on the
     # moderator's own /v1/:projectId/moderation/* routes (matches the vite dev proxy rewrite).
     location /moderator/ {
         set $moderator_upstream "${MODERATOR_UPSTREAM}";

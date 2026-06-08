@@ -56,8 +56,8 @@ function appStats(m: DashboardMetrics["appMetrics"]): Stat[] {
 // ── Supabase/infra: the one billing-ish figure the Management API actually exposes is nil, so we
 // read whole-instance Postgres size directly. Operator-only (instance-wide, not per-project). Egress
 // + Auth MAU are deliberately absent — the Management API doesn't expose them, so we don't fake them.
-// ── Automated moderation: aggregates from the @agora/moderator service (moderation_analyses). Shown
-// only when the moderator is reachable + the caller is an operator (the stats endpoint is gated). ──
+// ── Automated moderation: aggregates from the services/scorer service (moderation_analyses). Shown
+// only when the scorer is reachable + the caller is an operator (the stats endpoint is gated). ──
 function moderationStats(s: ModerationStats): Stat[] {
   return [
     { label: "Moderations", value: fmtNum(s.total), description: "Total automated assessments created", icon: Bot },
@@ -164,7 +164,7 @@ export function DashboardPage() {
           {moderation.data ? (
             <Section
               title="Automated moderation"
-              hint="From the @agora/moderator service"
+              hint="From the scorer service"
               badge={<Badge variant="success">Live</Badge>}
             >
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">

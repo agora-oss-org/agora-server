@@ -1,5 +1,5 @@
 // Applies an AUTOMATED ("client") moderation decision to an entity or comment. This is the write
-// path behind POST /internal/moderation/apply, called by the @agora/moderator service when it
+// path behind POST /internal/moderation/apply, called by the services/scorer service when it
 // auto-acts on a high-confidence violation. Mirrors the space moderation handlers' column writes but
 // stamps moderatedByType="client" (vs "user" for human decisions) and no moderatedById (no human).
 //
