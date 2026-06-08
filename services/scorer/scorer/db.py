@@ -96,7 +96,9 @@ insert into moderation_analyses
    model, auto_actioned, prompt_tokens, completion_tokens, source_msg_id)
 values
   ($1, $2::reaction_target, $3, $4, $5::moderation_verdict, $6, $7, $8, $9, $10, $11, $12, $13)
-on conflict (source_msg_id) do nothing
+-- the dedup index is PARTIAL (migration 0028: `where source_msg_id is not null`), so the ON CONFLICT
+-- arbiter must repeat that predicate to match it. NULL source_msg_id (on-demand /analyze) → no conflict.
+on conflict (source_msg_id) where source_msg_id is not null do nothing
 returning *
 """
 
