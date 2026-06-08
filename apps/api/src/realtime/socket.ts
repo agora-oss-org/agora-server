@@ -9,6 +9,7 @@ import { conversationMembers } from "../db/schema/index.js";
 import type { Server as HttpServer } from "node:http";
 import { jwtVerify } from "jose";
 import { env } from "../lib/env.js";
+import { hasActiveSuspension } from "../lib/suspensions.js";
 import { attachSecureRealtime } from "./secure-socket.js";
 
 // ── Event payload contracts (mirror @replyke/core/src/types/socket.ts) ──────────
@@ -76,6 +77,11 @@ export function attachRealtime(httpServer: HttpServer) {
       if (!token || !projectId) return next(new Error("unauthorized"));
       const { payload } = await jwtVerify(token, accessSecret, { algorithms: ["HS256"] });
       if (!payload.sub) return next(new Error("unauthorized"));
+      // Enforce suspensions on the realtime path too (mirrors middleware/auth.ts requireAuth):
+      // a suspended user must not keep receiving live events. Operators bypass (no self-lockout).
+      if (payload.operator !== true && (await hasActiveSuspension(payload.sub))) {
+        return next(new Error("suspended"));
+      }
       socket.data.userId = payload.sub;
       socket.data.projectId = projectId;
       next();

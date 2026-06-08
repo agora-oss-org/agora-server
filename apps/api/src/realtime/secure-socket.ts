@@ -13,6 +13,7 @@ import { db } from "../db/index.js";
 import { secureConversationMembers, secureDevices } from "../db/schema/index.js";
 import { jwtVerify } from "jose";
 import { env } from "../lib/env.js";
+import { hasActiveSuspension } from "../lib/suspensions.js";
 import type { SecureMessageModel, SecureHandshakeModel } from "@agora-server/contract";
 
 export interface SecureServerToClientEvents {
@@ -73,6 +74,11 @@ export function attachSecureRealtime(io: Server): SecureNamespace {
       if (!token || !projectId) return next(new Error("unauthorized"));
       const { payload } = await jwtVerify(token, accessSecret, { algorithms: ["HS256"] });
       if (!payload.sub) return next(new Error("unauthorized"));
+      // Enforce suspensions here too — the /secure namespace must not let a suspended user keep
+      // receiving E2E traffic (mirrors middleware/auth.ts requireAuth). Operators bypass.
+      if (payload.operator !== true && (await hasActiveSuspension(payload.sub))) {
+        return next(new Error("suspended"));
+      }
       socket.data.userId = payload.sub;
       socket.data.projectId = projectId;
       next();
