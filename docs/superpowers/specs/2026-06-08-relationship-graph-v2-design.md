@@ -224,6 +224,92 @@ No `moderation_analyses` writes occur on the graph-only paths, so the `0028` ded
   Neo4j) — add a reaction + a follow and assert the `INTERACTED` / `FOLLOWS` edges appear, and that an
   unfollow / un-react deletes them.
 
+## 8a. Addendum — the `CONNECTED` structural edge (v2.1)
+
+**Status:** design approved, pre-implementation. **Added:** 2026-06-08 (after the v2 smoke).
+
+The initial v2 modeled `follows` but missed the **`connections`** table — a *second, distinct*
+structural relationship. They are different social primitives and get **different edge labels** (one
+fact each), consistent with the two-edge-type principle:
+
+| | `FOLLOWS` (done) | `CONNECTED` (this addendum) |
+|---|---|---|
+| source | `follows` table | `connections` table |
+| shape | **asymmetric**, one-way | **mutual** (queried undirected) |
+| lifecycle | instant (insert / delete) | **stateful** — `connection_status` `pending → connected → declined` |
+| edge exists when | row exists | **only while `status = 'connected'`** |
+| sentiment | none (structural) | none (structural) |
+
+`connections` columns (`apps/api/src/db/schema/spaces.ts`): `requester_id`, `addressee_id`,
+`status` (`pending`/`connected`/`declined`), `unique(project_id, requester_id, addressee_id)`,
+`check requester_id <> addressee_id` (no self).
+
+### The lifecycle gate (the one subtlety)
+
+A `pending` request is **not** a relationship — no edge. The edge is created when the row *becomes*
+`connected` and removed when it *leaves* `connected` (declined) or is deleted:
+
+| event | edge action |
+|---|---|
+| INSERT `status='connected'` (direct connect) | **add** (`MERGE`) |
+| INSERT `status='pending'` | none |
+| UPDATE `pending → connected` (request accepted) | **add** (`MERGE`) |
+| UPDATE `connected → declined` (or any non-connected) | **remove** (`DELETE`) |
+| UPDATE `pending → declined`, or message-only edit | none |
+| DELETE a `connected` row | **remove** (`DELETE`) |
+| DELETE a `pending`/`declined` row | none |
+
+`declined` is treated as **"no edge,"** not a negative signal — declining a request reads as "no
+relationship," not hostility, and there's no `blocked` status in the enum. (Revisit if one is added.)
+
+### Migration `0037_scorer_connection_enqueue.sql`
+
+A new migration (0036 is already applied — don't edit it). Triggers on `connections`, gated by `WHEN`
+so the function only runs on edge-relevant transitions; a single `enqueue_connection_job()` decides
+`add` vs `remove`:
+
+- INSERT trigger — `WHEN (new.status = 'connected')` → add
+- UPDATE trigger — `WHEN (old.status is distinct from new.status and (new.status = 'connected' or old.status = 'connected'))` → fn: `new.status='connected'` ? add : remove
+- DELETE trigger — `WHEN (old.status = 'connected')` → remove
+
+Payload: `{kind:'connection', op:'add'|'remove', requesterId, addresseeId, projectId}`.
+
+### Edge schema (Neo4j) — directed-stored, queried undirected
+
+```cypher
+-- add
+MERGE (a:User {id:$requester_id})
+MERGE (b:User {id:$addressee_id})
+MERGE (a)-[r:CONNECTED]->(b)
+  ON CREATE SET r.createdAt = timestamp()
+SET r.at = timestamp()
+-- remove
+MATCH (a:User {id:$requester_id})-[r:CONNECTED]->(b:User {id:$addressee_id}) DELETE r
+```
+
+Stored directed `requester → addressee` (provenance: who initiated), but **mutual** in meaning — query
+with `MATCH (a)-[:CONNECTED]-(b)` (undirected). `unique(requester, addressee)` → one row → one edge;
+`MERGE`/`DELETE` are idempotent under pgmq redelivery, exactly like `FOLLOWS`.
+
+### File-by-file (addendum)
+
+- **New:** `apps/api/drizzle/0037_scorer_connection_enqueue.sql` + journal entry.
+- **Modified:**
+  - `scorer/models.py` — add `ConnectionJob`.
+  - `worker/neo4j_writer.py` — `write_connection_edge`, `delete_connection_edge`.
+  - `worker/pipeline.py` — `process_connection_job`; `dispatch_job` routes `kind == "connection"`.
+  - `tests/test_dispatch.py` — connection add/remove routing.
+  - `docs/SCORER.md` (data flow, pgmq triggers, v2 structural layer, smoke step 4b), `CHANGELOG.md`.
+- **No change** to `consumer.py` — `connection` is graph-only, already excluded from the content
+  dedup pre-check (which gates on `kind == "content"`).
+
+### Testing (addendum)
+
+- **Unit:** `dispatch_job` routes `connection` add → `write_connection_edge`, remove →
+  `delete_connection_edge` (mocked).
+- **Smoke:** insert a `pending` connection → assert **no** edge; update → `connected` → assert
+  `CONNECTED` edge appears (undirected match); update → `declined` (and/or delete) → assert it's gone.
+
 ## 9. Future (post-v2 — deferred, YAGNI)
 
 - **`RELATES_TO {strength}`** — if a single materialized number is later wanted, derive it from the two

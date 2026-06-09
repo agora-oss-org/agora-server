@@ -9,20 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **`services/scorer` relationship graph v2 — the user→user interaction graph.** The Neo4j graph now
-  records two distinct edge types (combined only at read time, never blended): a scored, append-log
+  records distinct edge types (combined only at read time, never blended): a scored, append-log
   **`INTERACTED`** edge (`actor → recipient`, `MERGE`-keyed on the source id so pgmq redelivery / edits
-  re-`SET` one edge) and a structural **`FOLLOWS`** edge mirroring the `follows` table. The actor is the
-  comment/reply/reaction author; the recipient is the **parent-content author** (comment→entity author,
-  reply→parent-comment author, reaction→content author). Text interactions carry the relationship-RoBERTa
-  sentiment; reactions derive it from the reaction *type* (`scorer/reaction_sentiment.py`). Reaction
-  removal / unfollow **deletes** the edge (retractable); self-interactions and chat-message-target
-  reactions are skipped (chat is E2E-encrypted, out of scope). New migration
-  `0036_scorer_graph_v2_enqueue.sql` adds `reactions` (insert/delete/retype-gated) + `follows`
-  (insert/delete) enqueue triggers onto the **same** `scorer_jobs` queue with a `kind` discriminator;
-  the worker's `dispatch_job` routes content (scored) vs. graph-only jobs. Unit-tested **and
-  smoke-validated end-to-end** against live Postgres + Neo4j (correctly-directed actor→recipient edges
-  for comment/reply/reaction/follow, type-mapped reaction sentiment incl. negative cases, edge deletion
-  on reaction-removal/unfollow, and the self-interaction + chat-message-target skips). Design spec:
+  re-`SET` one edge) plus two structural edges — **`FOLLOWS`** (asymmetric, mirrors the `follows` table)
+  and **`CONNECTED`** (mutual, mirrors the `connections` table). The actor is the comment/reply/reaction
+  author; the recipient is the **parent-content author** (comment→entity author, reply→parent-comment
+  author, reaction→content author). Text interactions carry the relationship-RoBERTa sentiment; reactions
+  derive it from the reaction *type* (`scorer/reaction_sentiment.py`). Reaction removal / unfollow /
+  disconnect **delete** the edge (retractable); self-interactions and chat-message-target reactions are
+  skipped (chat is E2E-encrypted, out of scope). New migration `0036_scorer_graph_v2_enqueue.sql` adds
+  `reactions` (insert/delete/retype-gated) + `follows` (insert/delete) triggers;
+  `0037_scorer_connection_enqueue.sql` adds `connections` triggers **gated on the `pending → connected →
+  declined` lifecycle** so the `CONNECTED` edge exists only while `status='connected'` (created on
+  accept/direct-connect, deleted on disconnect — which is a row DELETE, not a status flip; `declined` =
+  no edge). All enqueue onto the **same** `scorer_jobs` queue with a `kind` discriminator
+  (`reaction`/`follow`/`connection`); the worker's `dispatch_job` routes content (scored) vs. graph-only
+  jobs. Being connected does **not** imply following (and vice-versa) — only `follows` drives the feed.
+  Unit-tested **and smoke-validated end-to-end** against live Postgres + Neo4j (correctly-directed edges
+  for comment/reply/reaction/follow/connection, type-mapped reaction sentiment incl. negative cases, the
+  `CONNECTED` status-gate, edge deletion on reaction-removal/unfollow/disconnect, and the
+  self-interaction + chat-message-target skips). Design spec (incl. §8a):
   `docs/superpowers/specs/2026-06-08-relationship-graph-v2-design.md`.
 
 ## [0.11.0] - 2026-06-08

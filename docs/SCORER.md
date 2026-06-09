@@ -4,11 +4,12 @@
 > (+ LISTEN/NOTIFY), Claude Haiku adjudication + API write-back, the operator-complete admin surface, and
 > the Neo4j relationship graph all run against real infra: a toxic comment was scored `block`, auto-removed
 > through the API, and recorded; a benign one `allow`ed; both wrote signed sentiment edges to Neo4j. The
-> old `apps/moderator` is retired. The user→user interaction graph (**v2** — `INTERACTED`/`FOLLOWS` edges
-> from comments, replies, reactions, and follows) is **LIVE — validated end-to-end**: a comment, a reply,
-> a reaction, and a follow each wrote the correctly-directed actor→recipient edge (positive *and* negative
-> sentiment, upvote → +1.0); a reaction-removal and an unfollow deleted their edge; a self-interaction and
-> a chat-message-target reaction were skipped.
+> old `apps/moderator` is retired. The user→user interaction graph (**v2** — `INTERACTED` behavioral edges
+> + `FOLLOWS`/`CONNECTED` structural edges from comments, replies, reactions, follows, and connections) is
+> **LIVE — validated end-to-end**: a comment, a reply, a reaction, a follow, and a connection each wrote
+> the correctly-directed edge (positive *and* negative sentiment, upvote → +1.0; the `CONNECTED` edge
+> appears only on `status='connected'`); a reaction-removal, an unfollow, and a disconnect deleted their
+> edge; a self-interaction and a chat-message-target reaction were skipped.
 
 `services/scorer` is Agora's content scoring + moderation subsystem. It **replaces `apps/moderator`**
 (the Node/Hono LLM-over-webhooks service) with an **async, post-publish** Python pipeline: content
@@ -48,11 +49,12 @@ compose DNS (`http://scorer-toxicity:8001`).
 ## Data flow
 
 ```
-entity/comment INSERT/UPDATE · reaction INSERT/DELETE/retype · follow INSERT/DELETE
+entity/comment INSERT/UPDATE · reaction INS/DEL/retype · follow INS/DEL · connection status→/from connected
    │  Postgres triggers → pgmq.send('scorer_jobs', {kind, …})   (atomic with the write)
-   │    • content (0027): {targetType,targetId,projectId}          → scored
-   │    • reaction (0036): {kind:'reaction',op,reactionId,…}        → graph-only
-   │    • follow   (0036): {kind:'follow',op,followerId,followedId} → graph-only
+   │    • content    (0027): {targetType,targetId,projectId}             → scored
+   │    • reaction   (0036): {kind:'reaction',op,reactionId,…}           → graph-only
+   │    • follow     (0036): {kind:'follow',op,followerId,followedId}    → graph-only
+   │    • connection (0037): {kind:'connection',op,requesterId,addresseeId} → graph-only
    ▼
 pgmq queue 'scorer_jobs'   (Supabase pgmq; at-least-once, visibility-timeout redelivery)
    ▼
@@ -69,9 +71,10 @@ scorer-worker ── poll pgmq.read() ──► dispatch_job(message) by `kind`:
    │     record moderation_analyses  (append; dedup on pgmq msg_id)  ← admin AI-flag queue source
    │     MERGE Content/AUTHORED + (comment/reply) INTERACTED edge into Neo4j   ← "The relationship graph"
    │
-   ├─ reaction → resolve recipient (parent-content author); MERGE INTERACTED {sentiment=f(type)}
-   │             (op=remove → DELETE the edge by reactionId; idempotent)
-   ├─ follow   → MERGE / DELETE the structural FOLLOWS edge
+   ├─ reaction   → resolve recipient (parent-content author); MERGE INTERACTED {sentiment=f(type)}
+   │               (op=remove → DELETE the edge by reactionId; idempotent)
+   ├─ follow     → MERGE / DELETE the structural FOLLOWS edge
+   ├─ connection → MERGE / DELETE the structural CONNECTED edge (mutual; only while status=connected)
    │
    │   pgmq.delete(msg_id)
    └── ALSO serves /v1/:projectId/moderation/* (operator JWT) — identical shapes to the old moderator
@@ -90,11 +93,14 @@ scorer-worker ── poll pgmq.read() ──► dispatch_job(message) by `kind`:
   trigger-maintained count/reaction bumps do **not** re-enqueue. This is what prevents a write-back →
   re-score loop.
 - **Graph-job triggers (v2).** Migration `0036_scorer_graph_v2_enqueue.sql` adds triggers on `reactions`
-  (INSERT/DELETE, plus UPDATE **gated on `reaction_type` changing**) and `follows` (INSERT/DELETE) that
-  enqueue onto the **same** queue with a **`kind` discriminator** (`reaction`/`follow`); the worker's
-  `dispatch_job` routes by `kind`. These feed only the Neo4j graph (no scoring, no `moderation_analyses`
-  row) — see "The relationship graph" → v2. They enqueue regardless of whether `NEO4J_*` is set (the
-  worker no-ops the job when Neo4j is off); the documented "off" gate is dropping those triggers.
+  (INSERT/DELETE, plus UPDATE **gated on `reaction_type` changing**) and `follows` (INSERT/DELETE);
+  `0037_scorer_connection_enqueue.sql` adds triggers on `connections` (INSERT/UPDATE/DELETE, **gated** so
+  they only fire on transitions **into or out of `status='connected'`** — a `pending`/`declined` row
+  produces no edge). All enqueue onto the **same** queue with a **`kind` discriminator**
+  (`reaction`/`follow`/`connection`); the worker's `dispatch_job` routes by `kind`. These feed only the
+  Neo4j graph (no scoring, no `moderation_analyses` row) — see "The relationship graph" → v2. They enqueue
+  regardless of whether `NEO4J_*` is set (the worker no-ops the job when Neo4j is off); the documented
+  "off" gate is dropping those triggers.
 - **At-least-once → idempotency contract.** pgmq redelivers a message if the worker dies before
   `pgmq.delete` (visibility-timeout). So every downstream write is idempotent: the `moderation_analyses`
   insert is stamped with the pgmq **`source_msg_id`** and uses `ON CONFLICT (source_msg_id) DO NOTHING`
@@ -167,13 +173,14 @@ interaction graph** is **v2** — see below.
 
 ### v2 — the user→user interaction graph
 
-> **LIVE — validated end-to-end** (migration `0036`, worker `dispatch_job` + the reaction/follow handlers,
-> `neo4j_writer` edge writers). The smoke (step 4b below) confirmed correctly-directed actor→recipient
-> edges for comment/reply/reaction/follow, type-mapped reaction sentiment, edge deletion on
-> reaction-removal/unfollow, and the self-interaction + message-target skips. Design spec:
+> **LIVE — validated end-to-end** (migrations `0036`/`0037`, worker `dispatch_job` + the
+> reaction/follow/connection handlers, `neo4j_writer` edge writers). The smoke (step 4b below) confirmed
+> correctly-directed edges for comment/reply/reaction/follow/connection, type-mapped reaction sentiment,
+> the `CONNECTED` status-gate (no edge while `pending`), edge deletion on reaction-removal/unfollow/
+> disconnect, and the self-interaction + message-target skips. Design spec (incl. §8a CONNECTED):
 > `docs/superpowers/specs/2026-06-08-relationship-graph-v2-design.md`.
 
-Two **distinct edge types**, kept separate on purpose (one fact each) and combined only at *read* time —
+**Distinct edge types**, kept separate on purpose (one fact each) and combined only at *read* time —
 never blended into one overloaded edge:
 
 ```cypher
@@ -181,8 +188,12 @@ never blended into one overloaded edge:
 // redelivery is idempotent and a content edit updates that one edge in place.
 (actor:User)-[:INTERACTED {kind:'comment'|'reply'|'reaction', sentiment, sourceId, at}]->(recipient:User)
 
-// structural — UNscored. Mirrors the follows table exactly: MERGE on follow, DELETE on unfollow.
+// structural — UNscored, asymmetric. Mirrors the follows table: MERGE on follow, DELETE on unfollow.
 (follower:User)-[:FOLLOWS {at}]->(followee:User)
+
+// structural — UNscored, MUTUAL (stored directed requester→addressee, queried undirected). Mirrors the
+// connections table, but exists ONLY while status='connected' (MERGE on accept, DELETE on disconnect).
+(requester:User)-[:CONNECTED {at}]->(addressee:User)
 ```
 
 - **Recipient resolution** (the new bit): the *actor* is the comment/reply/reaction author; the
@@ -199,15 +210,21 @@ never blended into one overloaded edge:
   `sad` is left **neutral** (empathy as often as disapproval); an unknown/future type → `0.0`.
   Reaction *removal* / unfollow **deletes** the edge (these are retractable states); a comment edit
   re-`SET`s the edge, a comment deletion leaves it (it happened) — consistent with the v1 `AUTHORED` edge.
-- **Why two edge types (not one).** They're genuinely different facts: `INTERACTED` is a *behavioral
+- **Why distinct edge types (not one).** They're genuinely different facts: `INTERACTED` is a *behavioral
   event* — append-only, idempotent, can be **negative**, many per pair, sourced from the content
-  pipeline; `FOLLOWS` is a *structural state* — at most one per pair, inherently positive, **retractable**
-  (an unfollow deletes it), and never passes through the scorer's brain (there's no text). Folding a
-  retractable structural state into an append-log of scored events creates lifecycle confusion. So:
-  separate labels, each with one clear meaning.
+  pipeline; `FOLLOWS`/`CONNECTED` are *structural state* — at most one per pair, **retractable**, never
+  through the scorer's brain (no text). Folding a retractable structural state into an append-log of
+  scored events creates lifecycle confusion. So: separate labels, each with one clear meaning.
+- **`FOLLOWS` vs `CONNECTED` — two different structural ties.** They are decoupled in the app and
+  modeled separately: **`follows`** is *asymmetric/one-way/instant* and is the relationship that
+  **drives the feed** (`followedOnly` → `select followed_id from follows`); **`connections`** is
+  *mutual* with a lifecycle (`pending → connected → declined`) and does **not** touch the feed. A
+  `CONNECTED` edge exists **only while `status='connected'`** (created on accept/direct-connect, deleted
+  on disconnect — which is a row DELETE, not a status flip). `declined` = no edge (not a negative
+  signal; the enum has no `blocked`). Being connected does **not** imply following, and vice-versa.
 - **"How warmly does A relate to B?"** is a **query-time** combination (e.g.
-  `avg(INTERACTED.sentiment) · saturate(count)` plus a `FOLLOWS` bonus) — the weighting lives in the
-  *consumer*, not baked into an ambiguous edge.
+  `avg(INTERACTED.sentiment) · saturate(count)` plus `FOLLOWS`/`CONNECTED` bonuses) — the weighting
+  lives in the *consumer*, not baked into an ambiguous edge.
 
 (Chat/DMs can't feed this graph: secure chat is end-to-end-encrypted, so the server has no message
 plaintext to score.) The v1 schema is a deliberate, easily-revised starting point.
@@ -302,7 +319,7 @@ docker compose up -d agora scorer-toxicity scorer-relationship scorer-worker neo
 `SCORER_LISTEN_DATABASE_URL` (:5432, for the NOTIFY wake-up), `ANTHROPIC_API_KEY` (else gray-zone → review),
 `NEO4J_*`.
 
-**2. Migrate** (idempotent; applies `0027`/`0028`/`0033` + the v2 graph triggers `0036`):
+**2. Migrate** (idempotent; applies `0027`/`0028`/`0033` + the v2 graph triggers `0036`/`0037`):
 ```bash
 docker compose run --rm agora node scripts/migrate.mjs
 ```
@@ -337,10 +354,17 @@ psql "$DATABASE_URL" -c "insert into reactions (project_id, target_type, target_
 # follow:
 psql "$DATABASE_URL" -c "insert into follows (project_id, follower_id, followed_id)
   values ('11111111-1111-1111-1111-111111111111','<a-uuid>','<b-uuid>');"
+# connection (CONNECTED edge appears ONLY when status='connected'): insert pending → no edge;
+# then accept (→ connected) → edge appears; then disconnect (DELETE the row) → edge gone.
+psql "$DATABASE_URL" -c "insert into connections (project_id, requester_id, addressee_id, status)
+  values ('11111111-1111-1111-1111-111111111111','<a-uuid>','<b-uuid>','pending');"   # no edge yet
+psql "$DATABASE_URL" -c "update connections set status='connected', responded_at=now()
+  where requester_id='<a-uuid>' and addressee_id='<b-uuid>';"                          # → edge
 # Neo4j → the user→user edges (http://localhost:7474):
 #   MATCH (a:User)-[r:INTERACTED]->(b:User) RETURN a.id, r.kind, r.sentiment, r.sourceId, b.id LIMIT 20;
 #   MATCH (a:User)-[r:FOLLOWS]->(b:User) RETURN a.id, b.id LIMIT 20;
-# then DELETE the reaction / follow row and confirm the matching edge disappears (retractable).
+#   MATCH (a:User)-[r:CONNECTED]-(b:User) RETURN a.id, b.id LIMIT 20;   -- undirected (mutual)
+# then DELETE the reaction / follow / connected row and confirm the matching edge disappears (retractable).
 ```
 
 **5. ⚠️ Watch for the real-infra bugs** (fix before trusting it):
@@ -367,13 +391,15 @@ source retired**.
 **Remaining:** none — the REST surface and the scoring/graph pipeline are feature-complete and the v2
 graph is smoke-validated end-to-end.
 
-**Recently done:** ✅ **Relationship graph v2** — the user→user interaction graph. Two distinct edge
-types: the scored, append-log `INTERACTED` edge (comments/replies via the content pipeline + reactions
-with type-derived sentiment, recipient = parent-content author) and the structural `FOLLOWS` edge
-(mirrors the `follows` table). New enqueue triggers (migration `0036`) feed the same pgmq queue with a
-`kind` discriminator; the worker's `dispatch_job` routes content vs. graph-only jobs. Unit-tested **and
-smoke-validated end-to-end** (correctly-directed edges for comment/reply/reaction/follow, type-mapped
-reaction sentiment, edge deletion on reaction-removal/unfollow, self + message-target skips). See "The
+**Recently done:** ✅ **Relationship graph v2** — the user→user interaction graph. Edge types: the
+scored, append-log `INTERACTED` edge (comments/replies via the content pipeline + reactions with
+type-derived sentiment, recipient = parent-content author) and two structural edges — `FOLLOWS`
+(asymmetric, mirrors `follows`) and `CONNECTED` (mutual, mirrors `connections`, exists only while
+`status='connected'`; migration `0037`). New enqueue triggers (migrations `0036`/`0037`) feed the same
+pgmq queue with a `kind` discriminator; the worker's `dispatch_job` routes content vs. graph-only jobs.
+Unit-tested **and smoke-validated end-to-end** (correctly-directed edges for
+comment/reply/reaction/follow/connection, type-mapped reaction sentiment, the `CONNECTED` status-gate,
+edge deletion on reaction-removal/unfollow/disconnect, self + message-target skips). See "The
 relationship graph" → v2 and the design spec. · ✅ **ops polish** — a Python
 CI job (ruff + mypy + pytest) in `.github/workflows/ci.yml`;
 the scorer images (`agora-scorer-worker` + `agora-scorer-model-server`) added to `docker-publish.yml` as
