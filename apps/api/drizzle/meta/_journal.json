@@ -253,6 +253,13 @@
       "when": 1780911112412,
       "tag": "0035_drop_moderation_webhook_cols",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1780997512412,
+      "tag": "0036_scorer_graph_v2_enqueue",
+      "breakpoints": true
     }
   ]
 }

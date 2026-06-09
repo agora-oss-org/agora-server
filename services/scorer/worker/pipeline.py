@@ -10,17 +10,23 @@ the pgmq ``msg_id`` for dedup); the admin ``/analyze`` endpoint calls the core w
 
 from __future__ import annotations
 
-from typing import Optional, cast
+from typing import Any, Optional, cast
 
 import asyncpg
 
 from scorer.auto_action import AutoActionThresholds, ModerationVerdict, ReportTargetType, decide_auto_action
 from scorer.config import Settings
-from scorer.db import fetch_content, get_moderator_config
+from scorer.db import (
+    fetch_content,
+    get_moderator_config,
+    resolve_comment_interaction,
+    resolve_reaction_interaction,
+)
 from scorer.haiku import assess as haiku_assess
 from scorer.logging import get_logger, log
-from scorer.models import ScoreJob
+from scorer.models import FollowJob, ReactionJob, ScoreJob
 from scorer.reason import moderation_reason_text
+from scorer.reaction_sentiment import reaction_sentiment
 
 from . import analyses, model_clients, neo4j_writer, writeback
 
@@ -38,9 +44,14 @@ async def assess_and_record(
     context: Optional[str] = None,
     author_id: Optional[str] = None,
     source_msg_id: Optional[int] = None,
+    write_interaction: bool = False,
 ) -> Optional[asyncpg.Record]:
     """Run the full cascade over ``text`` and record one analysis. Returns the inserted row (None on a
-    dedup conflict). Idempotent: the insert dedups on ``source_msg_id``; write-back + MERGE are idempotent."""
+    dedup conflict). Idempotent: the insert dedups on ``source_msg_id``; write-back + MERGE are idempotent.
+
+    ``write_interaction`` (queue content path only) also projects the user→user INTERACTED edge for a
+    comment/reply — off for the on-demand ``/analyze`` path, whose operator-provided text may not match
+    the stored row."""
     toxicity, relationship = await model_clients.score_both(settings, text, context)
     cfg = await get_moderator_config(settings, project_id)
 
@@ -95,10 +106,11 @@ async def assess_and_record(
         ),
     )
 
-    # ── relationship edge → Neo4j ──────────────────────────────────────────────
+    # ── relationship edges → Neo4j ─────────────────────────────────────────────
     # Signed quality in [-1, 1] (P(positive) - P(negative)); fall back to top score for non-sentiment models.
     rel = relationship.scores
     rel_quality = (rel.get("positive", 0.0) - rel.get("negative", 0.0)) if rel else relationship.score
+    # v1: author → content (every scored item).
     await neo4j_writer.write_relationship_edge(
         settings,
         project_id=project_id,
@@ -107,13 +119,26 @@ async def assess_and_record(
         author_id=author_id,
         relationship_score=rel_quality,
     )
+    # v2: actor → recipient INTERACTED edge — comments/replies only (an entity post has no recipient).
+    if write_interaction and target_type == "comment":
+        ctx = await resolve_comment_interaction(settings, target_id)
+        if ctx is not None:
+            await neo4j_writer.write_interaction_edge(
+                settings,
+                project_id=project_id,
+                actor_id=ctx.actor_id,
+                recipient_id=ctx.recipient_id,
+                kind=ctx.kind,
+                source_id=target_id,
+                sentiment=rel_quality,
+            )
 
     log(logger, "info", "assessed", target_id=target_id, verdict=verdict, auto_actioned=auto_actioned)
     return row
 
 
 async def process_job(settings: Settings, job: ScoreJob, msg_id: int | None = None) -> None:
-    """Consume one pgmq job: fetch the content text by id, then run the cascade core."""
+    """Consume one pgmq content job: fetch the content text by id, then run the cascade core."""
     content = await fetch_content(settings, job.target_type, job.target_id)
     if content is None or not content.text:
         log(logger, "warn", "no content text for job (skipping)", target_id=job.target_id)
@@ -127,4 +152,59 @@ async def process_job(settings: Settings, job: ScoreJob, msg_id: int | None = No
         text=content.text,
         author_id=content.author_id,
         source_msg_id=msg_id,
+        write_interaction=True,
     )
+
+
+async def process_reaction_job(settings: Settings, job: ReactionJob) -> None:
+    """Project a reaction add/remove/retype onto the user→user INTERACTED graph (no scoring — sentiment
+    is derived from the reaction type). ``remove`` deletes the edge by reaction id; ``add`` resolves the
+    recipient and MERGEs the edge."""
+    if job.op == "remove":
+        await neo4j_writer.delete_interaction_edge(settings, source_id=job.reaction_id)
+        return
+    ctx = await resolve_reaction_interaction(settings, job.reaction_id)
+    if ctx is None:
+        log(logger, "warn", "reaction gone/unresolvable (skipping)", reaction_id=job.reaction_id)
+        return
+    if ctx.recipient_id is None:
+        # chat-message reaction (out of scope) or the target's author is gone — no edge.
+        log(logger, "debug", "reaction has no graph recipient (skipping)", reaction_id=job.reaction_id)
+        return
+    await neo4j_writer.write_interaction_edge(
+        settings,
+        project_id=job.project_id,
+        actor_id=ctx.actor_id,
+        recipient_id=ctx.recipient_id,
+        kind="reaction",
+        source_id=job.reaction_id,
+        sentiment=reaction_sentiment(ctx.reaction_type or ""),
+    )
+
+
+async def process_follow_job(settings: Settings, job: FollowJob) -> None:
+    """Project a follow/unfollow onto the structural FOLLOWS graph."""
+    if job.op == "remove":
+        await neo4j_writer.delete_follow_edge(
+            settings, follower_id=job.follower_id, followed_id=job.followed_id
+        )
+    else:
+        await neo4j_writer.write_follow_edge(
+            settings, follower_id=job.follower_id, followed_id=job.followed_id
+        )
+
+
+def job_kind(message: dict[str, Any]) -> str:
+    """The job-kind discriminator; a pre-v2 payload without it is a ``content`` job."""
+    return str(message.get("kind", "content"))
+
+
+async def dispatch_job(settings: Settings, message: dict[str, Any], msg_id: int | None = None) -> None:
+    """Route one pgmq message to its handler by ``kind`` (content scoring vs. graph-only projection)."""
+    kind = job_kind(message)
+    if kind == "reaction":
+        await process_reaction_job(settings, ReactionJob(**message))
+    elif kind == "follow":
+        await process_follow_job(settings, FollowJob(**message))
+    else:
+        await process_job(settings, ScoreJob(**message), msg_id=msg_id)

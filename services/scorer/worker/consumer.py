@@ -18,10 +18,9 @@ from typing import Optional
 from scorer import pgmq
 from scorer.config import Settings
 from scorer.logging import get_logger, log
-from scorer.models import ScoreJob
 
 from . import analyses
-from .pipeline import process_job
+from .pipeline import dispatch_job, job_kind
 
 logger = get_logger("scorer.worker.consumer")
 
@@ -57,15 +56,21 @@ async def run_consumer(settings: Settings, stop: asyncio.Event, wake: Optional[a
                     log(logger, "warn", "poison message archived", msg_id=msg.msg_id, read_ct=msg.read_ct)
                     await pgmq.archive(settings, msg.msg_id)
                     continue
-                # Redelivery pre-check: if a prior delivery already recorded this msg_id, ack and skip
-                # — avoids re-scoring and a redundant Haiku call. (The ON CONFLICT insert is the
-                # correctness backstop; this just saves the work. read_ct == 1 on first delivery.)
-                if msg.read_ct > 1 and await analyses.analysis_exists_for_msg(settings, msg.msg_id):
+                # Redelivery pre-check (content jobs only): if a prior delivery already recorded this
+                # msg_id, ack and skip — avoids re-scoring and a redundant Haiku call. (The ON CONFLICT
+                # insert is the correctness backstop; this just saves the work. read_ct == 1 on first
+                # delivery.) Graph-only jobs (reaction/follow) write no analysis row and are idempotent
+                # by construction (MERGE/DELETE), so they skip the pre-check and just reprocess.
+                if (
+                    job_kind(msg.message) == "content"
+                    and msg.read_ct > 1
+                    and await analyses.analysis_exists_for_msg(settings, msg.msg_id)
+                ):
                     log(logger, "info", "already processed; acking redelivery", msg_id=msg.msg_id)
                     await pgmq.delete(settings, msg.msg_id)
                     continue
                 try:
-                    await process_job(settings, ScoreJob(**msg.message), msg_id=msg.msg_id)
+                    await dispatch_job(settings, msg.message, msg_id=msg.msg_id)
                     await pgmq.delete(settings, msg.msg_id)
                 except Exception as exc:  # noqa: BLE001 — keep the loop alive; message redelivers after vt
                     # Keep error-level clean (no payload/content/trace that might carry sensitive data);

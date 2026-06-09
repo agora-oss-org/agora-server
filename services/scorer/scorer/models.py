@@ -29,12 +29,34 @@ class CamelModel(BaseModel):
 
 
 class ScoreJob(CamelModel):
-    """The pgmq job payload enqueued by the Postgres trigger (id-only; worker fetches text)."""
+    """The pgmq content-scoring job (id-only; worker fetches text). ``kind`` defaults to ``"content"``
+    so a pre-v2 payload (no discriminator) still parses."""
 
+    kind: Literal["content"] = "content"
     target_type: ReportTargetType
     target_id: str
     project_id: str
     space_id: Optional[str] = None
+
+
+class ReactionJob(CamelModel):
+    """Graph job for a reaction add/remove/retype (migration 0036). No scoring — the INTERACTED edge's
+    sentiment is derived from the reaction type. ``remove`` deletes the edge by ``reactionId``."""
+
+    kind: Literal["reaction"]
+    op: Literal["add", "remove"]
+    reaction_id: str
+    project_id: str
+
+
+class FollowJob(CamelModel):
+    """Graph job for a follow/unfollow (migration 0036). Structural FOLLOWS edge — no scoring."""
+
+    kind: Literal["follow"]
+    op: Literal["add", "remove"]
+    follower_id: str
+    followed_id: str
+    project_id: str
 
 
 class UserSummary(CamelModel):

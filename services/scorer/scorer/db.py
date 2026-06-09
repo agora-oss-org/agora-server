@@ -88,6 +88,69 @@ async def fetch_content(settings: Settings, target_type: str, target_id: str) ->
     return ContentRow(text=row["content"] or "", space_id=row["space_id"], author_id=row["user_id"])
 
 
+# ── v2 interaction-graph recipient resolution (services/scorer relationship graph) ────────────────
+@dataclass
+class InteractionContext:
+    """The actor → recipient pair for a user→user INTERACTED edge. ``actor_id``/``recipient_id`` may be
+    None (anonymous/deleted author, or a reaction targeting a chat message) — the caller skips those."""
+
+    actor_id: Optional[str]
+    recipient_id: Optional[str]
+    kind: str  # 'comment' | 'reply' | 'reaction'
+    reaction_type: Optional[str] = None  # set for reactions only (drives the sentiment map)
+
+
+async def resolve_comment_interaction(
+    settings: Settings, comment_id: str
+) -> Optional[InteractionContext]:
+    """Actor + recipient + kind for a comment/reply. The recipient is the entity author (a top-level
+    comment) or the parent-comment author (a reply). None if the comment is gone."""
+    pool = await get_pool(settings)
+    row = await pool.fetchrow(
+        "select c.user_id as actor_id, "
+        "case when c.parent_id is null then e.user_id else p.user_id end as recipient_id, "
+        "case when c.parent_id is null then 'comment' else 'reply' end as kind "
+        "from comments c "
+        "join entities e on e.id = c.entity_id "
+        "left join comments p on p.id = c.parent_id "
+        "where c.id = $1",
+        comment_id,
+    )
+    if row is None:
+        return None
+    return InteractionContext(
+        actor_id=str(row["actor_id"]) if row["actor_id"] is not None else None,
+        recipient_id=str(row["recipient_id"]) if row["recipient_id"] is not None else None,
+        kind=str(row["kind"]),
+    )
+
+
+async def resolve_reaction_interaction(
+    settings: Settings, reaction_id: str
+) -> Optional[InteractionContext]:
+    """Actor + recipient + reaction_type for a reaction on an entity/comment. ``recipient_id`` is None
+    when the target is a chat message (``target_type='message'`` — out of the relationship graph's
+    scope) or its author is gone. None if the reaction row itself is gone (already removed)."""
+    pool = await get_pool(settings)
+    row = await pool.fetchrow(
+        "select r.user_id as actor_id, r.reaction_type as reaction_type, "
+        "case r.target_type "
+        "  when 'entity' then (select user_id from entities where id = r.target_id) "
+        "  when 'comment' then (select user_id from comments where id = r.target_id) "
+        "  else null end as recipient_id "
+        "from reactions r where r.id = $1",
+        reaction_id,
+    )
+    if row is None:
+        return None
+    return InteractionContext(
+        actor_id=str(row["actor_id"]) if row["actor_id"] is not None else None,
+        recipient_id=str(row["recipient_id"]) if row["recipient_id"] is not None else None,
+        kind="reaction",
+        reaction_type=str(row["reaction_type"]),
+    )
+
+
 # ── moderation_analyses: deduped append + redelivery pre-check ────────────────
 _INSERT_ANALYSIS = """
 insert into moderation_analyses
