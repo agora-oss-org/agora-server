@@ -4,7 +4,9 @@
 > (+ LISTEN/NOTIFY), Claude Haiku adjudication + API write-back, the operator-complete admin surface, and
 > the Neo4j relationship graph all run against real infra: a toxic comment was scored `block`, auto-removed
 > through the API, and recorded; a benign one `allow`ed; both wrote signed sentiment edges to Neo4j. The
-> old `apps/moderator` is retired. Remaining is the user→user graph **v2** — see the roadmap.
+> old `apps/moderator` is retired. The user→user interaction graph (**v2** — `INTERACTED`/`FOLLOWS` edges
+> from comments, replies, reactions, and follows) is **implemented + unit-tested**; its DB-bound recipient
+> resolution and Neo4j edge writes still want the real-infra smoke pass before "validated end-to-end".
 
 `services/scorer` is Agora's content scoring + moderation subsystem. It **replaces `apps/moderator`**
 (the Node/Hono LLM-over-webhooks service) with an **async, post-publish** Python pipeline: content
@@ -44,23 +46,31 @@ compose DNS (`http://scorer-toxicity:8001`).
 ## Data flow
 
 ```
-entity / comment  INSERT  (or content-changing UPDATE)
-   │  Postgres trigger "Trigger A" → pgmq.send('scorer_jobs', {targetType,targetId,projectId})
-   │  (atomic with the write — a job exists only if the row committed)
+entity/comment INSERT/UPDATE · reaction INSERT/DELETE/retype · follow INSERT/DELETE
+   │  Postgres triggers → pgmq.send('scorer_jobs', {kind, …})   (atomic with the write)
+   │    • content (0027): {targetType,targetId,projectId}          → scored
+   │    • reaction (0036): {kind:'reaction',op,reactionId,…}        → graph-only
+   │    • follow   (0036): {kind:'follow',op,followerId,followedId} → graph-only
    ▼
 pgmq queue 'scorer_jobs'   (Supabase pgmq; at-least-once, visibility-timeout redelivery)
    ▼
-scorer-worker ── poll pgmq.read() ──► per job:
-   │   fetch content text by id
-   │   asyncio.gather( toxicity:8001/score , relationship:8002/score )   ← parallel
-   │   cascade (toxicity score):
-   │       < grayzone_low   → allow
-   │       ≥ grayzone_high  → block (high confidence)
-   │       in between       → escalate to Claude Haiku (salvaged policy prompt + verdict schema)
-   │   decide_auto_action(verdict, confidence, thresholds)   ← salvaged pure fn
-   │   if removable + triggered → POST {API}/internal/moderation/apply (x-moderation-secret)
-   │   record moderation_analyses  (append; dedup on pgmq msg_id)  ← admin AI-flag queue source
-   │   MERGE relationship edge into Neo4j  (idempotent)            ← see "The relationship graph"
+scorer-worker ── poll pgmq.read() ──► dispatch_job(message) by `kind`:
+   │
+   ├─ content → fetch content text by id
+   │     asyncio.gather( toxicity:8001/score , relationship:8002/score )   ← parallel
+   │     cascade (toxicity score):
+   │         < grayzone_low   → allow
+   │         ≥ grayzone_high  → block (high confidence)
+   │         in between       → escalate to Claude Haiku (salvaged policy prompt + verdict schema)
+   │     decide_auto_action(verdict, confidence, thresholds)   ← salvaged pure fn
+   │     if removable + triggered → POST {API}/internal/moderation/apply (x-moderation-secret)
+   │     record moderation_analyses  (append; dedup on pgmq msg_id)  ← admin AI-flag queue source
+   │     MERGE Content/AUTHORED + (comment/reply) INTERACTED edge into Neo4j   ← "The relationship graph"
+   │
+   ├─ reaction → resolve recipient (parent-content author); MERGE INTERACTED {sentiment=f(type)}
+   │             (op=remove → DELETE the edge by reactionId; idempotent)
+   ├─ follow   → MERGE / DELETE the structural FOLLOWS edge
+   │
    │   pgmq.delete(msg_id)
    └── ALSO serves /v1/:projectId/moderation/* (operator JWT) — identical shapes to the old moderator
 ```
@@ -77,6 +87,12 @@ scorer-worker ── poll pgmq.read() ──► per job:
   `title` for entities) so the moderation write-back itself (which only touches `moderation_status`) and
   trigger-maintained count/reaction bumps do **not** re-enqueue. This is what prevents a write-back →
   re-score loop.
+- **Graph-job triggers (v2).** Migration `0036_scorer_graph_v2_enqueue.sql` adds triggers on `reactions`
+  (INSERT/DELETE, plus UPDATE **gated on `reaction_type` changing**) and `follows` (INSERT/DELETE) that
+  enqueue onto the **same** queue with a **`kind` discriminator** (`reaction`/`follow`); the worker's
+  `dispatch_job` routes by `kind`. These feed only the Neo4j graph (no scoring, no `moderation_analyses`
+  row) — see "The relationship graph" → v2. They enqueue regardless of whether `NEO4J_*` is set (the
+  worker no-ops the job when Neo4j is off); the documented "off" gate is dropping those triggers.
 - **At-least-once → idempotency contract.** pgmq redelivers a message if the worker dies before
   `pgmq.delete` (visibility-timeout). So every downstream write is idempotent: the `moderation_analyses`
   insert is stamped with the pgmq **`source_msg_id`** and uses `ON CONFLICT (source_msg_id) DO NOTHING`
@@ -145,10 +161,61 @@ MERGE (u)-[:AUTHORED]->(c)
 - No-op (logged) when `NEO4J_*` is unset or the content has no resolvable author.
 
 ⚠️ **v1 captures "who authored what, and how positive/negative it reads."** The richer **user→user
-interaction graph** — `(:User)-[:INTERACTED {sentiment}]->(:User)` weighted by how warmly A engages B,
-which needs resolving the *recipient* of a comment (parent-content author) — is **v2** (see the roadmap).
+interaction graph** is **v2** — see below.
+
+### v2 — the user→user interaction graph
+
+> **Implemented + unit-tested** (migration `0036`, worker `dispatch_job` + the reaction/follow handlers,
+> `neo4j_writer` edge writers). The DB-bound recipient resolution and Neo4j writes still want the
+> real-infra smoke pass before "validated end-to-end". Design spec:
+> `docs/superpowers/specs/2026-06-08-relationship-graph-v2-design.md`.
+
+Two **distinct edge types**, kept separate on purpose (one fact each) and combined only at *read* time —
+never blended into one overloaded edge:
+
+```cypher
+// behavioral — scored. ONE edge per interaction (append-log), MERGE-keyed on sourceId so pgmq
+// redelivery is idempotent and a content edit updates that one edge in place.
+(actor:User)-[:INTERACTED {kind:'comment'|'reply'|'reaction', sentiment, sourceId, at}]->(recipient:User)
+
+// structural — UNscored. Mirrors the follows table exactly: MERGE on follow, DELETE on unfollow.
+(follower:User)-[:FOLLOWS {at}]->(followee:User)
+```
+
+- **Recipient resolution** (the new bit): the *actor* is the comment/reply/reaction author; the
+  *recipient* is the **parent-content author** — comment→entity author, reply→parent-comment author,
+  reaction→content author. **Self-interactions** (acting on your own content) are skipped (no self-loop).
+- **Sentiment source.** Text interactions carry the relationship-RoBERTa score already computed in the
+  cascade. **Reactions have no text** — their sentiment is derived from the reaction *type*
+  (`scorer/reaction_sentiment.py`, signed `[-1, 1]`):
+
+  | `upvote` | `love` | `like` | `funny` | `wow` | `sad` | `angry` | `downvote` |
+  |---|---|---|---|---|---|---|---|
+  | +1.0 | +1.0 | +0.8 | +0.5 | +0.3 | 0.0 | −0.8 | −1.0 |
+
+  `sad` is left **neutral** (empathy as often as disapproval); an unknown/future type → `0.0`.
+  Reaction *removal* / unfollow **deletes** the edge (these are retractable states); a comment edit
+  re-`SET`s the edge, a comment deletion leaves it (it happened) — consistent with the v1 `AUTHORED` edge.
+- **Why two edge types (not one).** They're genuinely different facts: `INTERACTED` is a *behavioral
+  event* — append-only, idempotent, can be **negative**, many per pair, sourced from the content
+  pipeline; `FOLLOWS` is a *structural state* — at most one per pair, inherently positive, **retractable**
+  (an unfollow deletes it), and never passes through the scorer's brain (there's no text). Folding a
+  retractable structural state into an append-log of scored events creates lifecycle confusion. So:
+  separate labels, each with one clear meaning.
+- **"How warmly does A relate to B?"** is a **query-time** combination (e.g.
+  `avg(INTERACTED.sentiment) · saturate(count)` plus a `FOLLOWS` bonus) — the weighting lives in the
+  *consumer*, not baked into an ambiguous edge.
+
 (Chat/DMs can't feed this graph: secure chat is end-to-end-encrypted, so the server has no message
 plaintext to score.) The v1 schema is a deliberate, easily-revised starting point.
+
+**Future (post-v2 — deferred, YAGNI):**
+- If you later want a single number, you materialize a derived `RELATES_TO {strength}` edge from these
+  two — but that's a YAGNI deferral, not v2.
+- A **hybrid** accumulation — keep the per-interaction edges as the source of truth *and* maintain a
+  rolled-up summary edge alongside on every write (fast reads + full history, at double the write work
+  and an extra re-derivable invariant) — is premature for v2. Revisit only if query-time aggregation
+  over the append-log becomes a measured bottleneck.
 
 ## Preserved contracts (so the admin keeps working)
 
@@ -232,7 +299,7 @@ docker compose up -d agora scorer-toxicity scorer-relationship scorer-worker neo
 `SCORER_LISTEN_DATABASE_URL` (:5432, for the NOTIFY wake-up), `ANTHROPIC_API_KEY` (else gray-zone → review),
 `NEO4J_*`.
 
-**2. Migrate** (idempotent; applies `0027`/`0028`/`0033`):
+**2. Migrate** (idempotent; applies `0027`/`0028`/`0033` + the v2 graph triggers `0036`):
 ```bash
 docker compose run --rm agora node scripts/migrate.mjs
 ```
@@ -258,6 +325,21 @@ curl -s localhost:4001/v1/11111111-1111-1111-1111-111111111111/moderation/queue 
 #   MATCH (u:User)-[:AUTHORED]->(c:Content) RETURN u.id, c.id, c.relationshipScore LIMIT 10;
 ```
 
+**4b. v2 graph smoke** (reactions + follows → user→user edges; needs `NEO4J_*`). Post a comment on
+someone else's entity, react to it, then follow them — each fires a `0036` trigger:
+```bash
+# react to a comment (entity/comment target — NOT a chat message):
+psql "$DATABASE_URL" -c "insert into reactions (project_id, target_type, target_id, user_id, reaction_type)
+  values ('11111111-1111-1111-1111-111111111111','comment','<comment-id>','<reactor-uuid>','upvote');"
+# follow:
+psql "$DATABASE_URL" -c "insert into follows (project_id, follower_id, followed_id)
+  values ('11111111-1111-1111-1111-111111111111','<a-uuid>','<b-uuid>');"
+# Neo4j → the user→user edges (http://localhost:7474):
+#   MATCH (a:User)-[r:INTERACTED]->(b:User) RETURN a.id, r.kind, r.sentiment, r.sourceId, b.id LIMIT 20;
+#   MATCH (a:User)-[r:FOLLOWS]->(b:User) RETURN a.id, b.id LIMIT 20;
+# then DELETE the reaction / follow row and confirm the matching edge disappears (retractable).
+```
+
 **5. ⚠️ Watch for the real-infra bugs** (fix before trusting it):
 - **Model label names** — confirm the toxicity model emits `toxic`/`neutral` and the sentiment model
   `negative`/`neutral`/`positive`. If they're `LABEL_0`/`LABEL_1`, the P(toxic) gate + signed-quality
@@ -266,6 +348,10 @@ curl -s localhost:4001/v1/11111111-1111-1111-1111-111111111111/moderation/queue 
 - **asyncpg jsonb** returns `dict` vs `str` (db.py coerces `str` — confirm).
 - **NOTIFY** only fires on the **`:5432`** listen connection (not the `:6543` pooler).
 - **Neo4j** auth + that `ensure_constraints` ran (worker startup log).
+- **v2 recipient resolution** — confirm a reaction `add` resolves the target author (the `CASE` on
+  `target_type` matches the `reaction_target` enum text `'entity'`/`'comment'`), a `message`-target
+  reaction writes **no** edge, a self-interaction is skipped, and a reaction *remove* / unfollow
+  **deletes** its edge.
 
 ## Roadmap
 
@@ -275,12 +361,17 @@ wake-up · ✅ Haiku adjudication + API write-back · ✅ Neo4j v1 graph (author
 **`/{id}/remove`**, config — contract-aligned) · ✅ **live end-to-end smoke validated** · ✅ **`apps/moderator`
 source retired**.
 
-**Remaining:**
-1. **Relationship graph v2** — the user→user `INTERACTED` edge (reactions trigger + a `reaction` job type
-   + resolving the recipient of replies via parent-content author). Chat/DMs are out of scope — secure
-   chat is E2E-encrypted, so the server has no message plaintext to derive a sentiment edge from.
+**Remaining:** none — the REST surface and the scoring/graph pipeline are feature-complete. The only
+open work is *verification*: run the v2 real-infra smoke (below) once against a live Neo4j.
 
-**Recently done:** ✅ **ops polish** — a Python CI job (ruff + mypy + pytest) in `.github/workflows/ci.yml`;
+**Recently done:** ✅ **Relationship graph v2** — the user→user interaction graph. Two distinct edge
+types: the scored, append-log `INTERACTED` edge (comments/replies via the content pipeline + reactions
+with type-derived sentiment, recipient = parent-content author) and the structural `FOLLOWS` edge
+(mirrors the `follows` table). New enqueue triggers (migration `0036`) feed the same pgmq queue with a
+`kind` discriminator; the worker's `dispatch_job` routes content vs. graph-only jobs. Implemented +
+unit-tested (the reaction-sentiment map, kind dispatch, interaction-edge projection); pending the
+real-infra smoke. See "The relationship graph" → v2 and the design spec. · ✅ **ops polish** — a Python
+CI job (ruff + mypy + pytest) in `.github/workflows/ci.yml`;
 the scorer images (`agora-scorer-worker` + `agora-scorer-model-server`) added to `docker-publish.yml` as
 **native-runner multi-arch** (amd64 + arm64, no QEMU — fast even for the torch-heavy model server);
 arch-aware CPU-torch install (`TARGETARCH`) + image slim + an `HF_HOME` cache volume; and the test-suite
