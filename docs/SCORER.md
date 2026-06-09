@@ -5,8 +5,10 @@
 > the Neo4j relationship graph all run against real infra: a toxic comment was scored `block`, auto-removed
 > through the API, and recorded; a benign one `allow`ed; both wrote signed sentiment edges to Neo4j. The
 > old `apps/moderator` is retired. The user→user interaction graph (**v2** — `INTERACTED`/`FOLLOWS` edges
-> from comments, replies, reactions, and follows) is **implemented + unit-tested**; its DB-bound recipient
-> resolution and Neo4j edge writes still want the real-infra smoke pass before "validated end-to-end".
+> from comments, replies, reactions, and follows) is **LIVE — validated end-to-end**: a comment, a reply,
+> a reaction, and a follow each wrote the correctly-directed actor→recipient edge (positive *and* negative
+> sentiment, upvote → +1.0); a reaction-removal and an unfollow deleted their edge; a self-interaction and
+> a chat-message-target reaction were skipped.
 
 `services/scorer` is Agora's content scoring + moderation subsystem. It **replaces `apps/moderator`**
 (the Node/Hono LLM-over-webhooks service) with an **async, post-publish** Python pipeline: content
@@ -165,9 +167,10 @@ interaction graph** is **v2** — see below.
 
 ### v2 — the user→user interaction graph
 
-> **Implemented + unit-tested** (migration `0036`, worker `dispatch_job` + the reaction/follow handlers,
-> `neo4j_writer` edge writers). The DB-bound recipient resolution and Neo4j writes still want the
-> real-infra smoke pass before "validated end-to-end". Design spec:
+> **LIVE — validated end-to-end** (migration `0036`, worker `dispatch_job` + the reaction/follow handlers,
+> `neo4j_writer` edge writers). The smoke (step 4b below) confirmed correctly-directed actor→recipient
+> edges for comment/reply/reaction/follow, type-mapped reaction sentiment, edge deletion on
+> reaction-removal/unfollow, and the self-interaction + message-target skips. Design spec:
 > `docs/superpowers/specs/2026-06-08-relationship-graph-v2-design.md`.
 
 Two **distinct edge types**, kept separate on purpose (one fact each) and combined only at *read* time —
@@ -361,16 +364,17 @@ wake-up · ✅ Haiku adjudication + API write-back · ✅ Neo4j v1 graph (author
 **`/{id}/remove`**, config — contract-aligned) · ✅ **live end-to-end smoke validated** · ✅ **`apps/moderator`
 source retired**.
 
-**Remaining:** none — the REST surface and the scoring/graph pipeline are feature-complete. The only
-open work is *verification*: run the v2 real-infra smoke (below) once against a live Neo4j.
+**Remaining:** none — the REST surface and the scoring/graph pipeline are feature-complete and the v2
+graph is smoke-validated end-to-end.
 
 **Recently done:** ✅ **Relationship graph v2** — the user→user interaction graph. Two distinct edge
 types: the scored, append-log `INTERACTED` edge (comments/replies via the content pipeline + reactions
 with type-derived sentiment, recipient = parent-content author) and the structural `FOLLOWS` edge
 (mirrors the `follows` table). New enqueue triggers (migration `0036`) feed the same pgmq queue with a
-`kind` discriminator; the worker's `dispatch_job` routes content vs. graph-only jobs. Implemented +
-unit-tested (the reaction-sentiment map, kind dispatch, interaction-edge projection); pending the
-real-infra smoke. See "The relationship graph" → v2 and the design spec. · ✅ **ops polish** — a Python
+`kind` discriminator; the worker's `dispatch_job` routes content vs. graph-only jobs. Unit-tested **and
+smoke-validated end-to-end** (correctly-directed edges for comment/reply/reaction/follow, type-mapped
+reaction sentiment, edge deletion on reaction-removal/unfollow, self + message-target skips). See "The
+relationship graph" → v2 and the design spec. · ✅ **ops polish** — a Python
 CI job (ruff + mypy + pytest) in `.github/workflows/ci.yml`;
 the scorer images (`agora-scorer-worker` + `agora-scorer-model-server`) added to `docker-publish.yml` as
 **native-runner multi-arch** (amd64 + arm64, no QEMU — fast even for the torch-heavy model server);

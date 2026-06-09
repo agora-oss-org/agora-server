@@ -19,9 +19,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reactions are skipped (chat is E2E-encrypted, out of scope). New migration
   `0036_scorer_graph_v2_enqueue.sql` adds `reactions` (insert/delete/retype-gated) + `follows`
   (insert/delete) enqueue triggers onto the **same** `scorer_jobs` queue with a `kind` discriminator;
-  the worker's `dispatch_job` routes content (scored) vs. graph-only jobs. Implemented + unit-tested
-  (reaction-sentiment map, kind dispatch, interaction-edge projection); real-infra smoke pending. Design
-  spec: `docs/superpowers/specs/2026-06-08-relationship-graph-v2-design.md`.
+  the worker's `dispatch_job` routes content (scored) vs. graph-only jobs. Unit-tested **and
+  smoke-validated end-to-end** against live Postgres + Neo4j (correctly-directed actor→recipient edges
+  for comment/reply/reaction/follow, type-mapped reaction sentiment incl. negative cases, edge deletion
+  on reaction-removal/unfollow, and the self-interaction + chat-message-target skips). Design spec:
+  `docs/superpowers/specs/2026-06-08-relationship-graph-v2-design.md`.
 
 ## [0.11.0] - 2026-06-08
 
