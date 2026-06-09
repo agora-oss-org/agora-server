@@ -35,8 +35,9 @@ services:
   # api, records moderation_analyses (the admin AI-flag queue), and MERGEs a relationship edge into
   # Neo4j. See docs/SCORER.md. FOUNDATION: ML/pgmq/Neo4j/Haiku I/O are stubs in this pass.
 
-  # RoBERTa toxicity classifier (model warm in RAM). Pinned to dedicated cores so it runs truly in
-  # parallel with the relationship server. cpuset values are HOST-SPECIFIC — adjust to your core layout.
+  # RoBERTa toxicity classifier (model warm in RAM). Pinned to a single dedicated core to avoid
+  # contention with the relationship server. cpuset values are HOST-SPECIFIC — adjust to your core layout.
+  # See docs/SCORER-REQUIREMENTS.md for deployment-specific configs.
   scorer-toxicity:
     build:
       context: .
@@ -47,9 +48,10 @@ services:
       SCORER_MODEL: ${SCORER_TOXICITY_MODEL:-s-nlp/roberta_toxicity_classifier}
       SCORER_MODEL_KIND: toxicity
       SCORER_PORT: "8001"
-      OMP_NUM_THREADS: "2"
+      OMP_NUM_THREADS: "1"
       LOG_LEVEL: ${LOG_LEVEL:-info}
-    cpuset: "0,1"
+    cpuset: "0"
+    mem_limit: "1.5g"
     init: true
     restart: unless-stopped
     # Persist the HF model download (HF_HOME, set in the image) so a container recreate doesn't
@@ -57,7 +59,7 @@ services:
     volumes:
       - scorer-hf-cache:/home/scorer/.cache/huggingface
 
-  # RoBERTa relationship-quality (sentiment) classifier — same image, different model + cores.
+  # RoBERTa relationship-quality (sentiment) classifier — same image, different model + core.
   scorer-relationship:
     build:
       context: .
@@ -68,9 +70,10 @@ services:
       SCORER_MODEL: ${SCORER_RELATIONSHIP_MODEL:-cardiffnlp/twitter-roberta-base-sentiment-latest}
       SCORER_MODEL_KIND: relationship
       SCORER_PORT: "8002"
-      OMP_NUM_THREADS: "2"
+      OMP_NUM_THREADS: "1"
       LOG_LEVEL: ${LOG_LEVEL:-info}
-    cpuset: "2,3"
+    cpuset: "1"
+    mem_limit: "1.5g"
     init: true
     restart: unless-stopped
     volumes:
@@ -93,6 +96,7 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-info}
     ports:
       - "${SCORER_ADMIN_PORT:-4001}:4001"
+    mem_limit: "512m"
     depends_on:
       - agora
       - scorer-toxicity
