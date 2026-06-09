@@ -9,7 +9,7 @@ from __future__ import annotations
 import pytest
 
 from scorer.config import ResolvedModeratorConfig, Settings
-from scorer.db import ContentRow
+from scorer.db import ContentRow, InteractionContext
 from scorer.models import ScoreJob
 from worker import analyses, model_clients, neo4j_writer, pipeline, writeback
 from worker.model_clients import ModelScore
@@ -43,12 +43,20 @@ def _patch(monkeypatch: pytest.MonkeyPatch, *, tox_scores: dict[str, float]) -> 
     async def fake_neo4j(settings, **kw):  # noqa: ANN001
         recorded["neo4j"] = kw
 
+    async def fake_interaction(settings, **kw):  # noqa: ANN001
+        recorded["interaction"] = kw
+
+    async def fake_resolve_comment(settings, cid):  # noqa: ANN001
+        return InteractionContext(actor_id="author-1", recipient_id="recipient-1", kind="reply")
+
     monkeypatch.setattr(pipeline, "fetch_content", fake_fetch_content)
     monkeypatch.setattr(pipeline, "get_moderator_config", fake_cfg)
+    monkeypatch.setattr(pipeline, "resolve_comment_interaction", fake_resolve_comment)
     monkeypatch.setattr(model_clients, "score_both", fake_score_both)
     monkeypatch.setattr(analyses, "record_analysis", fake_record)
     monkeypatch.setattr(writeback, "apply_moderation", fake_writeback)
     monkeypatch.setattr(neo4j_writer, "write_relationship_edge", fake_neo4j)
+    monkeypatch.setattr(neo4j_writer, "write_interaction_edge", fake_interaction)
     return recorded
 
 
@@ -87,3 +95,24 @@ async def test_assess_and_record_returns_the_row(monkeypatch: pytest.MonkeyPatch
     )
     assert row is rec["data"]
     assert row.source_msg_id is None  # on-demand → no pgmq message
+    assert "interaction" not in rec  # write_interaction defaults off (the /analyze path)
+
+
+async def test_comment_content_job_writes_interaction_edge(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A queued comment job projects the user→user INTERACTED edge with the relationship sentiment.
+    rec = _patch(monkeypatch, tox_scores={"neutral": 0.95, "toxic": 0.05})
+    job = ScoreJob(target_type="comment", target_id="c1", project_id="p1")
+    await pipeline.process_job(Settings(), job, msg_id=7)
+    assert rec["interaction"]["recipient_id"] == "recipient-1"
+    assert rec["interaction"]["kind"] == "reply"
+    assert rec["interaction"]["source_id"] == "c1"
+    # rel_quality = P(positive) - P(negative) = 0.2 - 0.2 = 0.0 (from the patched rel_scores)
+    assert rec["interaction"]["sentiment"] == pytest.approx(0.0)
+
+
+async def test_entity_content_job_writes_no_interaction_edge(monkeypatch: pytest.MonkeyPatch) -> None:
+    # An entity post has no recipient → only the v1 AUTHORED edge, never an INTERACTED edge.
+    rec = _patch(monkeypatch, tox_scores={"neutral": 0.95, "toxic": 0.05})
+    await pipeline.process_job(Settings(), _job(), msg_id=8)
+    assert "neo4j" in rec  # v1 AUTHORED edge still written
+    assert "interaction" not in rec
