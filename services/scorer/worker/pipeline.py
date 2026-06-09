@@ -24,7 +24,7 @@ from scorer.db import (
 )
 from scorer.haiku import assess as haiku_assess
 from scorer.logging import get_logger, log
-from scorer.models import FollowJob, ReactionJob, ScoreJob
+from scorer.models import ConnectionJob, FollowJob, ReactionJob, ScoreJob
 from scorer.reason import moderation_reason_text
 from scorer.reaction_sentiment import reaction_sentiment
 
@@ -194,6 +194,18 @@ async def process_follow_job(settings: Settings, job: FollowJob) -> None:
         )
 
 
+async def process_connection_job(settings: Settings, job: ConnectionJob) -> None:
+    """Project a connection becoming/leaving `connected` onto the structural CONNECTED graph."""
+    if job.op == "remove":
+        await neo4j_writer.delete_connection_edge(
+            settings, requester_id=job.requester_id, addressee_id=job.addressee_id
+        )
+    else:
+        await neo4j_writer.write_connection_edge(
+            settings, requester_id=job.requester_id, addressee_id=job.addressee_id
+        )
+
+
 def job_kind(message: dict[str, Any]) -> str:
     """The job-kind discriminator; a pre-v2 payload without it is a ``content`` job."""
     return str(message.get("kind", "content"))
@@ -206,5 +218,7 @@ async def dispatch_job(settings: Settings, message: dict[str, Any], msg_id: int 
         await process_reaction_job(settings, ReactionJob(**message))
     elif kind == "follow":
         await process_follow_job(settings, FollowJob(**message))
+    elif kind == "connection":
+        await process_connection_job(settings, ConnectionJob(**message))
     else:
         await process_job(settings, ScoreJob(**message), msg_id=msg_id)

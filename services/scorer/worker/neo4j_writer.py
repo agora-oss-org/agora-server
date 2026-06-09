@@ -58,6 +58,18 @@ set r.at = timestamp()
 
 _FOLLOW_DELETE = "match (a:User {id: $follower_id})-[r:FOLLOWS]->(b:User {id: $followed_id}) delete r"
 
+# v2.1 — structural MUTUAL edge from the connections table. Stored directed requester→addressee
+# (provenance: who initiated) but mutual in meaning — query undirected: (a)-[:CONNECTED]-(b).
+_CONNECTION_MERGE = """
+merge (a:User {id: $requester_id})
+merge (b:User {id: $addressee_id})
+merge (a)-[r:CONNECTED]->(b)
+  on create set r.createdAt = timestamp()
+set r.at = timestamp()
+"""
+
+_CONNECTION_DELETE = "match (a:User {id: $requester_id})-[r:CONNECTED]->(b:User {id: $addressee_id}) delete r"
+
 
 async def write_relationship_edge(
     settings: Settings,
@@ -155,3 +167,25 @@ async def delete_follow_edge(settings: Settings, *, follower_id: str, followed_i
     async with driver.session() as session:
         await session.run(_FOLLOW_DELETE, follower_id=str(follower_id), followed_id=str(followed_id))
     log(logger, "info", "neo4j follow edge deleted", follower_id=str(follower_id), followed_id=str(followed_id))
+
+
+async def write_connection_edge(settings: Settings, *, requester_id: str, addressee_id: str) -> None:
+    """MERGE the mutual CONNECTED edge (a connection became `connected`). No-op (logged) when Neo4j off."""
+    driver = await get_driver(settings)
+    if driver is None:
+        log(logger, "debug", "neo4j connection edge skipped (not configured)")
+        return
+    async with driver.session() as session:
+        await session.run(_CONNECTION_MERGE, requester_id=str(requester_id), addressee_id=str(addressee_id))
+    log(logger, "info", "neo4j connection edge merged", requester_id=str(requester_id), addressee_id=str(addressee_id))
+
+
+async def delete_connection_edge(settings: Settings, *, requester_id: str, addressee_id: str) -> None:
+    """DELETE the CONNECTED edge (disconnect / left the connected state). Idempotent — missing is a no-op."""
+    driver = await get_driver(settings)
+    if driver is None:
+        log(logger, "debug", "neo4j connection edge delete skipped (not configured)")
+        return
+    async with driver.session() as session:
+        await session.run(_CONNECTION_DELETE, requester_id=str(requester_id), addressee_id=str(addressee_id))
+    log(logger, "info", "neo4j connection edge deleted", requester_id=str(requester_id), addressee_id=str(addressee_id))

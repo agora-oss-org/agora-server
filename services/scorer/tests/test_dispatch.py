@@ -17,6 +17,7 @@ def test_job_kind_defaults_to_content() -> None:
     assert pipeline.job_kind({"targetType": "comment", "targetId": "c1", "projectId": "p1"}) == "content"
     assert pipeline.job_kind({"kind": "reaction", "op": "add"}) == "reaction"
     assert pipeline.job_kind({"kind": "follow", "op": "remove"}) == "follow"
+    assert pipeline.job_kind({"kind": "connection", "op": "add"}) == "connection"
 
 
 def _patch_writers(monkeypatch: pytest.MonkeyPatch) -> dict:
@@ -34,10 +35,18 @@ def _patch_writers(monkeypatch: pytest.MonkeyPatch) -> dict:
     async def del_follow(settings, **kw):  # noqa: ANN001
         rec["del_follow"] = kw
 
+    async def connection(settings, **kw):  # noqa: ANN001
+        rec["connection"] = kw
+
+    async def del_connection(settings, **kw):  # noqa: ANN001
+        rec["del_connection"] = kw
+
     monkeypatch.setattr(neo4j_writer, "write_interaction_edge", interaction)
     monkeypatch.setattr(neo4j_writer, "delete_interaction_edge", del_interaction)
     monkeypatch.setattr(neo4j_writer, "write_follow_edge", follow)
     monkeypatch.setattr(neo4j_writer, "delete_follow_edge", del_follow)
+    monkeypatch.setattr(neo4j_writer, "write_connection_edge", connection)
+    monkeypatch.setattr(neo4j_writer, "delete_connection_edge", del_connection)
     return rec
 
 
@@ -92,3 +101,17 @@ async def test_follow_add_and_remove_route_to_writers(monkeypatch: pytest.Monkey
         Settings(), {"kind": "follow", "op": "remove", "followerId": "a1", "followedId": "b1", "projectId": "p1"}
     )
     assert rec["del_follow"] == {"follower_id": "a1", "followed_id": "b1"}
+
+
+async def test_connection_add_and_remove_route_to_writers(monkeypatch: pytest.MonkeyPatch) -> None:
+    rec = _patch_writers(monkeypatch)
+    await pipeline.dispatch_job(
+        Settings(),
+        {"kind": "connection", "op": "add", "requesterId": "a1", "addresseeId": "b1", "projectId": "p1"},
+    )
+    assert rec["connection"] == {"requester_id": "a1", "addressee_id": "b1"}
+    await pipeline.dispatch_job(
+        Settings(),
+        {"kind": "connection", "op": "remove", "requesterId": "a1", "addresseeId": "b1", "projectId": "p1"},
+    )
+    assert rec["del_connection"] == {"requester_id": "a1", "addressee_id": "b1"}

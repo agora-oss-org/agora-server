@@ -59,6 +59,17 @@ class FollowJob(CamelModel):
     project_id: str
 
 
+class ConnectionJob(CamelModel):
+    """Graph job for a mutual connection becoming/leaving `connected` (migration 0037). Structural
+    CONNECTED edge — no scoring. ``add`` on accept/direct-connect, ``remove`` on disconnect/decline."""
+
+    kind: Literal["connection"]
+    op: Literal["add", "remove"]
+    requester_id: str
+    addressee_id: str
+    project_id: str
+
+
 class UserSummary(CamelModel):
     id: str
     username: Optional[str] = None

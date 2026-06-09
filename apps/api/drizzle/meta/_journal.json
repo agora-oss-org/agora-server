@@ -260,6 +260,13 @@
       "when": 1780997512412,
       "tag": "0036_scorer_graph_v2_enqueue",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1780997512413,
+      "tag": "0037_scorer_connection_enqueue",
+      "breakpoints": true
     }
   ]
 }
