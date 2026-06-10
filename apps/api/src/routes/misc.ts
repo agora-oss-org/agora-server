@@ -16,7 +16,9 @@ import * as webhooks from "../lib/webhooks.js";
 import { getFeedConfig, invalidateFeedConfig, feedConfigView } from "../lib/feed-config.js";
 import { getStewardConfig, invalidateStewardConfig, stewardConfigView } from "../lib/steward-config.js";
 import { safeFetchText } from "../lib/ssrf.js";
-import { parseBody, oauthAuthorizeSchema, signTestingJwtSchema, webhookConfigSchema, feedConfigSchema, moderatorConfigSchema, stewardConfigSchema, DEFAULT_MODERATION_CATEGORIES } from "../lib/validation.js";
+import { parseBody, oauthAuthorizeSchema, signTestingJwtSchema, webhookConfigSchema, feedConfigSchema, moderatorConfigSchema, stewardConfigSchema, socialConfigSchema, forbiddenSocialKeys, resolveSocialConfig, resultingSocialTier, SOCIAL_PRIVACY_TIERS, DEFAULT_MODERATION_CATEGORIES } from "../lib/validation.js";
+import type { SocialPrivacyTier } from "@agora-server/contract";
+import { getSocialConfig, invalidateSocialConfig, socialConfigView, transparencyView } from "../lib/social-config.js";
 
 type ProfileRow = typeof profiles.$inferSelect;
 
@@ -184,6 +186,62 @@ export const miscRoutes = new Hono<{ Variables: Variables }>()
     }
     await db.update(projects).set({ moderatorConfig: next }).where(eq(projects.id, c.var.projectId));
     return c.json(await moderatorView(c.var.projectId));
+  })
+  // ── social graph (community↔corporate tier; project-admin only) ─
+  // Per-project social-graph config (docs/SOCIAL-GRAPH.md §5). Two enforcement points: forbidden
+  // flags are REJECTED on write (400 social/tier-forbidden, validated against the RESULTING tier —
+  // a tier change + flags can arrive in one PATCH), and the resolver CLAMPS on read (stale flags
+  // from a corporate→community switch are neutralized, never served).
+  .get("/settings/social", requireAuth, async (c) => {
+    await requireProjectAdmin(c);
+    const [row] = await db
+      .select({ socialConfig: projects.socialConfig })
+      .from(projects)
+      .where(eq(projects.id, c.var.projectId))
+      .limit(1);
+    return c.json(socialConfigView(row?.socialConfig, resolveSocialConfig(row?.socialConfig)));
+  })
+  .patch("/settings/social", requireAuth, async (c) => {
+    await requireProjectAdmin(c);
+    const body = parseBody(socialConfigSchema, await c.req.json().catch(() => ({})), "social");
+    const [row] = await db
+      .select({ socialConfig: projects.socialConfig })
+      .from(projects)
+      .where(eq(projects.id, c.var.projectId))
+      .limit(1);
+    const current = (row?.socialConfig && typeof row.socialConfig === "object" ? row.socialConfig : {}) as Record<string, any>;
+    const currentTier: SocialPrivacyTier = (SOCIAL_PRIVACY_TIERS as readonly string[]).includes(current.privacyTier as string)
+      ? (current.privacyTier as SocialPrivacyTier)
+      : "community";
+    const forbidden = forbiddenSocialKeys(body as Record<string, unknown>, currentTier);
+    if (forbidden.length) {
+      throw Errors.badRequest(
+        "social/tier-forbidden",
+        `Not allowed under the '${resultingSocialTier(body, currentTier)}' tier: ${forbidden.join(", ")}`,
+      );
+    }
+    const next: Record<string, any> = { ...current };
+    for (const k of [
+      "privacyTier", "graphEnabled", "weatherEnabled", "constellationEnabled", "constellationKFloor",
+      "neighborhoodEnabled", "influenceScoresEnabled", "siloDetectionEnabled", "engagementScoresEnabled",
+      "frictionVisibleToStewards", "frictionAnalyticsEnabled", "readAffinityEnabled", "readReceiptsAllowed",
+      "warmthHalfLifeDays", "frictionHalfLifeDays",
+    ] as const) {
+      const v = (body as Record<string, unknown>)[k];
+      if (v === undefined) continue;
+      if (v === null) delete next[k]; // clear → tier default
+      else next[k] = v;
+    }
+    await db.update(projects).set({ socialConfig: next }).where(eq(projects.id, c.var.projectId));
+    invalidateSocialConfig(c.var.projectId);
+    return c.json(socialConfigView(next, resolveSocialConfig(next)));
+  })
+  // ── social transparency (any authenticated member) ─
+  // INVARIANT (docs/AGORA-CORP.md §4, invariant 5): the active tier + enabled analytics are
+  // readable by every member — people always know which instrument their instance is. Auth
+  // required (not public).
+  .get("/social/transparency", requireAuth, async (c) => {
+    return c.json(transparencyView(await getSocialConfig(c.var.projectId)));
   })
   // ── lean project info ───────────────────────────────────────────────────────
   .get("/projects/lean", async (c) => {
