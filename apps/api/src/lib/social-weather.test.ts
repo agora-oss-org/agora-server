@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   pairBrightness, weatherFromPairs, weatherBand,
   B_FLOOR, type WarmthPair,
+  computeWeather, getSocialWeather, invalidateSocialWeather, WEATHER_PAIRS_CYPHER,
 } from "./social-weather.js";
+import { SOCIAL_TIER_DEFAULTS } from "@agora-server/contract";
 
 // Formula (docs/AGORA-SOCIAL.md §11): S_w = W/(W+10); φ = F/(F+W+10);
 // B = 0.15 + 0.85·S_w·(1−0.5·φ). All expected values below are hand-computed from that.
@@ -102,5 +104,125 @@ describe("weatherBand", () => {
 
   it("ignores a quiet previous band", () => {
     expect(weatherBand(0.755, "quiet")).toBe("sunny");
+  });
+});
+
+// A stub neo4j Driver: returns canned {actor, recipient, w, f} records and logs each call's params.
+function stubDriver(rowsByCall: Array<Array<Record<string, unknown>>>) {
+  const calls: Array<{ cypher: string; params: Record<string, unknown> }> = [];
+  let i = 0;
+  const driver = {
+    executeQuery: async (cypher: string, params: Record<string, unknown>) => {
+      calls.push({ cypher, params });
+      const rows = rowsByCall[Math.min(i++, rowsByCall.length - 1)]!;
+      return { records: rows.map((r) => ({ get: (k: string) => r[k] })) };
+    },
+  };
+  return { driver: driver as never, calls };
+}
+
+const cfg = SOCIAL_TIER_DEFAULTS.community;
+
+describe("computeWeather", () => {
+  it("passes projectId, asOf, and the config half-lives to the query", async () => {
+    const { driver, calls } = stubDriver([[]]);
+    await computeWeather(driver, "proj-1", cfg, 1_000_000);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.cypher).toBe(WEATHER_PAIRS_CYPHER);
+    expect(calls[0]!.params).toMatchObject({
+      projectId: "proj-1", asOf: 1_000_000,
+      warmthHalfLifeDays: 30, frictionHalfLifeDays: 14,
+    });
+  });
+
+  it("aggregates returned pairs through weatherFromPairs, tolerating neo4j Integer-likes", async () => {
+    const { driver } = stubDriver([[
+      { actor: "a", recipient: "b", w: 1, f: 0 },
+      { actor: "c", recipient: "b", w: { toNumber: () => 3 }, f: { toNumber: () => 0 } },
+    ]]);
+    const v = await computeWeather(driver, "p", cfg, 0);
+    expect(v).toBeCloseTo((pairBrightness(1, 0) + pairBrightness(3, 0)) / 2, 10);
+  });
+
+  it("returns null when the graph has no matching edges", async () => {
+    const { driver } = stubDriver([[]]);
+    expect(await computeWeather(driver, "p", cfg, 0)).toBeNull();
+  });
+});
+
+describe("getSocialWeather", () => {
+  const NOW = 1_750_000_000_000;
+  const WEATHER_TTL_AND_A_BIT = 3_600_000 + 1;
+
+  it("computes value, 7d trend, and band; rounds value to 2dp and trend to 3dp", async () => {
+    const { driver, calls } = stubDriver([
+      [{ actor: "a", recipient: "b", w: 1e9, f: 0 }], // now: ≈ 1.0 → sunny
+      [{ actor: "a", recipient: "b", w: 10, f: 0 }],  // 7d ago: 0.575
+    ]);
+    invalidateSocialWeather("p1");
+    const out = await getSocialWeather("p1", cfg, { driver, nowMs: NOW });
+    expect(calls[0]!.params.asOf).toBe(NOW);
+    expect(calls[1]!.params.asOf).toBe(NOW - 7 * 86_400_000);
+    expect(out.value).toBeCloseTo(1.0, 2);
+    expect(out.band).toBe("sunny");
+    expect(out.trend).toBeCloseTo(1.0 - 0.575, 3);
+    expect(out.asOf).toBe(new Date(NOW).toISOString());
+  });
+
+  it("null windows → quiet band, null trend", async () => {
+    const { driver } = stubDriver([[]]);
+    invalidateSocialWeather("p2");
+    const out = await getSocialWeather("p2", cfg, { driver, nowMs: NOW });
+    expect(out).toMatchObject({ value: null, band: "quiet", trend: null });
+  });
+
+  it("serves from cache within the TTL and recomputes after invalidation", async () => {
+    const { driver, calls } = stubDriver([[{ actor: "a", recipient: "b", w: 5, f: 0 }]]);
+    invalidateSocialWeather("p3");
+    const first = await getSocialWeather("p3", cfg, { driver, nowMs: NOW });
+    const second = await getSocialWeather("p3", cfg, { driver, nowMs: NOW + 60_000 });
+    expect(second).toBe(first);            // same object — cache hit
+    expect(calls).toHaveLength(2);         // 2 windows, once
+    invalidateSocialWeather("p3");
+    await getSocialWeather("p3", cfg, { driver, nowMs: NOW + 120_000 });
+    expect(calls).toHaveLength(4);
+  });
+
+  it("applies hysteresis against the previously served band after the TTL lapses", async () => {
+    const { driver } = stubDriver([
+      [{ actor: "a", recipient: "b", w: 1e9, f: 0 }],   // call 1 now-window → sunny (≈1.0)
+      [{ actor: "a", recipient: "b", w: 1e9, f: 0 }],   // call 1 prior-window
+      [{ actor: "a", recipient: "b", w: 23.33, f: 0 }], // call 2 now-window → B≈0.745, inside margin of 0.75
+      [{ actor: "a", recipient: "b", w: 23.33, f: 0 }], // call 2 prior-window
+    ]);
+    invalidateSocialWeather("p4");
+    const first = await getSocialWeather("p4", cfg, { driver, nowMs: NOW });
+    expect(first.band).toBe("sunny");
+    const second = await getSocialWeather("p4", cfg, { driver, nowMs: NOW + WEATHER_TTL_AND_A_BIT });
+    expect(second.value).toBeCloseTo(0.74, 2);
+    expect(second.band).toBe("sunny"); // held by hysteresis, raw bucket would be "fine"
+  });
+
+  it("propagates driver errors without caching, preserving the stale hysteresis anchor", async () => {
+    const good = stubDriver([[{ actor: "a", recipient: "b", w: 1e9, f: 0 }]]);
+    invalidateSocialWeather("p5");
+    const first = await getSocialWeather("p5", cfg, { driver: good.driver, nowMs: NOW });
+    expect(first.band).toBe("sunny");
+    const bad = { executeQuery: async () => { throw new Error("bolt down"); } } as never;
+    await expect(
+      getSocialWeather("p5", cfg, { driver: bad, nowMs: NOW + WEATHER_TTL_AND_A_BIT }),
+    ).rejects.toThrow("bolt down");
+    // Recovery after the outage: the pre-outage entry survived and still anchors hysteresis.
+    const recovered = stubDriver([[{ actor: "a", recipient: "b", w: 23.33, f: 0 }]]);
+    const out = await getSocialWeather("p5", cfg, { driver: recovered.driver, nowMs: NOW + WEATHER_TTL_AND_A_BIT + 1 });
+    expect(out.value).toBeCloseTo(0.74, 2);
+    expect(out.band).toBe("sunny"); // raw bucket would be "fine" — held by the surviving anchor
+  });
+
+  it("returns frozen payloads so a handler can't poison the cache", async () => {
+    const { driver } = stubDriver([[{ actor: "a", recipient: "b", w: 5, f: 0 }]]);
+    invalidateSocialWeather("p6");
+    const out = await getSocialWeather("p6", cfg, { driver, nowMs: NOW });
+    expect(Object.isFrozen(out)).toBe(true);
   });
 });

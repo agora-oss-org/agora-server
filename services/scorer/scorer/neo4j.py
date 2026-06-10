@@ -63,6 +63,10 @@ async def ensure_constraints(settings: Settings) -> None:
             async with driver.session() as session:
                 await session.run("create constraint scorer_user_id if not exists for (u:User) require u.id is unique")
                 await session.run("create constraint scorer_content_id if not exists for (c:Content) require c.id is unique")
+                # Read-side support: @agora/api's Weather query filters INTERACTED by projectId
+                # (single shared graph, query-time scoping). Without this the planner scans every
+                # INTERACTED edge across all projects per weather window.
+                await session.run("create index scorer_interacted_project if not exists for ()-[r:INTERACTED]-() on (r.projectId)")
             log(logger, "info", "neo4j constraints ensured", attempt=attempt)
             return
         except Exception as exc:  # noqa: BLE001 — Neo4j may still be booting; retry

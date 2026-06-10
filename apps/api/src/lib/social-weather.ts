@@ -3,7 +3,9 @@
 // (cap+floor brightness, S_p, banding with hysteresis) lives here as pure functions so it unit-tests
 // without a graph. Decision log (PR 2): negative Layer-1 sentiment feeds the friction term F until
 // PR 3's dedicated FRICTION edges land; per-space Weather is deferred (spaceId isn't in the graph yet).
-import type { WeatherBand } from "@agora-server/contract";
+import type { Driver } from "neo4j-driver";
+import type { ResolvedSocialConfig, SocialWeather, WeatherBand } from "@agora-server/contract";
+import { getNeo4j } from "./neo4j.js";
 
 // Design constants — locked by docs/AGORA-SOCIAL.md §11; deliberately NOT in social_config.
 export const K_W = 10;       // warmth saturation constant
@@ -11,6 +13,11 @@ export const C_F = 0.5;      // CAP: friction can remove at most half the warmth
 export const B_FLOOR = 0.15; // FLOOR: extra-dark-equals-friction is unreadable by construction
 
 const HYSTERESIS_MARGIN = 0.02; // band moves only on a margin-crossing change (§12)
+
+const LN2 = Math.LN2;
+const DAY_MS = 86_400_000;
+const TREND_WINDOW_MS = 7 * DAY_MS;   // trend = now vs. as-of-7-days-ago
+const WEATHER_TTL_MS = 3_600_000;     // recompute at most hourly per project
 
 export interface WarmthPair {
   actor: string;
@@ -61,4 +68,86 @@ export function weatherBand(value: number | null, prevBand?: WeatherBand): Weath
   }
   // idx is 0-3 by construction (filter length on a 3-element array → 0..3)
   return BAND_SCALE[idx] as WeatherBand;
+}
+
+// Per-ordered-pair decayed sums over Layer-1 INTERACTED edges. Decay is READ-TIME (edges are never
+// rewritten): each edge contributes sentiment · exp(−ln2 · ageDays / halfLife), positives into w
+// (warmth half-life) and negatives into f (friction half-life). `at` is epoch-ms (scorer timestamp()).
+// Zero sentiment is excluded on purpose: the scorer writes 0 for deliberately-neutral reactions
+// (e.g. "sad" = empathy) — without the filter such a pair would sum to w=0,f=0 and read as a
+// floor-dark datapoint, inverting the design's intent (no signal ⇒ no entry).
+// Perf: projectId scoping relies on the scorer-created relationship index (scorer_interacted_project);
+// the query runs ≤2× per project per WEATHER_TTL_MS. TODO: fold both trend windows into one query.
+export const WEATHER_PAIRS_CYPHER = `
+MATCH (a:User)-[r:INTERACTED]->(b:User)
+WHERE r.projectId = $projectId AND r.at <= $asOf AND a.id <> b.id
+  AND r.sentiment IS NOT NULL AND r.sentiment <> 0
+WITH a.id AS actor, b.id AS recipient,
+     sum(CASE WHEN r.sentiment > 0
+          THEN r.sentiment * exp(-${LN2} * (toFloat($asOf - r.at) / ${DAY_MS}.0) / toFloat($warmthHalfLifeDays))
+          ELSE 0.0 END) AS w,
+     sum(CASE WHEN r.sentiment < 0
+          THEN -r.sentiment * exp(-${LN2} * (toFloat($asOf - r.at) / ${DAY_MS}.0) / toFloat($frictionHalfLifeDays))
+          ELSE 0.0 END) AS f
+RETURN actor, recipient, w, f`;
+
+// neo4j-driver may hand back Integer objects for whole numbers; sums here are floats but stay defensive.
+const toNum = (v: unknown): number =>
+  typeof v === "number" ? v : ((v as { toNumber?: () => number })?.toNumber?.() ?? 0);
+
+type HalfLives = Pick<ResolvedSocialConfig, "warmthHalfLifeDays" | "frictionHalfLifeDays">;
+
+/** One window: raw (unrounded) weather as of `asOfMs`, or null when the graph is empty. */
+export async function computeWeather(
+  driver: Driver, projectId: string, cfg: HalfLives, asOfMs: number,
+): Promise<number | null> {
+  const { records } = await driver.executeQuery(WEATHER_PAIRS_CYPHER, {
+    projectId,
+    asOf: asOfMs,
+    warmthHalfLifeDays: cfg.warmthHalfLifeDays,
+    frictionHalfLifeDays: cfg.frictionHalfLifeDays,
+  });
+  const pairs: WarmthPair[] = (records as Array<{ get: (k: string) => unknown }>).map((r) => ({
+    actor: String(r.get("actor")),
+    recipient: String(r.get("recipient")),
+    w: toNum(r.get("w")),
+    f: toNum(r.get("f")),
+  }));
+  return weatherFromPairs(pairs);
+}
+
+// Stale entries are kept past the TTL on purpose: the previous band anchors hysteresis.
+const weatherCache = new Map<string, { payload: SocialWeather; at: number }>();
+
+/** The member-facing Weather payload, cached per project for WEATHER_TTL_MS. Trend is dual-window
+ *  (now vs. now − 7d) so no history table is needed. Throws when Neo4j is unconfigured/unreachable —
+ *  the route maps that to 503. `opts` exists for tests (stub driver, frozen clock). */
+export async function getSocialWeather(
+  projectId: string, cfg: HalfLives, opts: { driver?: Driver; nowMs?: number } = {},
+): Promise<SocialWeather> {
+  const now = opts.nowMs ?? Date.now();
+  const hit = weatherCache.get(projectId);
+  if (hit && now - hit.at < WEATHER_TTL_MS) return hit.payload;
+  const driver = opts.driver ?? getNeo4j();
+  if (!driver) throw new Error("neo4j read client is not configured");
+  const [current, prior] = await Promise.all([
+    computeWeather(driver, projectId, cfg, now),
+    computeWeather(driver, projectId, cfg, now - TREND_WINDOW_MS),
+  ]);
+  const value = current == null ? null : Math.round(current * 100) / 100;
+  const payload: SocialWeather = Object.freeze({
+    value,
+    band: weatherBand(value, hit?.payload.band),
+    trend: current == null || prior == null ? null : Math.round((current - prior) * 1000) / 1000,
+    asOf: new Date(now).toISOString(),
+  });
+  weatherCache.set(projectId, { payload, at: now });
+  return payload;
+}
+
+/** Drop a project's cached Weather (call after an admin PATCHes /settings/social — half-life or
+ *  enablement changes should be visible promptly, not an hour later). Per-replica, like the config
+ *  caches: with multiple API replicas the others serve the old value until their TTL lapses. */
+export function invalidateSocialWeather(projectId: string): void {
+  weatherCache.delete(projectId);
 }
