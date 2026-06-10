@@ -1,0 +1,1 @@
+ALTER TABLE "projects" ADD COLUMN "social_config" jsonb DEFAULT '{}'::jsonb NOT NULL;

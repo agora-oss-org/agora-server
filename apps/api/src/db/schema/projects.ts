@@ -31,6 +31,10 @@ export const projects = pgTable("projects", {
   // (power-aware | symmetric | resolution-only). Resolved via lib/steward-config.ts; edited in admin
   // Settings → Stewardship. Empty = the power-aware default.
   stewardConfig: jsonb("steward_config").notNull().default(sql`'{}'::jsonb`),
+  // Per-project social-graph config: the community↔corporate privacy tier + feature flags
+  // (docs/SOCIAL-GRAPH.md §5, docs/AGORA-CORP.md §4). Resolved via lib/social-config.ts
+  // (tier defaults + clamp, fail-closed); edited in admin Settings → Social Graph. Empty = community defaults.
+  socialConfig: jsonb("social_config").notNull().default(sql`'{}'::jsonb`),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
