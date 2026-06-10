@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Community Weather (docs/SOCIAL-GRAPH.md §3): `GET /v7/:projectId/social/weather` returns the
+  project's aggregate warmth `{value, band, trend, asOf}` computed live from Layer-1 `INTERACTED`
+  edges with read-time decay (warmth + friction half-lives from social_config; zero-sentiment
+  "neutral" edges excluded), cached per project for 1h with band hysteresis. Gated by
+  `graphEnabled && weatherEnabled` (400 when off) and by the new optional
+  `NEO4J_URI`/`NEO4J_USER`/`NEO4J_PASSWORD` env vars (503 when unconfigured). The member
+  transparency endpoint moved to `routes/social.ts` (path unchanged). The scorer now also creates
+  a relationship index on `INTERACTED.projectId` for the read side. Admin: Community Weather card
+  on the Community dashboard.
 - Social-graph configuration foundation (`projects.social_config`): the community↔corporate
   privacy tier from `docs/SOCIAL-GRAPH.md` §5. Zod-validated contract schema + per-tier defaults
   with two-point enforcement (forbidden flags rejected on write with `social/tier-forbidden`,

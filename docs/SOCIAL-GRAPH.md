@@ -131,7 +131,7 @@ Graph reads are normal Hono handlers with normal gates (`requireAuth`, operator/
 
 | Endpoint (sketch) | Audience | Backing query |
 |---|---|---|
-| `GET /social/weather` | members | mean S_p over project (or space) — single scalar + trend |
+| `GET /social/weather` ✅ (PR 2) | members | mean S_p over project (or space) — single scalar + trend |
 | `GET /social/neighborhood` | the member themself | dyadic B(me, friend) per tie — own ties ONLY |
 | `GET /social/constellation` | members | k-anonymized cluster blobs (k ≥ 5), warmth tint only |
 | `GET /admin/social/influence` | operator, gated by config | PageRank / betweenness over INTERACTED+FOLLOWS |
@@ -252,6 +252,15 @@ Phasing (adapted from `agora-social/docs/08`, re-grounded in the scorer-owns-the
 1. **Phase 1 — Weather.** Read-time S_p aggregation over existing Layer 1 edges + the
    `social_config` column + admin settings UI. Lowest risk, zero re-identification surface, proves
    the read side. *(No new writes needed — the live INTERACTED graph already feeds it.)*
+
+   > **Status: ✅ implemented (PR 2).** Live Cypher over Layer-1 `INTERACTED` edges (zero-sentiment
+   > neutral edges excluded), dual-window trend (now vs. −7d), 1h per-project cache, band hysteresis
+   > (±0.02). Negative Layer-1 sentiment feeds the friction term until PR 3's dedicated FRICTION
+   > edges land. Per-space Weather deferred — `spaceId` is not yet written to the graph (scorer
+   > change, later PR). Design debt noted for PR 3+: a fully dormant community asymptotes to
+   > "stormy" rather than "quiet" (decayed pairs never leave the S_p denominator) — an age cutoff
+   > on edges (~6 warmth half-lives) would fix it and shrink the scan.
+
 2. **Phase 2 — Layer 2 writes.** FRICTION + CO_PARTICIPATES job kinds (triggers + scorer handlers),
    read-time decay, dyadic warmth → Neighborhood + Constellation endpoints. Feed affinity
    (`view` endpoint + `user_affinities`).
