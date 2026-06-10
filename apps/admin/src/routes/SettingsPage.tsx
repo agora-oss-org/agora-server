@@ -4,6 +4,7 @@ import { FeedRankingPanel } from "./settings/FeedRankingPanel";
 import { WebhooksPanel } from "./settings/WebhooksPanel";
 import { ModeratorPanel } from "./settings/ModeratorPanel";
 import { StewardPanel } from "./settings/StewardPanel";
+import { SocialGraphPanel } from "./settings/SocialGraphPanel";
 
 // Settings sections. Feed ranking, the automated moderator, and project webhooks are live.
 export function SettingsPage() {
@@ -26,6 +27,10 @@ export function SettingsPage() {
       <section className="space-y-3">
         <h2 className="text-sm font-semibold text-fg">Stewardship</h2>
         <StewardPanel />
+      </section>
+      <section className="space-y-3">
+        <h2 className="text-sm font-semibold text-fg">Social graph</h2>
+        <SocialGraphPanel />
       </section>
       <section className="space-y-3">
         <h2 className="text-sm font-semibold text-fg">Project webhooks</h2>
