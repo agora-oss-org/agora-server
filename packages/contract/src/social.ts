@@ -149,3 +149,24 @@ export function resolveSocialConfig(raw: unknown): ResolvedSocialConfig {
   }
   return cfg;
 }
+
+// ── Community Weather (GET /v7/:projectId/social/weather) ───────────────────────────────────────
+// One aggregate scalar — the only place friction shows publicly, as a dip in collective climate
+// (docs/AGORA-SOCIAL.md §5). Safe to publish per the magnitude-regime theorem: friction big enough
+// to move this number involves too many people to single anyone out.
+
+export const WEATHER_BANDS = ["quiet", "stormy", "overcast", "fine", "sunny"] as const;
+export type WeatherBand = (typeof WEATHER_BANDS)[number];
+
+export interface SocialWeather {
+  /** Mean S_p over the project; null when the graph has no interactions yet. 0..1 rounded to 2dp
+   *  is a runtime convention of the server's weather computation, not enforced by this type. */
+  value: number | null;
+  /** Bucketed label, never null. "quiet" is ONLY the no-data sentinel (value === null); a low
+   *  score with data is "stormy". Band moves with hysteresis — see apps/api lib/social-weather. */
+  band: WeatherBand;
+  /** value(now) − value(as of 7 days ago), 3dp; null when either window has no data. */
+  trend: number | null;
+  /** ISO timestamp of computation (results are cached ~1h server-side). */
+  asOf: string;
+}

@@ -7,6 +7,7 @@ import {
   SOCIAL_PRIVACY_TIERS,
   SOCIAL_TIER_DEFAULTS,
   socialConfigSchema,
+  WEATHER_BANDS,
 } from "./social.js";
 
 describe("socialConfigSchema — PATCH body contract", () => {
@@ -144,5 +145,12 @@ describe("structural drift guards", () => {
     const schemaKeys = Object.keys(socialConfigSchema.shape).sort();
     const resolvedKeys = Object.keys(SOCIAL_TIER_DEFAULTS.community).sort();
     expect(schemaKeys).toEqual(resolvedKeys);
+  });
+});
+
+describe("weather bands", () => {
+  it("exposes the five bands, quiet first, no duplicates", () => {
+    expect(WEATHER_BANDS).toEqual(["quiet", "stormy", "overcast", "fine", "sunny"]);
+    expect(new Set(WEATHER_BANDS).size).toBe(WEATHER_BANDS.length);
   });
 });
