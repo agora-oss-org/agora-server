@@ -6,3 +6,4 @@ export * from "./pagination.js";
 export * from "./errors.js";
 export * from "./schemas.js";
 export * from "./secure-chat.js";
+export * from "./social.js";
