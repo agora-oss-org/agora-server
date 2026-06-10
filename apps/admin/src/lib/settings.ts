@@ -156,3 +156,40 @@ export function updateStewardSettings(
 ): Promise<StewardConfigView> {
   return api<StewardConfigView>("/settings/steward", { method: "PATCH", body: patch });
 }
+
+// ── Social graph (GET/PATCH /settings/social) ────────────────────────────────────────────────────
+export type SocialPrivacyTier = "community" | "corporate";
+
+export interface ResolvedSocialConfig {
+  privacyTier: SocialPrivacyTier;
+  graphEnabled: boolean;
+  weatherEnabled: boolean;
+  constellationEnabled: boolean;
+  constellationKFloor: number;
+  neighborhoodEnabled: boolean;
+  influenceScoresEnabled: boolean;
+  siloDetectionEnabled: boolean;
+  engagementScoresEnabled: boolean;
+  frictionVisibleToStewards: boolean;
+  frictionAnalyticsEnabled: boolean;
+  readAffinityEnabled: boolean;
+  readReceiptsAllowed: boolean;
+  warmthHalfLifeDays: number;
+  frictionHalfLifeDays: number;
+}
+
+export interface SocialConfigView {
+  stored: Partial<ResolvedSocialConfig>;
+  effective: ResolvedSocialConfig;
+}
+
+// PATCH semantics: omit = unchanged, null = clear override (→ tier default).
+export type SocialConfigPatch = { [K in keyof ResolvedSocialConfig]?: ResolvedSocialConfig[K] | null };
+
+export function getSocialConfig(signal?: AbortSignal): Promise<SocialConfigView> {
+  return api<SocialConfigView>("/settings/social", { signal });
+}
+
+export function updateSocialConfig(patch: SocialConfigPatch): Promise<SocialConfigView> {
+  return api<SocialConfigView>("/settings/social", { method: "PATCH", body: patch });
+}
