@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Social-graph configuration foundation (`projects.social_config`): the community↔corporate
+  privacy tier from `docs/SOCIAL-GRAPH.md` §5. Zod-validated contract schema + per-tier defaults
+  with two-point enforcement (forbidden flags rejected on write with `social/tier-forbidden`,
+  clamped at read time), admin `GET/PATCH /settings/social`, member-facing
+  `GET /social/transparency` (the active tier + enabled analytics are always visible to members),
+  and an admin Settings → Social Graph panel. Migration `0038`.
 - **`services/scorer` relationship graph v2 — the user→user interaction graph.** The Neo4j graph now
   records distinct edge types (combined only at read time, never blended): a scored, append-log
   **`INTERACTED`** edge (`actor → recipient`, `MERGE`-keyed on the source id so pgmq redelivery / edits
