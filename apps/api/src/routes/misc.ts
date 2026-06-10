@@ -18,7 +18,8 @@ import { getStewardConfig, invalidateStewardConfig, stewardConfigView } from "..
 import { safeFetchText } from "../lib/ssrf.js";
 import { parseBody, oauthAuthorizeSchema, signTestingJwtSchema, webhookConfigSchema, feedConfigSchema, moderatorConfigSchema, stewardConfigSchema, socialConfigSchema, forbiddenSocialKeys, resolveSocialConfig, resultingSocialTier, SOCIAL_PRIVACY_TIERS, DEFAULT_MODERATION_CATEGORIES } from "../lib/validation.js";
 import type { SocialPrivacyTier } from "@agora-server/contract";
-import { getSocialConfig, invalidateSocialConfig, socialConfigView, transparencyView } from "../lib/social-config.js";
+import { invalidateSocialConfig, socialConfigView } from "../lib/social-config.js";
+import { invalidateSocialWeather } from "../lib/social-weather.js";
 
 type ProfileRow = typeof profiles.$inferSelect;
 
@@ -234,14 +235,8 @@ export const miscRoutes = new Hono<{ Variables: Variables }>()
     }
     await db.update(projects).set({ socialConfig: next }).where(eq(projects.id, c.var.projectId));
     invalidateSocialConfig(c.var.projectId);
+    invalidateSocialWeather(c.var.projectId); // half-life/enablement changes shouldn't wait out the 1h weather TTL
     return c.json(socialConfigView(next, resolveSocialConfig(next)));
-  })
-  // ── social transparency (any authenticated member) ─
-  // INVARIANT (docs/AGORA-CORP.md §4, invariant 5): the active tier + enabled analytics are
-  // readable by every member — people always know which instrument their instance is. Auth
-  // required (not public).
-  .get("/social/transparency", requireAuth, async (c) => {
-    return c.json(transparencyView(await getSocialConfig(c.var.projectId)));
   })
   // ── lean project info ───────────────────────────────────────────────────────
   .get("/projects/lean", async (c) => {
