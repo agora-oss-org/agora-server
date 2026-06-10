@@ -13,6 +13,9 @@ export default defineConfig({
     env: {
       DATABASE_URL: "postgres://test:test@localhost:5432/agora_test",
       ACCESS_TOKEN_SECRET: "unit-test-secret-unit-test-secret-unit-test",
+      // Hermetic, mirroring vitest.integration.config.ts: a developer's .env may point NEO4J_URI
+      // at a live DozerDB; unit tests must never construct a real driver.
+      NEO4J_URI: "",
     },
     coverage: {
       provider: "v8",

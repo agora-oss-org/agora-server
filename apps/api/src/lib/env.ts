@@ -50,6 +50,12 @@ const schema = z.object({
   // cap holds across API replicas; unset → in-process (per-replica) limiting. The app fail-opens to
   // in-memory if Redis is unreachable. A single replica needs no Redis. e.g. redis://redis:6379
   REDIS_URL: z.preprocess((v) => (v === "" ? undefined : v), z.string().url().optional()),
+  // Neo4j (DozerDB) — the social graph's READ side (docs/SOCIAL-GRAPH.md §3). The scorer service is
+  // the graph's only writer; the API only runs read queries (Weather). Unset → social graph read
+  // endpoints return 503 and the rest of the server is unaffected. e.g. bolt://neo4j:7687
+  NEO4J_URI: z.preprocess((v) => (v === "" ? undefined : v), z.string().url().optional()),
+  NEO4J_USER: z.string().default("neo4j"),
+  NEO4J_PASSWORD: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
   // Max accepted upload size (bytes) for /storage + multipart image attachments. Defense-in-depth
   // behind the proxy's body cap (the bundled Caddy edge caps at MAX_BODY_SIZE). Default 25 MiB.
   MAX_UPLOAD_BYTES: z.coerce.number().int().positive().default(26_214_400),

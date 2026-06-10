@@ -30,6 +30,10 @@ export default defineConfig({
       // synthetic-vector test (semantic-search.test.ts) covers match_content offline instead.
       VOYAGE_API_KEY: "",
       ANTHROPIC_API_KEY: "",
+      // Hermetic for the same reason: a developer's .env may point NEO4J_URI at a live DozerDB.
+      // Forced unset, the weather endpoint's 503 path is deterministic. The opt-in live test
+      // (social-weather-live.test.ts) uses TEST_NEO4J_URI with its own driver instead.
+      NEO4J_URI: "",
     },
   },
 });
