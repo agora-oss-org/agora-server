@@ -20,7 +20,9 @@ import { cn } from "../lib/cn";
 import { DEMO_URL } from "../config";
 import {
   getCommunityOverview, communityOverviewKey,
+  getSocialWeather, socialWeatherKey,
   type CommunityOverview, type CommunityLeader, type CommunitySeriesPoint,
+  type SocialWeather, type WeatherBand,
 } from "../lib/community";
 
 const RANGES = [
@@ -88,6 +90,8 @@ function CommunityBody({ data, days }: { data: CommunityOverview; days: number }
         <PulseCard label="Comments" value={data.totals.comments} delta={d?.comments ?? null} icon={MessageSquare} />
         <PulseCard label="Reactions" value={data.totals.reactions} delta={d?.reactions ?? null} icon={Heart} />
       </div>
+
+      <WeatherSection />
 
       <Section title="Growth" hint={`Per day, over the last ${days} days`}>
         <div className="grid gap-4 lg:grid-cols-2">
@@ -282,6 +286,70 @@ function ModerationChart({ series, days }: { series: { hour: string; opened: num
       )}
     </Card>
   );
+}
+
+// ── Community Weather: the social graph's aggregate warmth (GET /social/weather). Disabled config
+// surfaces as a 400 and an unconfigured graph as a 503 — both render as a quiet muted note rather
+// than an error state, since either is a legitimate deployment choice. ──
+const BAND_META: Record<WeatherBand, { emoji: string; label: string }> = {
+  sunny: { emoji: "☀️", label: "Sunny" },
+  fine: { emoji: "🌤️", label: "Fine" },
+  overcast: { emoji: "☁️", label: "Overcast" },
+  stormy: { emoji: "⛈️", label: "Stormy" },
+  quiet: { emoji: "🌫️", label: "Quiet" },
+};
+
+function WeatherSection() {
+  const { data, isLoading, isError, error } = useQuery({
+    queryKey: socialWeatherKey,
+    queryFn: ({ signal }) => getSocialWeather(signal),
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+  return (
+    <Section title="Community Weather" hint="Aggregate warmth from the social graph — decayed, anonymous, k-safe by construction">
+      <Card className="p-5">
+        {isLoading ? (
+          <p className="text-sm text-faint">Reading the sky…</p>
+        ) : isError ? (
+          <p className="text-sm text-muted">{(error as Error)?.message ?? "Weather unavailable"}</p>
+        ) : (
+          <WeatherReading w={data!} />
+        )}
+      </Card>
+    </Section>
+  );
+}
+
+function WeatherReading({ w }: { w: SocialWeather }) {
+  const meta = BAND_META[w.band];
+  return (
+    <div className="flex items-center gap-4">
+      <span className="text-4xl" role="img" aria-label={meta.label}>{meta.emoji}</span>
+      <div>
+        <p className="text-2xl font-semibold tracking-tight text-fg">
+          {meta.label}
+          {w.value != null ? <span className="ml-2 text-base font-normal text-muted">warmth {Math.round(w.value * 100)}%</span> : null}
+        </p>
+        <p className="mt-0.5 text-sm">
+          {w.value == null ? (
+            <span className="text-faint">No interactions in the graph yet.</span>
+          ) : (
+            <><TrendDelta n={w.trend} /> <span className="text-faint">vs last week · as of {fmtDateTime(w.asOf)}</span></>
+          )}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function TrendDelta({ n }: { n: number | null }) {
+  if (n == null) return <span className="text-faint">—</span>;
+  const pts = Math.round(Math.abs(n) * 100);
+  if (pts === 0) return <span className="text-faint">steady</span>;
+  return n > 0
+    ? <span className="text-success">▲ +{pts} pts</span>
+    : <span className="text-danger">▼ −{pts} pts</span>;
 }
 
 // ── small shared pieces ──────────────────────────────────────────────────────

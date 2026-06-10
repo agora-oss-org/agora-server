@@ -56,3 +56,20 @@ export const communityOverviewKey = (days: number) => ["community-overview", day
 export function getCommunityOverview(days: number, signal?: AbortSignal): Promise<CommunityOverview> {
   return api<CommunityOverview>("/admin/community/overview", { query: { days }, signal });
 }
+
+// ── Community Weather (GET /social/weather) ─────────────────────────────────────────────────────
+// Hand-copied from @agora-server/contract SocialWeather (PR-1 precedent in lib/settings.ts).
+export type WeatherBand = "quiet" | "stormy" | "overcast" | "fine" | "sunny";
+
+export interface SocialWeather {
+  value: number | null;
+  band: WeatherBand;
+  trend: number | null;
+  asOf: string;
+}
+
+export const socialWeatherKey = ["social-weather"] as const;
+
+export function getSocialWeather(signal?: AbortSignal): Promise<SocialWeather> {
+  return api<SocialWeather>("/social/weather", { signal });
+}
