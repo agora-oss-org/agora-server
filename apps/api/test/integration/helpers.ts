@@ -28,9 +28,19 @@ export async function api(method: string, path: string, init: Init = {}) {
 }
 
 /** Mint an Agora access token the auth middleware will accept (HS256 over ACCESS_TOKEN_SECRET).
- *  `steward` stamps the `steward` claim the auth middleware reads back as `isSteward`. */
-export function signToken(userId: string, role = "visitor", operator = false, steward = false) {
-  return new SignJWT({ role, operator, steward })
+ *  `steward` stamps the `steward` claim the auth middleware reads back as `isSteward`; `owner`/`admin`
+ *  stamp the `powner`/`padmin` claims read back as `isProjectOwner`/`isProjectAdmin`. These extra
+ *  params let SETUP mint owner/admin tokens directly (defaults false → existing call sites unchanged);
+ *  they bypass the DB resolver, so prove real claim propagation via the refresh path separately. */
+export function signToken(
+  userId: string,
+  role = "visitor",
+  operator = false,
+  steward = false,
+  owner = false,
+  admin = false,
+) {
+  return new SignJWT({ role, operator, steward, powner: owner, padmin: admin })
     .setProtectedHeader({ alg: "HS256" })
     .setSubject(userId)
     .setExpirationTime("1h")
