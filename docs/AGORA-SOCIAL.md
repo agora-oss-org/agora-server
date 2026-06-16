@@ -79,6 +79,16 @@ Projection rules: reply/upvote/mention → `INTERACTED` (warmth); same-thread po
 - **✨ Constellation** — the anonymous *shape*: cluster blobs (size = members, brightness =
   warmth), **never individual nodes**. Guardrails: k-anonymity (k ≥ 5, smaller merges up),
   layout re-randomized per load, warmth-only (friction never renders as structure).
+
+> **As shipped (PR 5):** `GET /social/constellation` returns cluster **blobs** — a bucketed size
+> (`5–9`, `10–19`, …) + a warmth band, **no ids, names, or member lists**. Clustering is **GDS Louvain**
+> (`gds.louvain.stream`) over the warmth/structure graph (`INTERACTED ∪ FOLLOWS ∪ CONNECTED`; **`FRICTION`
+> excluded** — friction is never structure), scoped by the project's user set, with a **by-space fallback**
+> when OpenGDS is absent. Clusters smaller than `constellationKFloor` (default 5, admin-raisable) are
+> **suppressed**; each blob is tinted by its members' mean `S_p`. Per §12 it's **materialized seasonally**
+> (a `social_constellation` snapshot refreshed by a weekly cron with a ~6-week per-project epoch gate —
+> never per-load), and blobs carry **no persistent identity** (re-clustered fresh each epoch). The
+> coarse buckets + slow cadence are the temporal-anonymity protection.
 - **🏡 Neighborhood** — zoom to *yourself*: your named friends and ties, warm and alive.
   Self-view only; nobody else can see it.
 
@@ -210,6 +220,12 @@ at the floor already attacked her.
 > scalar. Weather is protected by the **magnitude-regime theorem (§11) + the k≥5 floor**, which don't
 > care how often it updates. So **Weather's refresh cadence is a product/cost choice, not a privacy
 > one** (see SOCIAL-GRAPH.md §7). Everything below applies to the Constellation only.
+
+> **Implemented (PR 5):** the Constellation is materialized on a **weekly cron with a ~6-week per-project
+> epoch gate** (`CONSTELLATION_EPOCH_DAYS`), never per-load; blobs are **re-clustered fresh** with no
+> persistent identity, and **coarse size buckets + warmth bands** quantize away small shifts. (Per-blob
+> band *hysteresis* is moot without blob identity — the buckets + slow cadence do that work instead.
+> "Sticky noise" is deferred.)
 
 k-anon + unstable layout protect *one* snapshot; an always-on view leaks via the time
 series (differential privacy under continual observation). Master principle: **minimize how

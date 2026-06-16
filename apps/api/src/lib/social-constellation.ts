@@ -66,7 +66,7 @@ export function blobsFromCommunities(
 /** GDS Louvain over the project's warmth/structure graph (INTERACTED ∪ FOLLOWS ∪ CONNECTED — FRICTION
  *  excluded). Scoped by the Postgres profile-id set (User nodes carry no projectId). Returns communityId →
  *  member ids, or null when GDS is absent/unusable (→ caller falls back to by-space). */
-async function louvainCommunities(
+export async function louvainCommunities(
   driver: Driver, projectId: string, userIds: string[],
 ): Promise<Map<string, string[]> | null> {
   const graphName = GRAPH_NAME_PREFIX + projectId.replace(/-/g, "");

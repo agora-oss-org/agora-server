@@ -3,10 +3,12 @@
 > **Status: PARTIALLY IMPLEMENTED.** The `social_config` foundation (§5) shipped in **PR 1**,
 > Community Weather (§3 `GET /social/weather`, §7 Phase 1) shipped in **PR 2**, the Layer-2
 > **`FRICTION`** edge (user reports → Weather's friction term, §7 Phase 2) shipped in **PR 3**, and the
-> **Neighborhood** read surface (§3 `GET /social/neighborhood` — dyadic self-view) shipped in **PR 4** —
-> see the ✅ markers on those sections. The rest of Layer 2 (`CO_PARTICIPATES`, plus the `block`/`mute`
-> friction source — which has no feature/table yet), the remaining read endpoints (Constellation, admin
-> analytics), and the OpenGDS/feature-detect work (§6) remain **proposed**. This is the consolidation plan for the social-graph layer: what `../agora-social`
+> **Neighborhood** read surface (§3 `GET /social/neighborhood` — dyadic self-view) shipped in **PR 4**, and
+> the **Constellation** (§3 `GET /social/constellation` — GDS-Louvain k-anonymized blobs, seasonally
+> cron-materialized) shipped in **PR 5**, completing the member-facing **Garden** — see the ✅ markers on
+> those sections. The rest of Layer 2 (`CO_PARTICIPATES`, plus the `block`/`mute` friction source — which
+> has no feature/table yet), the **admin analytics** endpoints, and the corporate OpenGDS algorithm tier
+> (§6 — OpenGDS is now installed; PageRank/silo reports remain) stay **proposed**. This is the consolidation plan for the social-graph layer: what `../agora-social`
 > designed, what `services/scorer` already built, how the two become **one system**, and the
 > per-project configuration that lets each deployment decide what it extracts from its own graph.
 > Companion to `docs/SCORER.md` (the live Layer 1 writer) and the `../agora-social/docs/` design
@@ -144,7 +146,7 @@ Graph reads are normal Hono handlers with normal gates (`requireAuth`, operator/
 |---|---|---|
 | `GET /social/weather` ✅ (PR 2) | members | mean S_p over project — single scalar + trend (per-space deferred — see §7 Phase 1) |
 | `GET /social/neighborhood` ✅ (PR 4) | the member themself | dyadic B(me, friend) per tie — own ties ONLY. Default = follows ∪ connections; interactions opt-in via `neighborhoodIncludeInteractions` (project default) or `?includeInteractions=` (per-member override). Friction dims, never creates a tie. |
-| `GET /social/constellation` | members | k-anonymized cluster blobs (k ≥ 5), warmth tint only |
+| `GET /social/constellation` ✅ (PR 5) | members | k-anonymized cluster blobs (k ≥ 5), warmth tint only — GDS Louvain (by-space fallback), seasonally cron-materialized (§12), suppress sub-k-floor |
 | `GET /admin/social/influence` | operator, gated by config | PageRank / betweenness over INTERACTED+FOLLOWS |
 | `GET /admin/social/silos` | operator, gated by config | community detection between spaces/teams |
 | `GET /admin/social/engagement` | operator, gated by config | per-person S_p, churn-risk trends |
@@ -244,9 +246,11 @@ what the tier allows (e.g. `read_receipts_allowed: true` is rejected under `comm
 
 ## 6. GDS: DozerDB + OpenGDS
 
-The compose file currently runs stock `neo4j:5-community`. The deployment target is **DozerDB**
-(GPL; Neo4j Community + enterprise features: multi-db, full constraints — no Neo4j affiliation),
-with **OpenGDS** as a separately-installed plugin for the algorithm tier:
+The compose file runs **DozerDB** (`graphstack/dozerdb:5.26.3.0` — GPL; Neo4j Community + enterprise
+features: multi-db, full constraints — no Neo4j affiliation), with **OpenGDS 2.12.0** installed as a
+plugin (jar mounted at `/plugins`; APOC via `NEO4J_PLUGINS`) — see `docs/DOZERDB.md`. ✅ **The
+Constellation (PR 5) uses `gds.louvain.stream`** for community detection, with a by-space heuristic
+fallback when GDS is absent (feature-detected at run time). Remaining GDS tiers:
 
 - **Pure Cypher (no plugin needed):** weather, neighborhood, affinity feed boosts,
   people-you-may-know (friends-of-friends), co-participation queries. Phase 1–2 needs nothing else.
@@ -287,12 +291,14 @@ Phasing (adapted from `agora-social/docs/08`, re-grounded in the scorer-owns-the
    > existing hourly **`community-stats` rollup → `community_stats_hourly`** cron — it's the exact
    > pattern, right down to writing one row per project per period.
 
-2. **Phase 2 — Layer 2 writes + Garden reads.** *(Partially shipped, PR 3–4.)* ✅ `FRICTION` job kind
+2. **Phase 2 — Layer 2 writes + Garden reads.** *(Partially shipped, PR 3–5.)* ✅ `FRICTION` job kind
    (report trigger `0039` + scorer handler + read-time decay) folded into Weather (PR 3); ✅ the
    **Neighborhood** read endpoint — dyadic `B(me, friend)` over the caller's own ties, friction-folded,
-   age-cut, self-view only (PR 4). **Remaining:** the **Constellation** endpoint (k-anonymized blobs),
-   `CO_PARTICIPATES` (its first reader), the `block`/`mute` friction source (needs a feature/table first),
-   and feed affinity (`view` endpoint + `user_affinities`).
+   age-cut, self-view only (PR 4); ✅ the **Constellation** — k-anonymized cluster blobs from GDS Louvain
+   (by-space fallback), seasonally cron-materialized into `social_constellation`, sub-k-floor suppressed
+   (PR 5). **The Garden lenses are now complete.** **Remaining in Phase 2:** `CO_PARTICIPATES` (no reader
+   needs it yet — Louvain clusters over the existing warmth/structure edges), the `block`/`mute` friction
+   source (needs a feature/table first), and feed affinity (`view` endpoint + `user_affinities`).
 3. **Phase 3 — Steward tier.** Ripple tracing + audited in-context inspection (rides the existing
    `project_stewards` grant + audit machinery).
 4. **Phase 4 — Corporate analytics.** OpenGDS algorithms (influence, silos, engagement), per-space

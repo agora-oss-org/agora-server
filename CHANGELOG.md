@@ -8,6 +8,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Constellation — the anonymous community shape** (docs/AGORA-SOCIAL.md §12, SOCIAL-GRAPH.md §3),
+  completing the member-facing Garden (Weather → Constellation → Neighborhood). `GET
+  /v7/:projectId/social/constellation` returns cluster **blobs** — a bucketed size (`5–9`, `10–19`, …) and
+  a warmth band, with **no ids, names, or member lists**. Clustering is **GDS Louvain**
+  (`gds.louvain.stream`) over the warmth/structure graph (`INTERACTED ∪ FOLLOWS ∪ CONNECTED`; `FRICTION`
+  excluded — friction never renders as structure), scoped by the project's user set, with a **by-space
+  fallback** when OpenGDS is absent (feature-detected). Clusters smaller than `constellationKFloor`
+  (default 5, admin-raisable) are **suppressed** (k-anonymity); each blob is tinted by its members' mean
+  `S_p` (reusing the Weather warmth math). Per §12 it is **materialized seasonally** — a new
+  `social_constellation` table (migration 0040) refreshed by `POST /internal/cron/social-constellation`
+  on a weekly supercronic schedule with a ~6-week per-project epoch gate (never per-load); blobs carry no
+  persistent identity (re-clustered fresh). The read serves the latest snapshot, returning an `asOf:null`
+  "forming" payload (200, not 503) for a project never materialized. Gated by `graphEnabled &&
+  constellationEnabled` (400 `social/constellation-disabled`). `social-weather` refactored to share
+  `fetchWarmthPairs` + `personScoresFromPairs`.
 - **DozerDB + OpenGDS setup** (`docs/DOZERDB.md`): documented the Neo4j graph database configuration
   for the social-graph layer. DozerDB is the fully open-source Neo4j 5 distribution that ships APOC
   and OpenGDS without an Enterprise license. Documents the two-mechanism plugin loading (APOC via
