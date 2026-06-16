@@ -60,6 +60,24 @@ Built on the Layer 2 graph + OpenGDS (see §6):
 - **Trend over time** — is cross-functional interaction growing or shrinking quarter over
   quarter?
 
+**API surface (✅ shipped, PR 6 — operator-only, corporate-tier, NAMED).** Three reports read from
+one combined `social_analytics` snapshot table, gated per-report by the corporate-only config flags
+(`influence_scores_enabled` / `silo_detection_enabled` / `engagement_scores_enabled`):
+
+| Endpoint | Report | Backing |
+|---|---|---|
+| `GET /admin/social/influence` | informal leaders + bridge people | GDS PageRank + betweenness, one shared projection |
+| `GET /admin/social/silos` | named clusters → dominant spaces | GDS Louvain (no k-anon — operator view) |
+| `GET /admin/social/engagement` | per-person S_p + churn-risk band | Weather math (`fetchWarmthPairs`/`personScoresFromPairs`) over the trailing weekly series |
+| `POST /admin/social/recompute` | operator-forced **synchronous** recompute | runs the rollup with `force:true`, returns the fresh report(s) |
+
+Materialized weekly (`/internal/cron/social-analytics`, Sun 05:00; in-lib per-report epoch gate
+self-heals a missed run). Snapshots store **raw ids + scores only** — names and space labels are
+hydrated fresh at read, so a renamed/departed person is never stale. Each surface fails closed: under
+the community tier the flag is forced off → `400 social/<report>-disabled`; a non-operator → `403
+admin/operator-required`. Unlike the member-facing Constellation, these reports name real people —
+temporal anonymity does **not** apply, because the operator is the accountable employer (§4).
+
 ### 🌡️ Engagement & team health
 - **Team Weather** — the community-health scalar (`S_p` mean) scoped per space/team:
   "Engineering has been warm lately; Sales is having a stormy month."
@@ -210,7 +228,9 @@ Everything in `SCORER.md` / `SCORER-REQUIREMENTS.md` applies, plus:
 
 Corporate features ride the existing build order ([`SOCIAL-GRAPH.md` §7](SOCIAL-GRAPH.md)):
 the `corporate` tier config ships with **Phase 1** (it's just the jsonb + clamps), team
-Weather with Phase 1–2, read receipts + the OpenGDS analytics suite are **Phase 4**.
+Weather with Phase 1–2, read receipts + the OpenGDS analytics suite are **Phase 4**. ✅ The
+**analytics API** (influence / silos / engagement reports + operator forced-recompute) shipped
+in **PR 6** — see §2 flagship; per-space read receipts and the operator React dashboards remain.
 
 Open questions:
 

@@ -8,6 +8,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Admin analytics tier — the corporate counterpart to the Garden** (docs/AGORA-CORP.md §2,
+  SOCIAL-GRAPH.md §7 Phase 4). Three **operator-only, NAMED**, corporate-tier reports read from one
+  combined `social_analytics` snapshot table (migration `0046`): **`GET /v7/:projectId/admin/social/influence`**
+  (informal leaders via GDS PageRank + bridge people via GDS betweenness, computed over one shared
+  projection), **`/admin/social/silos`** (named GDS Louvain clusters mapped to their dominant spaces —
+  the receipts counterpart to the k-anonymized Constellation, with **no k-anon** because the operator is
+  the accountable employer), and **`/admin/social/engagement`** (per-person warmth-received `S_p` reusing
+  the Weather math, plus a **churn-risk band** — `none`/`watch`/`at-risk` — from the relative decline over
+  the trailing weekly `S_p` series). Plus **`POST /admin/social/recompute`**, an operator-forced
+  **synchronous** recompute that bypasses the weekly epoch gate and returns the fresh report(s). Each
+  surface applies the operator gate (`403 admin/operator-required`) then its per-report corporate-flag
+  gate (`400 social/<report>-disabled`; community tier forces the flags off), and returns the empty
+  `{ …, asOf: null }` sentinel (200, never 404) when nothing is materialized. Materialized weekly by
+  **`POST /internal/cron/social-analytics`** (Sun 05:00, after the Constellation pass) with an in-lib
+  per-report epoch gate that self-heals a missed run. Snapshots store **raw ids + scores only** — names
+  and space labels are hydrated fresh at read, so they never go stale. New shared `lib/social-gds.ts`
+  (`withProjectedGdsGraph` — feature-detect + Cypher projection + drop-in-`finally`, lifted out of the
+  Constellation's `louvainCommunities`, which now reuses it) and `lib/social-analytics.ts` (pure
+  `topByScore`/`dominantSpaces`/`churnFromSeries` + the compute/rollup/read functions). API-first; the
+  operator React dashboards are a follow-up.
 - **Auth-provider abstraction + native auth** (managed-hosting sub-project A): `projects.auth_provider`
   (`supabase` default | `native`) selects the credential backend per project via `lib/auth/`
   (`getAuthProvider`). `SupabaseAuthProvider` preserves the existing Supabase Auth behavior (no

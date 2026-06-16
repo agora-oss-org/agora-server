@@ -147,9 +147,10 @@ Graph reads are normal Hono handlers with normal gates (`requireAuth`, operator/
 | `GET /social/weather` ✅ (PR 2) | members | mean S_p over project — single scalar + trend (per-space deferred — see §7 Phase 1) |
 | `GET /social/neighborhood` ✅ (PR 4) | the member themself | dyadic B(me, friend) per tie — own ties ONLY. Default = follows ∪ connections; interactions opt-in via `neighborhoodIncludeInteractions` (project default) or `?includeInteractions=` (per-member override). Friction dims, never creates a tie. |
 | `GET /social/constellation` ✅ (PR 5) | members | k-anonymized cluster blobs (k ≥ 5), warmth tint only — GDS Louvain (by-space fallback), seasonally cron-materialized (§12), suppress sub-k-floor |
-| `GET /admin/social/influence` | operator, gated by config | PageRank / betweenness over INTERACTED+FOLLOWS |
-| `GET /admin/social/silos` | operator, gated by config | community detection between spaces/teams |
-| `GET /admin/social/engagement` | operator, gated by config | per-person S_p, churn-risk trends |
+| `GET /admin/social/influence` ✅ (PR 6) | operator, corporate-tier | named informal leaders (GDS PageRank) + bridge people (GDS betweenness), one shared projection; weekly cron-materialized, operator force-recompute |
+| `GET /admin/social/silos` ✅ (PR 6) | operator, corporate-tier | named GDS Louvain clusters mapped to their dominant spaces — the receipts form of the Constellation (NO k-anon; the operator is the accountable employer) |
+| `GET /admin/social/engagement` ✅ (PR 6) | operator, corporate-tier | per-person warmth-received S_p (reuses the Weather math) + a churn-risk band from the trailing weekly S_p series |
+| `POST /admin/social/recompute` ✅ (PR 6) | operator, corporate-tier | operator-forced synchronous recompute (bypasses the weekly epoch gate), returns the fresh report(s) |
 | steward ripple/inspection | steward, audited | N-hop trace along warmth/friction (`agora-social/docs/06`) |
 
 ## 4. Reads: affinity vs receipts (two different things)
@@ -301,8 +302,17 @@ Phasing (adapted from `agora-social/docs/08`, re-grounded in the scorer-owns-the
    source (needs a feature/table first), and feed affinity (`view` endpoint + `user_affinities`).
 3. **Phase 3 — Steward tier.** Ripple tracing + audited in-context inspection (rides the existing
    `project_stewards` grant + audit machinery).
-4. **Phase 4 — Corporate analytics.** OpenGDS algorithms (influence, silos, engagement), per-space
-   read receipts, org dashboards in admin.
+4. **Phase 4 — Corporate analytics.** *(API shipped, PR 6.)* ✅ Three operator-only, **NAMED**
+   corporate-tier reports read from one combined `social_analytics` snapshot table: **influence**
+   (GDS PageRank leaders + betweenness bridges, one shared projection), **silos** (GDS Louvain
+   clusters mapped to dominant spaces — the receipts counterpart to the k-anonymized Constellation,
+   no k-anon because the operator is the accountable employer), and **engagement** (per-person S_p
+   from the Weather math + a churn-risk band over the trailing weekly series). Weekly cron-materialized
+   (`/internal/cron/social-analytics`, Sun 05:00, in-lib per-report epoch gate self-heals a missed
+   run) with an operator-forced **synchronous** recompute (`POST /admin/social/recompute`). Snapshots
+   store raw ids + scores only; names + space labels are hydrated fresh at read so they never go stale.
+   See `docs/AGORA-CORP.md`. **Remaining in Phase 4:** per-space read receipts and the operator React
+   dashboards (API-first — the UI is a follow-up).
 
 Open questions (carried from `agora-social/docs/08` + new ones from this consolidation):
 
