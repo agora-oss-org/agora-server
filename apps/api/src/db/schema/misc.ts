@@ -203,3 +203,21 @@ export const socialConstellation = pgTable("social_constellation", {
 }, (t) => [
   primaryKey({ columns: [t.projectId, t.computedAt] }),
 ]);
+
+// Admin analytics snapshots (docs/AGORA-CORP.md; docs/SOCIAL-GRAPH.md §7 Phase 4) — the operator-only,
+// NAMED corporate reports, materialized on a slow (weekly) cadence by POST /internal/cron/social-analytics
+// plus an operator-forced recompute. ONE combined table: `report` discriminates influence | silos |
+// engagement, one row per (project, report, snapshot epoch). The read endpoints serve the LATEST row
+// (engagement also reads a trailing window for the churn-risk trend). `payload` stores RAW ids + scores
+// only (no names) — names are hydrated fresh at read so they never go stale. Corporate-tier-only, gated
+// per report by its CORPORATE_ONLY_FLAG.
+export const socialAnalytics = pgTable("social_analytics", {
+  projectId: uuid("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  report: text("report").notNull(),                                       // 'influence' | 'silos' | 'engagement'
+  computedAt: timestamp("computed_at", { withTimezone: true }).notNull(), // snapshot epoch boundary
+  payload: jsonb("payload").notNull().default(sql`'{}'::jsonb`),          // raw ids + scores (names hydrated at read)
+  memberCount: integer("member_count").notNull().default(0),              // people scored in this snapshot
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  primaryKey({ columns: [t.projectId, t.report, t.computedAt] }),
+]);
