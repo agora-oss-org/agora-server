@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Release script** (`scripts/release.sh`) — automated version bumping for monorepo releases. Bumps all `package.json` versions (root + contract + api + admin), commits with `chore(release): vX.Y.Z`, and creates a git tag. Fixes the gap where v0.12.0 tagged before package versions were bumped, so npm-publish published 0.11.0 instead. See `docs/RELEASE.md` for usage.
+
 ## [0.12.0] - 2026-06-16
 
 ### Added
