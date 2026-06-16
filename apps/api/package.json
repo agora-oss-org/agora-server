@@ -28,6 +28,7 @@
     "@agora-server/contract": "workspace:*",
     "@hono/node-server": "^1.19.14",
     "@jenova-marie/wonder-logger": "^2.0.18",
+    "@node-rs/argon2": "^2.0.2",
     "@supabase/supabase-js": "^2.107.0",
     "dotenv": "^17.4.2",
     "drizzle-orm": "^0.45.2",
