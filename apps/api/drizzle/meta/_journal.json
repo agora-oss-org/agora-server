@@ -302,6 +302,13 @@
       "when": 1781604722344,
       "tag": "0042_fuzzy_kang",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1781610215846,
+      "tag": "0043_auth_rls",
+      "breakpoints": true
     }
   ]
 }
