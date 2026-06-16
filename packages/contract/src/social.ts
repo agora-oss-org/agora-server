@@ -28,6 +28,10 @@ export interface ResolvedSocialConfig {
   constellationEnabled: boolean;
   constellationKFloor: number;
   neighborhoodEnabled: boolean;
+  /** When true, a member's Neighborhood also includes people they've recently *interacted* with (not
+   *  just follows/connections). Default false — the project-wide default; a member can override it for
+   *  their own view via the endpoint's `?includeInteractions=` query param. */
+  neighborhoodIncludeInteractions: boolean;
   influenceScoresEnabled: boolean;
   siloDetectionEnabled: boolean;
   engagementScoresEnabled: boolean;
@@ -46,6 +50,7 @@ const COMMUNITY_DEFAULTS: ResolvedSocialConfig = {
   constellationEnabled: true,
   constellationKFloor: 5,
   neighborhoodEnabled: true,
+  neighborhoodIncludeInteractions: false,
   influenceScoresEnabled: false,
   siloDetectionEnabled: false,
   engagementScoresEnabled: false,
@@ -80,6 +85,7 @@ export const socialConfigSchema = z.object({
   // LOCKSTEP: schema write bounds (5–1000) must stay aligned with resolver read bounds (intIn 1–1000 + Math.max(5)); change both together.
   constellationKFloor: z.number().int().min(5).max(1000).nullish(),
   neighborhoodEnabled: z.boolean().nullish(),
+  neighborhoodIncludeInteractions: z.boolean().nullish(),
   influenceScoresEnabled: z.boolean().nullish(),
   siloDetectionEnabled: z.boolean().nullish(),
   engagementScoresEnabled: z.boolean().nullish(),
@@ -134,6 +140,7 @@ export function resolveSocialConfig(raw: unknown): ResolvedSocialConfig {
     // The k-floor clamps UP only — a stored value below 5 is raised, never honored.
     constellationKFloor: Math.max(5, intIn(r.constellationKFloor, d.constellationKFloor, 1, 1000)),
     neighborhoodEnabled: bool(r.neighborhoodEnabled, d.neighborhoodEnabled),
+    neighborhoodIncludeInteractions: bool(r.neighborhoodIncludeInteractions, d.neighborhoodIncludeInteractions),
     influenceScoresEnabled: bool(r.influenceScoresEnabled, d.influenceScoresEnabled),
     siloDetectionEnabled: bool(r.siloDetectionEnabled, d.siloDetectionEnabled),
     engagementScoresEnabled: bool(r.engagementScoresEnabled, d.engagementScoresEnabled),
@@ -198,6 +205,10 @@ export interface NeighborhoodTie {
 export interface SocialNeighborhood {
   /** The caller's ties, brightest-first. */
   ties: NeighborhoodTie[];
+  /** The effective tie-set rule for this response: when true, interaction-only ties are included
+   *  (not just follows/connections). Echoes the resolved query-param-or-project-default so a client
+   *  can reflect the actual state of its toggle. */
+  includesInteractions: boolean;
   /** ISO timestamp of computation. */
   asOf: string;
 }

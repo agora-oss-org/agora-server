@@ -45,6 +45,7 @@ describe("SOCIAL_TIER_DEFAULTS — the two postures", () => {
     expect(d.weatherEnabled).toBe(true);
     expect(d.constellationEnabled).toBe(true);
     expect(d.neighborhoodEnabled).toBe(true);
+    expect(d.neighborhoodIncludeInteractions).toBe(false); // structural-only by default
     expect(d.frictionVisibleToStewards).toBe(true);
     expect(d.readAffinityEnabled).toBe(true);
     for (const k of CORPORATE_ONLY_FLAGS) expect(d[k]).toBe(false);
