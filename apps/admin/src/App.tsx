@@ -5,6 +5,7 @@ import { LoginPage } from "./routes/LoginPage";
 import { DashboardPage } from "./routes/DashboardPage";
 import { CommunityPage } from "./routes/CommunityPage";
 import { AnalyticsPage } from "./routes/AnalyticsPage";
+import { SocialAnalyticsPage } from "./routes/SocialAnalyticsPage";
 import { ModerationPage } from "./routes/ModerationPage";
 import { StewardPage } from "./routes/StewardPage";
 import { SettingsPage } from "./routes/SettingsPage";
@@ -21,6 +22,7 @@ export function App() {
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/community" element={<CommunityPage />} />
           <Route path="/analytics" element={<AnalyticsPage />} />
+          <Route path="/social" element={<SocialAnalyticsPage />} />
           <Route path="/moderation" element={<ModerationPage />} />
           <Route path="/steward" element={<StewardPage />} />
           <Route path="/settings" element={<SettingsPage />} />
