@@ -40,5 +40,12 @@ export const secureConversationType = pgEnum("secure_conversation_type", ["dm", 
 export const secureMemberRole = pgEnum("secure_member_role", ["admin", "member"]);
 export const secureHandshakeKind = pgEnum("secure_handshake_kind", ["welcome", "commit", "proposal"]);
 
+// ─── Native auth ──────────────────────────────────────────────────────────────
+// authProvider: per-project identity backend. "supabase" = Supabase Auth (default);
+// "native" = Agora's own credential store (auth_credentials + auth_email_tokens).
+export const authProvider = pgEnum("auth_provider", ["supabase", "native"]);
+// authEmailTokenKind: purpose of a short-lived token stored in auth_email_tokens.
+export const authEmailTokenKind = pgEnum("auth_email_token_kind", ["confirm", "reset"]);
+
 // ─── Reusable jsonb default: the 8 v7 reaction counts, all zero ──────────────
 export const zeroReactionCounts = sql`'{"upvote":0,"downvote":0,"like":0,"love":0,"wow":0,"sad":0,"angry":0,"funny":0}'::jsonb`;

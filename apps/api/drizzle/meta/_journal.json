@@ -288,6 +288,13 @@
       "when": 1781603295432,
       "tag": "0040_cheerful_sally_floyd",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1781604425190,
+      "tag": "0041_melted_bloodstrike",
+      "breakpoints": true
     }
   ]
 }

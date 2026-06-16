@@ -3,7 +3,7 @@ import { sql } from "drizzle-orm";
 import {
   pgTable, uuid, text, integer, boolean, date, jsonb, timestamp, index, unique, check,
 } from "drizzle-orm/pg-core";
-import { userRole } from "./_shared.js";
+import { userRole, authProvider } from "./_shared.js";
 
 export const projects = pgTable("projects", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -35,6 +35,9 @@ export const projects = pgTable("projects", {
   // (docs/SOCIAL-GRAPH.md §5, docs/AGORA-CORP.md §4). Resolved via lib/social-config.ts
   // (tier defaults + clamp, fail-closed); edited in admin Settings → Social Graph. Empty = community defaults.
   socialConfig: jsonb("social_config").notNull().default(sql`'{}'::jsonb`),
+  // Identity backend for this project. "supabase" delegates to Supabase Auth (default, existing behaviour);
+  // "native" uses Agora's own credential store (auth_credentials + auth_email_tokens).
+  authProvider: authProvider("auth_provider").notNull().default("supabase"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
