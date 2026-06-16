@@ -303,7 +303,9 @@ export function shapeAuthUser(
   row: ProfileRow,
   suspensions: { reason: string | null; startDate: Date; endDate: Date | null }[] = [],
   isOperator = false,
-  isSteward = false
+  isSteward = false,
+  isProjectOwner = false,
+  isProjectAdmin = false
 ): AuthUser {
   return {
     ...(shapeUser(row) as User),
@@ -320,6 +322,8 @@ export function shapeAuthUser(
     authMethods: row.authMethods ?? [],
     isOperator,
     isSteward,
+    isProjectOwner,
+    isProjectAdmin,
   };
 }
 

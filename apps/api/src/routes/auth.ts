@@ -14,7 +14,7 @@ import { profiles, userSuspensions, projects } from "../db/schema/index.js";
 import { getAuthProvider } from "../lib/auth/index.js";
 import { mintSession, rotateRefreshToken, revokeRefreshToken, revokeAllForProfile } from "../lib/tokens.js";
 import { isOperator } from "../lib/operators.js";
-import { isSteward } from "../lib/stewards.js";
+import { getProjectRoles } from "../lib/project-roles.js";
 import { shapeAuthUser } from "../lib/shape.js";
 import { logger } from "../lib/logger.js";
 import * as webhooks from "../lib/webhooks.js";
@@ -61,15 +61,23 @@ async function ensureProfile(projectId: string, authUserId: string, attrs: { ema
   return row!;
 }
 
+// Resolve the per-request auth bits (deployment operator + per-project role grants) for a profile.
+// steward folds in admin/owner (hierarchy); owner/admin carry the raw grant for the AuthUser fields.
+async function authBits(projectId: string, profile: ProfileRow) {
+  const roles = await getProjectRoles(projectId, profile.id);
+  const owner = roles.has("owner");
+  const admin = roles.has("admin");
+  return { operator: isOperator(profile), owner, admin, steward: roles.has("steward") || admin || owner };
+}
+
 // Build the auth response: AuthUser + a fresh token pair.
 async function sessionResponse(projectId: string, profile: ProfileRow) {
-  const [suspensions, operator, steward] = await Promise.all([
+  const [suspensions, { operator, owner, admin, steward }] = await Promise.all([
     db.select().from(userSuspensions).where(eq(userSuspensions.profileId, profile.id)),
-    Promise.resolve(isOperator(profile)),
-    isSteward(projectId, profile.id),
+    authBits(projectId, profile),
   ]);
-  const { accessToken, refreshToken } = await mintSession(projectId, profile.id, profile.role, operator, steward);
-  return { user: shapeAuthUser(profile, suspensions, operator, steward), accessToken, refreshToken };
+  const { accessToken, refreshToken } = await mintSession(projectId, profile.id, profile.role, operator, steward, owner, admin);
+  return { user: shapeAuthUser(profile, suspensions, operator, steward, owner, admin), accessToken, refreshToken };
 }
 
 export const authRoutes = new Hono<{ Variables: Variables }>()
@@ -131,8 +139,13 @@ export const authRoutes = new Hono<{ Variables: Variables }>()
     const suspensions = profile
       ? await db.select().from(userSuspensions).where(eq(userSuspensions.profileId, profile.id))
       : [];
-    const steward = profile ? await isSteward(projectId, profile.id) : false;
-    return c.json({ ...tokens, user: profile ? shapeAuthUser(profile, suspensions, isOperator(profile), steward) : undefined });
+    const bits = profile ? await authBits(projectId, profile) : undefined;
+    return c.json({
+      ...tokens,
+      user: profile && bits
+        ? shapeAuthUser(profile, suspensions, bits.operator, bits.steward, bits.owner, bits.admin)
+        : undefined,
+    });
   })
   .post("/change-password", requireAuth, async (c) => {
     const projectId = c.var.projectId;
@@ -145,7 +158,8 @@ export const authRoutes = new Hono<{ Variables: Variables }>()
     // Invalidate all existing sessions, then hand back a fresh one.
     await revokeAllForProfile(profile.id);
     logger.info({ projectId, userId: profile.id }, "auth: password changed (all sessions revoked)");
-    return c.json({ success: true, ...(await mintSession(projectId, profile.id, profile.role, isOperator(profile), await isSteward(projectId, profile.id))) });
+    const b = await authBits(projectId, profile);
+    return c.json({ success: true, ...(await mintSession(projectId, profile.id, profile.role, b.operator, b.steward, b.owner, b.admin)) });
   })
   .post("/request-password-reset", async (c) => {
     const body = parseBody(emailSchema, await c.req.json().catch(() => ({})), "auth");
