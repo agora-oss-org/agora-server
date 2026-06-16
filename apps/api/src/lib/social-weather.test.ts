@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  pairBrightness, weatherFromPairs, weatherBand,
-  B_FLOOR, type WarmthPair,
+  pairBrightness, weatherFromPairs, weatherBand, mergePairRows,
+  B_FLOOR, AGE_CUTOFF_HALF_LIVES, type WarmthPair,
   computeWeather, getSocialWeather, invalidateSocialWeather, WEATHER_PAIRS_CYPHER,
 } from "./social-weather.js";
 import { SOCIAL_TIER_DEFAULTS } from "@agora-server/contract";
@@ -66,6 +66,35 @@ describe("weatherFromPairs", () => {
     const stormW = weatherFromPairs(dogpiled)!;
     expect(calmW - stormW).toBeLessThan(0.05); // one target ≈ aggregate unmoved
     expect(stormW).toBeLessThanOrEqual(calmW);
+  });
+});
+
+describe("mergePairRows (additive fold of the UNION ALL branches)", () => {
+  const pair = (actor: string, recipient: string, w: number, f = 0): WarmthPair => ({ actor, recipient, w, f });
+
+  it("passes distinct directed pairs through unchanged", () => {
+    expect(mergePairRows([pair("a", "b", 1), pair("c", "b", 3)])).toHaveLength(2);
+  });
+
+  it("keeps a→b and b→a separate (direction matters)", () => {
+    expect(mergePairRows([pair("a", "b", 1), pair("b", "a", 1)])).toHaveLength(2);
+  });
+
+  it("sums w and f for the same directed pair (INTERACTED warmth + FRICTION report)", () => {
+    const merged = mergePairRows([pair("a", "b", 5, 0), pair("a", "b", 0, 3)]);
+    expect(merged).toHaveLength(1);
+    expect(merged[0]).toMatchObject({ actor: "a", recipient: "b", w: 5, f: 3 });
+  });
+
+  it("friction DIMS the warm tie, it does not crash it into a separate floor-dark datapoint", () => {
+    // Correct (merged): one tie B(5,3). Wrong (unmerged): two inbound pairs B(5,0) and B(0,3)=floor,
+    // whose mean drags the recipient toward the floor. Merged must read as the single dimmed tie.
+    const rows = [pair("a", "b", 5, 0), pair("a", "b", 0, 3)];
+    const merged = weatherFromPairs(mergePairRows(rows))!;
+    const unmerged = weatherFromPairs(rows)!;
+    expect(merged).toBeCloseTo(pairBrightness(5, 3), 10);
+    expect(merged).toBeLessThan(pairBrightness(5, 0)); // friction dimmed it...
+    expect(merged).toBeGreaterThan(unmerged);          // ...but far less than the wrong split reading
   });
 });
 
@@ -147,6 +176,26 @@ describe("computeWeather", () => {
   it("returns null when the graph has no matching edges", async () => {
     const { driver } = stubDriver([[]]);
     expect(await computeWeather(driver, "p", cfg, 0)).toBeNull();
+  });
+
+  it("passes an age cutoff of asOf − AGE_CUTOFF_HALF_LIVES·warmthHalfLife days", async () => {
+    const { driver, calls } = stubDriver([[]]);
+    const asOf = 1_700_000_000_000;
+    await computeWeather(driver, "p", cfg, asOf);
+    expect(calls[0]!.params).toMatchObject({
+      asOf,
+      ageCutoff: asOf - AGE_CUTOFF_HALF_LIVES * cfg.warmthHalfLifeDays * 86_400_000,
+    });
+  });
+
+  it("merges a pair emitted by BOTH UNION branches before computing brightness (additive)", async () => {
+    // The Cypher's INTERACTED branch returns the warm row; the FRICTION branch returns the report row;
+    // both for a→b. computeWeather must sum them into one dimmed tie, not two datapoints.
+    const { driver } = stubDriver([[
+      { actor: "a", recipient: "b", w: 5, f: 0 },
+      { actor: "a", recipient: "b", w: 0, f: 3 },
+    ]]);
+    expect(await computeWeather(driver, "p", cfg, 0)).toBeCloseTo(pairBrightness(5, 3), 10);
   });
 });
 
