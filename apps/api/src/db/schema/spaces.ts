@@ -28,6 +28,10 @@ export const spaces = pgTable("spaces", {
   membersCount: integer("members_count").notNull().default(0),
   childSpacesCount: integer("child_spaces_count").notNull().default(0),
   digestEnabled: boolean("digest_enabled").notNull().default(false),
+  // Per-space read-receipts opt-in (corporate tier, docs/SOCIAL-GRAPH.md §4). Flipped ONLY by the
+  // operator endpoint (PATCH /admin/social/read-receipts/spaces/:id); deliberately not in the member
+  // space-update schema. Gates whether reads in this space are recorded into read_receipts.
+  readReceiptsEnabled: boolean("read_receipts_enabled").notNull().default(false),
   digestWebhookUrl: text("digest_webhook_url"),
   digestWebhookSecret: text("digest_webhook_secret"),
   digestScheduleHour: integer("digest_schedule_hour"),

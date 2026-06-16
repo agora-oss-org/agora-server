@@ -1,7 +1,7 @@
 // entities, comments, reactions (ex-0002). Denormalized counts maintained by triggers.
 import { sql } from "drizzle-orm";
 import {
-  pgTable, uuid, text, integer, boolean, doublePrecision, jsonb, timestamp, index, unique,
+  pgTable, uuid, text, integer, boolean, doublePrecision, jsonb, timestamp, index, unique, primaryKey,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import {
@@ -92,4 +92,20 @@ export const reactions = pgTable("reactions", {
   unique("reactions_unique").on(t.projectId, t.targetType, t.targetId, t.userId),
   index("reactions_target_idx").on(t.targetType, t.targetId),
   index("reactions_user_idx").on(t.userId),
+]);
+
+// Per-space read receipts (corporate tier, docs/SOCIAL-GRAPH.md §4). One row per (entity, member) read,
+// recorded ONLY for entities in a read-receipts-enabled space. Pure Postgres — NEVER written to Neo4j or
+// the social graph; queryable only by the operator (coverage). spaceId is denormalized (captured at read
+// time) so coverage rollups don't re-join entities. Idempotent: the (project, entity, user) PK upserts,
+// bumping readAt on a re-read. RLS deny-all is added in the custom migration (0017 doesn't cover new tables).
+export const readReceipts = pgTable("read_receipts", {
+  projectId: uuid("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  spaceId: uuid("space_id").notNull().references(() => spaces.id, { onDelete: "cascade" }),
+  entityId: uuid("entity_id").notNull().references(() => entities.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").notNull().references(() => profiles.id, { onDelete: "cascade" }),
+  readAt: timestamp("read_at", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  primaryKey({ columns: [t.projectId, t.entityId, t.userId] }),
+  index("read_receipts_space_idx").on(t.projectId, t.spaceId),
 ]);
