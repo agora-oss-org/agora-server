@@ -469,13 +469,13 @@ describe("Stewardship: Cases & Conflict Resolution", () => {
       expect(res.body.code).toBe("steward/forbidden");
     });
 
-    it("rejects non-operator on steward grant/revoke (403)", async () => {
+    it("rejects a non-owner on steward grant/revoke (403)", async () => {
       const grantRes = await api("POST", `${base(projectId)}/steward/stewards`, {
         token: steward.token,
         body: { userId: member.id },
       });
       expect(grantRes.status).toBe(403);
-      expect(grantRes.body.code).toBe("steward/operator-only");
+      expect(grantRes.body.code).toBe("roles/owner-only");
 
       const revokeRes = await api("DELETE", `${base(projectId)}/steward/stewards/${steward.id}`, {
         token: steward.token,

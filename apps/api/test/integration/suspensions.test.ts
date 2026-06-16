@@ -59,10 +59,10 @@ describe("user suspensions", () => {
     expect((await api("GET", `${B}/app-notifications`, { token: other.token })).body.code).toBe("auth/suspended");
   });
 
-  it("suspend endpoints are operator-only", async () => {
+  it("suspend endpoints require project admin", async () => {
     const plain = await createUser(projectId);
     const res = await api("POST", `${B}/users/${user.id}/suspend`, { token: plain.token, body: {} });
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe("users/operator-only");
+    expect(res.body.code).toBe("roles/admin-only");
   });
 });

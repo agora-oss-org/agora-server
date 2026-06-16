@@ -11,7 +11,7 @@ import { eq } from "drizzle-orm";
 import { jwtVerify } from "jose";
 import { api, createProject, createUser, deleteProject, base } from "./helpers.js";
 import { db } from "../../src/db/index.js";
-import { refreshTokens, projectStewards } from "../../src/db/schema/index.js";
+import { refreshTokens, projectRoles } from "../../src/db/schema/index.js";
 import { mintSession } from "../../src/lib/tokens.js";
 
 const accessSecret = new TextEncoder().encode(process.env.ACCESS_TOKEN_SECRET);
@@ -200,8 +200,8 @@ describe("auth token rotation (integration)", () => {
       const before = (await jwtVerify(session.accessToken, accessSecret)).payload;
       expect(before.steward).toBeFalsy();
 
-      // Grant steward out-of-band (rotateRefreshToken recomputes auth bits from project_stewards).
-      await db.insert(projectStewards).values({ projectId, profileId: grantee.id, grantedById: grantee.id });
+      // Grant steward out-of-band (rotateRefreshToken recomputes auth bits from project_roles).
+      await db.insert(projectRoles).values({ projectId, profileId: grantee.id, role: "steward", grantedById: grantee.id });
 
       // The rotated access token now carries steward:true — the grant propagated on refresh.
       const rotated = await refresh(session.refreshToken);

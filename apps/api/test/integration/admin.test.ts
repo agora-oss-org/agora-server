@@ -98,11 +98,23 @@ describe("admin / operator surface (integration)", () => {
     });
   });
 
-  describe("GET /admin/community/overview — operator-only, empty until the rollup runs", () => {
-    it("rejects a non-operator with 403", async () => {
+  describe("GET /admin/community/overview — project-admin-or-up, empty until the rollup runs", () => {
+    // Reclassified by sub-project B from operator-only to within-project (requireProjectAdmin):
+    // a plain member is blocked with roles/admin-only, but a project admin (not a platform operator)
+    // now gets through.
+    it("rejects a plain member with 403 roles/admin-only", async () => {
       const res = await api("GET", `${B}/admin/community/overview`, { token: plain.token });
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe("admin/operator-required");
+      expect(res.body.code).toBe("roles/admin-only");
+    });
+
+    it("lets a project admin (not a platform operator) through (200)", async () => {
+      // Stamp the padmin claim directly; real claim propagation through the resolver is proven in
+      // project-roles.test.ts.
+      const admin = await createUser(projectId);
+      const adminToken = await signToken(admin.id, "visitor", false, false, false, true);
+      const res = await api("GET", `${B}/admin/community/overview`, { token: adminToken });
+      expect(res.status).toBe(200);
     });
 
     it("returns configured=false for an operator before the first community-stats rollup", async () => {
