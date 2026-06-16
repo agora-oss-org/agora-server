@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Per-space read receipts** (corporate tier, PR 8) — compliance surface answering "did members
+  see the policy announcement?". New `read_receipts` table (`(projectId, entityId, userId)` PK, RLS
+  deny-all, migration `0047`) + `spaces.read_receipts_enabled` boolean opt-in. **`POST
+  /entities/:id/read`** records an idempotent read (gates: auth → space read access → space
+  `readReceiptsEnabled` + project `readReceiptsAllowed`). **`GET /admin/social/read-receipts`**
+  returns operator-only live coverage: per-space list of announcement posts with `readerCount /
+  memberCount` and a `readReceiptCoverage` ratio. **`PATCH
+  /admin/social/read-receipts/spaces/:spaceId`** toggles per-space opt-in (operator + corporate
+  gate). `shapeSpace` gains `readReceiptsEnabled` so clients can render the receipt badge. New admin
+  **Spaces** section (`/spaces` nav + `SpacesPage`): master-detail list with a basic-settings editor
+  (project-admin) and a read-receipts toggle + per-post coverage panel (operator). `requireSpaceRole`
+  folds in project admins/operators so the admin Spaces page can edit spaces it doesn't own.
 - **Release script** (`scripts/release.sh`) — automated version bumping for monorepo releases. Bumps all `package.json` versions (root + contract + api + admin), commits with `chore(release): vX.Y.Z`, and creates a git tag. Fixes the gap where v0.12.0 tagged before package versions were bumped, so npm-publish published 0.11.0 instead. See `docs/RELEASE.md` for usage.
 
 ## [0.12.0] - 2026-06-16

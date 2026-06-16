@@ -86,12 +86,16 @@ temporal anonymity does **not** apply, because the operator is the accountable e
 - **Onboarding health** — are new hires' first interactions welcomed or chilled? (The 🌱
   newcomer signal, repurposed: same graph, corporate reading.)
 
-### 📣 Announcements with read receipts
-- A space marked `announcement` (with `read_receipts: true`) records `READ` rows operators
-  can query: "87% of Engineering has seen the new security policy."
-- Per-space and **disclosed** — members see the receipt badge on the space. Receipts are
-  off everywhere else (watercooler spaces are never tracked). See
-  [`SOCIAL-GRAPH.md` §4](SOCIAL-GRAPH.md).
+### 📣 Announcements with read receipts ✅ (PR 8)
+- An operator marks an individual space as `read_receipts_enabled` via `PATCH
+  /admin/social/read-receipts/spaces/:spaceId`. Members' reads of posts in that space are recorded
+  as `POST /entities/:id/read` (idempotent `(entity, member)` rows). Operators query live coverage
+  via `GET /admin/social/read-receipts` — per-space list of announcement posts with `readerCount /
+  memberCount` and a `readReceiptCoverage` ratio: "87% of Engineering has seen the new policy."
+- Per-space and **disclosed** — `shapeSpace` surfaces `readReceiptsEnabled` so clients can render
+  the receipt badge on opted-in spaces. Watercooler/casual spaces are never tracked. Corporate tier
+  only (`readReceiptsAllowed` flag); the admin Spaces section shows the toggle + coverage panel.
+  See [`SOCIAL-GRAPH.md` §4](SOCIAL-GRAPH.md).
 
 ### 🏆 Recognition
 - Kudos/peer-appreciation surfaces from the warmth graph itself — "who is quietly doing

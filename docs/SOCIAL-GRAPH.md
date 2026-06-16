@@ -314,7 +314,10 @@ Phasing (adapted from `agora-social/docs/08`, re-grounded in the scorer-owns-the
    See `docs/AGORA-CORP.md`. The **operator React dashboards** (PR 7) render the three reports as a
    tabbed, operator-only **Social** page in `apps/admin` (ranked influence lists, silo cards, an
    engagement table with trend sparklines + churn badges), each tab carrying a per-report Recompute
-   button. **Remaining in Phase 4:** per-space read receipts.
+   button. **Per-space read receipts shipped in PR 8** — `POST /entities/:id/read` records member
+   reads; `GET /admin/social/read-receipts` returns live per-space coverage (readerCount/memberCount
+   per announcement post); `PATCH /admin/social/read-receipts/spaces/:spaceId` toggles per-space
+   opt-in; admin **Spaces** page exposes the toggle + per-post coverage panel. **Phase 4 is complete.**
 
 Open questions (carried from `agora-social/docs/08` + new ones from this consolidation):
 

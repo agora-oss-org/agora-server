@@ -129,6 +129,7 @@ signs an RS256 JWT (issuer=projectId, aud="replyke.com", sub=userData.id, claim 
 | POST | `/entities/:id/publish` | ✅ |
 | GET | `/entities/is-entity-saved` | ✅ |
 | POST/DELETE | `/entities/:id/reactions` | ✅ |
+| POST | `/entities/:id/read` (record a member read for receipt tracking; gate: auth → space read access → `space.readReceiptsEnabled + cfg.readReceiptsAllowed`; idempotent upsert; → `{ recorded: true, readAt }`) | ✅ |
 
 ### comments
 | Method | Path | Status |
@@ -313,6 +314,15 @@ is project-owner-gated (`requireProjectOwner`, which a platform operator also sa
 | GET | `/roles` (project-admin; grantees grouped `{ roles: { owner[], admin[], steward[] } }`) | 🔶 |
 | POST | `/roles` (project-owner; `{ userId, role }` → idempotent grant; `404 roles/user-not-found` off-project) | 🔶 |
 | DELETE | `/roles/:userId/:role` (project-owner; revoke; `400 roles/last-owner` / `roles/invalid-role`) | 🔶 |
+
+### admin/social — read receipts (operator + corporate tier)
+Live per-space read-receipt coverage and per-space opt-in toggle. All routes require a deployment
+operator JWT; `400 social/read-receipts-disabled` if the project's `readReceiptsAllowed` flag is off
+(community tier).
+| Method | Path | Status |
+|---|---|---|
+| GET | `/admin/social/read-receipts` (operator; live coverage → `SocialReadReceipts { spaces: ReceiptSpace[], asOf }`) | ✅ |
+| PATCH | `/admin/social/read-receipts/spaces/:spaceId` (operator; `{ enabled: boolean }` → `{ spaceId, readReceiptsEnabled }`) | ✅ |
 
 ---
 

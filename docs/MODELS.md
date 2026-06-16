@@ -40,8 +40,8 @@ lastActive, createdAt, updatedAt`
 ## Space / SpaceDetailed
 `id, projectId, shortId, slug?, name, description?, avatarFileId?, bannerFileId?, userId,
 readingPermission(anyone|members), postingPermission(anyone|members|admins), requireJoinApproval,
-parentSpaceId?, depth, metadata(jsonb), createdAt, updatedAt, deletedAt?, membersCount, childSpacesCount,
-isMember?, avatarFile?, bannerFile?`
+readReceiptsEnabled(bool), parentSpaceId?, depth, metadata(jsonb), createdAt, updatedAt, deletedAt?,
+membersCount, childSpacesCount, isMember?, avatarFile?, bannerFile?`
 SpaceDetailed adds: `memberPermissions?, parentSpace?(SpacePreview), childSpaces[](SpacePreview)`
 
 ## SpaceMember
