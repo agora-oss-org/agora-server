@@ -287,10 +287,14 @@ export const miscRoutes = new Hono<{ Variables: Variables }>()
 
 // ── webhook-admin helpers ───────────────────────────────────────────────────
 // Project-admin gate for project-wide config (feed ranking, webhooks). Deployment operators, project
-// owners, and project admins (all folded into isProjectAdmin) pass.
+// owners, and project admins (all folded into isProjectAdmin) pass via JWT claims with no DB hit; we
+// also keep the legacy profiles.role='admin' path so pre-project_roles admins aren't locked out
+// (non-regression — see plan: "fold isProjectAdmin into the existing requireProjectAdmin").
 async function requireProjectAdmin(c: any): Promise<void> {
   if (isProjectAdmin(c.var.auth!)) return;
-  throw Errors.forbidden("project/not-admin", "Project admin or operator required");
+  const [p] = await db.select({ role: profiles.role }).from(profiles)
+    .where(and(eq(profiles.projectId, c.var.projectId), eq(profiles.id, c.var.auth!.userId))).limit(1);
+  if (!p || p.role !== "admin") throw Errors.forbidden("project/not-admin", "Project admin or operator required");
 }
 
 // Safe view of the webhook config — never returns the secret, only whether one is set.
