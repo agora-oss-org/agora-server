@@ -14,3 +14,9 @@
 # epoch gate makes most runs a cheap no-op (and self-heals a missed week); the long timeout covers GDS
 # Louvain over the whole graph. §12 keeps this deliberately slow ("seasonal", never per-load).
 0 4 * * 0 sh -c 'curl -fsS -m 600 -X POST -H "X-Cron-Secret: $CRON_SECRET" "$AGORA_URL/internal/cron/social-constellation"'
+
+# Weekly (Sunday 05:00 UTC): re-materialize the operator admin-analytics snapshots (influence/silos/
+# engagement). Runs after the Constellation pass; the in-lib weekly per-report epoch gate makes most runs
+# a no-op (and self-heals a missed week). The long timeout covers GDS PageRank/betweenness/Louvain over
+# the whole graph. Operators can force an out-of-band recompute via POST /admin/social/recompute.
+0 5 * * 0 sh -c 'curl -fsS -m 600 -X POST -H "X-Cron-Secret: $CRON_SECRET" "$AGORA_URL/internal/cron/social-analytics"'

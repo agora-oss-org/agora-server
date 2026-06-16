@@ -34,7 +34,9 @@ const SILO_MIN_SIZE = 2;   // a singleton "community" isn't a silo
 const SILO_SPACES_LIMIT = 5;
 const GRAPH_NAME_PREFIX = "analytics_";
 
-const REPORT_FLAG: Record<SocialAnalyticsReport, keyof ResolvedSocialConfig> = {
+/** Each report's corporate-tier flag — the single source for both the rollup's per-report gate and the
+ *  route gates (read endpoints + the forced-recompute). */
+export const ANALYTICS_REPORT_FLAG: Record<SocialAnalyticsReport, keyof ResolvedSocialConfig> = {
   influence: "influenceScoresEnabled",
   silos: "siloDetectionEnabled",
   engagement: "engagementScoresEnabled",
@@ -194,7 +196,7 @@ async function materializeProject(
 ): Promise<boolean> {
   const cfg = await getSocialConfig(projectId);
   if (!cfg.graphEnabled) return false;
-  const enabled = reports.filter((r) => cfg[REPORT_FLAG[r]] === true);
+  const enabled = reports.filter((r) => cfg[ANALYTICS_REPORT_FLAG[r]] === true);
   if (enabled.length === 0) return false;
 
   const userRows = await db.select({ id: profiles.id }).from(profiles).where(eq(profiles.projectId, projectId));

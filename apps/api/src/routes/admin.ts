@@ -8,6 +8,14 @@ import type { Variables } from "../http/context.js";
 import { Errors } from "../http/errors.js";
 import { requireAuth } from "../middleware/auth.js";
 import { env } from "../lib/env.js";
+import { parseBody } from "../lib/validation.js";
+import {
+  SOCIAL_ANALYTICS_REPORTS, socialAnalyticsRecomputeSchema, type SocialAnalyticsReport,
+} from "@agora-server/contract";
+import { getSocialConfig } from "../lib/social-config.js";
+import {
+  ANALYTICS_REPORT_FLAG, getEngagement, getInfluence, getSilos, rollupAnalytics,
+} from "../lib/social-analytics.js";
 import { buildRunningConfig } from "../lib/running-config.js";
 import { getOverview, umamiReportingEnabled, type UmamiSite } from "../lib/umami-reporting.js";
 import { getServerResources } from "../lib/server-resources.js";
@@ -16,6 +24,7 @@ import { db } from "../db/index.js";
 import {
   profiles, reports, spaces, spaceMembers, entities, comments, files, apiUsage, communityStatsHourly,
 } from "../db/schema/index.js";
+import { isProjectAdmin, requireProjectAdmin } from "../lib/project-roles.js";
 
 // Spaces where the user is an active admin/moderator (their moderation scope when not an operator).
 async function moderatedSpaceIds(projectId: string, userId: string): Promise<string[]> {
@@ -37,11 +46,12 @@ export const adminRoutes = new Hono<{ Variables: Variables }>()
     const projectId = c.var.projectId;
     const userId = c.var.auth!.userId;
     const isOperator = c.var.auth!.isOperator;
+    const projectAdmin = isProjectAdmin(c.var.auth!);
 
-    // Non-operators only see reports for spaces they moderate. Project-wide counts (members,
-    // entities, etc.) stay project-scoped — they're not space-partitioned and a moderator's
-    // dashboard still shows the project's totals as context.
-    const spaceScope = isOperator ? null : await moderatedSpaceIds(projectId, userId);
+    // Project admins/owners (and operators) see all reports project-wide; plain space-moderators only
+    // see reports for spaces they moderate. Project-wide counts (members, entities, etc.) stay
+    // project-scoped — they're not space-partitioned and a moderator's dashboard still shows totals.
+    const spaceScope = projectAdmin ? null : await moderatedSpaceIds(projectId, userId);
 
     const openReportsWhere = and(
       eq(reports.projectId, projectId),
@@ -99,7 +109,7 @@ export const adminRoutes = new Hono<{ Variables: Variables }>()
     const durationTotal = Number(usage[0]?.durationTotal ?? 0);
 
     return c.json({
-      scope: isOperator ? "operator" : "moderator",
+      scope: isOperator ? "operator" : projectAdmin ? "admin" : "moderator",
       projectMetrics: {
         openReports: openReports[0]?.n ?? 0,
         members: members[0]?.n ?? 0,
@@ -157,7 +167,7 @@ export const adminRoutes = new Hono<{ Variables: Variables }>()
   // (ranking ids stored in the rollup; display fields hydrated fresh here). `configured:false` until
   // the first rollup has run, so the page shows a friendly empty state instead of erroring.
   .get("/community/overview", requireAuth, async (c) => {
-    if (!c.var.auth!.isOperator) throw Errors.forbidden("admin/operator-required", "Operator access required");
+    requireProjectAdmin(c);
     const projectId = c.var.projectId;
     const days = Math.min(Math.max(Number(c.req.query("days")) || 30, 1), 90); // clamp 1..90
 
@@ -259,5 +269,31 @@ export const adminRoutes = new Hono<{ Variables: Variables }>()
         reactors: hydrateBoard(reactors),
       },
       topPosts,
+    });
+  })
+  // POST /admin/social/recompute — operator-forced, SYNCHRONOUS re-materialization of the admin-analytics
+  // snapshots (docs/AGORA-CORP.md). Blocks while GDS runs over the whole graph (the admin UI shows a
+  // "this will take a while" spinner), then returns the fresh reports. Body:
+  // { report?: 'influence' | 'silos' | 'engagement' | 'all' } (default 'all'). Corporate-tier-only:
+  // a specific disabled report 400s as social/<report>-disabled; "all" with nothing enabled 400s as
+  // social/analytics-disabled.
+  .post("/social/recompute", requireAuth, async (c) => {
+    if (!c.var.auth!.isOperator) throw Errors.forbidden("admin/operator-required", "Operator access required");
+    const projectId = c.var.projectId;
+    const cfg = await getSocialConfig(projectId);
+    const { report } = parseBody(socialAnalyticsRecomputeSchema, await c.req.json().catch(() => ({})), "social-analytics");
+    const target = report ?? "all";
+    const requested: SocialAnalyticsReport[] = target === "all" ? [...SOCIAL_ANALYTICS_REPORTS] : [target];
+    const enabled = requested.filter((r) => cfg.graphEnabled && cfg[ANALYTICS_REPORT_FLAG[r]]);
+    if (enabled.length === 0) {
+      const code = target === "all" ? "social/analytics-disabled" : `social/${target}-disabled`;
+      throw Errors.badRequest(code, "Analytics report is not enabled for this project");
+    }
+    await rollupAnalytics(projectId, { force: true, reports: enabled });
+    return c.json({
+      recomputed: enabled,
+      ...(enabled.includes("influence") ? { influence: await getInfluence(projectId) } : {}),
+      ...(enabled.includes("silos") ? { silos: await getSilos(projectId) } : {}),
+      ...(enabled.includes("engagement") ? { engagement: await getEngagement(projectId) } : {}),
     });
   });

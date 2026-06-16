@@ -16,6 +16,7 @@ import { recomputeDueScores } from "./lib/recompute.js";
 import { purgeExpiredRefreshTokens } from "./lib/token-cleanup.js";
 import { rollupCommunityStats } from "./lib/community-stats.js";
 import { rollupConstellation } from "./lib/social-constellation.js";
+import { rollupAnalytics } from "./lib/social-analytics.js";
 import { applyClientModeration } from "./lib/client-moderation.js";
 
 function safeEqual(a: string, b: string): boolean {
@@ -94,6 +95,14 @@ export function createApp() {
     const blocked = cronGuard(c); if (blocked) return blocked;
     const result = await rollupConstellation();
     logger.info({ result }, "cron: constellation materialized");
+    return c.json(result);
+  });
+  // Re-materialize the operator admin-analytics snapshots (docs/AGORA-CORP.md). The in-lib weekly epoch
+  // gate makes most runs a no-op; only projects whose snapshot is stale (per report) are recomputed.
+  app.post("/internal/cron/social-analytics", async (c) => {
+    const blocked = cronGuard(c); if (blocked) return blocked;
+    const result = await rollupAnalytics();
+    logger.info({ result }, "cron: admin analytics materialized");
     return c.json(result);
   });
 
