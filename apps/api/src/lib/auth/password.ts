@@ -7,6 +7,7 @@ export function hashPassword(plain: string): Promise<string> {
   return hash(plain);
 }
 
+// Arg order is (hashed, plain) — hash first, matching @node-rs/argon2's verify().
 export async function verifyPassword(hashed: string, plain: string): Promise<boolean> {
   try {
     return await verify(hashed, plain);

@@ -13,4 +13,11 @@ describe("password hashing (argon2id)", () => {
     expect(await verifyPassword(hash, "wrong")).toBe(false);
     expect(await verifyPassword("not-a-hash", "whatever")).toBe(false);
   });
+  it("produces a unique salt per hash", async () => {
+    const a = await hashPassword("CorrectHorse9!");
+    const b = await hashPassword("CorrectHorse9!");
+    expect(a).not.toBe(b);
+    expect(await verifyPassword(a, "CorrectHorse9!")).toBe(true);
+    expect(await verifyPassword(b, "CorrectHorse9!")).toBe(true);
+  });
 });
