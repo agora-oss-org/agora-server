@@ -212,3 +212,31 @@ export interface SocialNeighborhood {
   /** ISO timestamp of computation. */
   asOf: string;
 }
+
+// ── Constellation (GET /v7/:projectId/social/constellation) ─────────────────────────────────────
+// The anonymous *shape* of the community (docs/AGORA-SOCIAL.md, §12): cluster blobs — size + warmth
+// tint only, NEVER individual nodes. k-anonymity (clusters below the floor are suppressed), no
+// persistent blob identity (re-clustered fresh each epoch, shuffled), warmth-only (friction never
+// renders as structure). Materialized on a slow seasonal cadence (never per-load — §12), so the read
+// just returns the latest snapshot.
+
+export const BLOB_SIZE_BUCKETS = ["5–9", "10–19", "20–49", "50–99", "100+"] as const;
+export type BlobSizeBucket = (typeof BLOB_SIZE_BUCKETS)[number];
+
+export interface ConstellationBlob {
+  /** Bucketed member count — coarse on purpose (one of the §12 protections). Never an exact size. */
+  size: BlobSizeBucket;
+  /** Warmth tint, banded (reuses the Weather band scale). Warmth-only — friction never renders here. */
+  warmth: WeatherBand;
+}
+
+export interface SocialConstellation {
+  /** The community's blobs, shuffled — there is NO stable identity or ordering across epochs. Blobs
+   *  carry no ids, names, or member lists; a cluster smaller than the k-anonymity floor is omitted. */
+  blobs: ConstellationBlob[];
+  /** ISO timestamp of the materialized snapshot, or null when none has been computed yet ("forming"). */
+  asOf: string | null;
+  /** Which clustering produced this snapshot (transparency): GDS Louvain, the by-space fallback, or
+   *  null when not yet materialized. */
+  method: "louvain" | "space" | null;
+}
