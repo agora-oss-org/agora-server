@@ -8,6 +8,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Per-project role system — `project_roles` (`owner | admin | steward`)** (managed-hosting
+  sub-project B). Splits the single deployment-wide env `isOperator` god-flag into a **platform-operator**
+  (cross-tenant, the hosting provider — unchanged env allowlist) and **per-project owner/admin** (god
+  within one tenant, a DB grant), so the control plane can hand each tenant a project owner without
+  granting deployment-wide power. New `project_roles` table (migration `0044`) + RLS deny-all & a
+  backfill of existing `project_stewards` rows into `project_roles(role='steward')` (`0045`).
+  `lib/project-roles.ts` resolves a profile's roles (30s cache, mirrors `social-config`) and exposes
+  the hierarchy guards `isProjectOwner`/`isProjectAdmin` + throwing `requireProjectOwner`/`requireProjectAdmin`
+  (`operator ⊇ owner ⊇ admin ⊇ steward`). Grants fold into the access JWT at mint/refresh as new
+  `powner`/`padmin` claims (`lib/tokens.ts`), read back in `middleware/auth.ts` as
+  `AuthContext.isProjectOwner`/`isProjectAdmin` (and surfaced on `AuthUser`) — effective on the
+  grantee's next token refresh, like the operator/steward flags. New **`GET/POST/DELETE
+  /v7/:projectId/roles`** grant-management endpoints (view = project-admin, mutate = project-owner;
+  last-owner revoke blocked with `roles/last-owner`). The **`isOperator` audit**: every within-project
+  power (space access, moderation visibility, search, report scope + resolve, suspensions, project/feed/
+  webhook/social config, the dashboard scope + community-health overview, steward case access) now
+  accepts project owner/admin; deployment powers (`/admin/config`, `/admin/umami/overview`, the
+  Supabase DB-size + server-resource cards) stay operator-only. Admin app surfaces the new tier:
+  `AuthContext` exposes `isProjectOwner`/`isProjectAdmin`, the sidebar gates Community on project-admin
+  and the steward-grant card on project-owner, and the role badge shows Operator → Owner → Admin →
+  Steward → Moderator. **Non-regression:** a single-project deployment with an env operator and zero
+  `project_roles` rows behaves exactly as before (operator satisfies every `isProject*` predicate).
 - **Admin analytics tier — the corporate counterpart to the Garden** (docs/AGORA-CORP.md §2,
   SOCIAL-GRAPH.md §7 Phase 4). Three **operator-only, NAMED**, corporate-tier reports read from one
   combined `social_analytics` snapshot table (migration `0046`): **`GET /v7/:projectId/admin/social/influence`**
@@ -132,6 +154,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `CONNECTED` status-gate, edge deletion on reaction-removal/unfollow/disconnect, and the
   self-interaction + chat-message-target skips). Design spec (incl. §8a):
   `docs/superpowers/specs/2026-06-08-relationship-graph-v2-design.md`.
+
+### Changed
+- **`isSteward` is now sourced from `project_roles`** (sub-project B). `lib/stewards.ts`
+  (`isSteward`/`grantSteward`/`revokeSteward`/`listStewardIds`) now reads/writes
+  `project_roles(role='steward')` instead of the `project_stewards` table; existing grants were
+  backfilled (migration `0045`), and `project_stewards` is retained (deprecated) for now. Signatures
+  are unchanged. The steward access gate widened: project owners/admins reach the Steward caseload too
+  (steward grant/revoke moved from operator-only to project-owner). A couple of within-project admin
+  error codes changed accordingly (e.g. suspend now returns `roles/admin-only`, steward grant/revoke
+  `roles/owner-only`) — these are admin-only surfaces, not part of the SDK contract.
 
 ## [0.11.0] - 2026-06-08
 

@@ -260,8 +260,11 @@ signs an RS256 JWT (issuer=projectId, aud="replyke.com", sub=userData.id, claim 
 
 > `GET /reports/pending` + `GET /reports/moderated` are **role-scoped** (Agora admin extension, not
 > in the SDK): a deployment **operator** (env `OPERATOR_USER_IDS`/`OPERATOR_EMAILS`, surfaced as
-> `AuthUser.isOperator` / the JWT `operator` claim) sees every report in the project; any other user
-> sees only reports filed against spaces they own or moderate. Both paginate `{ data, pagination }`.
+> `AuthUser.isOperator` / the JWT `operator` claim) **or a project owner/admin** (`project_roles`
+> grant, surfaced as `AuthUser.isProjectOwner`/`isProjectAdmin` / the JWT `powner`/`padmin` claims)
+> sees every report in the project; any other user sees only reports filed against spaces they own or
+> moderate. `PATCH /reports/:id/resolve` is likewise project-admin-gated. Both lists paginate
+> `{ data, pagination }`.
 
 ### search
 All search endpoints are **POST** with a JSON body `{ query, limit?, ... }` and return a **bare
@@ -297,6 +300,19 @@ on validate replies). Covered events: entity/comment/space/message/user `.create
 | GET | `/settings/feed` (project-admin; resolved feed ranking config, re-rank secret redacted) | ✅ |
 | PATCH | `/settings/feed` (project-admin; deep-merge `feed_config`; cache-invalidated) | ✅ |
 | POST | `/webhooks/test` (signed test ping → `{ configured, ok, status? }`) | ✅ |
+
+### roles (per-project role grants; server-side admin surface, not an SDK hook)
+Per-project role management (`owner | admin | steward`), the within-project tier between member and
+the deployment platform-operator. Grants live in `project_roles` and are folded into the access JWT
+at mint/refresh (`powner`/`padmin` claims; steward via the existing `steward` claim) — effective on
+the grantee's next token refresh. **Viewing** is project-admin-gated (`requireProjectAdmin`); **mutating**
+is project-owner-gated (`requireProjectOwner`, which a platform operator also satisfies). The last
+`owner` of a project cannot be revoked (`400 roles/last-owner`).
+| Method | Path | Status |
+|---|---|---|
+| GET | `/roles` (project-admin; grantees grouped `{ roles: { owner[], admin[], steward[] } }`) | 🔶 |
+| POST | `/roles` (project-owner; `{ userId, role }` → idempotent grant; `404 roles/user-not-found` off-project) | 🔶 |
+| DELETE | `/roles/:userId/:role` (project-owner; revoke; `400 roles/last-owner` / `roles/invalid-role`) | 🔶 |
 
 ---
 

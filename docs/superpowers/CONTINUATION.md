@@ -84,29 +84,48 @@ memory `drizzle-journal-timestamp-skip`.
 4. Production `EmailSender` transport (Resend/SES/Postmark) — interface ready.
 5. Open spec Q: distinguish native vs Supabase password in `profiles.auth_methods`?
 
-## ⏭️ NEXT — Sub-project B: per-project role system (server-side, AGPL)
+## Sub-project B — DONE ✅ (per-project role system, server + admin)
 
-Goal: replace the deployment-wide env `isOperator` with proper per-project roles.
+Split the deployment-wide env `isOperator` god-flag into a **platform-operator** (cross-tenant, us)
+and **per-project owner/admin** (god within one tenant, a DB grant). Plan:
+`~/.claude/plans/effervescent-floating-pearl.md` (executed via subagent-driven-development).
 
-- **New `project_roles` table**, generalizing the existing `project_stewards` grant:
-  `project_id, profile_id, role enum('owner','admin','steward'), granted_by, granted_at,
-  unique(project_id, profile_id, role)`. Patterns to mirror: `lib/stewards.ts` +
-  `project_stewards` (the steward grant), `lib/social-config.ts` (cache).
-- **JWT claims**: stamp `isProjectOwner`/`isProjectAdmin` at mint/refresh in
-  `lib/tokens.ts` (next to existing `isSteward`/`operator`); read in `middleware/auth.ts`
-  → `c.var.auth.*`. Effective on next token refresh.
-- **The crux = the `isOperator` audit**: grep every `isOperator` use and classify
-  cross-tenant (stays *platform-operator*) vs within-project (becomes
-  `isProjectOwner`/`isProjectAdmin`). Security-critical; assert negatives.
-- **Grant endpoints** (route-scoped): owner grants admin/steward + transfers owner;
-  platform-operator anything; admin/steward grant nothing.
-- Migrate `steward` from `project_stewards` → `project_roles` (or keep as a view — decide
-  in B's spec). New migration `when` must exceed the journal max (gotcha above).
-- When an admin endpoint can flip `projects.auth_provider`, call
-  `invalidateAuthProvider(projectId)` on write.
+**What shipped:**
+- `project_roles` table (`owner|admin|steward`, migration `0044`) + RLS deny-all & backfill of
+  `project_stewards` → `project_roles(role='steward')` (`0045`). `project_stewards` retained (deprecated).
+- `lib/project-roles.ts` — cached resolver (`getProjectRoles`, 30s), `grant`/`revoke`/`listRoleGrantees`,
+  and hierarchy guards `isProjectOwner`/`isProjectAdmin` + `requireProjectOwner`/`requireProjectAdmin`
+  (`operator ⊇ owner ⊇ admin ⊇ steward`). Last-owner revoke blocked (`roles/last-owner`).
+- JWT: `powner`/`padmin` claims minted/refreshed in `lib/tokens.ts` (`profileAuthBits` resolves from
+  `project_roles`; steward folds admin/owner), read back in `middleware/auth.ts` →
+  `c.var.auth.isProjectOwner`/`isProjectAdmin`; surfaced on `AuthUser` (`shapeAuthUser`).
+- **The `isOperator` audit:** every within-project gate (space access, moderation visibility, search,
+  report scope + resolve, suspensions, project/feed/webhook/social config, dashboard scope +
+  community/overview, steward case access) now uses `isProjectAdmin`; steward grant/revoke uses
+  `requireProjectOwner`. Deployment gates (`/admin/config`, `/admin/umami/overview`, db-size + server
+  resources) stay raw `isOperator`. `lib/stewards.ts` repointed to `project_roles` (signatures unchanged).
+  **Gotcha fixed:** `misc.ts`'s `requireProjectAdmin` kept its legacy `profiles.role='admin'` path
+  (folded with `isProjectAdmin`) — the integration suite caught the regression.
+- Grant endpoints **`GET/POST/DELETE /v7/:projectId/roles`** (`routes/roles.ts`): view = project-admin,
+  mutate = project-owner.
+- Admin app: `AuthContext` exposes `isProjectOwner`/`isProjectAdmin`; sidebar gates Community on
+  project-admin + the steward-grant card on project-owner; role badge Operator→Owner→Admin→Steward→Moderator.
 
-**Approach:** `superpowers:brainstorming` → spec in `docs/superpowers/specs/` →
-`superpowers:writing-plans` → `superpowers:subagent-driven-development` (same as A).
+**Status: green.** `pnpm -r typecheck` clean (all 3 packages); unit suite green;
+**full integration suite 334 passed / 2 skipped / 0 failed** (`test/integration/project-roles.test.ts`
++ reconciled reference suites). Admin `typecheck` + `build` clean. **Non-regression:** a single-project
+deployment with an env operator and zero `project_roles` rows behaves exactly as before. Docs updated
+(CHANGELOG, MANIFEST §2 `roles`, root CLAUDE.md Operators/Owners/Stewards + migration note).
+
+## ⏭️ NEXT — Sub-project C: control plane (closed `../agora-hosting` repo)
+
+The control plane drives the first `owner` grant at provisioning time via `POST /v7/:projectId/roles`
+(operator-authed). Also pending: when an admin endpoint can flip `projects.auth_provider`, it must call
+`invalidateAuthProvider(projectId)` on write (carry-over from A). See `../agora-hosting/docs/roadmap.md`
+(C = control plane, D = billing+quotas, E = dedicated provisioning, F = admin domain routing, G =
+isolation hardening). Out-of-scope B follow-ups: eventually drop the deprecated `project_stewards`
+table (idempotent migration, `when` above journal max); an ownership-transfer UX (grant-owner +
+step-down) on top of the existing grant/revoke.
 
 ## Pointers
 - A spec: `docs/superpowers/specs/2026-06-16-auth-provider-abstraction-design.md`

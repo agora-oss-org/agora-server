@@ -222,15 +222,38 @@ The flag is stamped into the access JWT at mint time (`lib/tokens.ts`), read bac
 `middleware/auth.ts`, and surfaces as **`c.var.auth.isOperator`** — so handlers get a project-wide
 admin (all spaces/content/reports) with no extra DB hit. Independent of any space role; powers the
 admin app and bypasses moderation-visibility filtering. Unset → no operators (everyone space-scoped).
+The operator is the **platform-operator** (cross-tenant, the hosting provider); within-project god
+power is now a separate DB grant (project owner/admin, below). The hierarchy is
+`operator ⊇ owner ⊇ admin ⊇ steward ⊇ member` — an operator satisfies every within-project predicate,
+so single-project deployments are unaffected.
 
-**Stewards (conflict resolution).** A trust tier **between member and operator** powering the admin
+**Project owners/admins (per-project god-view).** The within-project tier between member and the
+platform-operator — a **DB-backed grant** in `project_roles` (`role ∈ owner|admin|steward`, migrations
+`0044`/`0045`; the old `project_stewards` rows were backfilled to `role='steward'`, table retained but
+deprecated). Resolved by `lib/project-roles.ts` `getProjectRoles()` (30s cache, mirrors
+`lib/social-config.ts`) and folded into the access JWT at mint/refresh as `powner`/`padmin` claims
+(`lib/tokens.ts`), read back in `middleware/auth.ts` as **`c.var.auth.isProjectOwner`/`isProjectAdmin`**
+(effective on next token refresh, like the operator/steward flags). Guard helpers
+`isProjectAdmin(a)` (= operator‖owner‖admin) / `isProjectOwner(a)` (= operator‖owner) +
+throwing `requireProjectAdmin(c)`/`requireProjectOwner(c)`. **Every within-project gate that used to
+read raw `isOperator` now uses these** (space access, moderation visibility, search, report scope +
+`/reports/:id/resolve`, suspensions, project/feed/webhook/social config, dashboard scope +
+`/admin/community/overview`, steward case access). **Deployment** powers stay raw `isOperator`
+(`/admin/config`, `/admin/umami/overview`, the Supabase DB-size + server-resource cards). Grant
+management is **`GET/POST/DELETE /v7/:projectId/roles`** (`routes/roles.ts`): viewing is
+project-admin-gated, mutating is project-owner-gated; the last `owner` can't be revoked
+(`roles/last-owner`). **Never write a within-project gate that checks `isProjectAdmin` but excludes
+operator** — the helpers already fold it in.
+
+**Stewards (conflict resolution).** A trust tier **between member and project-admin** powering the admin
 **Steward** tab (a conflict-resolution caseload — distinct from moderation, which judges content).
-Unlike operators (env), it's a **DB-backed grant**: `project_stewards`, where operators grant community
-members (`POST /steward/stewards`). Resolved by `lib/stewards.ts` `isSteward(projectId, profileId)`,
-stamped into the access JWT at mint/refresh (`lib/tokens.ts`), read back in `middleware/auth.ts` as
-**`c.var.auth.isSteward`** (so a grant takes effect on the user's next token refresh, like the operator
-flag). Privilege is **route-scoped** to `routes/steward.ts` (gated `isSteward||isOperator`) — stewards
-do NOT inherit the operator's global read bypass. A case escalation removes the subject content via the
+A **DB-backed grant** now stored in `project_roles(role='steward')`; project owners grant community
+members (`POST /steward/stewards`, owner-gated). Resolved by `lib/stewards.ts` `isSteward(projectId,
+profileId)` (a thin delegate to `getProjectRoles`), stamped into the access JWT at mint/refresh
+(`lib/tokens.ts`), read back in `middleware/auth.ts` as **`c.var.auth.isSteward`** (so a grant takes
+effect on the user's next token refresh, like the operator flag). Privilege is **route-scoped** to
+`routes/steward.ts` (gated `isProjectAdmin||isSteward` — project owners/admins reach the caseload too)
+— stewards do NOT inherit the operator's global read bypass. A case escalation removes the subject content via the
 normal moderation path (`moderatedByType="user"`); outcomes otherwise stay restorative (repair /
 separation / protection).
 
@@ -293,7 +316,8 @@ and `CHANGELOG.md` for what each migration did. Only the non-obvious conventions
   dedup column (`0028`). Don't "fix" the Drizzle schema to add them.
 - **RLS enablement is one-time** (the `0017` dynamic guard enables deny-all on every *existing* base
   table). A brand-new table is **not** covered retroactively — it must ship its own explicit RLS
-  deny-all in the migration that creates it (see `auth_credentials`/`auth_email_tokens`).
+  deny-all in the migration that creates it (see `auth_credentials`/`auth_email_tokens`, and
+  `project_roles` in `0045`).
 - **Read-path visibility lives in SQL** for recursive/semantic reads: `fetch_comment_thread(…,
   p_hide_removed)` and `match_content(…, p_viewer, p_privileged, p_hide_removed)` (`0019`). New
   recursive/search reads over moderatable content go through these, not raw queries.
