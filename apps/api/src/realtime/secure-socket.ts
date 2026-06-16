@@ -75,8 +75,10 @@ export function attachSecureRealtime(io: Server): SecureNamespace {
       const { payload } = await jwtVerify(token, accessSecret, { algorithms: ["HS256"] });
       if (!payload.sub) return next(new Error("unauthorized"));
       // Enforce suspensions here too — the /secure namespace must not let a suspended user keep
-      // receiving E2E traffic (mirrors middleware/auth.ts requireAuth). Operators bypass.
-      if (payload.operator !== true && (await hasActiveSuspension(payload.sub))) {
+      // receiving E2E traffic (mirrors middleware/auth.ts requireAuth). Operators AND project
+      // owners bypass (deployment god-view / no owner self-lockout).
+      const privileged = payload.operator === true || payload.powner === true;
+      if (!privileged && (await hasActiveSuspension(payload.sub))) {
         return next(new Error("suspended"));
       }
       socket.data.userId = payload.sub;

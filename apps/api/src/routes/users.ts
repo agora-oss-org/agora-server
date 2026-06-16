@@ -16,6 +16,7 @@ import { parseBody, updateProfileSchema } from "../lib/validation.js";
 import { notifyOnFollow } from "../lib/notifications.js";
 import * as webhooks from "../lib/webhooks.js";
 import { trackEvent } from "../lib/umami.js";
+import { requireProjectAdmin } from "../lib/project-roles.js";
 
 async function findUser(projectId: string, col: typeof profiles.id | typeof profiles.username | typeof profiles.foreignId, value: string) {
   const [row] = await db
@@ -155,17 +156,17 @@ export const userRoutes = new Hono<{ Variables: Variables }>()
       ));
     return c.json({ count: r?.n ?? 0 });
   })
-  // ── account suspensions (operator-only) ─────────────────────────────────────
+  // ── account suspensions (project admin / operator) ──────────────────────────
   // Suspending blocks the user on every authed request (middleware/auth.ts) and revokes their refresh
-  // families. Operators bypass enforcement, so they can always lift.
+  // families. Operators and project owners bypass enforcement, so they can always lift.
   .get("/:id/suspensions", requireAuth, async (c) => {
-    requireOperator(c);
+    requireProjectAdmin(c);
     const target = await loadTarget(c.var.projectId, c.req.param("id"));
     const rows = await listSuspensions(target.id);
     return c.json({ suspensions: rows.map(shapeSuspension) });
   })
   .post("/:id/suspend", requireAuth, async (c) => {
-    requireOperator(c);
+    requireProjectAdmin(c);
     const target = await loadTarget(c.var.projectId, c.req.param("id"));
     const body = parseBody(suspendSchema, await c.req.json().catch(() => ({})), "users");
     const endDate = body.endDate ? new Date(body.endDate) : null;
@@ -175,7 +176,7 @@ export const userRoutes = new Hono<{ Variables: Variables }>()
     return c.json(shapeSuspension(row), 201);
   })
   .delete("/:id/suspend", requireAuth, async (c) => {
-    requireOperator(c);
+    requireProjectAdmin(c);
     const target = await loadTarget(c.var.projectId, c.req.param("id"));
     const lifted = await liftSuspensions(target.id);
     logger.info({ projectId: c.var.projectId, profileId: target.id, by: c.var.auth!.userId, lifted }, "user: suspensions lifted");
@@ -186,10 +187,6 @@ const suspendSchema = z.object({
   reason: z.string().max(500).optional(),
   endDate: z.string().datetime().optional(), // ISO 8601; absent = indefinite
 });
-
-function requireOperator(c: any): void {
-  if (!c.var.auth!.isOperator) throw Errors.forbidden("users/operator-only", "Operator access required");
-}
 
 // Resolve a target profile within the project (404 if it doesn't belong here) — keeps suspension
 // operations project-scoped even though profile ids are globally unique.

@@ -78,8 +78,10 @@ export function attachRealtime(httpServer: HttpServer) {
       const { payload } = await jwtVerify(token, accessSecret, { algorithms: ["HS256"] });
       if (!payload.sub) return next(new Error("unauthorized"));
       // Enforce suspensions on the realtime path too (mirrors middleware/auth.ts requireAuth):
-      // a suspended user must not keep receiving live events. Operators bypass (no self-lockout).
-      if (payload.operator !== true && (await hasActiveSuspension(payload.sub))) {
+      // a suspended user must not keep receiving live events. Operators AND project owners bypass
+      // (deployment god-view / no owner self-lockout).
+      const privileged = payload.operator === true || payload.powner === true;
+      if (!privileged && (await hasActiveSuspension(payload.sub))) {
         return next(new Error("suspended"));
       }
       socket.data.userId = payload.sub;

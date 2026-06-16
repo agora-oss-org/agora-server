@@ -14,6 +14,7 @@ import { shapeEntity, shapeComment, shapeChatMessage, shapeSpace, shapeUser } fr
 import { embedText, embeddingsEnabled, type SourceType } from "../lib/embeddings.js";
 import { streamText, llmEnabled } from "../lib/llm.js";
 import { trackEvent } from "../lib/umami.js";
+import { isProjectAdmin } from "../lib/project-roles.js";
 
 // Mirrors the SDK's ContentSearchResult (interfaces/models): a shaped Entity | Comment | ChatMessage.
 type ContentSearchResult = { sourceType: SourceType; similarity: number; record: unknown };
@@ -70,7 +71,7 @@ async function retrieveContent(
   // INSIDE match_content, so the LIMIT applies to rows the caller may actually see (no short pages).
   // Operators bypass; removed content is always excluded from search for non-operators.
   const viewer = c.var.auth?.userId ?? null;
-  const privileged = c.var.auth?.isOperator === true;
+  const privileged = c.var.auth ? isProjectAdmin(c.var.auth) : false;
   const matches = (await db.execute(sql`
     select source_type, source_id, similarity
     from match_content(${projectId}::uuid, ${lit}::vector, ${limit}, ${typesArg}, ${space}::uuid,

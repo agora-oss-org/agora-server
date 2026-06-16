@@ -17,6 +17,7 @@ import type { Variables } from "../http/context.js";
 import { Errors } from "../http/errors.js";
 import { db } from "../db/index.js";
 import { spaces, spaceMembers, entities, comments } from "../db/schema/index.js";
+import { isProjectAdmin } from "./project-roles.js";
 
 type Ctx = Context<{ Variables: Variables }>;
 
@@ -50,7 +51,7 @@ async function isOwnerOrActiveMember(
  */
 export async function assertCanReadSpace(c: Ctx, spaceId: string | null | undefined): Promise<void> {
   if (!spaceId) return;
-  if (c.var.auth?.isOperator) return;
+  if (c.var.auth && isProjectAdmin(c.var.auth)) return;
   const [space] = await db
     .select({ userId: spaces.userId, readingPermission: spaces.readingPermission })
     .from(spaces)
@@ -65,7 +66,7 @@ export async function assertCanReadSpace(c: Ctx, spaceId: string | null | undefi
 
 /** Resolve an entity to its space and assert read access. No-ops if the entity doesn't exist. */
 export async function assertCanReadEntity(c: Ctx, entityId: string): Promise<void> {
-  if (c.var.auth?.isOperator) return;
+  if (c.var.auth && isProjectAdmin(c.var.auth)) return;
   const [row] = await db
     .select({ spaceId: entities.spaceId })
     .from(entities)
@@ -77,7 +78,7 @@ export async function assertCanReadEntity(c: Ctx, entityId: string): Promise<voi
 
 /** Resolve a comment to its entity's space and assert read access. No-ops if the comment is gone. */
 export async function assertCanReadComment(c: Ctx, commentId: string): Promise<void> {
-  if (c.var.auth?.isOperator) return;
+  if (c.var.auth && isProjectAdmin(c.var.auth)) return;
   const [row] = await db
     .select({ entityId: comments.entityId })
     .from(comments)
@@ -97,7 +98,7 @@ export async function assertCanReadComment(c: Ctx, commentId: string): Promise<v
  */
 export async function assertCanPostInSpace(c: Ctx, spaceId: string | null | undefined): Promise<void> {
   if (!spaceId) return;
-  if (c.var.auth?.isOperator) return;
+  if (c.var.auth && isProjectAdmin(c.var.auth)) return;
   const [space] = await db
     .select({ userId: spaces.userId, postingPermission: spaces.postingPermission })
     .from(spaces)
@@ -134,7 +135,7 @@ export async function assertCanPostInSpace(c: Ctx, spaceId: string | null | unde
  * Correlates to the outer `entities` row via `entities.space_id`.
  */
 export function readableEntitiesFilter(c: Ctx): SQL | undefined {
-  if (c.var.auth?.isOperator) return undefined;
+  if (c.var.auth && isProjectAdmin(c.var.auth)) return undefined;
   const uid = c.var.auth?.userId ?? null;
   const memberClause = uid
     ? sql`or s.user_id = ${uid}::uuid or exists (

@@ -11,6 +11,7 @@ import { shapeReport, loadReportParticipants } from "../lib/shape.js";
 import { parseBody, createReportSchema } from "../lib/validation.js";
 import { trackEvent } from "../lib/umami.js";
 import { Errors } from "../http/errors.js";
+import { isProjectAdmin, requireProjectAdmin } from "../lib/project-roles.js";
 
 // The set of space ids a user may moderate: spaces they own (space.userId) + memberships with an
 // active admin/moderator role. Used to scope the pending-reports queue for non-operators.
@@ -31,7 +32,7 @@ async function moderatedSpaceIds(projectId: string, userId: string): Promise<str
 // else is limited to reports in spaces they moderate. `empty: true` means "no visible reports"
 // (a non-operator who moderates nothing) — the caller should short-circuit to an empty page.
 async function scopeReports(c: any, base: ReturnType<typeof and>): Promise<{ where: ReturnType<typeof and>; empty: boolean }> {
-  if (c.var.auth.isOperator) return { where: base, empty: false };
+  if (isProjectAdmin(c.var.auth)) return { where: base, empty: false };
   const spaceIds = await moderatedSpaceIds(c.var.projectId, c.var.auth.userId);
   if (spaceIds.length === 0) return { where: base, empty: true };
   return { where: and(base, inArray(reports.spaceId, spaceIds)), empty: false };
@@ -85,7 +86,7 @@ export const reportRoutes = new Hono<{ Variables: Variables }>()
   // moderate the target + resolve the report here in one call. action: removed | approved | dismiss
   // (dismiss resolves without touching the content). Mirrors the space moderation fields exactly.
   .patch("/:id/resolve", requireAuth, async (c) => {
-    if (!c.var.auth!.isOperator) throw Errors.forbidden("reports/operator-only", "Operator role required to action this report");
+    requireProjectAdmin(c);
     const body = (await c.req.json().catch(() => ({}))) as { action?: string; reason?: string };
     if (body.action !== "removed" && body.action !== "approved" && body.action !== "dismiss") {
       throw Errors.badRequest("reports/invalid-action", "action must be removed, approved, or dismiss", "action");

@@ -56,8 +56,18 @@ describe("removedPolicy", () => {
     expect(await removedPolicy(c)).toEqual({ privileged: true });
   });
 
-  it("marks non-operators as non-privileged", async () => {
-    const c = { var: { auth: { isOperator: false } } } as any;
+  it("marks project owners as privileged", async () => {
+    const c = { var: { auth: { isOperator: false, isProjectOwner: true } } } as any;
+    expect(await removedPolicy(c)).toEqual({ privileged: true });
+  });
+
+  it("marks project admins as privileged", async () => {
+    const c = { var: { auth: { isOperator: false, isProjectAdmin: true } } } as any;
+    expect(await removedPolicy(c)).toEqual({ privileged: true });
+  });
+
+  it("marks plain members as non-privileged", async () => {
+    const c = { var: { auth: { isOperator: false, isProjectOwner: false, isProjectAdmin: false } } } as any;
     expect(await removedPolicy(c)).toEqual({ privileged: false });
   });
 

@@ -1,7 +1,8 @@
 // /v7/:projectId/steward/*  — conflict-resolution caseload + steward grant management.
 //
-// Gating: every route requires auth; case routes need steward||operator (requireSteward), grant
-// management is operator-only (requireOperator). Steward privilege is SCOPED HERE — the case-detail
+// Gating: every route requires auth; case routes need steward / project-admin / operator
+// (requireSteward), grant management needs project owner / operator (requireProjectOwner). Steward
+// privilege is SCOPED HERE — the case-detail
 // endpoint fetches the subject content directly (the route is already gated) rather than threading an
 // isSteward bypass through the global moderation/space gates, keeping blast radius small.
 //
@@ -27,6 +28,7 @@ import { openCaucusChannels, openJointChannel, listCaseChannels, closeMediationF
 import { listStewardIds, grantSteward, revokeSteward } from "../lib/stewards.js";
 import { parseBody } from "../lib/validation.js";
 import { Errors } from "../http/errors.js";
+import { isProjectAdmin, requireProjectOwner } from "../lib/project-roles.js";
 
 type Ctx = Context<{ Variables: Variables }>;
 type CaseRow = typeof stewardCases.$inferSelect;
@@ -35,10 +37,7 @@ type EventKind = typeof stewardCaseEvents.$inferInsert["kind"];
 // ─── guards ──────────────────────────────────────────────────────────────────
 function requireSteward(c: Ctx): void {
   const a = c.var.auth!;
-  if (!a.isSteward && !a.isOperator) throw Errors.forbidden("steward/forbidden", "Steward access required");
-}
-function requireOperator(c: Ctx): void {
-  if (!c.var.auth!.isOperator) throw Errors.forbidden("steward/operator-only", "Operator access required");
+  if (!(isProjectAdmin(a) || a.isSteward)) throw Errors.forbidden("steward/forbidden", "Steward access required");
 }
 
 // ─── request schemas (server-local — admin-only, not SDK contract) ────────────
@@ -336,15 +335,15 @@ export const stewardRoutes = new Hono<{ Variables: Variables }>()
     logger.info({ projectId: c.var.projectId, caseId: row.id, stewardId, kind: body.kind, channels: opened.length }, "steward: mediation channel(s) opened");
     return c.json({ channels: opened.map(shapeChannel) }, 201);
   })
-  // ── Steward grant management (operator-only).
+  // ── Steward grant management (project owner / operator).
   .get("/stewards", requireAuth, async (c) => {
-    requireOperator(c);
+    requireProjectOwner(c);
     const ids = await listStewardIds(c.var.projectId);
     const users = await loadUsers(c.var.projectId, ids);
     return c.json({ stewards: ids.map((id) => users.get(id)).filter(Boolean) });
   })
   .post("/stewards", requireAuth, async (c) => {
-    requireOperator(c);
+    requireProjectOwner(c);
     const body = parseBody(grantSchema, await c.req.json().catch(() => ({})), "steward");
     const [p] = await db.select({ id: profiles.id }).from(profiles)
       .where(and(eq(profiles.projectId, c.var.projectId), eq(profiles.id, body.userId))).limit(1);
@@ -354,7 +353,7 @@ export const stewardRoutes = new Hono<{ Variables: Variables }>()
     return c.json({ success: true }, 201);
   })
   .delete("/stewards/:userId", requireAuth, async (c) => {
-    requireOperator(c);
+    requireProjectOwner(c);
     await revokeSteward(c.var.projectId, c.req.param("userId"));
     logger.info({ projectId: c.var.projectId, profileId: c.req.param("userId"), revokedBy: c.var.auth!.userId }, "steward: revoked");
     return c.json({ success: true });

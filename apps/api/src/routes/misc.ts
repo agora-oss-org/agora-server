@@ -20,6 +20,7 @@ import { parseBody, oauthAuthorizeSchema, signTestingJwtSchema, webhookConfigSch
 import type { SocialPrivacyTier } from "@agora-server/contract";
 import { invalidateSocialConfig, socialConfigView } from "../lib/social-config.js";
 import { invalidateSocialWeather } from "../lib/social-weather.js";
+import { isProjectAdmin } from "../lib/project-roles.js";
 
 type ProfileRow = typeof profiles.$inferSelect;
 
@@ -285,13 +286,11 @@ export const miscRoutes = new Hono<{ Variables: Variables }>()
   });
 
 // ── webhook-admin helpers ───────────────────────────────────────────────────
-// Project-admin gate for project-wide config (feed ranking, webhooks). Deployment operators have the
-// god-view, so they pass; otherwise the user's profile must have role "admin".
+// Project-admin gate for project-wide config (feed ranking, webhooks). Deployment operators, project
+// owners, and project admins (all folded into isProjectAdmin) pass.
 async function requireProjectAdmin(c: any): Promise<void> {
-  if (c.var.auth?.isOperator) return;
-  const [p] = await db.select({ role: profiles.role }).from(profiles)
-    .where(and(eq(profiles.projectId, c.var.projectId), eq(profiles.id, c.var.auth!.userId))).limit(1);
-  if (!p || p.role !== "admin") throw Errors.forbidden("project/not-admin", "Project admin or operator required");
+  if (isProjectAdmin(c.var.auth!)) return;
+  throw Errors.forbidden("project/not-admin", "Project admin or operator required");
 }
 
 // Safe view of the webhook config — never returns the secret, only whether one is set.

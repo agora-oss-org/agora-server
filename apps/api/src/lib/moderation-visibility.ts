@@ -6,6 +6,7 @@ import type { Context } from "hono";
 import { or, isNull, ne, type SQL } from "drizzle-orm";
 import type { Variables } from "../http/context.js";
 import { entities, comments, chatMessages } from "../db/schema/index.js";
+import { isProjectAdmin } from "./project-roles.js";
 
 type Ctx = Context<{ Variables: Variables }>;
 
@@ -15,7 +16,7 @@ export interface RemovedPolicy {
 
 /** Resolve the per-request removed-content policy (whether the caller is privileged). */
 export async function removedPolicy(c: Ctx): Promise<RemovedPolicy> {
-  return { privileged: c.var.auth?.isOperator === true };
+  return { privileged: c.var.auth ? isProjectAdmin(c.var.auth) : false };
 }
 
 /**
