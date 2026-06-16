@@ -271,6 +271,33 @@ export const adminRoutes = new Hono<{ Variables: Variables }>()
       topPosts,
     });
   })
+  // ── Admin analytics reads (operator-only, corporate-tier) — docs/AGORA-CORP.md. Each serves the LATEST
+  // materialized snapshot (names hydrated fresh), or an empty `{ …, asOf: null }` sentinel when none exists
+  // yet. Gate order mirrors routes/social.ts: operator first, then graph + the report's corporate flag.
+  .get("/social/influence", requireAuth, async (c) => {
+    if (!c.var.auth!.isOperator) throw Errors.forbidden("admin/operator-required", "Operator access required");
+    const cfg = await getSocialConfig(c.var.projectId);
+    if (!cfg.graphEnabled || !cfg.influenceScoresEnabled) {
+      throw Errors.badRequest("social/influence-disabled", "Influence scores are not enabled for this project");
+    }
+    return c.json(await getInfluence(c.var.projectId));
+  })
+  .get("/social/silos", requireAuth, async (c) => {
+    if (!c.var.auth!.isOperator) throw Errors.forbidden("admin/operator-required", "Operator access required");
+    const cfg = await getSocialConfig(c.var.projectId);
+    if (!cfg.graphEnabled || !cfg.siloDetectionEnabled) {
+      throw Errors.badRequest("social/silos-disabled", "Silo detection is not enabled for this project");
+    }
+    return c.json(await getSilos(c.var.projectId));
+  })
+  .get("/social/engagement", requireAuth, async (c) => {
+    if (!c.var.auth!.isOperator) throw Errors.forbidden("admin/operator-required", "Operator access required");
+    const cfg = await getSocialConfig(c.var.projectId);
+    if (!cfg.graphEnabled || !cfg.engagementScoresEnabled) {
+      throw Errors.badRequest("social/engagement-disabled", "Engagement scores are not enabled for this project");
+    }
+    return c.json(await getEngagement(c.var.projectId));
+  })
   // POST /admin/social/recompute — operator-forced, SYNCHRONOUS re-materialization of the admin-analytics
   // snapshots (docs/AGORA-CORP.md). Blocks while GDS runs over the whole graph (the admin UI shows a
   // "this will take a while" spinner), then returns the fresh reports. Body:
