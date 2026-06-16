@@ -6,6 +6,11 @@ import {
   REACTION_TYPES, STEWARD_NOTIFY_POLICIES, STEWARD_MEDIATION_MODES, STEWARD_MEDIATION_ON_CLOSE,
   type StewardNotifyPolicy, type StewardMediationMode, type StewardMediationOnClose, type StewardConfigView,
 } from "@agora-server/contract";
+// Social-graph config types are the contract's — re-exported so downstream admin code keeps importing
+// them from here, but there's a single source of truth (adding a social_config field no longer needs a
+// matching hand-edit in this file).
+export type { ResolvedSocialConfig, SocialPrivacyTier, SocialConfigPatch } from "@agora-server/contract";
+import type { ResolvedSocialConfig, SocialConfigPatch } from "@agora-server/contract";
 import { api } from "./api";
 
 // KNOWN_ALGORITHMS lives in the API's lib/ranking.ts (not the shared contract), so it's mirrored here.
@@ -158,34 +163,12 @@ export function updateStewardSettings(
 }
 
 // ── Social graph (GET/PATCH /settings/social) ────────────────────────────────────────────────────
-export type SocialPrivacyTier = "community" | "corporate";
-
-export interface ResolvedSocialConfig {
-  privacyTier: SocialPrivacyTier;
-  graphEnabled: boolean;
-  weatherEnabled: boolean;
-  constellationEnabled: boolean;
-  constellationKFloor: number;
-  neighborhoodEnabled: boolean;
-  neighborhoodIncludeInteractions: boolean;
-  influenceScoresEnabled: boolean;
-  siloDetectionEnabled: boolean;
-  engagementScoresEnabled: boolean;
-  frictionVisibleToStewards: boolean;
-  frictionAnalyticsEnabled: boolean;
-  readAffinityEnabled: boolean;
-  readReceiptsAllowed: boolean;
-  warmthHalfLifeDays: number;
-  frictionHalfLifeDays: number;
-}
-
+// ResolvedSocialConfig / SocialPrivacyTier / SocialConfigPatch come from @agora-server/contract
+// (re-exported at the top of this file). Only the admin-shaped view envelope is local.
 export interface SocialConfigView {
   stored: Partial<ResolvedSocialConfig>;
   effective: ResolvedSocialConfig;
 }
-
-// PATCH semantics: omit = unchanged, null = clear override (→ tier default).
-export type SocialConfigPatch = { [K in keyof ResolvedSocialConfig]?: ResolvedSocialConfig[K] | null };
 
 export function getSocialConfig(signal?: AbortSignal): Promise<SocialConfigView> {
   return api<SocialConfigView>("/settings/social", { signal });
