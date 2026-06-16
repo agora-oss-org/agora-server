@@ -23,6 +23,8 @@ async function verify(token: string): Promise<AuthContext | null> {
       role: (payload.role as AuthContext["role"]) ?? "visitor",
       isOperator: payload.operator === true,
       isSteward: payload.steward === true,
+      isProjectOwner: payload.powner === true,
+      isProjectAdmin: payload.padmin === true,
     };
   } catch {
     return null;
@@ -46,8 +48,10 @@ export const requireAuth = createMiddleware<{ Variables: Variables }>(async (c, 
   const auth = token ? await verify(token) : null;
   if (!auth) throw Errors.unauthorized();
   // Block suspended users on every authed request (the access token outlives a fresh suspension).
-  // Operators bypass — they hold the deployment god-view and lift suspensions (avoids self-lockout).
-  if (!auth.isOperator && (await hasActiveSuspension(auth.userId))) {
+  // Operators AND project owners bypass — operators hold the deployment god-view and lift
+  // suspensions, and an owner can't be locked out of their own project (avoids self-lockout).
+  // Admins/stewards remain suspendable.
+  if (!(auth.isOperator || auth.isProjectOwner) && (await hasActiveSuspension(auth.userId))) {
     throw Errors.forbidden("auth/suspended", "Account suspended");
   }
   c.set("auth", auth);

@@ -8,7 +8,7 @@ import { db } from "../db/index.js";
 import { refreshTokens, profiles } from "../db/schema/index.js";
 import { env } from "./env.js";
 import { isOperator } from "./operators.js";
-import { isSteward } from "./stewards.js";
+import { getProjectRoles } from "./project-roles.js";
 import { logger } from "./logger.js";
 import { Errors } from "../http/errors.js";
 
@@ -21,10 +21,11 @@ export interface SessionTokens {
 }
 
 /** Sign a 30-minute access JWT (HS256). sub=profileId; verified by middleware/auth.ts.
- *  `operator` carries the deployment-operator flag and `steward` the conflict-resolution role, so
- *  handlers read both without a DB hit. */
-export async function signAccessToken(profileId: string, role: string, operator = false, steward = false): Promise<string> {
-  return new SignJWT({ role, operator, steward })
+ *  `operator` carries the deployment-operator flag, `steward` the conflict-resolution role, and
+ *  `powner`/`padmin` the per-project owner/admin grants, so handlers read all of them without a DB
+ *  hit. */
+export async function signAccessToken(profileId: string, role: string, operator = false, steward = false, owner = false, admin = false): Promise<string> {
+  return new SignJWT({ role, operator, steward, powner: owner, padmin: admin })
     .setProtectedHeader({ alg: "HS256" })
     .setSubject(profileId)
     .setIssuedAt()
@@ -46,11 +47,12 @@ async function issueRefreshToken(projectId: string, profileId: string, familyId:
 }
 
 /** Mint a full session (access + refresh). Starts a new family unless one is supplied (rotation).
- *  `operator` + `steward` flow into the access-token claims (caller computes them from the profile). */
-export async function mintSession(projectId: string, profileId: string, role: string, operator = false, steward = false, familyId?: string): Promise<SessionTokens> {
+ *  `operator` + `steward` + `owner`/`admin` flow into the access-token claims (caller computes them
+ *  from the profile + project roles). */
+export async function mintSession(projectId: string, profileId: string, role: string, operator = false, steward = false, owner = false, admin = false, familyId?: string): Promise<SessionTokens> {
   const family = familyId ?? randomUUID();
   const [accessToken, refreshToken] = await Promise.all([
-    signAccessToken(profileId, role, operator, steward),
+    signAccessToken(profileId, role, operator, steward, owner, admin),
     issueRefreshToken(projectId, profileId, family),
   ]);
   return { accessToken, refreshToken };
@@ -88,8 +90,8 @@ export async function rotateRefreshToken(projectId: string, raw: string): Promis
   if (row.rotatedAt) {
     if (now <= row.rotatedAt.getTime() + graceMs) {
       logger.debug({ projectId, profileId: row.profileId, familyId: row.familyId }, "auth: refresh replay within grace window");
-      const { role, operator, steward } = await profileAuthBits(projectId, row.profileId);
-      return { ...(await mintSession(projectId, row.profileId, role, operator, steward, row.familyId)), profileId: row.profileId };
+      const { role, operator, owner, admin, steward } = await profileAuthBits(projectId, row.profileId);
+      return { ...(await mintSession(projectId, row.profileId, role, operator, steward, owner, admin, row.familyId)), profileId: row.profileId };
     }
     logger.warn({ projectId, profileId: row.profileId, familyId: row.familyId }, "auth: rotated refresh token reused past grace — revoking family");
     await revokeFamily(row.familyId);
@@ -103,8 +105,8 @@ export async function rotateRefreshToken(projectId: string, raw: string): Promis
   // Normal rotation: spend this token, mint a successor in the same family.
   await db.update(refreshTokens).set({ rotatedAt: new Date() }).where(eq(refreshTokens.id, row.id));
   logger.debug({ projectId, profileId: row.profileId, familyId: row.familyId }, "auth: refresh rotated");
-  const { role, operator, steward } = await profileAuthBits(projectId, row.profileId);
-  return { ...(await mintSession(projectId, row.profileId, role, operator, steward, row.familyId)), profileId: row.profileId };
+  const { role, operator, owner, admin, steward } = await profileAuthBits(projectId, row.profileId);
+  return { ...(await mintSession(projectId, row.profileId, role, operator, steward, owner, admin, row.familyId)), profileId: row.profileId };
 }
 
 /** Sign-out: revoke the family of the presented refresh token (this session). */
@@ -122,11 +124,19 @@ export async function revokeAllForProfile(profileId: string): Promise<void> {
   await db.update(refreshTokens).set({ revoked: true }).where(eq(refreshTokens.profileId, profileId));
 }
 
-// Re-derive role + operator + steward status for a profile (used on refresh, where we only hold the
-// profile id). The steward grant is project-scoped, so this needs the projectId too.
-async function profileAuthBits(projectId: string, profileId: string): Promise<{ role: string; operator: boolean; steward: boolean }> {
+// Re-derive role + operator + per-project owner/admin/steward status for a profile (used on refresh,
+// where we only hold the profile id). Project roles are project-scoped, so this needs the projectId
+// too. `steward` folds the hierarchy operator ⊇ owner ⊇ admin ⊇ steward (an owner/admin is a steward).
+async function profileAuthBits(projectId: string, profileId: string): Promise<{ role: string; operator: boolean; owner: boolean; admin: boolean; steward: boolean }> {
   const [p] = await db.select({ id: profiles.id, role: profiles.role, email: profiles.email })
     .from(profiles).where(eq(profiles.id, profileId)).limit(1);
-  if (!p) return { role: "visitor", operator: false, steward: false };
-  return { role: p.role, operator: isOperator(p), steward: await isSteward(projectId, p.id) };
+  if (!p) return { role: "visitor", operator: false, owner: false, admin: false, steward: false };
+  const roles = await getProjectRoles(projectId, p.id);
+  return {
+    role: p.role,
+    operator: isOperator(p),
+    owner: roles.has("owner"),
+    admin: roles.has("admin"),
+    steward: roles.has("steward") || roles.has("admin") || roles.has("owner"),
+  };
 }
