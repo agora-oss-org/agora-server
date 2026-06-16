@@ -101,6 +101,54 @@ standard, the same family of guarantees as Signal but designed for large, dynami
 
 Full design, threat model, schema, endpoints, and roadmap: **[`docs/SECURE_CHAT.md`](docs/SECURE_CHAT.md)**.
 
+## Your social graph, pointed back at the community — not at you
+
+Every platform mines the social graph *at* the user — to target, rank, and sell them. Agora points the
+same structure **back at the community, for the community**, in service of its health. It's an
+**optional, off-by-default** layer: wire up a Neo4j instance (`NEO4J_URI`) and the **Garden** comes
+alive; leave it unset and nothing in the graph layer runs (every `/social/*` endpoint cleanly 503s and
+the admin panels stay hidden).
+
+There's a second purpose, just as deliberate: **to teach by showing.** Every member already *lives*
+inside a social graph on every platform they use — they just never get to see it. That graph is the
+asset being silently harvested, scored, brokered, and turned back on them as targeted advertising and
+behavioral nudging, with their consent buried in a terms-of-service no one reads. By rendering the
+graph **in the open, for once aimed at the community's wellbeing instead of at extracting from it**,
+the Garden makes the thing concrete: *this* is what a map of who-talks-to-whom looks like, *this* is
+how much it reveals, and *this* is exactly the structure that surveillance-capitalism platforms mine
+and sell without ever letting you look at it. Seeing it pointed at *care* is the clearest way to grasp
+how dangerous it is when it's pointed at *profit* — and how flatly that use conflicts with the
+interests of the people it's built from. The Garden is consciousness-raising as much as it is a feature:
+data literacy you can feel, not a lecture.
+
+The whole design exists because Agora's communities skew **trans, queer, sex-worker, and recovery** —
+for them graph exposure is a doxxing/outing vector, and mass-reporting is the primary harassment
+tactic (any score that counts reports lights up on the *target*, not the harasser). So every rule
+bends toward one non-negotiable:
+
+> **The asymmetry principle — every possible misreading must land on *kindness*, never a scarlet
+> letter.** Friction only ever *dims* a node; it never reddens it.
+
+- **One public signal: warmth.** Loneliness and conflict both render as *dim* — indistinguishable on
+  purpose, because both mean "bring care here." There is no per-person "bad actor" score, in any view.
+- **A zoom ladder that is a privacy ladder.** ☀️ **Community Weather** (one project-wide warmth scalar
+  with band + trend) → 🏡 **Neighborhood** (your *own* ties only, each rendered by its **dyadic**
+  brightness `B(you, them)` — never the friend's global score, which closes the friction side-channel
+  entirely). *(✨ Constellation — anonymous cluster blobs — is designed and next.)*
+- **Friction is quarantined and decays.** A user report projects a directed `FRICTION` edge that can
+  only *dim* an existing tie and fades at a ~14-day half-life ("a bad week is not a permanent
+  identity"); it never creates a tie, and never becomes a per-person verdict.
+- **One graph, opposite deployments.** The same structure serves a **vulnerable-population community**
+  and a **corporation's internal platform** — nearly opposite privacy needs — resolved by a per-project
+  `social_config` **tier** (community ↔ corporate, admin Settings → Social Graph), not by picking a side.
+
+Under the hood the **scorer** owns the write side (it projects `INTERACTED` / `FOLLOWS` / `CONNECTED` /
+`FRICTION` edges into Neo4j off the same pgmq queue it already scores content on), and `@agora/api`
+owns the read side (`/v7/:projectId/social/*`, member/operator-gated, computed live or cached with band
+hysteresis). Full design, ethics, and threat model:
+**[`docs/SOCIAL-GRAPH.md`](docs/SOCIAL-GRAPH.md)** (the consolidation plan) and
+**[`docs/AGORA-SOCIAL.md`](docs/AGORA-SOCIAL.md)** (the condensed design corpus).
+
 ## The contract is the constraint
 
 Agora's whole reason to exist is that the forked SDK's typed hooks work **unchanged**. So the
@@ -122,7 +170,7 @@ with setup, configuration, and development details:
 | Package | What it is | Docs |
 |---|---|---|
 | **[`@agora/api`](apps/api)** | The backend — Hono + Supabase + socket.io. Every endpoint, permission check, and bit of business logic. The reference package. | [apps/api/README.md](apps/api/README.md) |
-| **[`@agora/admin`](apps/admin)** | The admin dashboard — Vite + React. Moderation queue + AI queue, the **stewardship caseload** (cases, mediation channels, steward grants), feed tuning, webhook config, community & analytics dashboards. | [apps/admin/README.md](apps/admin/README.md) |
+| **[`@agora/admin`](apps/admin)** | The admin dashboard — Vite + React. Moderation queue + AI queue, the **stewardship caseload** (cases, mediation channels, steward grants), feed tuning, webhook config, community & analytics dashboards, plus the optional **Social Graph** panel + **Community Weather** card (gated on `VITE_SOCIAL_GRAPH_ENABLED`). | [apps/admin/README.md](apps/admin/README.md) |
 | **`@agora-server/contract`** | Shared API types + zod request schemas (no hono/drizzle). Built first; consumed across the workspace — and the permissive (Apache-2.0) wire surface the SDK builds on. | — |
 
 ```
@@ -130,7 +178,9 @@ agora/
 ├── docs/
 │   ├── MANIFEST.md          # the exact REST + socket.io contract (SDK-confirmed vs inferred)
 │   ├── MODELS.md            # field-level response shapes (drive both the API and the schema)
-│   └── SECURE_CHAT.md       # the end-to-end-encrypted chat design + reference
+│   ├── SECURE_CHAT.md       # the end-to-end-encrypted chat design + reference
+│   ├── STEWARDSHIP.md       # the conflict-resolution caseload design
+│   └── SOCIAL-GRAPH.md      # the optional Neo4j social-graph layer ("the Garden")
 ├── packages/
 │   └── contract/            # @agora-server/contract — shared API types + zod schemas
 └── apps/
@@ -179,6 +229,8 @@ Supabase Postgres   schema · triggers · RPC · pgvector · PostGIS · RLS
         ├── Supabase Auth     (passwords, confirmation/reset emails, OAuth)
         └── Supabase Storage  (file/image bytes)
         Voyage AI ──▶ embeddings        Anthropic ──▶ /search/ask answers
+        pgmq ──▶ services/scorer ──▶ AI moderation · social-graph edges ──▶ Neo4j   (optional)
+                                                  @agora/api reads Neo4j back for /social/*
 
 @agora/admin ─(operator JWT)─▶ @agora/api
 ```
@@ -217,6 +269,7 @@ complete** — no stubbed endpoints remain.
 | **webhooks** | project webhooks (HMAC validation gates + `*.complete` broadcasts) + per-space digests |
 | **moderation** | report resolution + server-enforced removed-content hiding (lists, single reads, **and** the search RPC); space-moderator + operator roles; **AI Agent Moderator** that flags inappropriate content on post — configurable violation categories, confidence thresholds, and auto-actions (immediate hide or human review) — tunable per-project in Settings; escalation to Stewards for conflict resolution |
 | **stewardship** | first-class **conflict resolution** — a DB-granted steward role (between member and operator), a caseload (`open → in_mediation → closed`), transformative outcomes, a "targeting" power-imbalance flag, **private mediation channels** (caucus + consensual joint room, built on chat), **configurable participant notifications** (power-aware/symmetric/resolution-only, never leaking who raised a case), append-only timeline, and escalate-to-removal for posts/comments/chat messages ([`docs/STEWARDSHIP.md`](docs/STEWARDSHIP.md)) |
+| **social graph** *(optional · Neo4j)* | the **Garden** — community-health analytics pointed *back at the community*: **Community Weather** (project-wide warmth scalar + band/trend, cached with hysteresis) and **Neighborhood** (your own ties by **dyadic** brightness); one public signal (warmth), friction quarantined + decaying, per-project privacy **tier** (community ↔ corporate). Scorer projects the edges, the API reads them. Off unless `NEO4J_URI` is set ([`docs/SOCIAL-GRAPH.md`](docs/SOCIAL-GRAPH.md)) |
 
 Denormalized counts (reaction counts, reply counts, member counts, thread counts, reputation) are
 maintained atomically by Postgres **triggers** — never recomputed per request.
@@ -312,7 +365,11 @@ pass a `projectId` + a signed user token to the provider; the SDK's typed hooks 
 - ✅ **Governance** — moderation (report queues + optional LLM auto-moderation) and the stewardship
   caseload (cases, private mediation channels, participant notifications) are wired and operator-gated
   in the admin dashboard.
-- ✅ Idempotent Drizzle migrations `0000`–`0030`; unit + integration test suites green.
+- 🌱 **Social graph (optional · Neo4j)** — the `social_config` foundation, **Community Weather**, and
+  **Neighborhood** are live and env-gated behind `NEO4J_URI` (scorer writes the `INTERACTED` / `FOLLOWS`
+  / `CONNECTED` / `FRICTION` edges, the API reads them); Constellation + admin graph analytics are
+  designed and next ([`docs/SOCIAL-GRAPH.md`](docs/SOCIAL-GRAPH.md)).
+- ✅ Idempotent Drizzle migrations `0000`–`0039`; unit + integration test suites green.
 - ✅ Client SDK published + repointed — validated 1:1 by the
   [`agora-demo`](https://github.com/jenova-marie/agora-demo) compatibility harness.
 - ⬜ Ops backlog: deployment guides, and RLS write policies (only needed if the Supabase Data API is
