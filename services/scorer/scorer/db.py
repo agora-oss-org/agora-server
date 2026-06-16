@@ -151,6 +151,44 @@ async def resolve_reaction_interaction(
     )
 
 
+@dataclass
+class FrictionContext:
+    """The reporter → subject pair for a Layer-2 FRICTION edge. Either id may be None — ``actor_id`` is
+    None for an anonymous report (``reporter_id`` null), ``recipient_id`` is None for a chat-message
+    report (``target_type='message'`` — secure chat, out of the graph's scope) or a deleted/anonymous
+    target author; the caller skips those. ``kind`` is always ``'report'`` for now (the one friction
+    source that exists — there is no block/mute feature)."""
+
+    actor_id: Optional[str]
+    recipient_id: Optional[str]
+    kind: str = "report"
+
+
+async def resolve_report_friction(
+    settings: Settings, report_id: str
+) -> Optional[FrictionContext]:
+    """Reporter (actor) + subject (recipient) for a report's FRICTION edge. The subject is the AUTHOR of
+    the reported content (entity/comment); a chat-message report has no graph recipient. None if the
+    report row itself is gone (already deleted)."""
+    pool = await get_pool(settings)
+    row = await pool.fetchrow(
+        "select r.reporter_id as actor_id, "
+        "case r.target_type "
+        "  when 'entity' then (select user_id from entities where id = r.target_id) "
+        "  when 'comment' then (select user_id from comments where id = r.target_id) "
+        "  else null end as recipient_id "
+        "from reports r where r.id = $1",
+        report_id,
+    )
+    if row is None:
+        return None
+    return FrictionContext(
+        actor_id=str(row["actor_id"]) if row["actor_id"] is not None else None,
+        recipient_id=str(row["recipient_id"]) if row["recipient_id"] is not None else None,
+        kind="report",
+    )
+
+
 # ── moderation_analyses: deduped append + redelivery pre-check ────────────────
 _INSERT_ANALYSIS = """
 insert into moderation_analyses

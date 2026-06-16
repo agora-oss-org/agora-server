@@ -67,6 +67,9 @@ async def ensure_constraints(settings: Settings) -> None:
                 # (single shared graph, query-time scoping). Without this the planner scans every
                 # INTERACTED edge across all projects per weather window.
                 await session.run("create index scorer_interacted_project if not exists for ()-[r:INTERACTED]-() on (r.projectId)")
+                # Same read-side support for the Layer-2 FRICTION edge (Weather folds it into the
+                # friction term, scoped by projectId) — see migration 0039.
+                await session.run("create index scorer_friction_project if not exists for ()-[r:FRICTION]-() on (r.projectId)")
             log(logger, "info", "neo4j constraints ensured", attempt=attempt)
             return
         except Exception as exc:  # noqa: BLE001 — Neo4j may still be booting; retry

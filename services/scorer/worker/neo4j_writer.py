@@ -70,6 +70,20 @@ set r.at = timestamp()
 
 _CONNECTION_DELETE = "match (a:User {id: $requester_id})-[r:CONNECTED]->(b:User {id: $addressee_id}) delete r"
 
+# Layer-2 — directed FRICTION edge, keyed on sourceId (the report id) so the MERGE is idempotent under
+# pgmq redelivery. A report carries no text, so its friction has a constant weight (read back by the
+# Weather query at read time and decayed at the friction half-life). Append-only: no delete counterpart
+# (a resolved/dismissed report just lets the edge decay — see migration 0039).
+FRICTION_REPORT_WEIGHT = 1.0
+
+_FRICTION_MERGE = """
+merge (a:User {id: $actor_id})
+merge (b:User {id: $recipient_id})
+merge (a)-[r:FRICTION {sourceId: $source_id}]->(b)
+  on create set r.createdAt = timestamp()
+set r.kind = $kind, r.weight = $weight, r.projectId = $project_id, r.at = timestamp()
+"""
+
 
 async def write_relationship_edge(
     settings: Settings,
@@ -189,3 +203,39 @@ async def delete_connection_edge(settings: Settings, *, requester_id: str, addre
     async with driver.session() as session:
         await session.run(_CONNECTION_DELETE, requester_id=str(requester_id), addressee_id=str(addressee_id))
     log(logger, "info", "neo4j connection edge deleted", requester_id=str(requester_id), addressee_id=str(addressee_id))
+
+
+async def write_friction_edge(
+    settings: Settings,
+    *,
+    project_id: str,
+    actor_id: str | None,
+    recipient_id: str | None,
+    source_id: str,
+    kind: str,
+    weight: float = FRICTION_REPORT_WEIGHT,
+) -> None:
+    """MERGE a directed user→user FRICTION edge keyed on ``source_id`` (the report id). No-op (logged)
+    when Neo4j is off, an endpoint is unresolvable (anonymous reporter / chat-message report / deleted
+    author), or it's a self-report (no self-loop)."""
+    driver = await get_driver(settings)
+    if driver is None:
+        log(logger, "debug", "neo4j friction edge skipped (not configured)", source_id=source_id)
+        return
+    if not actor_id or not recipient_id:
+        log(logger, "debug", "neo4j friction edge skipped (unresolved endpoint)", source_id=source_id)
+        return
+    if str(actor_id) == str(recipient_id):
+        log(logger, "debug", "neo4j friction edge skipped (self-report)", source_id=source_id)
+        return
+    async with driver.session() as session:
+        await session.run(
+            _FRICTION_MERGE,
+            actor_id=str(actor_id),
+            recipient_id=str(recipient_id),
+            source_id=str(source_id),
+            kind=kind,
+            weight=float(weight),
+            project_id=str(project_id),
+        )
+    log(logger, "info", "neo4j friction edge merged", source_id=source_id, kind=kind, weight=weight)

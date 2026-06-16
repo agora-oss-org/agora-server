@@ -70,6 +70,18 @@ class ConnectionJob(CamelModel):
     project_id: str
 
 
+class FrictionJob(CamelModel):
+    """Graph job for a user report → directed FRICTION edge (migration 0039). No scoring — a report
+    carries no text; its friction weight is a constant. Append + decay only: ``op`` is always ``"add"``
+    (kept for symmetry with the other graph jobs), there is no ``remove`` — a FRICTION edge decays at the
+    friction half-life and a later report resolution is a no-op in the graph."""
+
+    kind: Literal["friction"]
+    op: Literal["add"]
+    report_id: str
+    project_id: str
+
+
 class UserSummary(CamelModel):
     id: str
     username: Optional[str] = None
