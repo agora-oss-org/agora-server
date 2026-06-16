@@ -101,21 +101,22 @@ Python sibling:
 
 - `apps/api` — `@agora/api`, the Hono backend (everything below; the reference package).
 - `apps/admin` — `@agora/admin`, a Vite + React + TS admin frontend that consumes the API.
-- `services/scorer` — the Python **content-moderation subsystem** (NOT a pnpm package), which
-  **replaces the retired `apps/moderator`**. An async, post-publish pipeline: scoring runs off a **pgmq**
-  queue (the API's enqueue triggers — migration `0027`), two RoBERTa classifiers gate a Claude Haiku
-  adjudication, and removals are written back to the API (`POST /internal/moderation/apply`,
-  `moderatedByType="client"`). It records the `moderation_analyses` audit trail and serves the
-  operator-gated AI-flag queue at `/v1/:projectId/moderation/*` (the admin's AI tab; nginx upstream
-  `MODERATOR_UPSTREAM → scorer-worker:4001`). **Per-project tuning** lives in `projects.moderator_config`
-  (auto-action thresholds + LLM-provider config; admin Settings → Moderator), overlaid on the scorer's
-  env defaults. Shares the API's Postgres (R/W `moderation_analyses`) + `ACCESS_TOKEN_SECRET`; **all
-  content mutations go through the API over HTTP** (the API stays the trust boundary). See `docs/SCORER.md`.
+- `services/scorer` — the Python **content-moderation + social-graph subsystem** (NOT a pnpm package),
+  which **replaces the retired `apps/moderator`**. Two responsibilities off one pgmq consumer loop:
+  (1) **Moderation**: two RoBERTa classifiers gate a Claude Haiku adjudication; removals written back to
+  the API (`POST /internal/moderation/apply`, `moderatedByType="client"`); `moderation_analyses` audit
+  trail; operator-gated AI-flag queue at `/v1/:projectId/moderation/*` (admin AI tab). (2) **Social-graph
+  edges**: projects `INTERACTED` / `FOLLOWS` / `CONNECTED` / `FRICTION` edges into Neo4j; the API reads
+  them back for `GET /social/weather` + `GET /social/neighborhood` (see Social graph below).
+  **Per-project tuning** lives in `projects.moderator_config` (auto-action thresholds + LLM-provider
+  config; admin Settings → Moderator), overlaid on the scorer's env defaults. Shares the API's Postgres
+  + `ACCESS_TOKEN_SECRET`; **all content mutations go through the API over HTTP**. See `docs/SCORER.md`
+  and `docs/SOCIAL-GRAPH.md`.
 - `packages/contract` — `@agora-server/contract`, the **shared API contract**: response-model TS types
-  (`User`/`Entity`/`Comment`/`AuthUser`/`AuthContext`/`ModerationAnalysis`), the reaction taxonomy,
-  the pagination envelope + `paginate()`, the error-envelope shape, and the zod request schemas. Pure
-  types + zod, **no hono/drizzle**. Built to `dist/` and consumed via its `exports` map by api,
-  admin, and moderator.
+  (`User`/`Entity`/`Comment`/`AuthUser`/`AuthContext`/`ModerationAnalysis`/`SocialWeather`/`SocialNeighborhood`),
+  the reaction taxonomy, the pagination envelope + `paginate()`, the error-envelope shape, and the zod
+  request schemas. Pure types + zod, **no hono/drizzle**. Built to `dist/` and consumed via its
+  `exports` map by api and admin.
 
 **Rule:** any API request/response type or zod schema shared between server and admin lives in
 `packages/contract` (built first; `pnpm -r build` orders it). `apps/api`'s `shape.ts` /
@@ -168,6 +169,12 @@ Project id is the seed UUID `11111111-1111-1111-1111-111111111111`.
   (module singleton; REST handlers fan out via `emitToConversation()`).
 - `apps/api/src/lib/` — also `tokens.ts` (mint/rotate Agora tokens), `embeddings.ts` (Voyage),
   `storage.ts` (Supabase Storage uploads), `supabase.ts` (lazy `getSupabase()`).
+- `apps/api/src/lib/neo4j.ts` — `neo4jEnabled()` + lazy driver; returns `null` when `NEO4J_URI`
+  unset. `lib/social-config.ts` — cached `getSocialConfig()` resolver + tier defaults/clamping.
+  `lib/social-weather.ts` — Weather computation (warmth + FRICTION fold, decay, band hysteresis,
+  1h cache). `lib/social-neighborhood.ts` — Neighborhood (dyadic brightness per tie, live, no cache).
+- `apps/api/src/routes/social.ts` — `GET /social/weather`, `GET /social/neighborhood`,
+  `GET /social/transparency`; `GET/PATCH /settings/social` (admin).
 
 ## Commands
 
@@ -189,7 +196,8 @@ pnpm test:integration        # real-Postgres suite (test/integration/**) — nee
 pnpm test:cov                # unit suite + v8 coverage
 
 pnpm db:generate     # after editing src/db/schema/*.ts -> new migration in drizzle/
-pnpm db:migrate      # apply migrations (idempotent: journal skips applied; safe to re-run)
+pnpm db:migrate:run  # apply migrations — USE THIS, not db:migrate (drizzle-kit's journal schema is
+                     # misconfigured; db:migrate:run is the runtime migrator the container also uses)
 
 # Validate triggers/RPC + (re)seed dev data; asserts loudly on failure (run from apps/api):
 url=$(grep '^DATABASE_URL=' .env | cut -d= -f2-); psql "$url" -v ON_ERROR_STOP=1 -f scripts/seeds/seed.sql
@@ -201,12 +209,12 @@ url=$(grep '^DATABASE_URL=' .env | cut -d= -f2-); psql "$url" -v ON_ERROR_STOP=1
 
 **Env:** the root `.env` is the single source (direnv `dotenv`), symlinked from
 `apps/api/.env -> ../../.env` so dotenv resolves from `apps/api/`. `DATABASE_URL` is the Supabase
-**transaction pooler (:6543)** and
-is the only hard requirement. The rest gate specific features and are validated as optional:
-`SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` + `SUPABASE_ANON_KEY` (Auth + Storage),
-`VOYAGE_API_KEY` (semantic search), `RATE_LIMIT_MAX`/`RATE_LIMIT_AUTH_MAX` (edge rate limiting, off
-unless set), `OPERATOR_USER_IDS`/`OPERATOR_EMAILS` (deployment-operator allowlist — see below).
-Empty strings are treated as unset.
+**transaction pooler (:6543)** and is the only hard requirement. The rest gate specific features and
+are validated as optional: `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` + `SUPABASE_ANON_KEY`
+(Auth + Storage), `VOYAGE_API_KEY` (semantic search), `RATE_LIMIT_MAX`/`RATE_LIMIT_AUTH_MAX` (edge
+rate limiting, off unless set), `OPERATOR_USER_IDS`/`OPERATOR_EMAILS` (deployment-operator allowlist),
+`NEO4J_URI`/`NEO4J_USER`/`NEO4J_PASSWORD` (social graph — both scorer writes and API reads; unset →
+scorer skips edge writes, `/social/*` endpoints return 503). Empty strings are treated as unset.
 
 **Operators (deployment god-view).** `OPERATOR_USER_IDS`/`OPERATOR_EMAILS` (comma-separated profile
 UUIDs / case-insensitive emails) are an env allowlist resolved by `lib/operators.ts` `isOperator()`.
@@ -319,6 +327,24 @@ journal order and written **idempotently** (`create extension if not exists`, `c
   partial unique index. The worker stamps the pgmq message id and inserts `ON CONFLICT (source_msg_id)
   DO NOTHING`, so pgmq's at-least-once redelivery can't create duplicate analysis rows (kept out of the
   Drizzle schema like the `0001_postgis` columns — only the scorer's raw-SQL worker uses it).
+- `0029`–`0032_…` — incremental schema fixes and the LISTEN/NOTIFY wake-up trigger
+  (`pg_notify` on enqueue so the scorer drains instantly; `SCORER_LISTEN_DATABASE_URL` must be a
+  direct `:5432` DSN — LISTEN does not work over the transaction pooler).
+- `0033_…` — LISTEN/NOTIFY migration (scorer wake-up via `pg_notify`).
+- `0034_…` — `collection_entities` same-project constraint (cross-tenant isolation fix).
+- `0035_…` — drop the dead `moderation_webhook_url` / `moderation_webhook_secret` columns (added by
+  `0021`, dropped here — scorer uses pgmq, not webhooks).
+- `0036_…` — **scorer graph v2 enqueue**: `reactions` (insert/delete/retype-gated) + `follows`
+  (insert/delete) triggers; routes `reaction`/`follow` jobs onto `scorer_jobs` with a `kind`
+  discriminator. Self-interactions and chat-message-target reactions are skipped at trigger time.
+- `0037_…` — **scorer `CONNECTED` edge**: `connections` triggers gated on the `pending→connected→
+  declined` lifecycle — edge created on accept/direct-connect, deleted on disconnect (row DELETE).
+- `0038_…` — `projects.social_config` jsonb: the social-graph privacy tier + per-surface enabled
+  flags (`graphEnabled`, `weatherEnabled`, `neighborhoodEnabled`, warmth/friction half-lives).
+  Tier defaults enforced at write (forbidden flags rejected) and clamped at read. Migration name is
+  `0038_typical_speed_demon` (Drizzle auto-name).
+- `0039_…` — **scorer `FRICTION` edge enqueue**: `AFTER INSERT ON reports` trigger projects a
+  directed `(reporter)→[:FRICTION]→(subject)` job; MERGE-keyed on report id (idempotent).
 
 To change schema: edit `src/db/schema/*.ts` → `db:generate` → `db:migrate`. Edit triggers/functions/
 RLS/PostGIS by hand in their custom migration files. (Apply with `db:migrate:run` — the runtime
@@ -353,6 +379,10 @@ migrator the container uses; its journal is the `drizzle` schema.)
 - **Auth:** `requireAuth`/`optionalAuth` only *verify* tokens; minting + refresh
   rotation/reuse-detection/30s-grace live in `lib/tokens.ts` (`refresh_tokens` table).
   Identity is backed by Supabase Auth via the lazy anon client.
+- **Social graph gates** (`routes/social.ts`): config gate fires **before** infra gate — check
+  `cfg.graphEnabled && cfg.<surface>Enabled` first (throw 400 `social/<surface>-disabled`), then
+  check `neo4jEnabled()` (return 503 `social/graph-unavailable`). Never reverse this order.
+  `getSocialConfig()` is cached; `neo4jEnabled()` is a cheap env check (no I/O).
 - **Realtime is socket.io** — event names in `realtime/socket.ts` must stay byte-identical to
   `@replyke/core/types/socket.ts`; REST handlers fan out via `emitToConversation()` after writing.
 - **Logging:** use the shared `logger` (`lib/logger.ts`, Pino via `@jenova-marie/wonder-logger`),
@@ -398,6 +428,10 @@ migrator the container uses; its journal is the `drizzle` schema.)
   reads + enablement guard (`0017`). Server bypasses RLS (the trust boundary); RLS is defense-in-depth.
 - ✅ **Client SDK forked + repointed** — `../agora-sdk` (`@agora-sdk/*`), base URL repointed off
   `api.replyke.com` (MANIFEST §0), exercised 1:1 by the `../agora-demo` harness (see **Ecosystem**).
+- 🌱 **Social graph (optional · Neo4j)** — `social_config` foundation, Community Weather
+  (`GET /social/weather`), and Neighborhood (`GET /social/neighborhood`) are live; scorer projects
+  `INTERACTED`/`FOLLOWS`/`CONNECTED`/`FRICTION` edges. Constellation + admin analytics are next.
+  All surfaces env-gated behind `NEO4J_URI`; config-gated per-project via `projects.social_config`.
 
 `apps/api/src/routes/entities.ts` is the reference for a fully-built domain router.
 
