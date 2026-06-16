@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Neighborhood — the personal Garden lens** (docs/AGORA-SOCIAL.md, SOCIAL-GRAPH.md §3):
+  `GET /v7/:projectId/social/neighborhood` returns the **caller's own ties**, each with its **dyadic**
+  brightness `B(me, them)` and the identity to render it. A person is a tie via a **follow**, a (mutual)
+  **connection**, or a **recent interaction**; `FRICTION` only dims an existing tie (FLOOR-bounded) and
+  never creates one (a report-only pair never appears). Warmth/friction reuse PR3's read-time decay,
+  additive friction fold, and age cutoff — applied per dyad. **Self-view only** (keyed on the
+  authenticated user), never another member's ties, and never the friend's global score (the asymmetry
+  rule). No k-anonymity (named self-view). Gated by `graphEnabled && neighborhoodEnabled` (400
+  `social/neighborhood-disabled`) and Neo4j config (503 `social/graph-unavailable`); computed live (no
+  cache — bounded by the caller's degree). No migration (`neighborhoodEnabled` already in social_config).
 - **Layer-2 `FRICTION` edges from reports, folded into Community Weather** (docs/SOCIAL-GRAPH.md §3,
   AGORA-SOCIAL.md §11). A user **report** now projects a directed
   `(reporter)-[:FRICTION {kind:'report', weight}]->(subject)` edge (subject = the reported content's

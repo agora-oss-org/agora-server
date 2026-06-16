@@ -82,6 +82,14 @@ Projection rules: reply/upvote/mention → `INTERACTED` (warmth); same-thread po
 - **🏡 Neighborhood** — zoom to *yourself*: your named friends and ties, warm and alive.
   Self-view only; nobody else can see it.
 
+> **As shipped (PR 4):** `GET /social/neighborhood` returns the caller's own ties, each with its
+> **dyadic** brightness `B(me, them)` — *your tie's* warmth, **never** the friend's global `S_p` (the
+> asymmetry rule, cheat-sheet #6). A person is a tie via a **follow**, a **connection**, or a **recent
+> interaction**; `FRICTION` only *dims* an existing tie (FLOOR-bounded → unreadable) and never *creates*
+> one — a report-only pair never appears. Reuses the PR 3 warmth math (additive friction, read-time
+> decay, age cutoff) per dyad. No k-anonymity here (named self-view of people you already know — k≥5
+> governs the Constellation's view of *others*). Computed live, no cache (bounded by your own degree).
+
 **The abuser edge case, named:** a genuine abuser also reads "needs care" publicly. That's
 accepted — *the Garden is not where abuse is adjudicated*; the steward tier is.
 
