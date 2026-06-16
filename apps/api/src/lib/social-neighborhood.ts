@@ -75,9 +75,11 @@ WITH x, relTypes, w, fI,
   sum(coalesce(rf.weight, 1.0) * exp(-${LN2} * (toFloat($asOf - rf.at) / ${DAY_MS}.0) / toFloat($frictionHalfLifeDays))) AS fF
 RETURN x.id AS userId, relTypes AS tieKinds, w AS w, (fI + fF) AS f`;
 
-interface ProfileLite { id: string; username: string | null; name: string | null; avatar: string | null }
+export interface ProfileLite { id: string; username: string | null; name: string | null; avatar: string | null }
 
-async function fetchProfiles(projectId: string, ids: string[]): Promise<Map<string, ProfileLite>> {
+/** Batch-load minimal named identities for a project, deduped, as a `Map<id, ProfileLite>`. Shared by the
+ *  Neighborhood and the admin analytics getters (which hydrate names fresh at read so they never go stale). */
+export async function fetchProfiles(projectId: string, ids: string[]): Promise<Map<string, ProfileLite>> {
   const map = new Map<string, ProfileLite>();
   const uniq = [...new Set(ids)];
   if (uniq.length === 0) return map;

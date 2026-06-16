@@ -14,6 +14,7 @@ import { db } from "../db/index.js";
 import { profiles, projects, spaceMembers, socialConstellation } from "../db/schema/index.js";
 import { getNeo4j, isNeo4jError } from "./neo4j.js";
 import { getSocialConfig } from "./social-config.js";
+import { toNum, withProjectedGdsGraph } from "./social-gds.js";
 import {
   B_FLOOR, DAY_MS, fetchWarmthPairs, personScoresFromPairs, weatherBand,
 } from "./social-weather.js";
@@ -24,8 +25,6 @@ import { logger } from "./logger.js";
 export const CONSTELLATION_EPOCH_DAYS = 42; // ~6 weeks
 
 const GRAPH_NAME_PREFIX = "constellation_";
-const toNum = (v: unknown): number =>
-  typeof v === "number" ? v : ((v as { toNumber?: () => number })?.toNumber?.() ?? 0);
 
 // ── Pure helpers (unit-tested; no IO) ────────────────────────────────────────
 
@@ -70,30 +69,11 @@ export async function louvainCommunities(
   driver: Driver, projectId: string, userIds: string[],
 ): Promise<Map<string, string[]> | null> {
   const graphName = GRAPH_NAME_PREFIX + projectId.replace(/-/g, "");
-  const session = driver.session();
-  const dropGraph = async () => {
-    try {
-      await session.run("CALL gds.graph.drop($g, false) YIELD graphName RETURN graphName", { g: graphName });
-    } catch { /* best-effort */ }
-  };
-  try {
-    await session.run("RETURN gds.version()"); // feature-detect — throws if OpenGDS isn't installed
-    await dropGraph(); // clear any stale projection from a crashed prior run
-    await session.run(
-      `CALL gds.graph.project.cypher(
-         $g,
-         'MATCH (u:User) WHERE u.id IN $userIds RETURN id(u) AS id',
-         'MATCH (a:User)-[:INTERACTED|FOLLOWS|CONNECTED]-(b:User)
-            WHERE a.id IN $userIds AND b.id IN $userIds
-            RETURN id(a) AS source, id(b) AS target',
-         { parameters: { userIds: $userIds }, validateRelationships: false }
-       ) YIELD graphName RETURN graphName`,
-      { g: graphName, userIds },
-    );
+  return withProjectedGdsGraph(driver, graphName, userIds, async (session, g) => {
     const res = await session.run(
       `CALL gds.louvain.stream($g) YIELD nodeId, communityId
        RETURN gds.util.asNode(nodeId).id AS userId, communityId`,
-      { g: graphName },
+      { g },
     );
     const communities = new Map<string, string[]>();
     for (const rec of res.records) {
@@ -104,15 +84,7 @@ export async function louvainCommunities(
       else communities.set(community, [userId]);
     }
     return communities;
-  } catch (err) {
-    // Degrade gracefully (SOCIAL-GRAPH.md §6): GDS missing or a projection error → fall back to by-space.
-    logger.warn("social: GDS Louvain unavailable; falling back to by-space clustering");
-    logger.debug({ err, projectId }, "social: GDS Louvain failed");
-    return null;
-  } finally {
-    await dropGraph();
-    await session.close();
-  }
+  });
 }
 
 /** Fallback clustering: each space is a community (active members), grouped from Postgres. */
