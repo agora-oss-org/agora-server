@@ -67,6 +67,22 @@ describe("getSocialNeighborhood", () => {
     });
   });
 
+  it("defaults includeInteractions to false (structural-only) and echoes it", async () => {
+    const { driver, calls } = stubDriver([]);
+    const out = await getSocialNeighborhood("p", "me", cfg, { driver, nowMs: NOW, fetchProfiles: stubProfiles([]) });
+    expect(calls[0]!.params.includeInteractions).toBe(false);
+    expect(out.includesInteractions).toBe(false);
+  });
+
+  it("passes includeInteractions through and echoes it when set", async () => {
+    const { driver, calls } = stubDriver([]);
+    const out = await getSocialNeighborhood("p", "me", cfg, {
+      driver, nowMs: NOW, includeInteractions: true, fetchProfiles: stubProfiles([]),
+    });
+    expect(calls[0]!.params.includeInteractions).toBe(true);
+    expect(out.includesInteractions).toBe(true);
+  });
+
   it("joins profiles and returns dyadic brightness with friction folded in additively", async () => {
     const { driver } = stubDriver([{ userId: "x", tieKinds: ["INTERACTED"], w: 5, f: 3 }]);
     const out = await getSocialNeighborhood("p", "me", cfg, {

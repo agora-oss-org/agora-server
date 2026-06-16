@@ -46,8 +46,12 @@ export const socialRoutes = new Hono<{ Variables: Variables }>()
     if (!neo4jEnabled()) {
       return c.json({ error: "Social graph not configured", code: "social/graph-unavailable" }, 503);
     }
+    // Per-member override of the project default: ?includeInteractions=true|false. Absent → the config
+    // default (cfg.neighborhoodIncludeInteractions). Any value other than "true"/"false" is ignored.
+    const q = c.req.query("includeInteractions");
+    const includeInteractions = q === "true" ? true : q === "false" ? false : cfg.neighborhoodIncludeInteractions;
     try {
-      return c.json(await getSocialNeighborhood(c.var.projectId, c.var.auth!.userId, cfg));
+      return c.json(await getSocialNeighborhood(c.var.projectId, c.var.auth!.userId, cfg, { includeInteractions }));
     } catch (err) {
       if (!isNeo4jError(err)) throw err; // bugs in our own code surface as 500s via onError, not a fake 503
       logger.warn("social: neighborhood query failed");

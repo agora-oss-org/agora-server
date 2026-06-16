@@ -47,14 +47,16 @@ export function neighborhoodFromRows(
     .sort((a, b) => b.brightness - a.brightness);
 }
 
-// Dyad-undirected, project-scoped, age-cut. A person is a tie via a FOLLOWS/CONNECTED edge (always) or a
-// recent INTERACTED edge; FRICTION only feeds `f`, it never appears in the tie-set MATCH (no scarlet
-// letter — friction is not structure). w/f reuse the exact decay of WEATHER_PAIRS_CYPHER.
+// Dyad-undirected, project-scoped, age-cut. A person is a tie via a FOLLOWS/CONNECTED edge (always) or —
+// only when $includeInteractions is true — a recent INTERACTED edge. FRICTION only feeds `f`, it never
+// appears in the tie-set MATCH (no scarlet letter — friction is not structure). The tie-set toggle does
+// NOT touch the warmth math below: a structural tie still glows from interactions either way. w/f reuse
+// the exact decay of WEATHER_PAIRS_CYPHER.
 export const NEIGHBORHOOD_CYPHER = `
 MATCH (me:User {id: $me})-[rel:FOLLOWS|CONNECTED|INTERACTED]-(x:User)
 WHERE x.id <> $me AND (
   type(rel) IN ['FOLLOWS','CONNECTED']
-  OR (rel.projectId = $projectId AND rel.at >= $ageCutoff AND rel.at <= $asOf)
+  OR ($includeInteractions AND rel.projectId = $projectId AND rel.at >= $ageCutoff AND rel.at <= $asOf)
 )
 WITH me, x, collect(DISTINCT type(rel)) AS relTypes
 OPTIONAL MATCH (me)-[ri:INTERACTED]-(x)
@@ -104,10 +106,12 @@ export async function getSocialNeighborhood(
   opts: {
     driver?: Driver;
     nowMs?: number;
+    includeInteractions?: boolean;
     fetchProfiles?: (ids: string[]) => Promise<Map<string, ProfileLite>>;
   } = {},
 ): Promise<SocialNeighborhood> {
   const now = opts.nowMs ?? Date.now();
+  const includeInteractions = opts.includeInteractions ?? false;
   const driver = opts.driver ?? getNeo4j();
   if (!driver) throw new Error("neo4j read client is not configured");
   const ageCutoff = now - AGE_CUTOFF_HALF_LIVES * cfg.warmthHalfLifeDays * DAY_MS;
@@ -116,6 +120,7 @@ export async function getSocialNeighborhood(
     projectId,
     asOf: now,
     ageCutoff,
+    includeInteractions,
     warmthHalfLifeDays: cfg.warmthHalfLifeDays,
     frictionHalfLifeDays: cfg.frictionHalfLifeDays,
   });
@@ -141,5 +146,5 @@ export async function getSocialNeighborhood(
       tieKinds: s.tieKinds,
     });
   }
-  return { ties, asOf: new Date(now).toISOString() };
+  return { ties, includesInteractions: includeInteractions, asOf: new Date(now).toISOString() };
 }
