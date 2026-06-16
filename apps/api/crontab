@@ -9,3 +9,8 @@
 # Every 15 minutes: recompute feed scores. Only meaningful for projects on stored-mode `decay`;
 # for hot/top/query-time it is a cheap consistency pass (scores already refresh on vote).
 */15 * * * * sh -c 'curl -fsS -m 60 -X POST -H "X-Cron-Secret: $CRON_SECRET" "$AGORA_URL/internal/cron/recompute-scores"'
+
+# Weekly (Sunday 04:00 UTC): re-materialize the Constellation snapshot. The endpoint's ~6-week per-project
+# epoch gate makes most runs a cheap no-op (and self-heals a missed week); the long timeout covers GDS
+# Louvain over the whole graph. §12 keeps this deliberately slow ("seasonal", never per-load).
+0 4 * * 0 sh -c 'curl -fsS -m 600 -X POST -H "X-Cron-Secret: $CRON_SECRET" "$AGORA_URL/internal/cron/social-constellation"'

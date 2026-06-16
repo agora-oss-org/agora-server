@@ -15,6 +15,7 @@ import { sendDueDigests } from "./lib/digests.js";
 import { recomputeDueScores } from "./lib/recompute.js";
 import { purgeExpiredRefreshTokens } from "./lib/token-cleanup.js";
 import { rollupCommunityStats } from "./lib/community-stats.js";
+import { rollupConstellation } from "./lib/social-constellation.js";
 import { applyClientModeration } from "./lib/client-moderation.js";
 
 function safeEqual(a: string, b: string): boolean {
@@ -85,6 +86,14 @@ export function createApp() {
     const blocked = cronGuard(c); if (blocked) return blocked;
     const result = await rollupCommunityStats();
     logger.info({ result }, "cron: community stats rolled up");
+    return c.json(result);
+  });
+  // Re-materialize the Constellation snapshot (docs/AGORA-SOCIAL.md §12). The in-lib ~6-week epoch gate
+  // makes most (weekly) runs a no-op — only projects whose snapshot is stale are recomputed.
+  app.post("/internal/cron/social-constellation", async (c) => {
+    const blocked = cronGuard(c); if (blocked) return blocked;
+    const result = await rollupConstellation();
+    logger.info({ result }, "cron: constellation materialized");
     return c.json(result);
   });
 
