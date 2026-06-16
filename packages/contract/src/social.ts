@@ -170,3 +170,34 @@ export interface SocialWeather {
   /** ISO timestamp of computation (results are cached ~1h server-side). */
   asOf: string;
 }
+
+// ── Neighborhood (GET /v7/:projectId/social/neighborhood) ───────────────────────────────────────
+// The most personal Garden lens (docs/AGORA-SOCIAL.md): zoom to YOURSELF — your own named ties, each
+// rendered with its DYADIC brightness B(me, them). Self-view only. The brightness is *your tie's*
+// warmth, NEVER the friend's global score — the asymmetry rule that closes the friction side-channel
+// (cheat-sheet #6). Friction only DIMS an existing tie (FLOOR-bounded, so dim = friction-or-loneliness,
+// unreadable); it never creates one.
+
+export const NEIGHBORHOOD_TIE_KINDS = ["follow", "connection", "interaction"] as const;
+export type NeighborhoodTieKind = (typeof NEIGHBORHOOD_TIE_KINDS)[number];
+
+export interface NeighborhoodTie {
+  /** The friend's profile id (= the graph User id). */
+  userId: string;
+  username: string | null;
+  name: string | null;
+  avatar: string | null;
+  /** Dyadic brightness B(me, them) in [0.15, 1], rounded to 2dp. This is the caller's *tie* warmth —
+   *  NOT the friend's global S_p, which is never exposed to a member. */
+  brightness: number;
+  /** Which relationship(s) make this person a tie: a follow, a (mutual) connection, and/or recent
+   *  interaction. A pair whose only edge is friction never appears (friction isn't structure). */
+  tieKinds: NeighborhoodTieKind[];
+}
+
+export interface SocialNeighborhood {
+  /** The caller's ties, brightest-first. */
+  ties: NeighborhoodTie[];
+  /** ISO timestamp of computation. */
+  asOf: string;
+}
