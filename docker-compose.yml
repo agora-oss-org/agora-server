@@ -97,10 +97,14 @@ services:
       - "${SCORER_ADMIN_PORT:-4001}:4001"
     mem_limit: "512m"
     depends_on:
-      - agora
-      - scorer-toxicity
-      - scorer-relationship
-      - neo4j
+      agora:
+        condition: service_started
+      scorer-toxicity:
+        condition: service_started
+      scorer-relationship:
+        condition: service_started
+      neo4j:
+        condition: service_healthy   # wait until Neo4j accepts Bolt, not just container start
     init: true
     restart: unless-stopped
 
@@ -132,6 +136,15 @@ services:
       - ./neo4j/plugins:/plugins    # OpenGDS jar (open-gds-2.12.0.jar) — loaded at startup
       # Mount SSL certs here when NEO4J_dbms_ssl_policy_bolt_enabled=true (production).
       # - ./deploy/neo4j/ssl:/ssl:ro
+    # Readiness probe: actually run a Bolt query (not just a port check) so dependents that wait on
+    # `condition: service_healthy` don't connect before the DB is up. Creds are parsed from NEO4J_AUTH
+    # ("user/password") via shell expansion — $$ escapes compose's own interpolation.
+    healthcheck:
+      test: ["CMD-SHELL", "cypher-shell -u \"$${NEO4J_AUTH%%/*}\" -p \"$${NEO4J_AUTH#*/}\" 'RETURN 1' >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 40s   # plugins (APOC + OpenGDS) extend cold-start; don't fail the container early
     init: true
     restart: unless-stopped
 
