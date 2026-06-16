@@ -400,10 +400,15 @@ and `CHANGELOG.md` for what each migration did. Only the non-obvious conventions
   reads + enablement guard (`0017`). Server bypasses RLS (the trust boundary); RLS is defense-in-depth.
 - ✅ **Client SDK forked + repointed** — `../agora-sdk` (`@agora-sdk/*`), base URL repointed off
   `api.replyke.com` (MANIFEST §0), exercised 1:1 by the `../agora-demo` harness (see **Ecosystem**).
-- 🌱 **Social graph (optional · Neo4j)** — `social_config` foundation, Community Weather
-  (`GET /social/weather`), and Neighborhood (`GET /social/neighborhood`) are live; scorer projects
-  `INTERACTED`/`FOLLOWS`/`CONNECTED`/`FRICTION` edges. Constellation + admin analytics are next.
+- ✅ **Social graph (optional · Neo4j)** — Garden complete: Weather, Constellation (GDS Louvain,
+  k-anon), Neighborhood (dyadic brightness, FRICTION-dimming). Operator analytics tier:
+  `/admin/social/influence`, `/admin/social/silos`, `/admin/social/engagement` + React dashboards.
   All surfaces env-gated behind `NEO4J_URI`; config-gated per-project via `projects.social_config`.
+- **Known server gaps (minor):** `@mention` resolution is unimplemented — mention tokens are stored
+  in jsonb and fan-out notifications fire, but no link-resolution or validation endpoint exists.
+  RLS write policies are not set (server is the trust boundary; accepted per `SECURITY.md`).
+  E2E integration tests for real Supabase auth/Storage/Voyage/Anthropic are opt-in (need live
+  creds, skipped in CI — all three surfaces are covered by the unit + mock-integration suites).
 
 `apps/api/src/routes/entities.ts` is the reference for a fully-built domain router.
 
