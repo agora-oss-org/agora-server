@@ -9,6 +9,7 @@ import { logger } from "../lib/logger.js";
 import { getSocialConfig, transparencyView } from "../lib/social-config.js";
 import { isNeo4jError, neo4jEnabled } from "../lib/neo4j.js";
 import { getSocialWeather } from "../lib/social-weather.js";
+import { getSocialNeighborhood } from "../lib/social-neighborhood.js";
 
 export const socialRoutes = new Hono<{ Variables: Variables }>()
   // INVARIANT (docs/AGORA-CORP.md §4, invariant 5): the active tier + enabled analytics are
@@ -32,6 +33,25 @@ export const socialRoutes = new Hono<{ Variables: Variables }>()
       if (!isNeo4jError(err)) throw err; // bugs in our own code surface as 500s via onError, not a fake 503
       logger.warn("social: weather query failed");
       logger.debug({ err, projectId: c.var.projectId }, "social: weather query failed");
+      return c.json({ error: "Social graph unavailable", code: "social/graph-unavailable" }, 503);
+    }
+  })
+  // The personal Garden lens: the caller's OWN ties, each with its dyadic brightness B(me, them).
+  // Self-view only — keyed on c.var.auth.userId, never another member. Same gate order as /weather.
+  .get("/neighborhood", requireAuth, async (c) => {
+    const cfg = await getSocialConfig(c.var.projectId);
+    if (!cfg.graphEnabled || !cfg.neighborhoodEnabled) {
+      throw Errors.badRequest("social/neighborhood-disabled", "The Neighborhood is not enabled for this project");
+    }
+    if (!neo4jEnabled()) {
+      return c.json({ error: "Social graph not configured", code: "social/graph-unavailable" }, 503);
+    }
+    try {
+      return c.json(await getSocialNeighborhood(c.var.projectId, c.var.auth!.userId, cfg));
+    } catch (err) {
+      if (!isNeo4jError(err)) throw err; // bugs in our own code surface as 500s via onError, not a fake 503
+      logger.warn("social: neighborhood query failed");
+      logger.debug({ err, projectId: c.var.projectId }, "social: neighborhood query failed");
       return c.json({ error: "Social graph unavailable", code: "social/graph-unavailable" }, 503);
     }
   });
