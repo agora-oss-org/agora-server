@@ -274,6 +274,13 @@
       "when": 1781060768936,
       "tag": "0038_typical_speed_demon",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1781665568936,
+      "tag": "0039_scorer_friction_enqueue",
+      "breakpoints": true
     }
   ]
 }
