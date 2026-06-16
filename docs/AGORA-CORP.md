@@ -1,7 +1,12 @@
 # Agora Corp — the corporate deployment profile 🏢✨
 
-> **Status: PROPOSED — design doc, nothing implemented.** The corporate-installation
-> counterpart to [`AGORA-SOCIAL.md`](AGORA-SOCIAL.md) (the community design, condensed) and
+> **Status: CONFIG LAYER IMPLEMENTED; ANALYTICS PROPOSED.** The `corporate` privacy tier, its
+> per-tier flag defaults, the two-point enforcement (§4), and the mandatory member-transparency
+> endpoint (§4.5) shipped in **PR 1** (`packages/contract/src/social.ts`, `GET /social/transparency`).
+> The analytics **computation** the tier unlocks (§2/§6 — influence/silo/engagement scores via
+> PageRank/Louvain/OpenGDS) is **not yet built**: PR 1 ships the *flags* that gate it, not the graph
+> algorithms behind them. The corporate-installation counterpart to
+> [`AGORA-SOCIAL.md`](AGORA-SOCIAL.md) (the community design, condensed) and
 > [`SOCIAL-GRAPH.md`](SOCIAL-GRAPH.md) (the graph consolidation + `social_config` plan).
 > This doc specifies what an **internal corporate social platform** deployment of Agora
 > looks like: the market context, the feature set, the `corporate` privacy tier, what it
@@ -120,8 +125,11 @@ Set `social_config.privacy_tier = "corporate"`
    asymmetry principle: warmth-only, friction dims, no red badges, no public per-person
    scores. (Management analytics are operator-facing and disclosed — see invariant 5.)
 5. **Transparency is mandatory, not optional.** The active tier and every enabled analytic
-   are **readable by every member** (project metadata / an about screen). Employees always
-   know the instance runs corporate analytics, which ones, and who can see them.
+   are **readable by every member** via `GET /social/transparency` (PR 1 — returns the tier,
+   the enabled analytics, the Garden surfaces, and the decay half-lives). Employees always
+   know the instance runs corporate analytics and which ones. *(Surfacing the **audience** —
+   which roles can see each analytic — is a planned addition; the endpoint exposes which
+   analytics are active today, not per-analytic viewer roles.)*
 
 **The line, in one sentence:** *Agora Corp does disclosed organizational analytics; it does
 not do covert individual surveillance.* Concretely refused, in any configuration:

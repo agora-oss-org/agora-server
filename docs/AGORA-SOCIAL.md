@@ -85,6 +85,16 @@ Projection rules: reply/upvote/mention → `INTERACTED` (warmth); same-thread po
 **The abuser edge case, named:** a genuine abuser also reads "needs care" publicly. That's
 accepted — *the Garden is not where abuse is adjudicated*; the steward tier is.
 
+> **Future idea — the Weather oracle (Jenova, 2026-06):** when a member asks "why did it dip this
+> week?", an LLM agent generates a one-line **narrative** for the current Weather ("a couple of tense
+> threads in the commons, but your core circles held steady"), regenerated in sync with each Weather
+> refresh. *Users ask, Agora answers.* **Hard guardrail:** it must be the **stateless number-only
+> oracle** (doc 13 / "agent privacy") — it sees only the aggregate numbers (value, trend, per-space
+> bands where k ≥ 5), **never names, edges, or individual events** — or it would narrate the very
+> per-person leak the whole design exists to prevent. Pairs naturally with cron-materialized Weather
+> (store the number + its sentence together); cheap at a daily cadence, pricey/noisy hourly, so the
+> narrative likely runs on a slower clock than the number even if the number ticks faster.
+
 ## The steward tier (doc 06)
 
 The other room. `isSteward` role gates the system's one genuinely dangerous capability:
@@ -156,17 +166,34 @@ with defaults `k_w=10, c_f=0.5, B_floor=0.15`. Two structural guarantees:
 - **FLOOR** — `B ≥ 0.15` always; friction can never dim *below* the lonely band, so
   "extra-dark = friction" is **unreadable by construction**.
 
+> **As shipped (PR 2):** Weather computes `W`/`F` live from **Layer-1 `INTERACTED` edges only** —
+> positive `sentiment` feeds `W` (warmth half-life), **negative `sentiment` feeds `F`** (friction
+> half-life), and zero-sentiment edges (deliberately-neutral reactions like "sad" = empathy) are
+> **excluded** so they can't read as floor-dark. This is the interim friction source until PR 3's
+> dedicated `FRICTION` edges (report/block/downvote) land; the brightness formula is unchanged, only
+> the source of `F` differs.
+
 **The magnitude-regime theorem:** friction identifiable enough to target one person can't
 move an aggregate; friction big enough to move the Weather involves too many people to
 single anyone out. The regimes are disjoint → aggregate Weather can be *sharp and honest*
 while individuals stay unreadable.
 
-**Dogpile simulation (the numbers to remember):** 8 brigaders hit well-loved T in a
-community of 200 → her real friend's porch: **0.72 → 0.72 (unchanged)**; blob tint −0.005;
-Weather −0.0001. An honest storm (80 of 200 in friction) moves Weather −11%. T's support
-network is never poisoned, and the only people who see her at the floor already attacked her.
+**Dogpile simulation (illustrative — a worked example with assumed per-dyad inputs, not output
+reproducible from the shipped constants; "blob tint" refers to the not-yet-built Constellation. The
+PR 2 tests assert only the *direction and bound* — a dogpile moves the aggregate by < 0.05 and
+downward):** 8 brigaders hit well-loved T in a community of 200 → her real friend's porch:
+**0.72 → 0.72 (unchanged)**; blob tint −0.005; Weather −0.0001. An honest storm (80 of 200 in
+friction) moves Weather −11%. T's support network is never poisoned, and the only people who see her
+at the floor already attacked her.
 
-## Temporal anonymity (doc 12) — the Constellation is a stream, not a frame
+## Temporal anonymity (doc 12) — a **Constellation-only** concern
+
+> **Scope (settled 2026-06): this governs the Constellation, NOT Weather.** The time-series leak
+> below needs either *structure you can track* (blobs, small clusters) or a population that changes by
+> ~one between readings — both real for the Constellation, neither real for a project-wide Weather
+> scalar. Weather is protected by the **magnitude-regime theorem (§11) + the k≥5 floor**, which don't
+> care how often it updates. So **Weather's refresh cadence is a product/cost choice, not a privacy
+> one** (see SOCIAL-GRAPH.md §7). Everything below applies to the Constellation only.
 
 k-anon + unstable layout protect *one* snapshot; an always-on view leaks via the time
 series (differential privacy under continual observation). Master principle: **minimize how

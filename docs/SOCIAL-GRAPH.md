@@ -1,10 +1,14 @@
 # Social graph — community & corporate deployments 🌱🏢
 
-> **Status: PROPOSED — design doc, nothing implemented.** This is the consolidation plan for the
-> social-graph layer: what `../agora-social` designed, what `services/scorer` already built, how the
-> two become **one system**, and the per-project configuration that lets each deployment decide what
-> it extracts from its own graph. Companion to `docs/SCORER.md` (the live Layer 1 writer) and the
-> `../agora-social/docs/` design corpus (the Layer 2 ethics + mechanics spec).
+> **Status: PARTIALLY IMPLEMENTED.** The `social_config` foundation (§5) shipped in **PR 1** and
+> Community Weather (§3 `GET /social/weather`, §7 Phase 1) shipped in **PR 2** — see the ✅ markers on
+> those sections. Layer 2 (FRICTION/CO_PARTICIPATES, §7 Phase 2+), the other read endpoints
+> (Neighborhood, Constellation, admin analytics), and the OpenGDS/feature-detect work (§6) remain
+> **proposed**. This is the consolidation plan for the social-graph layer: what `../agora-social`
+> designed, what `services/scorer` already built, how the two become **one system**, and the
+> per-project configuration that lets each deployment decide what it extracts from its own graph.
+> Companion to `docs/SCORER.md` (the live Layer 1 writer) and the `../agora-social/docs/` design
+> corpus (the Layer 2 ethics + mechanics spec).
 
 ## 1. The decision that frames everything
 
@@ -86,7 +90,7 @@ Validated end-to-end (see `SCORER.md`):
 
 ```cypher
 (:User)-[:AUTHORED]->(:Content {type, projectId, relationshipScore, scoredAt})   // v1, per scored item
-(actor:User)-[:INTERACTED {kind, sentiment, sourceId, at}]->(recipient:User)     // comments/replies/reactions
+(actor:User)-[:INTERACTED {kind, sentiment, sourceId, projectId, at}]->(recipient:User)  // comments/replies/reactions (projectId scopes the read query)
 (follower:User)-[:FOLLOWS {at}]->(followee:User)                                 // mirrors follows table
 (requester:User)-[:CONNECTED {at}]->(addressee:User)                             // only while status='connected'
 ```
@@ -131,7 +135,7 @@ Graph reads are normal Hono handlers with normal gates (`requireAuth`, operator/
 
 | Endpoint (sketch) | Audience | Backing query |
 |---|---|---|
-| `GET /social/weather` ✅ (PR 2) | members | mean S_p over project (or space) — single scalar + trend |
+| `GET /social/weather` ✅ (PR 2) | members | mean S_p over project — single scalar + trend (per-space deferred — see §7 Phase 1) |
 | `GET /social/neighborhood` | the member themself | dyadic B(me, friend) per tie — own ties ONLY |
 | `GET /social/constellation` | members | k-anonymized cluster blobs (k ≥ 5), warmth tint only |
 | `GET /admin/social/influence` | operator, gated by config | PageRank / betweenness over INTERACTED+FOLLOWS |
@@ -260,6 +264,18 @@ Phasing (adapted from `agora-social/docs/08`, re-grounded in the scorer-owns-the
    > change, later PR). Design debt noted for PR 3+: a fully dormant community asymptotes to
    > "stormy" rather than "quiet" (decayed pairs never leave the S_p denominator) — an age cutoff
    > on edges (~6 warmth half-lives) would fix it and shrink the scan.
+
+   > **Cadence & materialization (decision 2026-06).** §12 temporal-anonymity does **not** apply to
+   > Weather (re-scoped to the Constellation) — so the refresh cadence is a **product/cost choice, not
+   > privacy**. The 30d/14d decay half-lives mean the number can't meaningfully move faster than ~daily
+   > (one hour ages it ~0.1% — noise), so the **target default is daily**, but kept **tunable** (a
+   > `social_config` TTL field) for deployments that want an hourly "pulse" that makes the community
+   > feel alive. *Shipped today:* a 1h per-replica in-process cache, lazy-computed on request — fine as
+   > an interim. *Evolution* when stored history (sparklines) or the Weather-oracle narrative
+   > (AGORA-SOCIAL.md, Garden) lands: a **scheduled cron-materialization** — snapshot Weather (+ its
+   > agent sentence) to a table on the chosen clock; the endpoint then reads the table. Mirror the
+   > existing hourly **`community-stats` rollup → `community_stats_hourly`** cron — it's the exact
+   > pattern, right down to writing one row per project per period.
 
 2. **Phase 2 — Layer 2 writes.** FRICTION + CO_PARTICIPATES job kinds (triggers + scorer handlers),
    read-time decay, dyadic warmth → Neighborhood + Constellation endpoints. Feed affinity
