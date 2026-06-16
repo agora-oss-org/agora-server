@@ -22,8 +22,9 @@ const HYSTERESIS_MARGIN = 0.02; // band moves only on a margin-crossing change (
 // shrinks the scan. Uses the longer (warmth) half-life so friction never outlives the warmth it dims.
 export const AGE_CUTOFF_HALF_LIVES = 6;
 
-const LN2 = Math.LN2;
-const DAY_MS = 86_400_000;
+// Shared with social-neighborhood.ts so both read surfaces decay edges identically.
+export const LN2 = Math.LN2;
+export const DAY_MS = 86_400_000;
 const TREND_WINDOW_MS = 7 * DAY_MS;   // trend = now vs. as-of-7-days-ago
 const WEATHER_TTL_MS = 3_600_000;     // recompute at most hourly per project
 
