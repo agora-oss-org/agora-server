@@ -30,8 +30,9 @@ const TIE_KIND: Record<string, NeighborhoodTieKind> = {
   FOLLOWS: "follow",
   CONNECTED: "connection",
   INTERACTED: "interaction",
+  CO_PARTICIPATES: "coParticipation",
 };
-const KIND_ORDER: readonly NeighborhoodTieKind[] = ["follow", "connection", "interaction"];
+const KIND_ORDER: readonly NeighborhoodTieKind[] = ["follow", "connection", "interaction", "coParticipation"];
 
 const round2 = (x: number): number => Math.round(x * 100) / 100;
 // neo4j-driver may hand back Integer objects for whole numbers; sums are floats but stay defensive.
@@ -48,15 +49,17 @@ export function neighborhoodFromRows(
 }
 
 // Dyad-undirected, project-scoped, age-cut. A person is a tie via a FOLLOWS/CONNECTED edge (always) or —
-// only when $includeInteractions is true — a recent INTERACTED edge. FRICTION only feeds `f`, it never
-// appears in the tie-set MATCH (no scarlet letter — friction is not structure). The tie-set toggle does
-// NOT touch the warmth math below: a structural tie still glows from interactions either way. w/f reuse
-// the exact decay of WEATHER_PAIRS_CYPHER.
+// only when $includeInteractions is true — a recent INTERACTED edge, or when $includeCoParticipates is
+// true — a recent CO_PARTICIPATES edge (co-commenter, keyed on lastAt, contributing 0 warmth/friction).
+// FRICTION only feeds `f`, it never appears in the tie-set MATCH (no scarlet letter — friction is not
+// structure). The tie-set toggle does NOT touch the warmth math below: a structural tie still glows from
+// interactions either way. w/f reuse the exact decay of WEATHER_PAIRS_CYPHER.
 export const NEIGHBORHOOD_CYPHER = `
-MATCH (me:User {id: $me})-[rel:FOLLOWS|CONNECTED|INTERACTED]-(x:User)
+MATCH (me:User {id: $me})-[rel:FOLLOWS|CONNECTED|INTERACTED|CO_PARTICIPATES]-(x:User)
 WHERE x.id <> $me AND (
   type(rel) IN ['FOLLOWS','CONNECTED']
-  OR ($includeInteractions AND rel.projectId = $projectId AND rel.at >= $ageCutoff AND rel.at <= $asOf)
+  OR (type(rel) = 'INTERACTED' AND $includeInteractions AND rel.projectId = $projectId AND rel.at >= $ageCutoff AND rel.at <= $asOf)
+  OR (type(rel) = 'CO_PARTICIPATES' AND $includeCoParticipates AND rel.projectId = $projectId AND rel.lastAt >= $ageCutoff AND rel.lastAt <= $asOf)
 )
 WITH me, x, collect(DISTINCT type(rel)) AS relTypes
 OPTIONAL MATCH (me)-[ri:INTERACTED]-(x)
@@ -109,11 +112,13 @@ export async function getSocialNeighborhood(
     driver?: Driver;
     nowMs?: number;
     includeInteractions?: boolean;
+    includeCoParticipates?: boolean;
     fetchProfiles?: (ids: string[]) => Promise<Map<string, ProfileLite>>;
   } = {},
 ): Promise<SocialNeighborhood> {
   const now = opts.nowMs ?? Date.now();
   const includeInteractions = opts.includeInteractions ?? false;
+  const includeCoParticipates = opts.includeCoParticipates ?? false;
   const driver = opts.driver ?? getNeo4j();
   if (!driver) throw new Error("neo4j read client is not configured");
   const ageCutoff = now - AGE_CUTOFF_HALF_LIVES * cfg.warmthHalfLifeDays * DAY_MS;
@@ -123,6 +128,7 @@ export async function getSocialNeighborhood(
     asOf: now,
     ageCutoff,
     includeInteractions,
+    includeCoParticipates,
     warmthHalfLifeDays: cfg.warmthHalfLifeDays,
     frictionHalfLifeDays: cfg.frictionHalfLifeDays,
   });
@@ -148,5 +154,10 @@ export async function getSocialNeighborhood(
       tieKinds: s.tieKinds,
     });
   }
-  return { ties, includesInteractions: includeInteractions, asOf: new Date(now).toISOString() };
+  return {
+    ties,
+    includesInteractions: includeInteractions,
+    includesCoParticipates: includeCoParticipates,
+    asOf: new Date(now).toISOString(),
+  };
 }

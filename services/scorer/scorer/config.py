@@ -82,6 +82,13 @@ class Settings:
     neo4j_uri: str | None = field(default_factory=lambda: _env_str("NEO4J_URI"))
     neo4j_auth: str | None = field(default_factory=lambda: _env_str("NEO4J_AUTH"))
 
+    # CO_PARTICIPATES — undirected co-commenter edges (docs/SOCIAL-GRAPH.md §7). Neutral: feeds the
+    # Neighborhood neighbor-set only, no warmth/friction. Lookback bounds recency; cap bounds fan-out
+    # per comment event; weight ceiling bounds edge growth under repeated co-participation.
+    co_participates_lookback_days: int = field(default_factory=lambda: _env_int("SCORER_CO_PARTICIPATES_LOOKBACK_DAYS", 7))
+    co_participates_max_participants: int = field(default_factory=lambda: _env_int("SCORER_CO_PARTICIPATES_MAX_PARTICIPANTS", 50))
+    co_participates_max_weight: float = field(default_factory=lambda: _env_float("SCORER_CO_PARTICIPATES_MAX_WEIGHT", 10.0))
+
     def write_back_enabled(self) -> bool:
         return bool(self.api_base_url and self.moderation_service_secret)
 

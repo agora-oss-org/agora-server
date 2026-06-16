@@ -189,6 +189,34 @@ async def resolve_report_friction(
     )
 
 
+async def resolve_co_participants(
+    settings: Settings, *, comment_id: str, actor_id: str
+) -> list[str]:
+    """Distinct other users who also commented on the SAME entity (any thread depth) within the
+    CO_PARTICIPATES lookback window, most-recent-first, capped at ``max_participants``. Excludes the
+    triggering commenter, anonymous (null-author) and soft-deleted comments. Empty list if the comment
+    is gone or has no co-participants."""
+    pool = await get_pool(settings)
+    rows = await pool.fetch(
+        "select c2.user_id "
+        "from comments c1 "
+        "join comments c2 on c2.entity_id = c1.entity_id "
+        "where c1.id = $1 "
+        "  and c2.user_id is not null "
+        "  and c2.user_id <> $2 "
+        "  and c2.deleted_at is null "
+        "  and c2.created_at >= now() - make_interval(days => $3) "
+        "group by c2.user_id "
+        "order by max(c2.created_at) desc "
+        "limit $4",
+        comment_id,
+        actor_id,
+        settings.co_participates_lookback_days,
+        settings.co_participates_max_participants,
+    )
+    return [str(r["user_id"]) for r in rows]
+
+
 # ── moderation_analyses: deduped append + redelivery pre-check ────────────────
 _INSERT_ANALYSIS = """
 insert into moderation_analyses

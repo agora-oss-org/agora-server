@@ -289,6 +289,19 @@ against the SDK's `useSearchContent`/`useAskContent`/`useSearchSpaces`/`useSearc
 |---|---|---|
 | GET | `/utils/get-metadata` (URL/OG metadata fetch) | ✅ |
 
+### social (member-facing garden; Agora extension, not an SDK hook)
+Member-facing social-graph surfaces. All routes require an authenticated member JWT and are
+config-gated (`graphEnabled` + surface-specific flag in `social_config`; `400 social/<surface>-disabled`)
+and infra-gated (`NEO4J_URI` set; `503 social/graph-unavailable`).
+| Method | Path | Status |
+|---|---|---|
+| GET | `/social/weather` (→ `SocialWeather { band, value, trend, cachedAt }`) | ✅ |
+| GET | `/social/neighborhood` (own ties only; `?includeInteractions=` overrides `social_config.neighborhoodIncludeInteractions` (default false — adds interaction-only ties); `?includeCoParticipates=` (default false — adds CO_PARTICIPATES co-commenter ties at floor brightness, 0 warmth/friction); response echoes `includesInteractions` + `includesCoParticipates`) | ✅ |
+| GET | `/social/constellation` (k-anonymized cluster blobs, k ≥ 5; seasonally cron-materialized) | ✅ |
+| GET | `/social/transparency` (active tier + enabled flags; readable by members) | ✅ |
+| GET | `/settings/social` (project-admin; resolved `social_config`) | ✅ |
+| PATCH | `/settings/social` (project-admin; deep-merge `social_config`; cache-invalidated) | ✅ |
+
 ### webhooks (project-admin; server-side admin surface, not an SDK hook)
 Replyke-style project webhooks: synchronous `validate` events (host may veto a write → 403) +
 fire-and-forget `*.complete` broadcasts. HMAC `X-Signature`/`X-Timestamp` (+ `X-Response-Signature`

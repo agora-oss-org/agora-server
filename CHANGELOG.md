@@ -20,6 +20,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   **Spaces** section (`/spaces` nav + `SpacesPage`): master-detail list with a basic-settings editor
   (project-admin) and a read-receipts toggle + per-post coverage panel (operator). `requireSpaceRole`
   folds in project admins/operators so the admin Spaces page can edit spaces it doesn't own.
+- **CO_PARTICIPATES social-graph edge** (SOCIAL-GRAPH §7 Phase 2). The scorer projects an undirected,
+  structurally-neutral edge between users who comment in the same thread (canonical `(min,max)` key,
+  windowed + capped + weight-clamped via `SCORER_CO_PARTICIPATES_LOOKBACK_DAYS` / `_MAX_PARTICIPANTS` /
+  `_MAX_WEIGHT`). `GET /social/neighborhood?includeCoParticipates=true` opts a member's view into these
+  ties (default off; adds neighbors at the floor brightness, contributes 0 warmth/friction). Neo4j-only —
+  no Postgres migration.
 - **Release script** (`scripts/release.sh`) — automated version bumping for monorepo releases. Bumps all `package.json` versions (root + contract + api + admin), commits with `chore(release): vX.Y.Z`, and creates a git tag. Fixes the gap where v0.12.0 tagged before package versions were bumped, so npm-publish published 0.11.0 instead. See `docs/RELEASE.md` for usage.
 
 ## [0.12.0] - 2026-06-16

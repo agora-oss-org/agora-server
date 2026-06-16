@@ -6,7 +6,7 @@
 > **Neighborhood** read surface (§3 `GET /social/neighborhood` — dyadic self-view) shipped in **PR 4**, and
 > the **Constellation** (§3 `GET /social/constellation` — GDS-Louvain k-anonymized blobs, seasonally
 > cron-materialized) shipped in **PR 5**, completing the member-facing **Garden** — see the ✅ markers on
-> those sections. The rest of Layer 2 (`CO_PARTICIPATES`, plus the `block`/`mute` friction source — which
+> those sections. The **`CO_PARTICIPATES`** edge (§7 Phase 2) shipped in **PR 9** — see the ✅ marker there. The rest of Layer 2 (the `block`/`mute` friction source — which
 > has no feature/table yet), the **admin analytics** endpoints, and the corporate OpenGDS algorithm tier
 > (§6 — OpenGDS is now installed; PageRank/silo reports remain) stay **proposed**. This is the consolidation plan for the social-graph layer: what `../agora-social`
 > designed, what `services/scorer` already built, how the two become **one system**, and the
@@ -292,14 +292,16 @@ Phasing (adapted from `agora-social/docs/08`, re-grounded in the scorer-owns-the
    > existing hourly **`community-stats` rollup → `community_stats_hourly`** cron — it's the exact
    > pattern, right down to writing one row per project per period.
 
-2. **Phase 2 — Layer 2 writes + Garden reads.** *(Partially shipped, PR 3–5.)* ✅ `FRICTION` job kind
+2. **Phase 2 — Layer 2 writes + Garden reads.** *(Partially shipped, PR 3–5; CO_PARTICIPATES shipped PR 9.)* ✅ `FRICTION` job kind
    (report trigger `0039` + scorer handler + read-time decay) folded into Weather (PR 3); ✅ the
    **Neighborhood** read endpoint — dyadic `B(me, friend)` over the caller's own ties, friction-folded,
    age-cut, self-view only (PR 4); ✅ the **Constellation** — k-anonymized cluster blobs from GDS Louvain
    (by-space fallback), seasonally cron-materialized into `social_constellation`, sub-k-floor suppressed
-   (PR 5). **The Garden lenses are now complete.** **Remaining in Phase 2:** `CO_PARTICIPATES` (no reader
-   needs it yet — Louvain clusters over the existing warmth/structure edges), the `block`/`mute` friction
-   source (needs a feature/table first), and feed affinity (`view` endpoint + `user_affinities`).
+   (PR 5). **The Garden lenses are now complete.** ✅ **`CO_PARTICIPATES`** — undirected structurally-neutral
+   co-commenter edge (scorer, PR 9); `GET /social/neighborhood?includeCoParticipates=true` opts in
+   (default off; floor brightness, 0 warmth/friction; canonical `(min,max)` key, windowed + capped +
+   weight-clamped). **Remaining in Phase 2:** the `block`/`mute` friction source (needs a feature/table
+   first), and feed affinity (`view` endpoint + `user_affinities`).
 3. **Phase 3 — Steward tier.** Ripple tracing + audited in-context inspection (rides the existing
    `project_stewards` grant + audit machinery).
 4. **Phase 4 — Corporate analytics.** *(API shipped, PR 6; operator dashboards shipped, PR 7.)* ✅ Three operator-only, **NAMED**
@@ -326,7 +328,7 @@ Open questions (carried from `agora-social/docs/08` + new ones from this consoli
   feeding `F` as negative-sentiment `INTERACTED` and do not *also* create `FRICTION` edges.
 - Exact warmth formula weights / cap + floor constants (`agora-social/docs/11` leaves them TBD).
 - Half-life defaults (14d friction / 30d warmth) need validation against real activity volumes.
-- `CO_PARTICIPATES` lookback window + weight cap (thread-size blowup guard).
+- ~~`CO_PARTICIPATES` lookback window + weight cap (thread-size blowup guard).~~ **Resolved (PR 9):** `SCORER_CO_PARTICIPATES_LOOKBACK_DAYS`=7, `_MAX_PARTICIPANTS`=50, `_MAX_WEIGHT`=10.
 - LLM valence enrichment (`agora-social/docs/04`, the five-trigger agent) — deferred entirely;
   raw RoBERTa sentiment is the valence source until there's evidence it isn't enough.
 - Corporate tier legal surface: read receipts + engagement scores likely interact with works-council

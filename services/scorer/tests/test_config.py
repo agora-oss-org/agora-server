@@ -34,3 +34,10 @@ def test_resolve_ignores_bad_threshold_types() -> None:
 def test_resolve_empty_categories_falls_back() -> None:
     s = Settings()
     assert resolve({"categories": []}, s).categories == list(DEFAULT_MODERATION_CATEGORIES)
+
+
+def test_co_participates_defaults() -> None:
+    s = Settings()
+    assert s.co_participates_lookback_days == 7
+    assert s.co_participates_max_participants == 50
+    assert s.co_participates_max_weight == 10.0

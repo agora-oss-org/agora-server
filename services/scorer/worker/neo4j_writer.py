@@ -84,6 +84,25 @@ merge (a)-[r:FRICTION {sourceId: $source_id}]->(b)
 set r.kind = $kind, r.weight = $weight, r.projectId = $project_id, r.at = timestamp()
 """
 
+# CO_PARTICIPATES — undirected co-commenter edge, canonical-directed (lower id → higher id) so the pair
+# is keyed once regardless of who triggers the write. Structurally neutral (no sentiment): the
+# Neighborhood reads it only to EXPAND the neighbor set (0 warmth, 0 friction). weight is a co-event
+# counter clamped at $max_weight — Cypher has no scalar min(), so a CASE does the clamp.
+_CO_PARTICIPATES_MERGE = """
+merge (a:User {id: $source_a})
+merge (b:User {id: $source_b})
+merge (a)-[r:CO_PARTICIPATES {sourceA: $source_a, sourceB: $source_b, projectId: $project_id}]->(b)
+  on create set r.createdAt = timestamp(), r.weight = 1.0
+  on match set r.weight = (case when r.weight + 1.0 > $max_weight then $max_weight else r.weight + 1.0 end)
+set r.lastAt = timestamp()
+"""
+
+
+def canonical_pair(a: str, b: str) -> tuple[str, str]:
+    """Order a user-id pair deterministically (min, max) so the undirected CO_PARTICIPATES edge keys
+    once. Lexicographic on the id strings — stable regardless of call direction."""
+    return (a, b) if a <= b else (b, a)
+
 
 async def write_relationship_edge(
     settings: Settings,
@@ -239,3 +258,35 @@ async def write_friction_edge(
             project_id=str(project_id),
         )
     log(logger, "info", "neo4j friction edge merged", source_id=source_id, kind=kind, weight=weight)
+
+
+async def write_co_participates_edge(
+    settings: Settings,
+    *,
+    project_id: str,
+    actor_id: str | None,
+    participant_id: str | None,
+) -> None:
+    """MERGE an undirected CO_PARTICIPATES edge between two co-commenters, keyed on the canonical
+    (sourceA, sourceB, projectId) pair. No-op (logged) when Neo4j is off, an endpoint is missing, or
+    it's a self-pair."""
+    driver = await get_driver(settings)
+    if driver is None:
+        log(logger, "debug", "neo4j co-participates edge skipped (not configured)", actor_id=actor_id)
+        return
+    if not actor_id or not participant_id:
+        log(logger, "debug", "neo4j co-participates edge skipped (missing endpoint)", actor_id=actor_id)
+        return
+    if str(actor_id) == str(participant_id):
+        log(logger, "debug", "neo4j co-participates edge skipped (self-pair)", actor_id=actor_id)
+        return
+    source_a, source_b = canonical_pair(str(actor_id), str(participant_id))
+    async with driver.session() as session:
+        await session.run(
+            _CO_PARTICIPATES_MERGE,
+            source_a=source_a,
+            source_b=source_b,
+            project_id=str(project_id),
+            max_weight=float(settings.co_participates_max_weight),
+        )
+    log(logger, "info", "neo4j co-participates edge merged", source_a=source_a, source_b=source_b)

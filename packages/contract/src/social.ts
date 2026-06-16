@@ -185,7 +185,7 @@ export interface SocialWeather {
 // (cheat-sheet #6). Friction only DIMS an existing tie (FLOOR-bounded, so dim = friction-or-loneliness,
 // unreadable); it never creates one.
 
-export const NEIGHBORHOOD_TIE_KINDS = ["follow", "connection", "interaction"] as const;
+export const NEIGHBORHOOD_TIE_KINDS = ["follow", "connection", "interaction", "coParticipation"] as const;
 export type NeighborhoodTieKind = (typeof NEIGHBORHOOD_TIE_KINDS)[number];
 
 export interface NeighborhoodTie {
@@ -197,8 +197,9 @@ export interface NeighborhoodTie {
   /** Dyadic brightness B(me, them) in [0.15, 1], rounded to 2dp. This is the caller's *tie* warmth —
    *  NOT the friend's global S_p, which is never exposed to a member. */
   brightness: number;
-  /** Which relationship(s) make this person a tie: a follow, a (mutual) connection, and/or recent
-   *  interaction. A pair whose only edge is friction never appears (friction isn't structure). */
+  /** Which relationship(s) make this person a tie: a follow, a (mutual) connection, recent
+   *  interaction, and/or co-participation (commenting in the same thread). A pair whose only edge is
+   *  friction never appears (friction isn't structure). */
   tieKinds: NeighborhoodTieKind[];
 }
 
@@ -209,6 +210,10 @@ export interface SocialNeighborhood {
    *  (not just follows/connections). Echoes the resolved query-param-or-project-default so a client
    *  can reflect the actual state of its toggle. */
   includesInteractions: boolean;
+  /** Whether CO_PARTICIPATES (co-commenter) ties were folded into the neighbor set for this response.
+   *  Echoes the request's ?includeCoParticipates flag (default false). A neutral structural edge: it can
+   *  only ADD a neighbor (at the floor brightness), never change warmth or friction. */
+  includesCoParticipates: boolean;
   /** ISO timestamp of computation. */
   asOf: string;
 }

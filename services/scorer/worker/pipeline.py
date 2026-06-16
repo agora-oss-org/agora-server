@@ -19,6 +19,7 @@ from scorer.config import Settings
 from scorer.db import (
     fetch_content,
     get_moderator_config,
+    resolve_co_participants,
     resolve_comment_interaction,
     resolve_reaction_interaction,
     resolve_report_friction,
@@ -133,6 +134,20 @@ async def assess_and_record(
                 source_id=target_id,
                 sentiment=rel_quality,
             )
+            # CO_PARTICIPATES — undirected co-commenter edges (neutral; feeds the Neighborhood
+            # neighbor-set only). Gated on Neo4j being configured so the co-participant query never
+            # runs when the graph is off. Self-pairs / missing ids are dropped by the writer.
+            if settings.neo4j_enabled() and ctx.actor_id is not None:
+                participant_ids = await resolve_co_participants(
+                    settings, comment_id=target_id, actor_id=ctx.actor_id
+                )
+                for participant_id in participant_ids:
+                    await neo4j_writer.write_co_participates_edge(
+                        settings,
+                        project_id=project_id,
+                        actor_id=ctx.actor_id,
+                        participant_id=participant_id,
+                    )
 
     log(logger, "info", "assessed", target_id=target_id, verdict=verdict, auto_actioned=auto_actioned)
     return row

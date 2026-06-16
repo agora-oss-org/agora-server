@@ -6,6 +6,8 @@ gray-zone decision logic in process_job with no real infra.
 
 from __future__ import annotations
 
+import dataclasses
+
 import pytest
 
 from scorer.config import ResolvedModeratorConfig, Settings
@@ -116,3 +118,45 @@ async def test_entity_content_job_writes_no_interaction_edge(monkeypatch: pytest
     await pipeline.process_job(Settings(), _job(), msg_id=8)
     assert "neo4j" in rec  # v1 AUTHORED edge still written
     assert "interaction" not in rec
+
+
+def _capture_co_participates(monkeypatch: pytest.MonkeyPatch, rec: dict, participant_ids: list[str]) -> None:
+    rec["co_participates"] = []
+
+    async def fake_resolve_co(settings, *, comment_id, actor_id):  # noqa: ANN001
+        rec["resolve_co_args"] = {"comment_id": comment_id, "actor_id": actor_id}
+        return participant_ids
+
+    async def fake_write_co(settings, **kw):  # noqa: ANN001
+        rec["co_participates"].append(kw)
+
+    monkeypatch.setattr(pipeline, "resolve_co_participants", fake_resolve_co)
+    monkeypatch.setattr(neo4j_writer, "write_co_participates_edge", fake_write_co)
+
+
+async def test_comment_job_writes_co_participates_when_graph_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    rec = _patch(monkeypatch, tox_scores={"neutral": 0.95, "toxic": 0.05})
+    _capture_co_participates(monkeypatch, rec, ["u2", "u3"])
+    settings = dataclasses.replace(Settings(), neo4j_uri="bolt://x", neo4j_auth="u/p")
+    job = ScoreJob(target_type="comment", target_id="c1", project_id="p1")
+    await pipeline.process_job(settings, job, msg_id=11)
+    assert rec["resolve_co_args"] == {"comment_id": "c1", "actor_id": "author-1"}
+    assert [c["participant_id"] for c in rec["co_participates"]] == ["u2", "u3"]
+    assert all(c["actor_id"] == "author-1" and c["project_id"] == "p1" for c in rec["co_participates"])
+
+
+async def test_entity_job_writes_no_co_participates(monkeypatch: pytest.MonkeyPatch) -> None:
+    rec = _patch(monkeypatch, tox_scores={"neutral": 0.95, "toxic": 0.05})
+    _capture_co_participates(monkeypatch, rec, ["u2"])
+    settings = dataclasses.replace(Settings(), neo4j_uri="bolt://x", neo4j_auth="u/p")
+    job = ScoreJob(target_type="entity", target_id="e1", project_id="p1")
+    await pipeline.process_job(settings, job, msg_id=12)
+    assert rec["co_participates"] == []
+
+
+async def test_comment_job_skips_co_participates_when_graph_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    rec = _patch(monkeypatch, tox_scores={"neutral": 0.95, "toxic": 0.05})
+    _capture_co_participates(monkeypatch, rec, ["u2"])
+    job = ScoreJob(target_type="comment", target_id="c1", project_id="p1")
+    await pipeline.process_job(Settings(), job, msg_id=13)  # default Settings → neo4j_enabled() is False
+    assert rec["co_participates"] == []

@@ -51,8 +51,13 @@ export const socialRoutes = new Hono<{ Variables: Variables }>()
     // default (cfg.neighborhoodIncludeInteractions). Any value other than "true"/"false" is ignored.
     const q = c.req.query("includeInteractions");
     const includeInteractions = q === "true" ? true : q === "false" ? false : cfg.neighborhoodIncludeInteractions;
+    // Per-request opt-in (no project default — neutral structural edge). Only "true" enables it.
+    const includeCoParticipates = c.req.query("includeCoParticipates") === "true";
     try {
-      return c.json(await getSocialNeighborhood(c.var.projectId, c.var.auth!.userId, cfg, { includeInteractions }));
+      return c.json(await getSocialNeighborhood(c.var.projectId, c.var.auth!.userId, cfg, {
+        includeInteractions,
+        includeCoParticipates,
+      }));
     } catch (err) {
       if (!isNeo4jError(err)) throw err; // bugs in our own code surface as 500s via onError, not a fake 503
       logger.warn("social: neighborhood query failed");

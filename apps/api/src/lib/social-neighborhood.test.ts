@@ -122,4 +122,30 @@ describe("getSocialNeighborhood", () => {
   it("throws when no driver is configured (route maps to 503)", async () => {
     await expect(getSocialNeighborhood("p", "me", cfg, { nowMs: NOW })).rejects.toThrow(/neo4j/i);
   });
+
+  it("defaults includeCoParticipates to false and echoes it", async () => {
+    const { driver, calls } = stubDriver([]);
+    const out = await getSocialNeighborhood("p", "me", cfg, { driver, nowMs: NOW, fetchProfiles: stubProfiles([]) });
+    expect(calls[0]!.params.includeCoParticipates).toBe(false);
+    expect(out.includesCoParticipates).toBe(false);
+  });
+
+  it("passes includeCoParticipates through and echoes it when set", async () => {
+    const { driver, calls } = stubDriver([]);
+    const out = await getSocialNeighborhood("p", "me", cfg, {
+      driver, nowMs: NOW, includeCoParticipates: true, fetchProfiles: stubProfiles([]),
+    });
+    expect(calls[0]!.params.includeCoParticipates).toBe(true);
+    expect(out.includesCoParticipates).toBe(true);
+  });
+
+  it("maps a CO_PARTICIPATES-only tie to the coParticipation kind at the floor brightness", async () => {
+    const { driver } = stubDriver([{ userId: "x", tieKinds: ["CO_PARTICIPATES"], w: 0, f: 0 }]);
+    const out = await getSocialNeighborhood("p", "me", cfg, {
+      driver, nowMs: NOW, includeCoParticipates: true,
+      fetchProfiles: stubProfiles([["x", { username: "ex" }]]),
+    });
+    expect(out.ties[0]!.tieKinds).toEqual(["coParticipation"]);
+    expect(out.ties[0]!.brightness).toBe(0.15);
+  });
 });
