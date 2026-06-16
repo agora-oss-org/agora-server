@@ -10,7 +10,7 @@
 import {
   pgTable, uuid, text, boolean, jsonb, timestamp, index, unique,
 } from "drizzle-orm/pg-core";
-import { reactionTarget, stewardCaseState, stewardCaseOutcome, stewardCaseEventKind } from "./_shared.js";
+import { reactionTarget, stewardCaseState, stewardCaseOutcome, stewardCaseEventKind, projectRole } from "./_shared.js";
 import { projects, profiles } from "./projects.js";
 import { spaces } from "./spaces.js";
 import { reports } from "./misc.js";
@@ -23,6 +23,18 @@ export const projectStewards = pgTable("project_stewards", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (t) => [
   unique("project_stewards_unique").on(t.projectId, t.profileId),
+]);
+
+export const projectRoles = pgTable("project_roles", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  projectId: uuid("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  profileId: uuid("profile_id").notNull().references(() => profiles.id, { onDelete: "cascade" }),
+  role: projectRole("role").notNull(),
+  grantedById: uuid("granted_by_id").references(() => profiles.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  unique("project_roles_unique").on(t.projectId, t.profileId, t.role),
+  index("project_roles_lookup_idx").on(t.projectId, t.profileId),
 ]);
 
 export const stewardCases = pgTable("steward_cases", {

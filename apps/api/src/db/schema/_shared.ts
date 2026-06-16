@@ -46,6 +46,8 @@ export const secureHandshakeKind = pgEnum("secure_handshake_kind", ["welcome", "
 export const authProvider = pgEnum("auth_provider", ["supabase", "native"]);
 // authEmailTokenKind: purpose of a short-lived token stored in auth_email_tokens.
 export const authEmailTokenKind = pgEnum("auth_email_token_kind", ["confirm", "reset"]);
+// projectRole: per-project trust tier (owner|admin|steward), DB-backed grant in project_roles.
+export const projectRole = pgEnum("project_role", ["owner", "admin", "steward"]);
 
 // ─── Reusable jsonb default: the 8 v7 reaction counts, all zero ──────────────
 export const zeroReactionCounts = sql`'{"upvote":0,"downvote":0,"like":0,"love":0,"wow":0,"sad":0,"angry":0,"funny":0}'::jsonb`;
