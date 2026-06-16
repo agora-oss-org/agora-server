@@ -240,3 +240,99 @@ export interface SocialConstellation {
    *  null when not yet materialized. */
   method: "louvain" | "space" | null;
 }
+
+// ── Admin Analytics (corporate tier · operator-only · NAMED) ────────────────────────────────────
+// The corporate counterpart to the Garden (docs/AGORA-CORP.md; docs/SOCIAL-GRAPH.md §7 Phase 4).
+// Unlike the member-facing lenses these NAME real people — the operator is the accountable employer,
+// so the temporal-anonymity protections do NOT apply. Each report is corporate-tier-only, gated by its
+// CORPORATE_ONLY_FLAG (`influenceScoresEnabled` / `siloDetectionEnabled` / `engagementScoresEnabled`),
+// which the community tier forces off. Materialized on a slow (weekly) cadence plus an operator-forced
+// recompute; the reads return the latest snapshot, names hydrated fresh so they never go stale.
+
+export const SOCIAL_ANALYTICS_REPORTS = ["influence", "silos", "engagement"] as const;
+export type SocialAnalyticsReport = (typeof SOCIAL_ANALYTICS_REPORTS)[number];
+
+// Influence — informal leaders (PageRank) + bridge people (betweenness). GET /admin/social/influence.
+export interface InfluenceMember {
+  /** Profile id (= the graph User id). */
+  userId: string;
+  username: string | null;
+  name: string | null;
+  avatar: string | null;
+  /** GDS PageRank centrality — overall influence across the interaction/structural graph. */
+  pageRank: number;
+  /** GDS betweenness centrality — how often this person sits on shortest paths (a bridge/broker). */
+  betweenness: number;
+}
+
+export interface SocialInfluence {
+  /** Informal leaders, highest PageRank first. */
+  leaders: InfluenceMember[];
+  /** Bridge people, highest betweenness first. */
+  bridges: InfluenceMember[];
+  /** ISO timestamp of the materialized snapshot, or null when none has been computed yet. */
+  asOf: string | null;
+}
+
+// Silos — the NAMED, space-mapped form of the Constellation's clusters (GDS Louvain). No k-anonymity:
+// the operator sees exact sizes and named members. GET /admin/social/silos.
+export interface SiloMember {
+  userId: string;
+  username: string | null;
+  name: string | null;
+  avatar: string | null;
+}
+
+export interface SiloSpace {
+  spaceId: string;
+  name: string | null;
+  /** How many of this silo's members belong to the space — the mapping that labels the cluster. */
+  memberCount: number;
+}
+
+export interface Silo {
+  /** Stable only WITHIN a snapshot (the GDS community id); no identity across epochs. */
+  id: string;
+  /** Exact member count — operator view, no bucketing and no suppression. */
+  size: number;
+  members: SiloMember[];
+  /** The spaces this silo concentrates in, most-represented first — the human label for the cluster. */
+  spaces: SiloSpace[];
+}
+
+export interface SocialSilos {
+  silos: Silo[];
+  asOf: string | null;
+}
+
+// Engagement — per-person warmth-RECEIVED (S_p) with a churn-risk trend. GET /admin/social/engagement.
+export const CHURN_RISK_BANDS = ["none", "watch", "at-risk"] as const;
+export type ChurnRiskBand = (typeof CHURN_RISK_BANDS)[number];
+
+export interface EngagementMember {
+  userId: string;
+  username: string | null;
+  name: string | null;
+  avatar: string | null;
+  /** Current mean inbound brightness S_p (warmth this person receives) — the latest snapshot's value. */
+  sP: number;
+  /** Trailing per-snapshot S_p series, oldest→newest (one point per weekly epoch in the window). */
+  trend: number[];
+  /** sP(current) − sP(window start); negative = cooling. */
+  delta: number;
+  /** Banded churn risk derived from the trend's relative decline over the window. */
+  churnRisk: ChurnRiskBand;
+}
+
+export interface SocialEngagement {
+  members: EngagementMember[];
+  asOf: string | null;
+}
+
+// POST /admin/social/recompute — operator-forced, synchronous re-materialization. The body selects a
+// single report or "all" (default); the request blocks while GDS runs over the whole graph.
+export const SOCIAL_ANALYTICS_RECOMPUTE_TARGETS = [...SOCIAL_ANALYTICS_REPORTS, "all"] as const;
+export const socialAnalyticsRecomputeSchema = z.object({
+  report: z.enum(SOCIAL_ANALYTICS_RECOMPUTE_TARGETS).nullish(),
+});
+export type SocialAnalyticsRecompute = z.infer<typeof socialAnalyticsRecomputeSchema>;
