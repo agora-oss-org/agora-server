@@ -19,6 +19,8 @@ import {
   grantProjectRole, revokeProjectRole, listRoleGrantees,
 } from "../lib/project-roles.js";
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export const rolesRoutes = new Hono<{ Variables: Variables }>()
   // List grantees grouped by role. Project-admin (and up) may view; only owner mutates.
   .get("/", requireAuth, async (c) => {
@@ -47,9 +49,13 @@ export const rolesRoutes = new Hono<{ Variables: Variables }>()
   // Revoke a role (owner-gated). Last-owner removal is blocked inside revokeProjectRole.
   .delete("/:userId/:role", requireAuth, async (c) => {
     requireProjectOwner(c);
+    const userId = c.req.param("userId");
     const role = c.req.param("role");
+    // Validate both path params before they hit the uuid/enum columns (fail closed, clean 400 not 500;
+    // parity with POST's zod-validated body).
+    if (!UUID_RE.test(userId)) throw Errors.badRequest("roles/invalid-user", "userId must be a UUID", "userId");
     if (role !== "owner" && role !== "admin" && role !== "steward") throw Errors.badRequest("roles/invalid-role", "Unknown role");
-    await revokeProjectRole(c.var.projectId, c.req.param("userId"), role);
-    logger.info({ projectId: c.var.projectId, profileId: c.req.param("userId"), role, revokedBy: c.var.auth!.userId }, "roles: revoked");
+    await revokeProjectRole(c.var.projectId, userId, role);
+    logger.info({ projectId: c.var.projectId, profileId: userId, role, revokedBy: c.var.auth!.userId }, "roles: revoked");
     return c.json({ success: true });
   });

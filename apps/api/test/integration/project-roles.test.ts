@@ -207,12 +207,47 @@ describe("Per-project roles (owner|admin|steward) — grants, claims, authorizat
       }
     });
 
+    it("two concurrent owner-revokes can never drop the project to zero owners (TOCTOU)", async () => {
+      // Exactly two owners; fire both removals at once. The transactional FOR UPDATE guard must let
+      // at most one through — the project must always retain >= 1 owner.
+      const proj = await createProject();
+      try {
+        const op = await createUser(proj);
+        op.token = await signToken(op.id, "visitor", true, false);
+        const o1 = await createUser(proj);
+        const o2 = await createUser(proj);
+        await api("POST", `${base(proj)}/roles`, { token: op.token, body: { userId: o1.id, role: "owner" } });
+        await api("POST", `${base(proj)}/roles`, { token: op.token, body: { userId: o2.id, role: "owner" } });
+
+        const [r1, r2] = await Promise.all([
+          api("DELETE", `${base(proj)}/roles/${o1.id}/owner`, { token: op.token }),
+          api("DELETE", `${base(proj)}/roles/${o2.id}/owner`, { token: op.token }),
+        ]);
+
+        // At least one revoke is blocked as last-owner; the survivor list never reaches empty.
+        const blocked = [r1, r2].filter((r) => r.status === 400 && r.body.code === "roles/last-owner");
+        expect(blocked.length).toBeGreaterThanOrEqual(1);
+        const view = await api("GET", `${base(proj)}/roles`, { token: op.token });
+        expect(view.body.roles.owner.length).toBeGreaterThanOrEqual(1);
+      } finally {
+        await deleteProject(proj);
+      }
+    });
+
     it("rejects an unknown role on revoke (400 roles/invalid-role)", async () => {
       const res = await api("DELETE", `${base(projectId)}/roles/${member.id}/superuser`, {
         token: owner.token,
       });
       expect(res.status).toBe(400);
       expect(res.body.code).toBe("roles/invalid-role");
+    });
+
+    it("rejects a non-UUID userId on revoke (400 roles/invalid-user, not a 500)", async () => {
+      const res = await api("DELETE", `${base(projectId)}/roles/not-a-uuid/admin`, {
+        token: owner.token,
+      });
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe("roles/invalid-user");
     });
 
     it("404s roles/user-not-found when granting to a non-profile id", async () => {

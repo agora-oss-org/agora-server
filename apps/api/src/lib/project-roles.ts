@@ -51,17 +51,26 @@ export async function grantProjectRole(projectId: string, profileId: string, rol
   await db.insert(projectRoles).values({ projectId, profileId, role, grantedById }).onConflictDoNothing();
   invalidateProjectRoles(projectId, profileId);
 }
-/** Revoke a role. Guards the last owner. */
+/** Revoke a role. Guards the last owner — atomically, so two concurrent owner-revokes can't both
+ *  pass the check and drop the project to zero owners (TOCTOU). The owner check+delete run in one
+ *  transaction with `FOR UPDATE` on the owner rows; a racing revoke blocks, then re-reads the reduced
+ *  count and correctly throws `roles/last-owner`. Non-owner revokes need no guard. */
 export async function revokeProjectRole(projectId: string, profileId: string, role: ProjectRole): Promise<void> {
   if (role === "owner") {
-    const owners = await db.select({ id: projectRoles.id }).from(projectRoles)
-      .where(and(eq(projectRoles.projectId, projectId), eq(projectRoles.role, "owner")));
-    const [target] = await db.select({ id: projectRoles.id }).from(projectRoles)
-      .where(and(eq(projectRoles.projectId, projectId), eq(projectRoles.profileId, profileId), eq(projectRoles.role, "owner"))).limit(1);
-    if (target && owners.length <= 1) throw Errors.badRequest("roles/last-owner", "Cannot remove the last owner of a project");
+    await db.transaction(async (tx) => {
+      // Lock every owner row for this project; serializes concurrent owner-revokes through this point.
+      const owners = await tx.select({ profileId: projectRoles.profileId }).from(projectRoles)
+        .where(and(eq(projectRoles.projectId, projectId), eq(projectRoles.role, "owner")))
+        .for("update");
+      const targetIsOwner = owners.some((o) => o.profileId === profileId);
+      if (targetIsOwner && owners.length <= 1) throw Errors.badRequest("roles/last-owner", "Cannot remove the last owner of a project");
+      await tx.delete(projectRoles)
+        .where(and(eq(projectRoles.projectId, projectId), eq(projectRoles.profileId, profileId), eq(projectRoles.role, "owner")));
+    });
+  } else {
+    await db.delete(projectRoles)
+      .where(and(eq(projectRoles.projectId, projectId), eq(projectRoles.profileId, profileId), eq(projectRoles.role, role)));
   }
-  await db.delete(projectRoles)
-    .where(and(eq(projectRoles.projectId, projectId), eq(projectRoles.profileId, profileId), eq(projectRoles.role, role)));
   invalidateProjectRoles(projectId, profileId);
 }
 /** List grantees of a role (newest first). */
