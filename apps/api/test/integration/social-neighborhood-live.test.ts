@@ -78,27 +78,29 @@ describe.runIf(!!uri)("neighborhood cypher (live graph)", () => {
     await driver.close();
   });
 
-  it("returns exactly the structural + recent-interaction ties (friction-only and ancient excluded)", async () => {
+  it("DEFAULT (structural-only): only follows + connections — interaction-only Z is excluded", async () => {
     const out = await getSocialNeighborhood(projectId, me, cfg, {
-      driver, nowMs: NOW, fetchProfiles: stubProfiles,
+      driver, nowMs: NOW, fetchProfiles: stubProfiles, // includeInteractions defaults to false
     });
-    const ids = out.ties.map((t) => t.userId).sort();
-    expect(ids).toEqual([X, Y, Z].sort()); // Q (ancient) and R (friction-only) absent
+    expect(out.includesInteractions).toBe(false);
+    expect(out.ties.map((t) => t.userId).sort()).toEqual([X, Y].sort()); // Z, Q, R all absent
   });
 
-  it("tags each tie with the right kind(s)", async () => {
+  it("includeInteractions=true: adds the recent-interaction tie Z (ancient + friction-only still excluded)", async () => {
     const out = await getSocialNeighborhood(projectId, me, cfg, {
-      driver, nowMs: NOW, fetchProfiles: stubProfiles,
+      driver, nowMs: NOW, includeInteractions: true, fetchProfiles: stubProfiles,
     });
+    expect(out.includesInteractions).toBe(true);
+    expect(out.ties.map((t) => t.userId).sort()).toEqual([X, Y, Z].sort()); // Q (ancient) + R (friction-only) absent
     const byId = new Map(out.ties.map((t) => [t.userId, t.tieKinds]));
     expect(byId.get(X)).toEqual(["follow"]);
     expect(byId.get(Y)).toEqual(["connection"]);
     expect(byId.get(Z)).toEqual(["interaction"]);
   });
 
-  it("computes dyadic brightness: friction dims X, the quiet connection Y sits at the floor", async () => {
+  it("computes dyadic brightness either way: friction-dimmed X and quiet connection Y sit at the floor", async () => {
     const out = await getSocialNeighborhood(projectId, me, cfg, {
-      driver, nowMs: NOW, fetchProfiles: stubProfiles,
+      driver, nowMs: NOW, includeInteractions: true, fetchProfiles: stubProfiles,
     });
     const b = (id: string) => out.ties.find((t) => t.userId === id)!.brightness;
     // X: W=0 (no interaction), F=1 (one report) → floor (friction can't dip below it).

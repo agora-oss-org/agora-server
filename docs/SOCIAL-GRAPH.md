@@ -143,7 +143,7 @@ Graph reads are normal Hono handlers with normal gates (`requireAuth`, operator/
 | Endpoint (sketch) | Audience | Backing query |
 |---|---|---|
 | `GET /social/weather` ✅ (PR 2) | members | mean S_p over project — single scalar + trend (per-space deferred — see §7 Phase 1) |
-| `GET /social/neighborhood` ✅ (PR 4) | the member themself | dyadic B(me, friend) per tie — own ties ONLY (follows ∪ connections ∪ recent interactions; friction dims, never creates a tie) |
+| `GET /social/neighborhood` ✅ (PR 4) | the member themself | dyadic B(me, friend) per tie — own ties ONLY. Default = follows ∪ connections; interactions opt-in via `neighborhoodIncludeInteractions` (project default) or `?includeInteractions=` (per-member override). Friction dims, never creates a tie. |
 | `GET /social/constellation` | members | k-anonymized cluster blobs (k ≥ 5), warmth tint only |
 | `GET /admin/social/influence` | operator, gated by config | PageRank / betweenness over INTERACTED+FOLLOWS |
 | `GET /admin/social/silos` | operator, gated by config | community detection between spaces/teams |
@@ -190,6 +190,7 @@ Graph**, defaulted by tier, **enforced in the data-access layer, not the UI** (l
   "constellation_enabled": true,
   "constellation_k_floor": 5,         // k-anonymity floor; clamp: can be raised, never lowered below 5
   "neighborhood_enabled": true,
+  "neighborhood_include_interactions": false,  // default tie set is follows+connections; opt in to add interaction-only ties (per-member ?includeInteractions= overrides)
 
   // operator analytics
   "influence_scores_enabled": false,  // named PageRank/bridge reports
