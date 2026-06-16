@@ -17,6 +17,8 @@ interface AuthValue {
   user: AuthUser | null;
   isOperator: boolean;
   isSteward: boolean;
+  isProjectOwner: boolean;
+  isProjectAdmin: boolean;
   signIn: (email: string, password: string, projectId: string) => Promise<void>;
   signOut: () => Promise<void>;
 }
@@ -33,6 +35,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isOperator: !!session?.user?.isOperator,
       // Operators are stewards implicitly (they hold the project-wide god-view).
       isSteward: !!session?.user?.isSteward || !!session?.user?.isOperator,
+      // Hierarchy: operator ⊇ project-owner ⊇ project-admin. Fold the higher tiers in so an operator
+      // (and an owner) always satisfies an admin-gated UI check.
+      isProjectOwner: !!session?.user?.isProjectOwner || !!session?.user?.isOperator,
+      isProjectAdmin:
+        !!session?.user?.isProjectAdmin || !!session?.user?.isProjectOwner || !!session?.user?.isOperator,
       async signIn(email, password, projectId) {
         const data = await api<SignInResponse>("/auth/sign-in", {
           method: "POST",

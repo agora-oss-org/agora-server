@@ -75,10 +75,10 @@ export function ReviewDialog({ report, onClose }: { report: Report | null; onClo
   // Deep link to the reported content in the consumer app (null for a comment until its parent
   // entity id loads with the target).
   const deepLink = report ? reportDeepLink(report, target) : null;
-  const { isOperator, isSteward } = useAuth();
+  const { isProjectAdmin, isSteward } = useAuth();
   const scoped = !!report?.spaceId;
-  // Space reports are actioned via the space flow; project-level reports (no space) only by operators.
-  const canAct = scoped || isOperator;
+  // Space reports are actioned via the space flow; project-level reports (no space) only by project admins.
+  const canAct = scoped || isProjectAdmin;
   const busy = mutation.isPending;
 
   return (
@@ -126,7 +126,7 @@ export function ReviewDialog({ report, onClose }: { report: Report | null; onClo
                 <div className="rounded-lg border border-border bg-bg p-3 text-sm text-muted">{report.details}</div>
               ) : null}
 
-              {isSteward || isOperator ? (
+              {isSteward || isProjectAdmin ? (
                 <div className="flex items-center justify-between gap-2 rounded-lg border border-border bg-bg p-3 text-sm">
                   <span className="text-muted">A conflict between members, not just bad content?</span>
                   <Button variant="outline" size="sm" disabled={openStewardCase.isPending} onClick={() => openStewardCase.mutate()}>
@@ -140,13 +140,13 @@ export function ReviewDialog({ report, onClose }: { report: Report | null; onClo
                   <label className="text-xs font-medium text-muted">Moderation reason (optional)</label>
                   <Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Why is this being removed/kept?" />
                   {!scoped ? (
-                    <p className="text-xs text-faint">Project-level report — actioning it uses your operator god-view.</p>
+                    <p className="text-xs text-faint">Project-level report — actioning it uses your project-admin access.</p>
                   ) : null}
                 </div>
               ) : (
                 <div className="flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/10 p-3 text-sm text-warning">
                   <AlertTriangle className="mt-0.5 size-4 shrink-0" />
-                  This report isn't tied to a space, and your role can't action it — only a deployment operator can resolve project-level reports.
+                  This report isn't tied to a space, and your role can't action it — only a project admin can resolve project-level reports.
                 </div>
               )}
             </>

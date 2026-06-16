@@ -1,4 +1,4 @@
-// Operator-only community-health pulse. Reads the hourly rollup (GET /admin/community/overview) and
+// Project-admin community-health pulse. Reads the hourly rollup (GET /admin/community/overview) and
 // renders: pulse cards (all-time totals + 24h deltas), per-day growth charts (the hourly series
 // bucketed by day), leaderboards (top posters/commenters/reactors by activity volume in the window,
 // reputation shown alongside), top posts (ranked by reactions+replies, deep-linked into the demo app),
@@ -34,7 +34,7 @@ const RANGES = [
 const fmtNum = (n: number) => n.toLocaleString();
 
 export function CommunityPage() {
-  const { isOperator } = useAuth();
+  const { isProjectAdmin } = useAuth();
   const [days, setDays] = useState(30);
 
   const { data, isLoading, isError, error } = useQuery({
@@ -42,7 +42,7 @@ export function CommunityPage() {
     queryFn: ({ signal }) => getCommunityOverview(days, signal),
     staleTime: 60_000,
     retry: false,
-    enabled: isOperator,
+    enabled: isProjectAdmin,
   });
 
   return (
@@ -59,8 +59,8 @@ export function CommunityPage() {
         ) : null}
       </div>
 
-      {!isOperator ? (
-        <Card className="p-5"><p className="text-sm text-muted">Operator access is required to view community analytics.</p></Card>
+      {!isProjectAdmin ? (
+        <Card className="p-5"><p className="text-sm text-muted">Project admin access is required to view community analytics.</p></Card>
       ) : isLoading ? (
         <LoadingPanel label="Loading community pulse…" />
       ) : isError ? (

@@ -105,7 +105,7 @@ function serverStats(m: NonNullable<DashboardMetrics["serverMetrics"]>): Stat[] 
 }
 
 export function DashboardPage() {
-  const { user, isOperator } = useAuth();
+  const { user, isOperator, isProjectAdmin } = useAuth();
   const name = user?.name || user?.username || "there";
 
   const { data, isLoading, isError, error } = useQuery({
@@ -129,7 +129,9 @@ export function DashboardPage() {
         description={
           isOperator
             ? "Project-wide overview — you can see and act across the whole deployment."
-            : "Overview of the spaces you own or moderate."
+            : isProjectAdmin
+              ? "Project overview — you can see and act across this project."
+              : "Overview of the spaces you own or moderate."
         }
       />
 

@@ -6,7 +6,19 @@ import { cn } from "../../lib/cn";
 import { NAV_ITEMS } from "./nav";
 
 export function Sidebar() {
-  const { isOperator, isSteward } = useAuth();
+  const { isOperator, isSteward, isProjectAdmin, isProjectOwner } = useAuth();
+
+  // First match wins; operator is checked before owner because the folded predicates make
+  // isProjectOwner/isProjectAdmin true for operators too.
+  const role = isOperator
+    ? { label: "Operator", variant: "primary" as const }
+    : isProjectOwner
+      ? { label: "Owner", variant: "warning" as const }
+      : isProjectAdmin
+        ? { label: "Admin", variant: "success" as const }
+        : isSteward
+          ? { label: "Steward", variant: "info" as const }
+          : { label: "Moderator", variant: "muted" as const };
 
   return (
     <aside className="flex w-60 shrink-0 flex-col border-r border-border bg-surface">
@@ -18,7 +30,10 @@ export function Sidebar() {
 
       <nav className="flex-1 space-y-1 p-3">
         {NAV_ITEMS.filter((item) =>
-          (item.operatorOnly ? isOperator : true) && (item.stewardOnly ? isSteward || isOperator : true),
+          (item.operatorOnly ? isOperator : true) &&
+          (item.projectAdminOnly ? isProjectAdmin : true) &&
+          (item.projectOwnerOnly ? isProjectOwner : true) &&
+          (item.stewardOnly ? isSteward || isProjectAdmin : true),
         ).map(({ to, label, icon: Icon, end }) => (
           <NavLink
             key={to}
@@ -38,8 +53,8 @@ export function Sidebar() {
       </nav>
 
       <div className="border-t border-border p-3">
-        <Badge variant={isOperator ? "primary" : isSteward ? "info" : "muted"} className="w-full justify-center py-1">
-          {isOperator ? "Operator" : isSteward ? "Steward" : "Moderator"}
+        <Badge variant={role.variant} className="w-full justify-center py-1">
+          {role.label}
         </Badge>
       </div>
     </aside>

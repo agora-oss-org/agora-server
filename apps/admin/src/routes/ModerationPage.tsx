@@ -27,7 +27,7 @@ const VERDICT_BADGE: Record<ModerationVerdict, "success" | "danger" | "warning">
 type ModTab = ReportStatus | "ai";
 
 export function ModerationPage() {
-  const { isOperator } = useAuth();
+  const { isProjectAdmin } = useAuth();
   const [tab, setTab] = useState<ModTab>("pending");
   const [reviewing, setReviewing] = useState<Report | null>(null);
   const [reviewingFlag, setReviewingFlag] = useState<ModerationAnalysis | null>(null);
@@ -37,7 +37,7 @@ export function ModerationPage() {
       <PageHeader
         title="Moderation"
         description={
-          isOperator
+          isProjectAdmin
             ? "Every reported item across the project."
             : "Reports filed against spaces you own or moderate."
         }

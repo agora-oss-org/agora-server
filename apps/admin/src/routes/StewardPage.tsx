@@ -1,6 +1,7 @@
 // Steward — conflict-resolution caseload. A case records a dyadic conflict (complainant vs
 // respondent) over some content and closes with a transformative-leaning outcome. The tab is visible
-// to stewards (a DB-granted trust tier) and operators. Operators also get the grant-management card.
+// to stewards (a DB-granted trust tier) and project admins/owners. Project owners also get the
+// grant-management card.
 // Mirrors ModerationPage's list + detail-dialog shape.
 import { useState } from "react";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -34,12 +35,12 @@ const STATE_BADGE: Record<CaseState, "warning" | "info" | "muted"> = {
 };
 
 export function StewardPage() {
-  const { isOperator, isSteward } = useAuth();
+  const { isSteward, isProjectAdmin, isProjectOwner } = useAuth();
   const [tab, setTab] = useState<CaseState>("open");
   const [openCaseId, setOpenCaseId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
 
-  if (!isSteward && !isOperator) {
+  if (!isSteward && !isProjectAdmin) {
     return (
       <>
         <PageHeader title="Steward" description="Conflict resolution between members." />
@@ -84,7 +85,7 @@ export function StewardPage() {
         ))}
       </Tabs>
 
-      {isOperator ? <StewardsCard /> : null}
+      {isProjectOwner ? <StewardsCard /> : null}
 
       <CaseDialog caseId={openCaseId} onClose={() => setOpenCaseId(null)} />
       <NewCaseDialog
@@ -252,7 +253,7 @@ function NewCaseDialog({ open, onClose, onCreated }: { open: boolean; onClose: (
   );
 }
 
-// Operator-only: grant / revoke the steward role for community members.
+// Project-owner-only: grant / revoke the steward role for community members.
 function StewardsCard() {
   const toast = useToast();
   const qc = useQueryClient();
