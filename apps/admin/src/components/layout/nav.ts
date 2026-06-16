@@ -1,4 +1,4 @@
-import { Activity, BarChart3, LayoutDashboard, Scale, ShieldAlert, Settings, HelpCircle, Share2, type LucideIcon } from "lucide-react";
+import { Activity, BarChart3, LayoutDashboard, Layers, Scale, ShieldAlert, Settings, HelpCircle, Share2, type LucideIcon } from "lucide-react";
 import { SOCIAL_GRAPH_ENABLED } from "../../config";
 
 export interface NavItem {
@@ -22,6 +22,7 @@ export interface NavItem {
 export const NAV_ITEMS: NavItem[] = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { to: "/community", label: "Community", icon: Activity, projectAdminOnly: true },
+  { to: "/spaces", label: "Spaces", icon: Layers, projectAdminOnly: true },
   { to: "/analytics", label: "Analytics", icon: BarChart3, operatorOnly: true },
   // Operator-only social-analytics dashboards (corporate tier). Hidden unless the deployment wired up
   // the social graph (NEO4J_URI) — mirrors how SettingsPage gates its Social Graph panel.

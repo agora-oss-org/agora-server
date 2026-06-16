@@ -10,6 +10,7 @@ import { ModerationPage } from "./routes/ModerationPage";
 import { StewardPage } from "./routes/StewardPage";
 import { SettingsPage } from "./routes/SettingsPage";
 import { HelpPage } from "./routes/HelpPage";
+import { SpacesPage } from "./routes/SpacesPage";
 import { NotFound } from "./routes/NotFound";
 
 export function App() {
@@ -21,6 +22,7 @@ export function App() {
           <Route index element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/community" element={<CommunityPage />} />
+          <Route path="/spaces" element={<SpacesPage />} />
           <Route path="/analytics" element={<AnalyticsPage />} />
           <Route path="/social" element={<SocialAnalyticsPage />} />
           <Route path="/moderation" element={<ModerationPage />} />
