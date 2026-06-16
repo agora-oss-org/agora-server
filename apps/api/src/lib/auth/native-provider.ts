@@ -24,7 +24,12 @@ export class NativeAuthProvider implements AuthProvider {
     const email = normalizeEmail(emailRaw);
     const [existing] = await db.select({ id: authCredentials.id }).from(authCredentials)
       .where(and(eq(authCredentials.projectId, projectId), eq(authCredentials.email, email))).limit(1);
-    if (existing) return { status: "confirmation_required" }; // anti-enumeration: don't reveal, don't recreate
+    if (existing) {
+      // Anti-enumeration: don't reveal, don't recreate. Run a throwaway hash so the existing-email
+      // path takes ~the same time as the new-account path below (no argon2 timing oracle).
+      await hashPassword(password);
+      return { status: "confirmation_required" };
+    }
     const passwordHash = await hashPassword(password);
     const [cred] = await db.insert(authCredentials).values({ projectId, email, passwordHash }).returning({ id: authCredentials.id });
     await this.sendConfirm(projectId, cred!.id, email);
