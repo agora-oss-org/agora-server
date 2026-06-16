@@ -10,6 +10,7 @@ import { getSocialConfig, transparencyView } from "../lib/social-config.js";
 import { isNeo4jError, neo4jEnabled } from "../lib/neo4j.js";
 import { getSocialWeather } from "../lib/social-weather.js";
 import { getSocialNeighborhood } from "../lib/social-neighborhood.js";
+import { getConstellation } from "../lib/social-constellation.js";
 
 export const socialRoutes = new Hono<{ Variables: Variables }>()
   // INVARIANT (docs/AGORA-CORP.md §4, invariant 5): the active tier + enabled analytics are
@@ -58,4 +59,14 @@ export const socialRoutes = new Hono<{ Variables: Variables }>()
       logger.debug({ err, projectId: c.var.projectId }, "social: neighborhood query failed");
       return c.json({ error: "Social graph unavailable", code: "social/graph-unavailable" }, 503);
     }
+  })
+  // The anonymous community shape — read straight from the seasonally-materialized snapshot (§12), so
+  // there's NO live-Neo4j gate: a project that's never been materialized returns the asOf:null "forming"
+  // payload, not a 503. Only the config gate applies.
+  .get("/constellation", requireAuth, async (c) => {
+    const cfg = await getSocialConfig(c.var.projectId);
+    if (!cfg.graphEnabled || !cfg.constellationEnabled) {
+      throw Errors.badRequest("social/constellation-disabled", "The Constellation is not enabled for this project");
+    }
+    return c.json(await getConstellation(c.var.projectId));
   });
