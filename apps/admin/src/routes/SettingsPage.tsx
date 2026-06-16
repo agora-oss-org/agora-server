@@ -1,5 +1,5 @@
 import { PageHeader } from "../components/ui/PageHeader";
-import { SETTINGS_READ_ONLY } from "../config";
+import { SETTINGS_READ_ONLY, SOCIAL_GRAPH_ENABLED } from "../config";
 import { FeedRankingPanel } from "./settings/FeedRankingPanel";
 import { WebhooksPanel } from "./settings/WebhooksPanel";
 import { ModeratorPanel } from "./settings/ModeratorPanel";
@@ -28,10 +28,12 @@ export function SettingsPage() {
         <h2 className="text-sm font-semibold text-fg">Stewardship</h2>
         <StewardPanel />
       </section>
-      <section className="space-y-3">
-        <h2 className="text-sm font-semibold text-fg">Social graph</h2>
-        <SocialGraphPanel />
-      </section>
+      {SOCIAL_GRAPH_ENABLED && (
+        <section className="space-y-3">
+          <h2 className="text-sm font-semibold text-fg">Social graph</h2>
+          <SocialGraphPanel />
+        </section>
+      )}
       <section className="space-y-3">
         <h2 className="text-sm font-semibold text-fg">Project webhooks</h2>
         <WebhooksPanel />

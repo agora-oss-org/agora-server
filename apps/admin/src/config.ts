@@ -27,3 +27,8 @@ export const DEMO_URL = import.meta.env.VITE_DEMO_URL || "http://localhost:5174/
 // by operator token, so it is NOT a security boundary; lock writes down at the server/token level for
 // real enforcement.
 export const SETTINGS_READ_ONLY = String(import.meta.env.VITE_SETTINGS_READ_ONLY ?? "").toLowerCase() === "true";
+
+// When VITE_SOCIAL_GRAPH_ENABLED=true, the Social Graph settings panel and Community Weather card
+// are shown. Default off — set to "true" only on deployments that have NEO4J_URI wired up on the
+// server; otherwise the panel shows but all graph endpoints return 503.
+export const SOCIAL_GRAPH_ENABLED = String(import.meta.env.VITE_SOCIAL_GRAPH_ENABLED ?? "").toLowerCase() === "true";

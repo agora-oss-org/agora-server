@@ -10,6 +10,9 @@ interface ImportMetaEnv {
   readonly VITE_DEMO_PASSWORD?: string;
   /** When "true", the Settings page is view-only — all Save controls are disabled. UI guard only. */
   readonly VITE_SETTINGS_READ_ONLY?: string;
+  /** When "true", the Social Graph settings panel and Community Weather card are shown. Default false.
+   *  Set to "true" only on deployments with NEO4J_URI configured on the server. */
+  readonly VITE_SOCIAL_GRAPH_ENABLED?: string;
 }
 
 interface ImportMeta {

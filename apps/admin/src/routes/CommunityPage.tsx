@@ -17,7 +17,7 @@ import { Card } from "../components/ui/Card";
 import { Badge } from "../components/ui/Badge";
 import { LoadingPanel } from "../components/ui/Spinner";
 import { cn } from "../lib/cn";
-import { DEMO_URL } from "../config";
+import { DEMO_URL, SOCIAL_GRAPH_ENABLED } from "../config";
 import {
   getCommunityOverview, communityOverviewKey,
   getSocialWeather, socialWeatherKey,
@@ -91,7 +91,7 @@ function CommunityBody({ data, days }: { data: CommunityOverview; days: number }
         <PulseCard label="Reactions" value={data.totals.reactions} delta={d?.reactions ?? null} icon={Heart} />
       </div>
 
-      <WeatherSection />
+      {SOCIAL_GRAPH_ENABLED && <WeatherSection />}
 
       <Section title="Growth" hint={`Per day, over the last ${days} days`}>
         <div className="grid gap-4 lg:grid-cols-2">
