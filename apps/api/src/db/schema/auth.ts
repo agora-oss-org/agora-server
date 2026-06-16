@@ -31,6 +31,7 @@ export const authCredentials = pgTable("auth_credentials", {
   passwordHash: text("password_hash").notNull(),
   emailConfirmedAt: timestamp("email_confirmed_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (t) => [
   unique("auth_credentials_project_email").on(t.projectId, t.email),
 ]);

@@ -295,6 +295,13 @@
       "when": 1781604425190,
       "tag": "0041_melted_bloodstrike",
       "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1781604722344,
+      "tag": "0042_fuzzy_kang",
+      "breakpoints": true
     }
   ]
 }
