@@ -302,7 +302,7 @@ Phasing (adapted from `agora-social/docs/08`, re-grounded in the scorer-owns-the
    source (needs a feature/table first), and feed affinity (`view` endpoint + `user_affinities`).
 3. **Phase 3 — Steward tier.** Ripple tracing + audited in-context inspection (rides the existing
    `project_stewards` grant + audit machinery).
-4. **Phase 4 — Corporate analytics.** *(API shipped, PR 6.)* ✅ Three operator-only, **NAMED**
+4. **Phase 4 — Corporate analytics.** *(API shipped, PR 6; operator dashboards shipped, PR 7.)* ✅ Three operator-only, **NAMED**
    corporate-tier reports read from one combined `social_analytics` snapshot table: **influence**
    (GDS PageRank leaders + betweenness bridges, one shared projection), **silos** (GDS Louvain
    clusters mapped to dominant spaces — the receipts counterpart to the k-anonymized Constellation,
@@ -311,8 +311,10 @@ Phasing (adapted from `agora-social/docs/08`, re-grounded in the scorer-owns-the
    (`/internal/cron/social-analytics`, Sun 05:00, in-lib per-report epoch gate self-heals a missed
    run) with an operator-forced **synchronous** recompute (`POST /admin/social/recompute`). Snapshots
    store raw ids + scores only; names + space labels are hydrated fresh at read so they never go stale.
-   See `docs/AGORA-CORP.md`. **Remaining in Phase 4:** per-space read receipts and the operator React
-   dashboards (API-first — the UI is a follow-up).
+   See `docs/AGORA-CORP.md`. The **operator React dashboards** (PR 7) render the three reports as a
+   tabbed, operator-only **Social** page in `apps/admin` (ranked influence lists, silo cards, an
+   engagement table with trend sparklines + churn badges), each tab carrying a per-report Recompute
+   button. **Remaining in Phase 4:** per-space read receipts.
 
 Open questions (carried from `agora-social/docs/08` + new ones from this consolidation):
 

@@ -230,7 +230,8 @@ Corporate features ride the existing build order ([`SOCIAL-GRAPH.md` §7](SOCIAL
 the `corporate` tier config ships with **Phase 1** (it's just the jsonb + clamps), team
 Weather with Phase 1–2, read receipts + the OpenGDS analytics suite are **Phase 4**. ✅ The
 **analytics API** (influence / silos / engagement reports + operator forced-recompute) shipped
-in **PR 6** — see §2 flagship; per-space read receipts and the operator React dashboards remain.
+in **PR 6** — see §2 flagship — and the operator React dashboards (a tabbed, operator-only **Social**
+page in `apps/admin`) shipped in **PR 7**; per-space read receipts remain.
 
 Open questions:
 

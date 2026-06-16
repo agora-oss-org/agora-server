@@ -49,7 +49,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`withProjectedGdsGraph` — feature-detect + Cypher projection + drop-in-`finally`, lifted out of the
   Constellation's `louvainCommunities`, which now reuses it) and `lib/social-analytics.ts` (pure
   `topByScore`/`dominantSpaces`/`churnFromSeries` + the compute/rollup/read functions). API-first; the
-  operator React dashboards are a follow-up.
+  operator React dashboards ship in the entry below.
+- **Operator analytics dashboards (admin UI)** — the React surface for the admin analytics tier above
+  (docs/AGORA-CORP.md §2, SOCIAL-GRAPH.md §7 Phase 4). A new operator-only **Social** page in `apps/admin`
+  (`routes/SocialAnalyticsPage.tsx` + `lib/social-analytics.ts`) renders the three reports as tabs —
+  **Influence** (informal-leaders + bridge-people ranked lists with score bars), **Silos** (cards with
+  exact size, dominant-space badges, and member rosters), and **Engagement** (a table with `S_p`, an
+  inline trend sparkline, the period delta, and a churn-risk badge). Each tab reads its latest snapshot
+  and carries a **Recompute** button that POSTs `/admin/social/recompute` for that one report and seeds
+  the React-Query cache from the synchronous response (a "this can take a while" pending state for the
+  GDS run). State matrix mirrors the API gates: a community-tier `400 social/<report>-disabled` renders
+  as a "corporate tier required" card linking to Settings → Social graph, a `503` as a quiet
+  "Neo4j not configured" note, and an unmaterialized `asOf:null` snapshot as an empty state with the
+  recompute action. The sidebar entry is operator-only **and** gated on `VITE_SOCIAL_GRAPH_ENABLED`
+  (mirrors the Settings social panel), so a deployment without the social graph never shows a dead tab.
 - **Auth-provider abstraction + native auth** (managed-hosting sub-project A): `projects.auth_provider`
   (`supabase` default | `native`) selects the credential backend per project via `lib/auth/`
   (`getAuthProvider`). `SupabaseAuthProvider` preserves the existing Supabase Auth behavior (no
