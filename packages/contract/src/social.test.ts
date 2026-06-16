@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   CORPORATE_ONLY_FLAGS,
   forbiddenSocialKeys,
+  readReceiptCoverage,
+  readReceiptsToggleSchema,
   resolveSocialConfig,
   resultingSocialTier,
   SOCIAL_PRIVACY_TIERS,
@@ -153,5 +155,29 @@ describe("weather bands", () => {
   it("exposes the five bands, quiet first, no duplicates", () => {
     expect(WEATHER_BANDS).toEqual(["quiet", "stormy", "overcast", "fine", "sunny"]);
     expect(new Set(WEATHER_BANDS).size).toBe(WEATHER_BANDS.length);
+  });
+});
+
+describe("readReceiptCoverage — per-post coverage", () => {
+  it("is readers / members, rounded to 2dp", () => {
+    expect(readReceiptCoverage(1, 4)).toBe(0.25);
+    expect(readReceiptCoverage(1, 3)).toBe(0.33);
+    expect(readReceiptCoverage(2, 3)).toBe(0.67);
+  });
+  it("is 0 when the space has no members (no denominator)", () => {
+    expect(readReceiptCoverage(0, 0)).toBe(0);
+    expect(readReceiptCoverage(5, 0)).toBe(0);
+  });
+  it("clamps to [0,1] even if readers somehow exceed members", () => {
+    expect(readReceiptCoverage(5, 4)).toBe(1);
+    expect(readReceiptCoverage(-1, 4)).toBe(0);
+  });
+});
+
+describe("readReceiptsToggleSchema — operator toggle body", () => {
+  it("requires a boolean enabled", () => {
+    expect(readReceiptsToggleSchema.safeParse({ enabled: true }).success).toBe(true);
+    expect(readReceiptsToggleSchema.safeParse({ enabled: "yes" }).success).toBe(false);
+    expect(readReceiptsToggleSchema.safeParse({}).success).toBe(false);
   });
 });

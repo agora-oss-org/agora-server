@@ -336,3 +336,61 @@ export const socialAnalyticsRecomputeSchema = z.object({
   report: z.enum(SOCIAL_ANALYTICS_RECOMPUTE_TARGETS).nullish(),
 });
 export type SocialAnalyticsRecompute = z.infer<typeof socialAnalyticsRecomputeSchema>;
+
+// ── Read receipts (corporate tier · per-space opt-in) ───────────────────────────────────────────
+// The compliance counterpart to the private feed-affinity reads (docs/SOCIAL-GRAPH.md §4): a space the
+// operator marks `readReceiptsEnabled` records a proper READ row per (entity, member) — DISCLOSED to
+// members (the space carries the flag), scoped to that space, and queryable ONLY by the operator. Pure
+// Postgres; never written to Neo4j or the social graph. Community tier can never enable it
+// (`readReceiptsAllowed` is a CORPORATE_ONLY_FLAG, clamped off above). Live read — no snapshot, no cron.
+
+// POST /v7/:projectId/entities/:id/read — a member records having read an announcement post. Idempotent
+// (one row per member per post; re-reads bump readAt). Gated on the entity's space being receipts-enabled.
+export interface ReadReceiptRecorded {
+  recorded: boolean;
+  /** ISO timestamp the read was recorded/refreshed. */
+  readAt: string;
+}
+
+// GET /admin/social/read-receipts — per-space, per-post coverage over receipts-enabled spaces.
+export interface ReceiptAnnouncement {
+  /** The announcement entity (post) id. */
+  entityId: string;
+  /** The entity's title, hydrated fresh at read; null when the post has no title. */
+  title: string | null;
+  /** ISO creation timestamp of the post. */
+  createdAt: string;
+  /** Distinct active space members who have read this post. */
+  readerCount: number;
+  /** readerCount / memberCount in [0,1], 2dp — the share of the space that has seen this post. */
+  coverage: number;
+}
+
+export interface ReceiptSpace {
+  spaceId: string;
+  name: string | null;
+  /** Active members of the space — the coverage denominator. */
+  memberCount: number;
+  /** Recent posts in the space, newest first. */
+  announcements: ReceiptAnnouncement[];
+}
+
+export interface SocialReadReceipts {
+  spaces: ReceiptSpace[];
+  /** ISO timestamp of the (live) computation. */
+  asOf: string;
+}
+
+/** Coverage = distinct member readers / active members, clamped to [0,1] and rounded to 2dp.
+ *  Zero members → 0 (no denominator). Pure so it's unit-testable and identical on both sides. */
+export function readReceiptCoverage(readerCount: number, memberCount: number): number {
+  if (memberCount <= 0) return 0;
+  const c = Math.min(1, Math.max(0, readerCount / memberCount));
+  return Math.round(c * 100) / 100;
+}
+
+// PATCH /admin/social/read-receipts/spaces/:spaceId — operator flips a single space's opt-in.
+export const readReceiptsToggleSchema = z.object({
+  enabled: z.boolean(),
+});
+export type ReadReceiptsToggle = z.infer<typeof readReceiptsToggleSchema>;
