@@ -42,11 +42,10 @@ export function pairBrightness(w: number, f: number): number {
   return B_FLOOR + (1 - B_FLOOR) * sw * (1 - C_F * phi);
 }
 
-/** Weather = mean over persons of S_p, where S_p = mean INBOUND brightness. Null when no pairs.
- *  Persons with no inbound pair (actors only) don't contribute an S_p — no data, no entry. Inputs
- *  are assumed clean (w, f ≥ 0 from the Cypher sums); garbage degrades to "stormy", never throws. */
-export function weatherFromPairs(pairs: WarmthPair[]): number | null {
-  if (pairs.length === 0) return null;
+/** Per-person S_p = mean INBOUND brightness, keyed by recipient id. Persons with no inbound pair
+ *  (actors only) get no entry. The building block for both Weather (mean of these) and the
+ *  Constellation (mean of a cluster's members). Inputs assumed clean (w, f ≥ 0 from the Cypher sums). */
+export function personScoresFromPairs(pairs: WarmthPair[]): Map<string, number> {
   const inbound = new Map<string, { sum: number; n: number }>();
   for (const p of pairs) {
     const acc = inbound.get(p.recipient) ?? { sum: 0, n: 0 };
@@ -54,9 +53,18 @@ export function weatherFromPairs(pairs: WarmthPair[]): number | null {
     acc.n += 1;
     inbound.set(p.recipient, acc);
   }
+  const out = new Map<string, number>();
+  for (const [id, acc] of inbound) out.set(id, acc.sum / acc.n);
+  return out;
+}
+
+/** Weather = mean over persons of S_p. Null when no pairs. Garbage degrades to "stormy", never throws. */
+export function weatherFromPairs(pairs: WarmthPair[]): number | null {
+  if (pairs.length === 0) return null;
+  const scores = personScoresFromPairs(pairs);
   let total = 0;
-  for (const acc of inbound.values()) total += acc.sum / acc.n;
-  return total / inbound.size;
+  for (const s of scores.values()) total += s;
+  return total / scores.size;
 }
 
 const BAND_BOUNDS = [0.35, 0.55, 0.75] as const;
@@ -137,10 +145,11 @@ export function mergePairRows(rows: WarmthPair[]): WarmthPair[] {
 
 type HalfLives = Pick<ResolvedSocialConfig, "warmthHalfLifeDays" | "frictionHalfLifeDays">;
 
-/** One window: raw (unrounded) weather as of `asOfMs`, or null when the graph is empty. */
-export async function computeWeather(
+/** Run WEATHER_PAIRS_CYPHER and return the merged per-directed-pair warmth/friction rows as of `asOfMs`.
+ *  Shared by Weather (→ mean S_p) and the Constellation (→ per-person S_p to tint clusters). */
+export async function fetchWarmthPairs(
   driver: Driver, projectId: string, cfg: HalfLives, asOfMs: number,
-): Promise<number | null> {
+): Promise<WarmthPair[]> {
   // Edges older than this fall out of the scan (dormant ⇒ "quiet", not floor-dark "stormy").
   const ageCutoff = asOfMs - AGE_CUTOFF_HALF_LIVES * cfg.warmthHalfLifeDays * DAY_MS;
   const { records } = await driver.executeQuery(WEATHER_PAIRS_CYPHER, {
@@ -156,7 +165,14 @@ export async function computeWeather(
     w: toNum(r.get("w")),
     f: toNum(r.get("f")),
   }));
-  return weatherFromPairs(mergePairRows(rows));
+  return mergePairRows(rows);
+}
+
+/** One window: raw (unrounded) weather as of `asOfMs`, or null when the graph is empty. */
+export async function computeWeather(
+  driver: Driver, projectId: string, cfg: HalfLives, asOfMs: number,
+): Promise<number | null> {
+  return weatherFromPairs(await fetchWarmthPairs(driver, projectId, cfg, asOfMs));
 }
 
 // Stale entries are kept past the TTL on purpose: the previous band anchors hysteresis.
