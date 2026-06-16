@@ -249,6 +249,9 @@ export function shapeSpace(row: SpaceRow, opts: { isMember?: boolean } = {}) {
     metadata: (row.metadata as Record<string, unknown>) ?? {},
     membersCount: row.membersCount,
     childSpacesCount: row.childSpacesCount,
+    // Disclosed per-space read-receipts opt-in (docs/SOCIAL-GRAPH.md §4) — lets a client badge the space
+    // "this space tracks reads". The project-wide gate is in GET /social/transparency.
+    readReceiptsEnabled: row.readReceiptsEnabled,
     createdAt: iso(row.createdAt)!,
     updatedAt: iso(row.updatedAt)!,
     deletedAt: iso(row.deletedAt),

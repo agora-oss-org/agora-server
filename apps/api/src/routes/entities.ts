@@ -13,7 +13,8 @@ import * as webhooks from "../lib/webhooks.js";
 import { trackEvent } from "../lib/umami.js";
 import { notifyOnEntityMentions, notifyOnReaction } from "../lib/notifications.js";
 import { parseBracketQuery, buildFeedConditions, buildFeedOrder } from "../lib/entity-filters.js";
-import { entities, reactions, collections, collectionEntities } from "../db/schema/index.js";
+import { entities, reactions, collections, collectionEntities, spaces, readReceipts } from "../db/schema/index.js";
+import { getSocialConfig } from "../lib/social-config.js";
 import { readPagination, paginate } from "../http/envelope.js";
 import {
   shapeEntity,
@@ -274,6 +275,43 @@ export const entityRoutes = new Hono<{ Variables: Variables }>()
     const [updated] = await db.update(entities).set({ isDraft: false }).where(eq(entities.id, row.id)).returning();
     logger.info({ projectId: c.var.projectId, entityId: row.id, userId: row.userId }, "entity: published");
     return c.json(shapeEntity(updated!));
+  })
+  // ── read receipts ───────────────────────────────────────────────────────
+  // Record that the caller read this post (corporate-tier per-space receipts, docs/SOCIAL-GRAPH.md §4).
+  // Pure Postgres — never touches the social graph. Only valid for a post in a read-receipts-enabled
+  // space under a project that allows receipts; idempotent (one row per member per post, readAt bumped).
+  .post("/:id/read", requireAuth, async (c) => {
+    const id = c.req.param("id");
+    const [row] = await db
+      .select({ spaceId: entities.spaceId, moderationStatus: entities.moderationStatus, deletedAt: entities.deletedAt })
+      .from(entities)
+      .where(and(eq(entities.projectId, c.var.projectId), eq(entities.id, id)))
+      .limit(1);
+    if (!row || row.deletedAt || shouldHide(await removedPolicy(c), row.moderationStatus)) {
+      throw Errors.notFound("entities/not-found", "Entity not found");
+    }
+    // Receipts only exist for posts that live in a space; a space-less post can't be receipt-tracked.
+    if (!row.spaceId) throw Errors.badRequest("social/read-receipts-disabled", "Read receipts are not enabled for this post");
+    await assertCanReadSpace(c, row.spaceId); // can't record reading content you can't read
+    // Gate: the space must be receipts-enabled AND the project must allow receipts (corporate tier).
+    const [space] = await db
+      .select({ enabled: spaces.readReceiptsEnabled })
+      .from(spaces)
+      .where(and(eq(spaces.projectId, c.var.projectId), eq(spaces.id, row.spaceId)))
+      .limit(1);
+    const cfg = await getSocialConfig(c.var.projectId);
+    if (!space?.enabled || !cfg.readReceiptsAllowed) {
+      throw Errors.badRequest("social/read-receipts-disabled", "Read receipts are not enabled for this space");
+    }
+    const readAt = new Date();
+    await db
+      .insert(readReceipts)
+      .values({ projectId: c.var.projectId, spaceId: row.spaceId, entityId: id, userId: c.var.auth!.userId, readAt })
+      .onConflictDoUpdate({
+        target: [readReceipts.projectId, readReceipts.entityId, readReceipts.userId],
+        set: { readAt },
+      });
+    return c.json({ recorded: true, readAt: readAt.toISOString() });
   })
   // ── reactions ─────────────────────────────────────────────────────────────
   .post("/:id/reactions", requireAuth, async (c) => {
