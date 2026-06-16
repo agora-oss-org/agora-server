@@ -209,6 +209,13 @@ function SocialGraphForm({ view }: { view: SocialConfigView }) {
             onChange={(v) => set("neighborhoodEnabled", v)}
           />
           <ToggleRow
+            label="Neighborhood includes interactions"
+            hint="Off: a member's Neighborhood shows only their follows and connections. On: it also includes people they've recently interacted with. This is the project default — members can override it for their own view."
+            checked={draft.neighborhoodIncludeInteractions}
+            disabled={disabled || !draft.neighborhoodEnabled}
+            onChange={(v) => set("neighborhoodIncludeInteractions", v)}
+          />
+          <ToggleRow
             label="Read affinity"
             hint="Private per-viewer feed boost; never graph data — the member's own reading history, invisible to operators."
             checked={draft.readAffinityEnabled}

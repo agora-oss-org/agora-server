@@ -167,6 +167,7 @@ export interface ResolvedSocialConfig {
   constellationEnabled: boolean;
   constellationKFloor: number;
   neighborhoodEnabled: boolean;
+  neighborhoodIncludeInteractions: boolean;
   influenceScoresEnabled: boolean;
   siloDetectionEnabled: boolean;
   engagementScoresEnabled: boolean;
