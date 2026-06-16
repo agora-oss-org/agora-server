@@ -22,6 +22,7 @@ import { searchRoutes } from "./search.js";
 import { storageRoutes } from "./storage.js";
 import { adminRoutes } from "./admin.js";
 import { stewardRoutes } from "./steward.js";
+import { rolesRoutes } from "./roles.js";
 import { socialRoutes } from "./social.js";
 import { miscRoutes } from "./misc.js";
 
@@ -46,6 +47,7 @@ export function mountRoutes() {
   project.route("/storage", storageRoutes);
   project.route("/admin", adminRoutes);
   project.route("/steward", stewardRoutes);
+  project.route("/roles", rolesRoutes);
   project.route("/social", socialRoutes);   // graph read side: transparency + weather
   // oauth, projects, crypto, utils — small, grouped in misc
   project.route("/", miscRoutes);

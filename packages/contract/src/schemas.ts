@@ -223,6 +223,11 @@ export const refreshSchema = z.object({
   refreshToken: z.string().min(1),
 });
 
+export const grantRoleSchema = z.object({
+  userId: z.string().uuid(),
+  role: z.enum(["owner", "admin", "steward"]),
+});
+
 export const signOutSchema = z.object({
   refreshToken: z.string().min(1).optional(),
 });
