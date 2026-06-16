@@ -345,6 +345,12 @@ journal order and written **idempotently** (`create extension if not exists`, `c
   `0038_typical_speed_demon` (Drizzle auto-name).
 - `0039_…` — **scorer `FRICTION` edge enqueue**: `AFTER INSERT ON reports` trigger projects a
   directed `(reporter)→[:FRICTION]→(subject)` job; MERGE-keyed on report id (idempotent).
+- `0041`/`0042`/`0043_…` — **native auth provider** (managed-hosting sub-project A): `0041` adds
+  `auth_credentials` + `auth_email_tokens` (Agora-owned password store; argon2id hashes, hashed
+  single-use confirm/reset tokens) and `projects.auth_provider` enum (`supabase` default | `native`);
+  `0042` adds `auth_credentials.updated_at`; `0043` enables RLS deny-all on both tables (the `0017`
+  backstop is one-time, so new tables need explicit RLS). Provider selected per-project via
+  `lib/auth/` (`getAuthProvider`). (`0040` is the separate `social_constellation` feature.)
 
 To change schema: edit `src/db/schema/*.ts` → `db:generate` → `db:migrate`. Edit triggers/functions/
 RLS/PostGIS by hand in their custom migration files. (Apply with `db:migrate:run` — the runtime

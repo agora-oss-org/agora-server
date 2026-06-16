@@ -84,6 +84,7 @@ Status codes: `400 / 401 / 403 / 404 / 409 / 429 / 500`.
 | POST | `/auth/request-new-access-token` | ✅ |
 | POST | `/auth/change-password` | ✅ |
 | POST | `/auth/request-password-reset` | ✅ |
+| POST | `/auth/reset-password` (body `{ token, newPassword }`; completes a reset — required by the native auth provider) | 🔶 |
 | POST | `/auth/verify-email` | ✅ |
 | POST | `/auth/send-verification-email` | ✅ |
 | POST | `/auth/verify-external-user` (body `{ userJwt }`; legacy `{ token }` also accepted) | ✅ |

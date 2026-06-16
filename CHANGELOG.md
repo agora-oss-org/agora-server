@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Auth-provider abstraction + native auth** (managed-hosting sub-project A): `projects.auth_provider`
+  (`supabase` default | `native`) selects the credential backend per project via `lib/auth/`
+  (`getAuthProvider`). `SupabaseAuthProvider` preserves the existing Supabase Auth behavior (no
+  regression); the new `NativeAuthProvider` is an Agora-owned credential store for the shared hosting
+  tier — argon2id password hashes (`@node-rs/argon2`), per-tenant identity (`unique(project_id,
+  email)`, email lowercased), and hashed, single-use, expiring confirm/reset tokens. Confirm/reset
+  emails go through a pluggable `EmailSender` (dev `ConsoleEmailSender`; link base `AUTH_EMAIL_LINK_BASE`).
+  New tables `auth_credentials` + `auth_email_tokens` (migrations `0041`/`0042`) with RLS deny-all
+  (`0043`). New endpoint **`POST /v7/:projectId/auth/reset-password`** (`{ token, newPassword }`)
+  completes a password reset. Email fields capped at RFC-5321 254 chars. SDK contract unchanged
+  (default `supabase`).
 - **Constellation — the anonymous community shape** (docs/AGORA-SOCIAL.md §12, SOCIAL-GRAPH.md §3),
   completing the member-facing Garden (Weather → Constellation → Neighborhood). `GET
   /v7/:projectId/social/constellation` returns cluster **blobs** — a bucketed size (`5–9`, `10–19`, …) and
