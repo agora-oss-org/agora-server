@@ -70,3 +70,69 @@ describe.runIf(!!uri)("weather cypher (live graph)", () => {
     expect(v!).toBeCloseTo(expected, 3);
   });
 });
+
+// PR 3 — the FRICTION UNION branch + the age cutoff, both real-Cypher-only behaviors. Own projectId so
+// it can't perturb the block above (project-wide weather aggregates over every pair).
+describe.runIf(!!uri)("weather cypher — FRICTION fold + age cutoff (live graph)", () => {
+  let driver: Driver;
+  const projectId = randomUUID();
+  const u = [randomUUID(), randomUUID(), randomUUID(), randomUUID()];
+  const NOW = Date.now();
+  // 6 warmth half-lives = 180d is the cutoff; 200d is safely past it, 10d safely inside.
+  const ANCIENT_DAYS = 200;
+
+  async function seedInteracted(pid: string, actor: string, recipient: string, sentiment: number, ageDays: number) {
+    await driver.executeQuery(
+      `MERGE (a:User {id: $actor}) MERGE (b:User {id: $recipient})
+       CREATE (a)-[:INTERACTED {sourceId: $sourceId, kind: "comment", sentiment: $sentiment,
+                                projectId: $pid, at: $at, createdAt: $at}]->(b)`,
+      { actor, recipient, sentiment, pid, sourceId: randomUUID(), at: NOW - ageDays * DAY_MS },
+    );
+  }
+  async function seedFriction(pid: string, actor: string, recipient: string, weight: number, ageDays: number) {
+    await driver.executeQuery(
+      `MERGE (a:User {id: $actor}) MERGE (b:User {id: $recipient})
+       CREATE (a)-[:FRICTION {sourceId: $sourceId, kind: "report", weight: $weight,
+                              projectId: $pid, at: $at, createdAt: $at}]->(b)`,
+      { actor, recipient, weight, pid, sourceId: randomUUID(), at: NOW - ageDays * DAY_MS },
+    );
+  }
+
+  beforeAll(async () => {
+    driver = neo4j.driver(
+      uri!,
+      neo4j.auth.basic(process.env.TEST_NEO4J_USER ?? "neo4j", process.env.TEST_NEO4J_PASSWORD ?? ""),
+    );
+    // Pair u0→u1: warm INTERACTED (W=1) AND a fresh report (FRICTION weight 1) — the additive fold.
+    await seedInteracted(projectId, u[0]!, u[1]!, 1.0, 0);
+    await seedFriction(projectId, u[0]!, u[1]!, 1.0, 0);
+    // Pair u2→u3 (same project): a single warm edge, but ANCIENT — must fall out under the age cutoff
+    // (if it didn't, the additive assertion below would see a second recipient and fail).
+    await seedInteracted(projectId, u[2]!, u[3]!, 1.0, ANCIENT_DAYS);
+  });
+
+  afterAll(async () => {
+    if (!driver) return;
+    await driver.executeQuery(`MATCH (n:User) WHERE n.id IN $ids DETACH DELETE n`, { ids: u });
+    await driver.close();
+  });
+
+  it("folds a FRICTION edge into F additively on the same directed pair (UNION ALL + merge)", async () => {
+    // Both branches emit a u0→u1 row; mergePairRows sums them → one tie B(W=1, F=1), strictly dimmer
+    // than warmth-only B(1,0) but above the floor. u2→u3 is excluded (ancient) so u1 is the only
+    // recipient → weather = B(1, 1).
+    const v = await computeWeather(driver, projectId, cfg, NOW);
+    expect(v!).toBeCloseTo(pairBrightness(1, 1), 3);
+    expect(v!).toBeLessThan(pairBrightness(1, 0)); // the report dimmed the tie
+    expect(v!).toBeGreaterThan(0.15);              // ...but not to the floor
+  });
+
+  it("drops edges older than the age cutoff (dormant ⇒ quiet, not stormy)", async () => {
+    // A throwaway project whose ONLY edge is 200d old: past 6 warmth half-lives → no rows → null.
+    const dormant = randomUUID();
+    const a = randomUUID(), b = randomUUID();
+    u.push(a, b); // tracked for afterAll cleanup
+    await seedInteracted(dormant, a, b, 1.0, ANCIENT_DAYS);
+    expect(await computeWeather(driver, dormant, cfg, NOW)).toBeNull();
+  });
+});

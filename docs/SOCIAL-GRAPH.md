@@ -1,10 +1,11 @@
 # Social graph — community & corporate deployments 🌱🏢
 
-> **Status: PARTIALLY IMPLEMENTED.** The `social_config` foundation (§5) shipped in **PR 1** and
-> Community Weather (§3 `GET /social/weather`, §7 Phase 1) shipped in **PR 2** — see the ✅ markers on
-> those sections. Layer 2 (FRICTION/CO_PARTICIPATES, §7 Phase 2+), the other read endpoints
-> (Neighborhood, Constellation, admin analytics), and the OpenGDS/feature-detect work (§6) remain
-> **proposed**. This is the consolidation plan for the social-graph layer: what `../agora-social`
+> **Status: PARTIALLY IMPLEMENTED.** The `social_config` foundation (§5) shipped in **PR 1**,
+> Community Weather (§3 `GET /social/weather`, §7 Phase 1) shipped in **PR 2**, and the Layer-2
+> **`FRICTION`** edge (user reports → Weather's friction term, §7 Phase 2) shipped in **PR 3** — see the
+> ✅ markers on those sections. The rest of Layer 2 (`CO_PARTICIPATES`, plus the `block`/`mute` friction
+> source — which has no feature/table yet), the other read endpoints (Neighborhood, Constellation, admin
+> analytics), and the OpenGDS/feature-detect work (§6) remain **proposed**. This is the consolidation plan for the social-graph layer: what `../agora-social`
 > designed, what `services/scorer` already built, how the two become **one system**, and the
 > per-project configuration that lets each deployment decide what it extracts from its own graph.
 > Companion to `docs/SCORER.md` (the live Layer 1 writer) and the `../agora-social/docs/` design
@@ -99,17 +100,22 @@ Append-style, idempotent under pgmq redelivery (keyed on `sourceId`), raw signed
 relationship RoBERTa (text) or the reaction→sentiment map. **This is unchanged** — it is the
 provenance layer that lets Layer 2 be recomputed at any time.
 
-### Layer 2 — derived social edges (➕ NEW, written by scorer)
+### Layer 2 — derived social edges (➕ written by scorer)
 
 Additions to the scorer's graph projection, adapted from `agora-social/docs/03-data-model.md` +
 `11-warmth-model.md`:
 
-1. **`FRICTION` edges** — new pgmq job kinds wired by new enqueue triggers (post-`0037` migration),
-   mirroring the existing reaction/follow/connection pattern:
-   - `report` (user reports content/user) → `(reporter)-[:FRICTION {kind:'report', sourceId, at}]->(subject)`
-   - `block` (user blocks user) → `(blocker)-[:FRICTION {kind:'block', sourceId, at}]->(subject)`
-   - Downvotes already flow as negative-sentiment `INTERACTED`; whether they *also* project to
-     `FRICTION` is an open tuning question (§7).
+1. **`FRICTION` edges** — ✅ **LIVE for reports (PR 3)**. New pgmq job kind (`friction`) wired by an
+   enqueue trigger (migration `0039`), mirroring the reaction/follow/connection pattern:
+   - `report` (user reports content) → `(reporter)-[:FRICTION {kind:'report', sourceId, weight, projectId, at}]->(subject)`,
+     where the subject is the **author of the reported content**. ✅ shipped. Append + decay only: a
+     resolved/dismissed report is a no-op in the graph (friction fades at the friction half-life; it
+     isn't adjudicated here — that's the steward tier). Weather folds it into `F` **additively**
+     alongside negative-`INTERACTED` (§7 Phase 1 note).
+   - `block` (user blocks user) → `(blocker)-[:FRICTION {kind:'block'}]->(subject)` — **deferred**: no
+     block/mute feature or table exists yet.
+   - Downvotes flow as negative-sentiment `INTERACTED` and **stay `INTERACTED`-only** (resolved §7 open
+     question — same brigading vector as mass-reporting); they do not *also* project to `FRICTION`.
 2. **`CO_PARTICIPATES` edges** — undirected neutral structure: at comment-score time the worker
    already fetched the content; it additionally upserts co-participation with the thread's other
    recent participants (`{weight, lastAt}`, capped lookback).
@@ -125,7 +131,7 @@ Internal boundary inside the scorer (same worker, same consumer loop, separated 
 worker/pipeline.py        ├─ assess_and_record()   ← moderation (existing)
                           └─ project_social()      ← graph projection (new)
 worker/neo4j_writer.py    ├─ moderation/Layer-1 writers (existing)
-                          └─ social/Layer-2 writers: FRICTION, CO_PARTICIPATES (new)
+                          └─ social/Layer-2 writers: FRICTION ✅ (PR 3), CO_PARTICIPATES (new)
 ```
 
 ### Read side — `@agora/api` (➕ NEW)
@@ -257,13 +263,15 @@ Phasing (adapted from `agora-social/docs/08`, re-grounded in the scorer-owns-the
    `social_config` column + admin settings UI. Lowest risk, zero re-identification surface, proves
    the read side. *(No new writes needed — the live INTERACTED graph already feeds it.)*
 
-   > **Status: ✅ implemented (PR 2).** Live Cypher over Layer-1 `INTERACTED` edges (zero-sentiment
-   > neutral edges excluded), dual-window trend (now vs. −7d), 1h per-project cache, band hysteresis
-   > (±0.02). Negative Layer-1 sentiment feeds the friction term until PR 3's dedicated FRICTION
-   > edges land. Per-space Weather deferred — `spaceId` is not yet written to the graph (scorer
-   > change, later PR). Design debt noted for PR 3+: a fully dormant community asymptotes to
-   > "stormy" rather than "quiet" (decayed pairs never leave the S_p denominator) — an age cutoff
-   > on edges (~6 warmth half-lives) would fix it and shrink the scan.
+   > **Status: ✅ implemented (PR 2), extended (PR 3).** Live Cypher over Layer-1 `INTERACTED` edges
+   > (zero-sentiment neutral edges excluded), dual-window trend (now vs. −7d), 1h per-project cache,
+   > band hysteresis (±0.02). **PR 3** made the friction term `F` **additive**: negative-`INTERACTED`
+   > sentiment **plus** dedicated `FRICTION` edges (user reports, migration `0039`), summed per directed
+   > pair and merged before brightness (`mergePairRows`). PR 3 also added the **age cutoff** (~6 warmth
+   > half-lives) — the design debt below is **resolved**: long-dead edges leave the scan, so a fully
+   > dormant community now reads "quiet" instead of asymptoting to floor-dark "stormy", and the scan
+   > shrinks. Per-space Weather is still deferred — `spaceId` is not yet written to the graph (scorer
+   > change, later PR).
 
    > **Cadence & materialization (decision 2026-06).** §12 temporal-anonymity does **not** apply to
    > Weather (re-scoped to the Constellation) — so the refresh cadence is a **product/cost choice, not
@@ -277,8 +285,10 @@ Phasing (adapted from `agora-social/docs/08`, re-grounded in the scorer-owns-the
    > existing hourly **`community-stats` rollup → `community_stats_hourly`** cron — it's the exact
    > pattern, right down to writing one row per project per period.
 
-2. **Phase 2 — Layer 2 writes.** FRICTION + CO_PARTICIPATES job kinds (triggers + scorer handlers),
-   read-time decay, dyadic warmth → Neighborhood + Constellation endpoints. Feed affinity
+2. **Phase 2 — Layer 2 writes.** *(Partially shipped, PR 3.)* ✅ `FRICTION` job kind (report trigger
+   `0039` + scorer handler + read-time decay) folded into Weather. **Remaining:** `CO_PARTICIPATES`
+   (no reader until the endpoints below land), the dyadic-warmth **Neighborhood + Constellation**
+   endpoints, the `block`/`mute` friction source (needs a feature/table first), and feed affinity
    (`view` endpoint + `user_affinities`).
 3. **Phase 3 — Steward tier.** Ripple tracing + audited in-context inspection (rides the existing
    `project_stewards` grant + audit machinery).
@@ -287,8 +297,9 @@ Phasing (adapted from `agora-social/docs/08`, re-grounded in the scorer-owns-the
 
 Open questions (carried from `agora-social/docs/08` + new ones from this consolidation):
 
-- Do downvotes project into `FRICTION`, or stay negative-`INTERACTED` only? (Mass-downvoting is the
-  same brigading vector as mass-reporting — leaning: INTERACTED-only, like today.)
+- ~~Do downvotes project into `FRICTION`, or stay negative-`INTERACTED` only?~~ **Resolved (PR 3):
+  `INTERACTED`-only.** Mass-downvoting is the same brigading vector as mass-reporting; downvotes keep
+  feeding `F` as negative-sentiment `INTERACTED` and do not *also* create `FRICTION` edges.
 - Exact warmth formula weights / cap + floor constants (`agora-social/docs/11` leaves them TBD).
 - Half-life defaults (14d friction / 30d warmth) need validation against real activity volumes.
 - `CO_PARTICIPATES` lookback window + weight cap (thread-size blowup guard).

@@ -166,12 +166,16 @@ with defaults `k_w=10, c_f=0.5, B_floor=0.15`. Two structural guarantees:
 - **FLOOR** — `B ≥ 0.15` always; friction can never dim *below* the lonely band, so
   "extra-dark = friction" is **unreadable by construction**.
 
-> **As shipped (PR 2):** Weather computes `W`/`F` live from **Layer-1 `INTERACTED` edges only** —
-> positive `sentiment` feeds `W` (warmth half-life), **negative `sentiment` feeds `F`** (friction
-> half-life), and zero-sentiment edges (deliberately-neutral reactions like "sad" = empathy) are
-> **excluded** so they can't read as floor-dark. This is the interim friction source until PR 3's
-> dedicated `FRICTION` edges (report/block/downvote) land; the brightness formula is unchanged, only
-> the source of `F` differs.
+> **As shipped (PR 3):** Weather computes `W`/`F` live at read time. `W` comes from positive-`sentiment`
+> Layer-1 `INTERACTED` edges (warmth half-life); zero-sentiment edges (deliberately-neutral reactions
+> like "sad" = empathy) are **excluded** so they can't read as floor-dark. `F` is now **additive** —
+> **negative `sentiment` `INTERACTED`** (angry/downvote reactions) **plus** dedicated Layer-2
+> **`FRICTION`** edges (user **reports**, migration 0039), both decayed at the friction half-life and
+> summed per directed pair. The brightness formula is unchanged. Scope notes: **`block`/`mute` friction
+> is deferred** — no such feature/table exists yet; and **downvotes stay `INTERACTED`-only** (they do not
+> *also* project to `FRICTION` — same brigading vector as mass-reporting, §-open-questions). A read-time
+> **age cutoff** (~6 warmth half-lives) drops long-dead edges so a dormant community reads "quiet", not
+> floor-dark "stormy".
 
 **The magnitude-regime theorem:** friction identifiable enough to target one person can't
 move an aggregate; friction big enough to move the Weather involves too many people to

@@ -194,6 +194,11 @@ never blended into one overloaded edge:
 // structural — UNscored, MUTUAL (stored directed requester→addressee, queried undirected). Mirrors the
 // connections table, but exists ONLY while status='connected' (MERGE on accept, DELETE on disconnect).
 (requester:User)-[:CONNECTED {at}]->(addressee:User)
+
+// Layer-2 friction — UNscored, directed. Mirrors the reports table (PR 3, migration 0039): a user report
+// MERGEs one edge per report (keyed on the report id), the subject being the reported content's author.
+// Append + decay only (no delete) — Community Weather folds it into the friction term at read time.
+(reporter:User)-[:FRICTION {kind:'report', sourceId, weight, projectId, at}]->(subject:User)
 ```
 
 - **Recipient resolution** (the new bit): the *actor* is the comment/reply/reaction author; the
@@ -222,6 +227,15 @@ never blended into one overloaded edge:
   `CONNECTED` edge exists **only while `status='connected'`** (created on accept/direct-connect, deleted
   on disconnect — which is a row DELETE, not a status flip). `declined` = no edge (not a negative
   signal; the enum has no `blocked`). Being connected does **not** imply following, and vice-versa.
+- **`FRICTION` — the Layer-2 friction edge (PR 3).** A user **report** projects a directed
+  `(reporter)-[:FRICTION {kind:'report', weight}]->(subject)` edge (subject = the reported content's
+  author), enqueued by an `AFTER INSERT on reports` trigger (migration `0039`, job kind `friction`) and
+  MERGE-keyed on the report id (idempotent under redelivery). **Append + decay only** — there is *no*
+  delete counterpart: a resolved/dismissed report simply lets the edge decay at the friction half-life
+  (friction *fades*; it is not adjudicated in the graph — that's the steward tier). Skipped for
+  chat-message reports (out of scope), anonymous reporters, and self-reports. Community Weather reads it
+  into the friction term `F` **additively** alongside negative-`INTERACTED` (`block`/`mute` deferred —
+  no such table; downvotes stay `INTERACTED`-only).
 - **"How warmly does A relate to B?"** is a **query-time** combination (e.g.
   `avg(INTERACTED.sentiment) · saturate(count)` plus `FOLLOWS`/`CONNECTED` bonuses) — the weighting
   lives in the *consumer*, not baked into an ambiguous edge.

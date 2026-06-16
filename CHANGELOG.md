@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Layer-2 `FRICTION` edges from reports, folded into Community Weather** (docs/SOCIAL-GRAPH.md §3,
+  AGORA-SOCIAL.md §11). A user **report** now projects a directed
+  `(reporter)-[:FRICTION {kind:'report', weight}]->(subject)` edge (subject = the reported content's
+  author) via a new pgmq job kind (`friction`), enqueued by an `AFTER INSERT on reports` trigger
+  (migration `0039_scorer_friction_enqueue.sql`) and MERGE-keyed on the report id (idempotent). Append +
+  decay only — a resolved/dismissed report is a no-op in the graph (friction fades at the friction
+  half-life; it isn't adjudicated there). Community Weather's friction term `F` is now **additive**:
+  negative-`INTERACTED` sentiment **plus** the decayed `FRICTION` edges, `UNION ALL`'d in
+  `WEATHER_PAIRS_CYPHER` and summed per directed pair (`mergePairRows`) before the unchanged brightness
+  formula. Weather also gained a read-time **edge age cutoff** (~6 warmth half-lives): a fully dormant
+  community now reads "quiet" instead of asymptoting to floor-dark "stormy", and the scan shrinks. The
+  scorer creates a `FRICTION.projectId` index for the read side. Scope: `block`/`mute` friction is
+  deferred (no such feature/table); downvotes stay `INTERACTED`-only.
 - Community Weather (docs/SOCIAL-GRAPH.md §3): `GET /v7/:projectId/social/weather` returns the
   project's aggregate warmth `{value, band, trend, asOf}` computed live from Layer-1 `INTERACTED`
   edges with read-time decay (warmth + friction half-lives from social_config; zero-sentiment
