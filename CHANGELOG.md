@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-06-16
+
 ### Added
 - **Per-project role system — `project_roles` (`owner | admin | steward`)** (managed-hosting
   sub-project B). Splits the single deployment-wide env `isOperator` god-flag into a **platform-operator**
@@ -1156,7 +1158,8 @@ cloud Supabase — no stubbed endpoints remain.
   (`@agora/*`), a repointed fork of `@replyke/core`.
 - Backlog: rate limiting, refresh-token cleanup sweep, RLS write policies, turnkey deploy guide.
 
-[Unreleased]: https://github.com/jenova-marie/agora/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/jenova-marie/agora/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/jenova-marie/agora/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/jenova-marie/agora/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/jenova-marie/agora/compare/v0.9.2...v0.10.0
 [0.9.2]: https://github.com/jenova-marie/agora/compare/v0.9.0...v0.9.2
