@@ -1,11 +1,12 @@
 // OPT-IN live-graph test for NEIGHBORHOOD_CYPHER — the tie-set union + dyadic brightness + age cutoff,
 // the parts unit tests (stub driver) can't reach. Run with:
-//   TEST_NEO4J_URI=bolt://localhost:7687 TEST_NEO4J_PASSWORD=… pnpm test:integration
+//   TEST_NEO4J_URI=bolt://localhost:7687 TEST_NEO4J_AUTH=neo4j/… pnpm test:integration
 // Own driver (the app's NEO4J_URI is forced empty for hermeticity); profiles are stubbed (the Cypher
 // returns ids — Postgres join is covered by the unit suite). All nodes namespaced + DETACH DELETEd.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { randomUUID } from "node:crypto";
-import neo4j, { type Driver } from "neo4j-driver";
+import { type Driver } from "neo4j-driver";
+import { testNeo4jDriver } from "./neo4j-test-driver.js";
 import { getSocialNeighborhood } from "../../src/lib/social-neighborhood.js";
 import { pairBrightness } from "../../src/lib/social-weather.js";
 
@@ -60,10 +61,7 @@ describe.runIf(!!uri)("neighborhood cypher (live graph)", () => {
   }
 
   beforeAll(async () => {
-    driver = neo4j.driver(
-      uri!,
-      neo4j.auth.basic(process.env.TEST_NEO4J_USER ?? "neo4j", process.env.TEST_NEO4J_PASSWORD ?? ""),
-    );
+    driver = testNeo4jDriver();
     await follow(me, X);
     await friction(me, X, 1.0, 0);       // I reported X → dims my tie to X
     await connect(me, Y);                 // mutual, no interaction → floor

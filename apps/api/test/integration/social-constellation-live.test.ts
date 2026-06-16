@@ -1,10 +1,11 @@
 // OPT-IN live-graph test for the Constellation's GDS Louvain clustering — the one thing the unit suite
 // (pure bucket/band/suppress helpers) can't reach. Requires OpenGDS installed in the Neo4j/DozerDB target.
-// Run with: TEST_NEO4J_URI=bolt://localhost:7687 TEST_NEO4J_PASSWORD=… pnpm test:integration
+// Run with: TEST_NEO4J_URI=bolt://localhost:7687 TEST_NEO4J_AUTH=neo4j/… pnpm test:integration
 // Uses its own driver (the app's NEO4J_URI is forced empty for hermeticity) and namespaces all nodes.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { randomUUID } from "node:crypto";
-import neo4j, { type Driver } from "neo4j-driver";
+import { type Driver } from "neo4j-driver";
+import { testNeo4jDriver } from "./neo4j-test-driver.js";
 import { louvainCommunities } from "../../src/lib/social-constellation.js";
 
 const uri = process.env.TEST_NEO4J_URI;
@@ -31,10 +32,7 @@ describe.runIf(!!uri)("constellation Louvain (live graph)", () => {
   }
 
   beforeAll(async () => {
-    driver = neo4j.driver(
-      uri!,
-      neo4j.auth.basic(process.env.TEST_NEO4J_USER ?? "neo4j", process.env.TEST_NEO4J_PASSWORD ?? ""),
-    );
+    driver = testNeo4jDriver();
     await clique(A);
     await clique(B);
     await edge(A[0]!, B[0]!); // one weak bridge — graph is connected, but the two cliques still split

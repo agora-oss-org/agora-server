@@ -1,10 +1,11 @@
 // OPT-IN live-graph test for WEATHER_PAIRS_CYPHER — the one thing unit tests can't cover.
-// Run with: TEST_NEO4J_URI=bolt://localhost:7687 TEST_NEO4J_PASSWORD=… pnpm test:integration
+// Run with: TEST_NEO4J_URI=bolt://localhost:7687 TEST_NEO4J_AUTH=neo4j/… pnpm test:integration
 // Uses its own driver (the app's NEO4J_URI is forced empty for hermeticity) and namespaces all
 // nodes under a random projectId, DETACH DELETEing them afterwards.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { randomUUID } from "node:crypto";
-import neo4j, { type Driver } from "neo4j-driver";
+import { type Driver } from "neo4j-driver";
+import { testNeo4jDriver } from "./neo4j-test-driver.js";
 import { computeWeather, pairBrightness } from "../../src/lib/social-weather.js";
 
 const uri = process.env.TEST_NEO4J_URI;
@@ -31,10 +32,7 @@ describe.runIf(!!uri)("weather cypher (live graph)", () => {
   }
 
   beforeAll(async () => {
-    driver = neo4j.driver(
-      uri!,
-      neo4j.auth.basic(process.env.TEST_NEO4J_USER ?? "neo4j", process.env.TEST_NEO4J_PASSWORD ?? ""),
-    );
+    driver = testNeo4jDriver();
     await seedEdge(u[0]!, u[1]!, 1.0, 0);   // fresh full-warmth comment
     await seedEdge(u[0]!, u[1]!, 1.0, 30);  // one warmth half-life old → contributes 0.5
     await seedEdge(u[2]!, u[1]!, -1.0, 0);  // fresh friction
@@ -99,10 +97,7 @@ describe.runIf(!!uri)("weather cypher — FRICTION fold + age cutoff (live graph
   }
 
   beforeAll(async () => {
-    driver = neo4j.driver(
-      uri!,
-      neo4j.auth.basic(process.env.TEST_NEO4J_USER ?? "neo4j", process.env.TEST_NEO4J_PASSWORD ?? ""),
-    );
+    driver = testNeo4jDriver();
     // Pair u0→u1: warm INTERACTED (W=1) AND a fresh report (FRICTION weight 1) — the additive fold.
     await seedInteracted(projectId, u[0]!, u[1]!, 1.0, 0);
     await seedFriction(projectId, u[0]!, u[1]!, 1.0, 0);
