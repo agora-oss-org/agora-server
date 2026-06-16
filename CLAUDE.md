@@ -277,84 +277,26 @@ Voyage/Anthropic calls); `match_content` is covered offline with synthetic vecto
 
 ## Database migrations (Drizzle)
 
-Schema lives in `apps/api/src/db/schema/*.ts`. `drizzle-kit generate` produces table DDL; anything
-Drizzle can't express is a **hand-written custom migration** in `server/drizzle/`, applied in
-journal order and written **idempotently** (`create extension if not exists`, `create or replace`,
-`drop trigger if exists` before create):
+Schema lives in `apps/api/src/db/schema/*.ts`, the single source of truth for tables. To change it:
+edit `schema/*.ts` → `pnpm db:generate` (drizzle-kit emits the table DDL) → `pnpm db:migrate:run`.
+Anything Drizzle can't express (triggers, functions, RLS, PostGIS, RPC) is a **hand-written custom
+migration** in `apps/api/drizzle/`, applied in journal order and written **idempotently** (`create
+… if not exists`, `create or replace`, `drop trigger if exists` before create).
 
-- `0000_init` — extensions (vector/postgis/pgcrypto, prepended) + enums + tables + btree indexes
-- `0001_postgis` — `geography(Point,4326)` columns + GIN/GiST/IVFFlat indexes (kept out of TS schema)
-- `0002_triggers` — denormalized counts + reputation
-- `0003_functions` — `toggle_reaction`, `hot_score`/`refresh_entity_score`, `fetch_comment_thread`, `match_content` (semantic search; later given visibility args by `0019`)
-- `0004_rls` — enable RLS on all tables (deny-all backstop)
-- `0005_refresh_tokens` — token rotation table (auth)
-- `0006_message_report_enum` — extend `reaction_target` with `message` (chat-message reports)
-- `0007_embeddings_1024` — `entity_embeddings.embedding` → `vector(1024)` (Voyage voyage-3.5)
-- `0008_rls_public_read` — public SELECT policies (entities/comments/spaces/rules/follows/reactions); writes + private tables stay deny-all; `profiles` not exposed (column leak)
-- `0017_rls_self_access` — (1) enablement backstop: dynamic guard enables RLS on every public base
-  table (future tables deny-all by default); (2) `authenticated` self-read policies — a signed-in
-  user reads only their own private rows (inbox/collections/connections/oauth/reports/uploads/space
-  memberships + member-scoped conversations/messages/reactions). Maps `auth.uid()`→profiles via two
-  `SECURITY DEFINER` helpers in a non-exposed `private` schema. No write policies (server-only).
-- `0018_…moderation_config` — `projects.moderation_config jsonb` (once held the `hide` vs
-  `placeholder` removed-content behavior; now unused — removed content is always hidden, the column
-  is kept only to avoid a migration).
-- `0019_rpc_visibility` — pushes read-path visibility **into SQL**: `space_readable(space, viewer)`
-  predicate; `fetch_comment_thread(…, p_hide_removed)` prunes removed comments **and their subtrees**
-  in the recursive CTE; `match_content(…, p_viewer, p_privileged, p_hide_removed)` filters semantic-
-  search hits by space-readability + chat membership + moderation status (operators bypass).
-- `0020_…` — `moderation_analyses` table + `moderation_verdict` enum (allow/block/review): the
-  `services/scorer` service's automated-moderation audit trail + AI-flag queue.
-- `0021_…` — (added `projects.moderation_webhook_url` + `moderation_webhook_secret` for the old
-  per-project moderation notifier; **dropped again by `0035`** — `services/scorer` uses pgmq, not a
-  webhook, so the columns are dead. See `docs/SCORER.md`.)
-- `0022_…` — `projects.moderator_config` jsonb: per-project moderator tuning (`autoActionThreshold`
-  + LLM provider config) that `services/scorer` overlays on its env defaults (admin Settings → Moderator).
-- `0023_…` — `moderation_analyses.prompt_tokens` + `completion_tokens`: per-assessment LLM token usage,
-  summed by the moderator's `GET /moderation/stats` for the dashboard's automated-moderation metrics.
-- `0024_…` — `community_stats_hourly`: hourly community-health rollup (one row/project/hour) powering
-  the operator-only Community dashboard (`lib/community-stats.ts`).
-- `0025_…` — steward conflict-resolution: `project_stewards` (the steward grant) + `steward_cases` +
-  `steward_case_events` (+ `steward_case_state` / `steward_case_outcome` / `steward_case_event_kind` enums).
-- `0026_…` — `user_suspensions.profile_id` btree index: the suspension-enforcement lookup that now runs
-  on every authenticated request (`lib/suspensions.ts` `hasActiveSuspension`).
-- `0027_…` — **`services/scorer` pgmq enqueue**: `create extension pgmq` + the `scorer_jobs` queue +
-  `enqueue_scorer_job()` trigger fn, attached as AFTER INSERT / **content-gated** UPDATE triggers on
-  `entities`/`comments` (the UPDATE gate skips moderation/count writes so the write-back
-  doesn't re-enqueue). Replaces the moderation webhook notifier; see `docs/SCORER.md`. (Chat messages are
-  **not** scored — secure chat is E2E-encrypted, so the server has no plaintext to classify.)
-- `0028_…` — **`services/scorer` analysis dedup**: `moderation_analyses.source_msg_id` (bigint) + a
-  partial unique index. The worker stamps the pgmq message id and inserts `ON CONFLICT (source_msg_id)
-  DO NOTHING`, so pgmq's at-least-once redelivery can't create duplicate analysis rows (kept out of the
-  Drizzle schema like the `0001_postgis` columns — only the scorer's raw-SQL worker uses it).
-- `0029`–`0032_…` — incremental schema fixes and the LISTEN/NOTIFY wake-up trigger
-  (`pg_notify` on enqueue so the scorer drains instantly; `SCORER_LISTEN_DATABASE_URL` must be a
-  direct `:5432` DSN — LISTEN does not work over the transaction pooler).
-- `0033_…` — LISTEN/NOTIFY migration (scorer wake-up via `pg_notify`).
-- `0034_…` — `collection_entities` same-project constraint (cross-tenant isolation fix).
-- `0035_…` — drop the dead `moderation_webhook_url` / `moderation_webhook_secret` columns (added by
-  `0021`, dropped here — scorer uses pgmq, not webhooks).
-- `0036_…` — **scorer graph v2 enqueue**: `reactions` (insert/delete/retype-gated) + `follows`
-  (insert/delete) triggers; routes `reaction`/`follow` jobs onto `scorer_jobs` with a `kind`
-  discriminator. Self-interactions and chat-message-target reactions are skipped at trigger time.
-- `0037_…` — **scorer `CONNECTED` edge**: `connections` triggers gated on the `pending→connected→
-  declined` lifecycle — edge created on accept/direct-connect, deleted on disconnect (row DELETE).
-- `0038_…` — `projects.social_config` jsonb: the social-graph privacy tier + per-surface enabled
-  flags (`graphEnabled`, `weatherEnabled`, `neighborhoodEnabled`, warmth/friction half-lives).
-  Tier defaults enforced at write (forbidden flags rejected) and clamped at read. Migration name is
-  `0038_typical_speed_demon` (Drizzle auto-name).
-- `0039_…` — **scorer `FRICTION` edge enqueue**: `AFTER INSERT ON reports` trigger projects a
-  directed `(reporter)→[:FRICTION]→(subject)` job; MERGE-keyed on report id (idempotent).
-- `0041`/`0042`/`0043_…` — **native auth provider** (managed-hosting sub-project A): `0041` adds
-  `auth_credentials` + `auth_email_tokens` (Agora-owned password store; argon2id hashes, hashed
-  single-use confirm/reset tokens) and `projects.auth_provider` enum (`supabase` default | `native`);
-  `0042` adds `auth_credentials.updated_at`; `0043` enables RLS deny-all on both tables (the `0017`
-  backstop is one-time, so new tables need explicit RLS). Provider selected per-project via
-  `lib/auth/` (`getAuthProvider`). (`0040` is the separate `social_constellation` feature.)
+**The per-migration history is NOT mirrored here** — read `apps/api/drizzle/` (each file's header)
+and `CHANGELOG.md` for what each migration did. Only the non-obvious conventions live here:
 
-To change schema: edit `src/db/schema/*.ts` → `db:generate` → `db:migrate`. Edit triggers/functions/
-RLS/PostGIS by hand in their custom migration files. (Apply with `db:migrate:run` — the runtime
-migrator the container uses; its journal is the `drizzle` schema.)
+- **Apply with `db:migrate:run`, not `db:migrate`** — drizzle-kit's journal schema is misconfigured;
+  `db:migrate:run` is the runtime migrator the container uses (journal lives in the `drizzle` schema).
+- **Some columns are deliberately kept out of the TS schema** and exist only in custom SQL — PostGIS
+  `geography` columns + their indexes (`0001`), and the scorer's `moderation_analyses.source_msg_id`
+  dedup column (`0028`). Don't "fix" the Drizzle schema to add them.
+- **RLS enablement is one-time** (the `0017` dynamic guard enables deny-all on every *existing* base
+  table). A brand-new table is **not** covered retroactively — it must ship its own explicit RLS
+  deny-all in the migration that creates it (see `auth_credentials`/`auth_email_tokens`).
+- **Read-path visibility lives in SQL** for recursive/semantic reads: `fetch_comment_thread(…,
+  p_hide_removed)` and `match_content(…, p_viewer, p_privileged, p_hide_removed)` (`0019`). New
+  recursive/search reads over moderatable content go through these, not raw queries.
 
 ## Handler conventions (don't break these)
 
