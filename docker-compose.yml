@@ -107,7 +107,7 @@ services:
 
   # Neo4j for relationship-edge writes. FOUNDATION ONLY — the graph schema is out of scope.
   neo4j:
-    image: neo4j:5-community
+    image: graphstack/dozerdb:5.26.3.0
     environment:
       NEO4J_AUTH: ${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:-please_change_me}
     ports:
