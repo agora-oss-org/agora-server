@@ -6,3 +6,7 @@ dist/
 .env.local
 *.log
 .DS_Store
+
+# Neo4j — runtime data (Docker volume) and plugin jars (downloaded on setup, not tracked)
+neo4j/data/
+neo4j/plugins/*.jar

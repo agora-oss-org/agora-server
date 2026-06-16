@@ -146,8 +146,9 @@ Under the hood the **scorer** owns the write side (it projects `INTERACTED` / `F
 `FRICTION` edges into Neo4j off the same pgmq queue it already scores content on), and `@agora/api`
 owns the read side (`/v7/:projectId/social/*`, member/operator-gated, computed live or cached with band
 hysteresis). Full design, ethics, and threat model:
-**[`docs/SOCIAL-GRAPH.md`](docs/SOCIAL-GRAPH.md)** (the consolidation plan) and
-**[`docs/AGORA-SOCIAL.md`](docs/AGORA-SOCIAL.md)** (the condensed design corpus).
+**[`docs/SOCIAL-GRAPH.md`](docs/SOCIAL-GRAPH.md)** (the consolidation plan),
+**[`docs/AGORA-SOCIAL.md`](docs/AGORA-SOCIAL.md)** (the condensed design corpus), and
+**[`docs/DOZERDB.md`](docs/DOZERDB.md)** (DozerDB + OpenGDS setup — plugins, memory tuning, TLS).
 
 ## The contract is the constraint
 
@@ -180,7 +181,8 @@ agora/
 │   ├── MODELS.md            # field-level response shapes (drive both the API and the schema)
 │   ├── SECURE_CHAT.md       # the end-to-end-encrypted chat design + reference
 │   ├── STEWARDSHIP.md       # the conflict-resolution caseload design
-│   └── SOCIAL-GRAPH.md      # the optional Neo4j social-graph layer ("the Garden")
+│   ├── SOCIAL-GRAPH.md      # the optional Neo4j social-graph layer ("the Garden")
+│   └── DOZERDB.md           # DozerDB + OpenGDS setup (plugins, memory tuning, TLS)
 ├── packages/
 │   └── contract/            # @agora-server/contract — shared API types + zod schemas
 └── apps/

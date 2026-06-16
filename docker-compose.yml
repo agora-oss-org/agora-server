@@ -29,11 +29,10 @@ services:
     restart: unless-stopped
 
   # ── services/scorer ──────────────────────────────────────────────────────────────────────────
-  # Python scoring/moderation subsystem — REPLACES @agora/moderator. Async, post-publish: a Postgres
-  # trigger (migration 0026) enqueues jobs on Supabase pgmq; the worker scores with two RoBERTa model
-  # servers in parallel, cascades borderline toxicity to Claude Haiku, writes removals back through the
-  # api, records moderation_analyses (the admin AI-flag queue), and MERGEs a relationship edge into
-  # Neo4j. See docs/SCORER.md. FOUNDATION: ML/pgmq/Neo4j/Haiku I/O are stubs in this pass.
+  # Python content-moderation + social-graph subsystem. Async, post-publish: Postgres triggers enqueue
+  # jobs on pgmq; the worker (1) scores content with two RoBERTa classifiers + Claude Haiku escalation
+  # and writes removals back through the API, and (2) projects INTERACTED/FOLLOWS/CONNECTED/FRICTION
+  # social-graph edges into Neo4j. See docs/SCORER.md + docs/SOCIAL-GRAPH.md.
 
   # RoBERTa toxicity classifier (model warm in RAM). Pinned to a single dedicated core to avoid
   # contention with the relationship server. cpuset values are HOST-SPECIFIC — adjust to your core layout.
@@ -105,9 +104,13 @@ services:
     init: true
     restart: unless-stopped
 
-  # Neo4j for relationship-edge writes. FOUNDATION ONLY — the graph schema is out of scope.
+  # Neo4j / DozerDB — social-graph database. The scorer writes INTERACTED/FOLLOWS/CONNECTED/FRICTION
+  # edges; the API reads them for GET /social/weather and GET /social/neighborhood.
+  # env_file passes all NEO4J_* vars (APOC, memory, TLS) from the root .env automatically.
+  # NEO4J_AUTH is constructed here from the individual user/pass vars (can't come from env_file as-is).
   neo4j:
     image: graphstack/dozerdb:5.26.3.0
+    env_file: .env
     environment:
       NEO4J_AUTH: ${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:-please_change_me}
     ports:
@@ -115,6 +118,9 @@ services:
       - "7687:7687"
     volumes:
       - neo4j-data:/data
+      - ./neo4j/plugins:/plugins    # OpenGDS jar (open-gds-2.12.0.jar) — loaded at startup
+      # Mount SSL certs here when NEO4J_dbms_connector_bolt_tls_level=REQUIRED (production).
+      # - ./deploy/neo4j/ssl:/ssl:ro
     init: true
     restart: unless-stopped
 

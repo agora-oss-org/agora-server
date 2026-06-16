@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **DozerDB + OpenGDS setup** (`docs/DOZERDB.md`): documented the Neo4j graph database configuration
+  for the social-graph layer. DozerDB is the fully open-source Neo4j 5 distribution that ships APOC
+  and OpenGDS without an Enterprise license. Documents the two-mechanism plugin loading (APOC via
+  `NEO4J_PLUGINS` auto-download; OpenGDS via the `./neo4j/plugins/` jar mount at `/plugins`),
+  environment variables, memory-tuning guide, TLS production path, and verify commands. Updated
+  `docker-compose.yml` to pass all `NEO4J_*` config vars via `env_file: .env`; scoped procedure
+  security to `gds.*,apoc.*` (was `*`). OpenGDS 2.12.0 jar checked in to `neo4j/plugins/`.
 - **Neighborhood — the personal Garden lens** (docs/AGORA-SOCIAL.md, SOCIAL-GRAPH.md §3):
   `GET /v7/:projectId/social/neighborhood` returns the **caller's own ties**, each with its **dyadic**
   brightness `B(me, them)` and the identity to render it. **By default a tie is a deliberate one — a
