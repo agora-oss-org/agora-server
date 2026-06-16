@@ -18,6 +18,7 @@ import {
 import { notifyOnSpaceApproved } from "../lib/notifications.js";
 import * as webhooks from "../lib/webhooks.js";
 import { trackEvent } from "../lib/umami.js";
+import { isProjectAdmin } from "../lib/project-roles.js";
 
 type SpaceRow = typeof spaces.$inferSelect;
 type Membership = typeof spaceMembers.$inferSelect;
@@ -42,6 +43,9 @@ async function membershipOf(projectId: string, spaceId: string, userId: string):
 // Owner counts as admin. Returns the effective role or throws 403.
 async function requireSpaceRole(c: any, space: SpaceRow, roles: Array<"admin" | "moderator" | "member">): Promise<"admin" | "moderator" | "member"> {
   const uid = c.var.auth.userId as string;
+  // Project admins/owners/operators satisfy any space-role check (operator ⊇ owner ⊇ admin ⊇ steward ⊇
+  // member — CLAUDE.md); they manage spaces they don't own from the admin Spaces section.
+  if (c.var.auth && isProjectAdmin(c.var.auth)) return "admin";
   if (space.userId === uid) return "admin";
   const m = await membershipOf(c.var.projectId, space.id, uid);
   if (!m || m.status !== "active" || !roles.includes(m.role)) {

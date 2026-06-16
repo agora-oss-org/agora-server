@@ -10,12 +10,15 @@ import { requireAuth } from "../middleware/auth.js";
 import { env } from "../lib/env.js";
 import { parseBody } from "../lib/validation.js";
 import {
-  SOCIAL_ANALYTICS_REPORTS, socialAnalyticsRecomputeSchema, type SocialAnalyticsReport,
+  SOCIAL_ANALYTICS_REPORTS, socialAnalyticsRecomputeSchema, readReceiptsToggleSchema,
+  type SocialAnalyticsReport,
 } from "@agora-server/contract";
 import { getSocialConfig } from "../lib/social-config.js";
 import {
   ANALYTICS_REPORT_FLAG, getEngagement, getInfluence, getSilos, rollupAnalytics,
 } from "../lib/social-analytics.js";
+import { getReadReceiptsCoverage } from "../lib/social-read-receipts.js";
+import { logger } from "../lib/logger.js";
 import { buildRunningConfig } from "../lib/running-config.js";
 import { getOverview, umamiReportingEnabled, type UmamiSite } from "../lib/umami-reporting.js";
 import { getServerResources } from "../lib/server-resources.js";
@@ -323,4 +326,35 @@ export const adminRoutes = new Hono<{ Variables: Variables }>()
       ...(enabled.includes("silos") ? { silos: await getSilos(projectId) } : {}),
       ...(enabled.includes("engagement") ? { engagement: await getEngagement(projectId) } : {}),
     });
+  })
+  // ── Read receipts (operator-only, corporate-tier) — docs/SOCIAL-GRAPH.md §4. Live Postgres coverage
+  // over read-receipts-enabled spaces (no snapshot, no cron, no graph). Gate: operator first, then the
+  // corporate readReceiptsAllowed flag — NOT graphEnabled (receipts are independent of Neo4j).
+  .get("/social/read-receipts", requireAuth, async (c) => {
+    if (!c.var.auth!.isOperator) throw Errors.forbidden("admin/operator-required", "Operator access required");
+    const cfg = await getSocialConfig(c.var.projectId);
+    if (!cfg.readReceiptsAllowed) {
+      throw Errors.badRequest("social/read-receipts-disabled", "Read receipts are not enabled for this project");
+    }
+    return c.json(await getReadReceiptsCoverage(c.var.projectId));
+  })
+  // PATCH /admin/social/read-receipts/spaces/:spaceId { enabled } — operator flips a single space's
+  // per-space opt-in. Kept in the /admin/social namespace (not the member space PATCH) so enabling
+  // tracking stays an operator+corporate action ("the operator chooses; the platform enforces").
+  .patch("/social/read-receipts/spaces/:spaceId", requireAuth, async (c) => {
+    if (!c.var.auth!.isOperator) throw Errors.forbidden("admin/operator-required", "Operator access required");
+    const cfg = await getSocialConfig(c.var.projectId);
+    if (!cfg.readReceiptsAllowed) {
+      throw Errors.badRequest("social/read-receipts-disabled", "Read receipts are not enabled for this project");
+    }
+    const { enabled } = parseBody(readReceiptsToggleSchema, await c.req.json().catch(() => ({})), "read-receipts");
+    const spaceId = c.req.param("spaceId");
+    const [updated] = await db
+      .update(spaces)
+      .set({ readReceiptsEnabled: enabled })
+      .where(and(eq(spaces.projectId, c.var.projectId), eq(spaces.id, spaceId), isNull(spaces.deletedAt)))
+      .returning({ id: spaces.id, readReceiptsEnabled: spaces.readReceiptsEnabled });
+    if (!updated) throw Errors.notFound("spaces/not-found", "Space not found");
+    logger.info({ projectId: c.var.projectId, spaceId, enabled }, "admin: read receipts toggled");
+    return c.json({ spaceId: updated.id, readReceiptsEnabled: updated.readReceiptsEnabled });
   });
