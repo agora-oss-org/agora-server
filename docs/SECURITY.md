@@ -148,8 +148,13 @@ How Agora is *designed* to be secure — useful context for both operators and r
   family), a 30-second grace window for racing tabs, SHA-256-hashed storage, and a cron that purges
   expired tokens. External identity (`verify-external-user`) uses **RS256 with per-project public keys**
   and pinned audience + issuer.
-- **Authorization tiers.** `operator` (env allowlist, project-wide) and `steward` (DB-granted, scoped to
-  the conflict-resolution routes) are stamped into the JWT and read back per request — no extra DB hit.
+- **Authorization tiers.** A hierarchy `operator ⊇ owner ⊇ admin ⊇ steward ⊇ member`. The deployment
+  **platform-operator** (env allowlist, cross-tenant) plus DB-granted **per-project** `owner`/`admin`/`steward`
+  (`project_roles`) are stamped into the JWT (`operator`/`powner`/`padmin`/`steward` claims) and read back
+  per request — no extra DB hit. Within-project powers (moderation, reports, suspensions, project config,
+  private-space access) accept owner/admin; **deployment** powers (running config, DB size, server
+  resources, the shared Umami key) stay operator-only. Role grants take effect on the user's next token
+  refresh (see the revocation-latency limitation below).
 - **Internal endpoints & webhooks** (cron, moderation apply, webhook signatures) are gated by secrets
   compared in **constant time** (`crypto.timingSafeEqual`); webhooks are **HMAC-SHA256 signed** with a
   timestamp, in both directions.
@@ -178,6 +183,7 @@ the areas we're actively looking into; contributions welcome.
 | **`ACCESS_TOKEN_SECRET` strength** | ✅ **Fixed.** Env validation now requires `min(32)` (was `min(1)`); `openssl rand -base64 48` documented above. | — |
 | **JWT verify algorithm pinning** | ✅ **Fixed.** `algorithms: ["HS256"]` pinned on the access-token + socket.io verifies (and the moderator's); the external-auth verify pins `["RS256"]`. | — |
 | **Security headers** | ✅ **Addressed at the edge.** The bundled Caddy proxy sends HSTS + `X-Content-Type-Options` + `Referrer-Policy` + `X-Frame-Options` (and strips `Server`). The API itself still sets none. | Bring-your-own proxy must add them; a strict app-specific CSP is the remaining tuning (commented starting point in the Caddyfile). |
+| **Role/privilege revocation latency** | ⚠️ **Known gap.** Authorization tiers (operator/owner/admin/steward) are stamped into the short-lived access JWT and read per request with **no DB hit** (by design — fast, stateless). Revoking a role deletes the grant and drops it on the user's next token **refresh**, but an **already-minted access token keeps its elevated claims until it expires — up to ~30 min** (`ACCESS_TOKEN` TTL). So a **revoked admin/owner retains access for that window**; for `owner` it also includes suspension-immunity. The cross-replica role cache adds ≤30s on top (it's in-process, not the shared Redis — which today serves only rate limiting). This is the same tradeoff already accepted for the `operator`/`steward` flags, but more consequential for admin/owner. **No store is consulted on the request hot path**, so neither the cache nor Redis is the dominant factor — the live JWT is. | Make revoke bite immediately: **(a)** `revokeAllForProfile()` on owner/admin revoke (kills refresh-extension; cheap, no infra, ~90% of the value), and/or **(b)** a per-request token-version / `roles_epoch` check (true immediate revocation — the one place a shared fast store like Redis would earn its keep on the auth path). Interim mitigation: shorten `ACCESS_TOKEN` TTL. Tracked for the managed-hosting **isolation-hardening** pass (sub-project G). |
 | **CORS default** | Defaults to `*` if unset. | Documented; consider failing/​warning loudly on a wildcard in production mode. |
 | **RLS write policies** | None by design (writes are server-only). Safe today, but means RLS offers no second line for writes if the app boundary is bypassed. | Tracked as a deliberate trade-off; revisit if direct-DB access patterns are ever introduced. |
 

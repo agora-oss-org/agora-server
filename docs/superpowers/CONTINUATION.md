@@ -127,6 +127,16 @@ isolation hardening). Out-of-scope B follow-ups: eventually drop the deprecated 
 table (idempotent migration, `when` above journal max); an ownership-transfer UX (grant-owner +
 step-down) on top of the existing grant/revoke.
 
+**⚠️ Security item deferred to G (documented in `docs/SECURITY.md` → Known limitations):**
+**role-revocation latency** — a revoked admin/owner keeps access until their access JWT expires
+(~30 min `ACCESS_TOKEN` TTL), because tiers are stamped into the stateless JWT and read per request
+with no DB hit. Decided 2026-06-16 NOT to fix in B (Jenova's call — document for later). Fix options
+when G tackles it: (a) `revokeAllForProfile()` on owner/admin revoke (cheap, kills refresh-extension),
+and/or (b) a per-request token-version / `roles_epoch` check for true immediate revocation (where a
+shared Redis store would finally earn a place on the auth path — auth uses **no** Redis today; it's
+rate-limiting only). The B adversarial review (4 lenses) otherwise found the authz surface clean; the
+last-owner TOCTOU + DELETE UUID-validation were the only code fixes (commit `d070d85`).
+
 ## Pointers
 - A spec: `docs/superpowers/specs/2026-06-16-auth-provider-abstraction-design.md`
 - Plan: `~/.claude/plans/effervescent-floating-pearl.md`
