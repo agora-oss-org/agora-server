@@ -21,10 +21,11 @@ from scorer.db import (
     get_moderator_config,
     resolve_comment_interaction,
     resolve_reaction_interaction,
+    resolve_report_friction,
 )
 from scorer.haiku import assess as haiku_assess
 from scorer.logging import get_logger, log
-from scorer.models import ConnectionJob, FollowJob, ReactionJob, ScoreJob
+from scorer.models import ConnectionJob, FollowJob, FrictionJob, ReactionJob, ScoreJob
 from scorer.reason import moderation_reason_text
 from scorer.reaction_sentiment import reaction_sentiment
 
@@ -206,6 +207,28 @@ async def process_connection_job(settings: Settings, job: ConnectionJob) -> None
         )
 
 
+async def process_friction_job(settings: Settings, job: FrictionJob) -> None:
+    """Project a user report onto the Layer-2 FRICTION graph (no scoring — the edge weight is a
+    constant). Resolves the reporter (actor) and the reported content's author (subject); skips a
+    chat-message report, an anonymous report, or a self-report. Append-only — there is no remove."""
+    ctx = await resolve_report_friction(settings, job.report_id)
+    if ctx is None:
+        log(logger, "warn", "report gone/unresolvable (skipping)", report_id=job.report_id)
+        return
+    if ctx.recipient_id is None or ctx.actor_id is None:
+        # chat-message report (out of scope), anonymous reporter, or the target's author is gone — no edge.
+        log(logger, "debug", "report has no graph endpoints (skipping)", report_id=job.report_id)
+        return
+    await neo4j_writer.write_friction_edge(
+        settings,
+        project_id=job.project_id,
+        actor_id=ctx.actor_id,
+        recipient_id=ctx.recipient_id,
+        source_id=job.report_id,
+        kind=ctx.kind,
+    )
+
+
 def job_kind(message: dict[str, Any]) -> str:
     """The job-kind discriminator; a pre-v2 payload without it is a ``content`` job."""
     return str(message.get("kind", "content"))
@@ -220,5 +243,7 @@ async def dispatch_job(settings: Settings, message: dict[str, Any], msg_id: int 
         await process_follow_job(settings, FollowJob(**message))
     elif kind == "connection":
         await process_connection_job(settings, ConnectionJob(**message))
+    elif kind == "friction":
+        await process_friction_job(settings, FrictionJob(**message))
     else:
         await process_job(settings, ScoreJob(**message), msg_id=msg_id)

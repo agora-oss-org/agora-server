@@ -9,7 +9,7 @@ from __future__ import annotations
 import pytest
 
 from scorer.config import Settings
-from scorer.db import InteractionContext
+from scorer.db import FrictionContext, InteractionContext
 from worker import neo4j_writer, pipeline
 
 
@@ -18,6 +18,7 @@ def test_job_kind_defaults_to_content() -> None:
     assert pipeline.job_kind({"kind": "reaction", "op": "add"}) == "reaction"
     assert pipeline.job_kind({"kind": "follow", "op": "remove"}) == "follow"
     assert pipeline.job_kind({"kind": "connection", "op": "add"}) == "connection"
+    assert pipeline.job_kind({"kind": "friction", "op": "add"}) == "friction"
 
 
 def _patch_writers(monkeypatch: pytest.MonkeyPatch) -> dict:
@@ -41,12 +42,16 @@ def _patch_writers(monkeypatch: pytest.MonkeyPatch) -> dict:
     async def del_connection(settings, **kw):  # noqa: ANN001
         rec["del_connection"] = kw
 
+    async def friction(settings, **kw):  # noqa: ANN001
+        rec["friction"] = kw
+
     monkeypatch.setattr(neo4j_writer, "write_interaction_edge", interaction)
     monkeypatch.setattr(neo4j_writer, "delete_interaction_edge", del_interaction)
     monkeypatch.setattr(neo4j_writer, "write_follow_edge", follow)
     monkeypatch.setattr(neo4j_writer, "delete_follow_edge", del_follow)
     monkeypatch.setattr(neo4j_writer, "write_connection_edge", connection)
     monkeypatch.setattr(neo4j_writer, "delete_connection_edge", del_connection)
+    monkeypatch.setattr(neo4j_writer, "write_friction_edge", friction)
     return rec
 
 
@@ -115,3 +120,61 @@ async def test_connection_add_and_remove_route_to_writers(monkeypatch: pytest.Mo
         {"kind": "connection", "op": "remove", "requesterId": "a1", "addresseeId": "b1", "projectId": "p1"},
     )
     assert rec["del_connection"] == {"requester_id": "a1", "addressee_id": "b1"}
+
+
+async def test_friction_add_merges_edge_reporter_to_subject(monkeypatch: pytest.MonkeyPatch) -> None:
+    rec = _patch_writers(monkeypatch)
+
+    async def fake_resolve(settings, report_id):  # noqa: ANN001
+        return FrictionContext(actor_id="reporter1", recipient_id="subject1", kind="report")
+
+    monkeypatch.setattr(pipeline, "resolve_report_friction", fake_resolve)
+    await pipeline.dispatch_job(
+        Settings(), {"kind": "friction", "op": "add", "reportId": "rep1", "projectId": "p1"}
+    )
+    assert rec["friction"]["actor_id"] == "reporter1"
+    assert rec["friction"]["recipient_id"] == "subject1"
+    assert rec["friction"]["source_id"] == "rep1"  # keyed on the report id → idempotent under redelivery
+    assert rec["friction"]["kind"] == "report"
+    assert rec["friction"]["project_id"] == "p1"
+
+
+async def test_friction_on_message_target_writes_no_edge(monkeypatch: pytest.MonkeyPatch) -> None:
+    rec = _patch_writers(monkeypatch)
+
+    async def fake_resolve(settings, report_id):  # noqa: ANN001
+        # chat-message report → subject unresolved (out of scope)
+        return FrictionContext(actor_id="reporter1", recipient_id=None, kind="report")
+
+    monkeypatch.setattr(pipeline, "resolve_report_friction", fake_resolve)
+    await pipeline.dispatch_job(
+        Settings(), {"kind": "friction", "op": "add", "reportId": "rep1", "projectId": "p1"}
+    )
+    assert "friction" not in rec
+
+
+async def test_friction_anonymous_reporter_writes_no_edge(monkeypatch: pytest.MonkeyPatch) -> None:
+    rec = _patch_writers(monkeypatch)
+
+    async def fake_resolve(settings, report_id):  # noqa: ANN001
+        # reporter_id is null (anonymous report) → no actor
+        return FrictionContext(actor_id=None, recipient_id="subject1", kind="report")
+
+    monkeypatch.setattr(pipeline, "resolve_report_friction", fake_resolve)
+    await pipeline.dispatch_job(
+        Settings(), {"kind": "friction", "op": "add", "reportId": "rep1", "projectId": "p1"}
+    )
+    assert "friction" not in rec
+
+
+async def test_friction_gone_report_writes_no_edge(monkeypatch: pytest.MonkeyPatch) -> None:
+    rec = _patch_writers(monkeypatch)
+
+    async def fake_resolve(settings, report_id):  # noqa: ANN001
+        return None  # report row already deleted
+
+    monkeypatch.setattr(pipeline, "resolve_report_friction", fake_resolve)
+    await pipeline.dispatch_job(
+        Settings(), {"kind": "friction", "op": "add", "reportId": "rep1", "projectId": "p1"}
+    )
+    assert "friction" not in rec
