@@ -33,10 +33,10 @@ async def get_driver(settings: Settings) -> Optional[Any]:
     if _driver is None:
         from neo4j import AsyncGraphDatabase  # lazy import
 
-        # neo4j_enabled() above guarantees these are set; assert narrows the types for mypy.
-        assert settings.neo4j_uri and settings.neo4j_user and settings.neo4j_password
+        creds = settings.neo4j_credentials()
+        assert settings.neo4j_uri and creds  # neo4j_enabled() above guarantees this
         _driver = AsyncGraphDatabase.driver(
-            settings.neo4j_uri, auth=(settings.neo4j_user, settings.neo4j_password)
+            settings.neo4j_uri, auth=creds
         )
         log(logger, "info", "neo4j driver created")
     return _driver

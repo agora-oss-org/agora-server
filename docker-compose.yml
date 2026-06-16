@@ -106,20 +106,31 @@ services:
 
   # Neo4j / DozerDB — social-graph database. The scorer writes INTERACTED/FOLLOWS/CONNECTED/FRICTION
   # edges; the API reads them for GET /social/weather and GET /social/neighborhood.
-  # env_file passes all NEO4J_* vars (APOC, memory, TLS) from the root .env automatically.
-  # NEO4J_AUTH is constructed here from the individual user/pass vars (can't come from env_file as-is).
   neo4j:
     image: graphstack/dozerdb:5.26.3.0
-    env_file: .env
+    # No env_file here — Neo4j maps every NEO4J_* var to a config key, so passing NEO4J_URI
+    # (which the API/scorer use to connect) would crash it with "Unrecognized setting: URI".
+    # NEO4J_AUTH is the one shared var: same "user/password" format on both sides.
     environment:
-      NEO4J_AUTH: ${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:-please_change_me}
+      NEO4J_AUTH: ${NEO4J_AUTH:-neo4j/please_change_me}
+      NEO4J_ACCEPT_LICENSE_AGREEMENT: ${NEO4J_ACCEPT_LICENSE_AGREEMENT:-yes}
+      NEO4J_initial_dbms_default__database: ${NEO4J_initial_dbms_default__database:-neo4j}
+      NEO4J_PLUGINS: '["apoc"]'
+      NEO4J_apoc_export_file_enabled: ${NEO4J_apoc_export_file_enabled:-true}
+      NEO4J_apoc_import_file_enabled: ${NEO4J_apoc_import_file_enabled:-true}
+      NEO4J_dbms_security_procedures_unrestricted: ${NEO4J_dbms_security_procedures_unrestricted:-gds.*,apoc.*}
+      NEO4J_dbms_security_procedures_allowlist: ${NEO4J_dbms_security_procedures_allowlist:-gds.*,apoc.*}
+      NEO4J_server_memory_heap_initial__size: ${NEO4J_server_memory_heap_initial__size:-512m}
+      NEO4J_server_memory_heap_max__size: ${NEO4J_server_memory_heap_max__size:-1024m}
+      NEO4J_server_memory_pagecache_size: ${NEO4J_server_memory_pagecache_size:-256m}
+      # TLS: configure via NEO4J_dbms_ssl_policy_bolt_* when TLS is needed (production).
     ports:
       - "7474:7474"
       - "7687:7687"
     volumes:
       - neo4j-data:/data
       - ./neo4j/plugins:/plugins    # OpenGDS jar (open-gds-2.12.0.jar) — loaded at startup
-      # Mount SSL certs here when NEO4J_dbms_connector_bolt_tls_level=REQUIRED (production).
+      # Mount SSL certs here when NEO4J_dbms_ssl_policy_bolt_enabled=true (production).
       # - ./deploy/neo4j/ssl:/ssl:ro
     init: true
     restart: unless-stopped

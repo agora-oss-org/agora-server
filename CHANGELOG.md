@@ -12,9 +12,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   for the social-graph layer. DozerDB is the fully open-source Neo4j 5 distribution that ships APOC
   and OpenGDS without an Enterprise license. Documents the two-mechanism plugin loading (APOC via
   `NEO4J_PLUGINS` auto-download; OpenGDS via the `./neo4j/plugins/` jar mount at `/plugins`),
-  environment variables, memory-tuning guide, TLS production path, and verify commands. Updated
-  `docker-compose.yml` to pass all `NEO4J_*` config vars via `env_file: .env`; scoped procedure
-  security to `gds.*,apoc.*` (was `*`). OpenGDS 2.12.0 jar checked in to `neo4j/plugins/`.
+  environment variables, memory-tuning guide, TLS production path, and verify commands. The `neo4j`
+  service in `docker-compose.yml` enumerates each valid `NEO4J_*` config var explicitly (it can **not**
+  use `env_file: .env` — Neo4j maps every `NEO4J_*` var to a config key, so the API/scorer's
+  `NEO4J_URI` would crash it with `Unrecognized setting: URI`); scoped procedure security to
+  `gds.*,apoc.*` (was `*`). The OpenGDS 2.12.0 jar is **gitignored** (`neo4j/plugins/*.jar`), downloaded
+  once per `docs/DOZERDB.md`.
+- **Single `NEO4J_AUTH` credential var** replacing `NEO4J_USER` + `NEO4J_PASSWORD` across the API
+  (`lib/env.ts`, `lib/neo4j.ts`), the scorer (`config.py` `neo4j_credentials()`, `neo4j.py`),
+  `docker-compose.yml`, and `.env.example` — the `user/password` string is now the one shared var
+  between the Neo4j container (its native `NEO4J_AUTH`) and both clients, passed straight through.
 - **Neighborhood — the personal Garden lens** (docs/AGORA-SOCIAL.md, SOCIAL-GRAPH.md §3):
   `GET /v7/:projectId/social/neighborhood` returns the **caller's own ties**, each with its **dyadic**
   brightness `B(me, them)` and the identity to render it. **By default a tie is a deliberate one — a

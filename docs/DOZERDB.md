@@ -59,7 +59,13 @@ curl -fsSL -o ./neo4j/plugins/open-gds-2.12.0.jar \
 
 ## Environment variables
 
-These live in the root `.env` and are passed to the `neo4j` container via `env_file: .env`.
+These are set in the `neo4j` service's `environment:` block in `docker-compose.yml`, pulling values
+from `.env` via `${VAR:-default}` substitution. The neo4j service does **not** use `env_file: .env`
+— Neo4j maps every `NEO4J_*` var to a config key, so passing `NEO4J_URI` (the connection URL used
+by the API/scorer) would crash it with `Unrecognized setting: URI`.
+
+`NEO4J_AUTH` is the one shared var: the same `user/password` string the API/scorer read from `.env`
+is passed straight through to Neo4j as its auth setting.
 
 | Variable | Value | Purpose |
 |---|---|---|
@@ -95,10 +101,10 @@ docker compose exec neo4j cypher-shell -u neo4j -p <password> "SHOW PROCEDURES Y
 
 ## TLS (production)
 
-Bolt TLS defaults to `DISABLED` in `.env` (dev-safe). For production:
+Bolt TLS is off by default (Neo4j 5.x dev-safe default). For production:
 
-1. Set `NEO4J_dbms_connector_bolt_tls_level=REQUIRED` in `.env`
-2. Uncomment and configure the `NEO4J_dbms_ssl_policy_bolt_*` vars
+1. Set `NEO4J_dbms_ssl_policy_bolt_enabled=true` in `.env`
+2. Configure the remaining `NEO4J_dbms_ssl_policy_bolt_*` vars
 3. Uncomment the SSL volume mount in `docker-compose.yml`:
    ```yaml
    - ./deploy/neo4j/ssl:/ssl:ro

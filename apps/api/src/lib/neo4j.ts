@@ -26,7 +26,9 @@ export function getNeo4j(): Driver | null {
   if (attempted) return driver;
   attempted = true;
   if (!env.NEO4J_URI) return null;
-  driver = neo4j.driver(env.NEO4J_URI, neo4j.auth.basic(env.NEO4J_USER, env.NEO4J_PASSWORD ?? ""), {
+  const [neo4jUser, ...rest] = (env.NEO4J_AUTH ?? "neo4j/").split("/");
+  const neo4jPassword = rest.join("/"); // preserve any slashes in the password
+  driver = neo4j.driver(env.NEO4J_URI, neo4j.auth.basic(neo4jUser!, neo4jPassword), {
     connectionAcquisitionTimeout: 5_000, // fail fast instead of hanging when Neo4j is down
   });
   logger.info("neo4j: social-graph read client enabled");

@@ -78,10 +78,9 @@ class Settings:
     poll_interval_ms: int = field(default_factory=lambda: _env_int("SCORER_POLL_INTERVAL_MS", 1000))
     visibility_timeout_s: int = field(default_factory=lambda: _env_int("SCORER_VISIBILITY_TIMEOUT_S", 60))
 
-    # Neo4j (foundation — graph schema out of scope). Unset → relationship-edge write is a no-op.
+    # Neo4j — social-graph write side. NEO4J_AUTH="user/password" (same var Neo4j container uses).
     neo4j_uri: str | None = field(default_factory=lambda: _env_str("NEO4J_URI"))
-    neo4j_user: str | None = field(default_factory=lambda: _env_str("NEO4J_USER"))
-    neo4j_password: str | None = field(default_factory=lambda: _env_str("NEO4J_PASSWORD"))
+    neo4j_auth: str | None = field(default_factory=lambda: _env_str("NEO4J_AUTH"))
 
     def write_back_enabled(self) -> bool:
         return bool(self.api_base_url and self.moderation_service_secret)
@@ -89,8 +88,15 @@ class Settings:
     def haiku_enabled(self) -> bool:
         return bool(self.anthropic_api_key)
 
+    def neo4j_credentials(self) -> tuple[str, str] | None:
+        """Parse NEO4J_AUTH='user/password' → (user, password), or None if unset."""
+        if not self.neo4j_auth:
+            return None
+        user, _, password = self.neo4j_auth.partition("/")
+        return (user, password)
+
     def neo4j_enabled(self) -> bool:
-        return bool(self.neo4j_uri and self.neo4j_user and self.neo4j_password)
+        return bool(self.neo4j_uri and self.neo4j_credentials())
 
     def notify_enabled(self) -> bool:
         return bool(self.listen_database_url)
