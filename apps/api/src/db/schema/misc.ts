@@ -187,3 +187,19 @@ export const communityStatsHourly = pgTable("community_stats_hourly", {
 }, (t) => [
   primaryKey({ columns: [t.projectId, t.hour] }),
 ]);
+
+// Constellation snapshot (docs/AGORA-SOCIAL.md §12) — the anonymous community *shape*, materialized on a
+// slow seasonal cadence by POST /internal/cron/social-constellation (never per-load — §12). One row per
+// (project, snapshot epoch); the read endpoint serves the LATEST row. `blobs` is the rendered, already
+// k-anonymized + bucketed output ([{ size, warmth }]) — no member ids, no cluster identity (re-clustered
+// fresh each epoch). `method` records which clustering produced it (GDS Louvain or the by-space fallback).
+export const socialConstellation = pgTable("social_constellation", {
+  projectId: uuid("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  computedAt: timestamp("computed_at", { withTimezone: true }).notNull(), // snapshot epoch boundary
+  method: text("method").notNull(),                                       // 'louvain' | 'space'
+  blobs: jsonb("blobs").notNull().default(sql`'[]'::jsonb`),              // [{ size: bucket, warmth: band }]
+  memberCount: integer("member_count").notNull().default(0),              // total clustered members (pre-suppression)
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  primaryKey({ columns: [t.projectId, t.computedAt] }),
+]);
