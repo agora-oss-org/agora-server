@@ -208,7 +208,7 @@ export const createReportSchema = z.object({
 
 // ─── auth ──────────────────────────────────────────────────────────────────
 export const signUpSchema = z.object({
-  email: z.string().email(),
+  email: z.string().email().max(254),
   password: z.string().min(8).max(128),
   name: z.string().max(120).optional(),
   username: z.string().min(1).max(60).optional(),
@@ -233,12 +233,17 @@ export const changePasswordSchema = z.object({
 });
 
 export const emailSchema = z.object({
-  email: z.string().email(),
+  email: z.string().email().max(254),
 });
 
 export const verifyEmailSchema = z.object({
   tokenHash: z.string().min(1),
   type: z.enum(["signup", "email", "recovery"]).optional(),
+});
+
+export const resetPasswordSchema = z.object({
+  token: z.string().min(1),
+  newPassword: z.string().min(8).max(128),
 });
 
 export const externalUserSchema = z

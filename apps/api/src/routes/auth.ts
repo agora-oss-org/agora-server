@@ -11,7 +11,7 @@ import { Errors } from "../http/errors.js";
 import { requireAuth, optionalAuth } from "../middleware/auth.js";
 import { db } from "../db/index.js";
 import { profiles, userSuspensions, projects } from "../db/schema/index.js";
-import { getSupabase, getSupabaseAnon } from "../lib/supabase.js";
+import { getAuthProvider } from "../lib/auth/index.js";
 import { mintSession, rotateRefreshToken, revokeRefreshToken, revokeAllForProfile } from "../lib/tokens.js";
 import { isOperator } from "../lib/operators.js";
 import { isSteward } from "../lib/stewards.js";
@@ -21,7 +21,7 @@ import * as webhooks from "../lib/webhooks.js";
 import { trackEvent } from "../lib/umami.js";
 import {
   parseBody, signUpSchema, signInSchema, refreshSchema, signOutSchema,
-  changePasswordSchema, emailSchema, verifyEmailSchema, externalUserSchema,
+  changePasswordSchema, emailSchema, verifyEmailSchema, resetPasswordSchema, externalUserSchema,
 } from "../lib/validation.js";
 
 type ProfileRow = typeof profiles.$inferSelect;
@@ -81,24 +81,13 @@ export const authRoutes = new Hono<{ Variables: Variables }>()
       logger.info({ projectId }, "auth: sign-up rejected by validation webhook");
       throw Errors.forbidden("auth/rejected", check.message ?? "Sign-up rejected by validation webhook");
     }
-    const { data, error } = await getSupabaseAnon().auth.signUp({ email: body.email, password: body.password });
-    if (error) {
-      logger.warn({ projectId, err: error.message }, "auth: sign-up failed");
-      throw Errors.badRequest("auth/sign-up-failed", error.message);
-    }
-    // When email confirmation is enabled, GoTrue creates the user and sends the confirmation
-    // email but returns NO session (and supabase-js's _sessionResponse nulls out `data.user`,
-    // since GoTrue serializes the new user at the top level rather than under `data.user`).
-    // That is a *success*, not a failure: the user must click the email link, then sign in.
-    // Don't mint Agora tokens here — the profile is created lazily on first sign-in. Returning
-    // the same shape for "already registered" (GoTrue obfuscates it as no-session) also avoids
-    // email enumeration.
-    if (!data.session) {
+    const provider = await getAuthProvider(projectId);
+    const result = await provider.signUp(projectId, body.email, body.password);
+    if (result.status === "confirmation_required") {
       logger.info({ projectId }, "auth: sign-up pending email confirmation");
       return c.json({ status: "confirmation_required", email: body.email }, 200);
     }
-    // Email confirmation is disabled (auto-confirm): a full session comes back immediately.
-    const profile = await ensureProfile(projectId, data.session.user.id, { email: body.email, name: body.name, username: body.username });
+    const profile = await ensureProfile(projectId, result.authUserId, { email: body.email, name: body.name, username: body.username });
     const session = await sessionResponse(projectId, profile);
     logger.info({ projectId, userId: profile.id, autoConfirmed: true }, "auth: signed up");
     webhooks.broadcast(projectId, "user.created.complete", session.user);
@@ -108,12 +97,13 @@ export const authRoutes = new Hono<{ Variables: Variables }>()
   .post("/sign-in", async (c) => {
     const projectId = c.var.projectId;
     const body = parseBody(signInSchema, await c.req.json().catch(() => ({})), "auth");
-    const { data, error } = await getSupabaseAnon().auth.signInWithPassword({ email: body.email, password: body.password });
-    if (error || !data.user) {
+    const provider = await getAuthProvider(projectId);
+    const cred = await provider.verifyCredentials(projectId, body.email, body.password);
+    if (!cred) {
       logger.info({ projectId }, "auth: sign-in failed (invalid credentials)");
       throw Errors.unauthorized("auth/invalid-credentials", "Invalid email or password");
     }
-    const profile = await ensureProfile(projectId, data.user.id, { email: body.email });
+    const profile = await ensureProfile(projectId, cred.authUserId, { email: body.email });
     await db.update(profiles).set({ lastActive: new Date() }).where(eq(profiles.id, profile.id));
     logger.info({ projectId, userId: profile.id, role: profile.role, operator: isOperator(profile) }, "auth: signed in");
     return c.json(await sessionResponse(projectId, profile));
@@ -150,11 +140,8 @@ export const authRoutes = new Hono<{ Variables: Variables }>()
     const [profile] = await db.select().from(profiles)
       .where(and(eq(profiles.projectId, projectId), eq(profiles.id, c.var.auth!.userId))).limit(1);
     if (!profile?.authUserId || !profile.email) throw Errors.badRequest("auth/no-password-identity", "No password identity for this user");
-    // Verify current password by attempting a sign-in.
-    const { error: badPw } = await getSupabaseAnon().auth.signInWithPassword({ email: profile.email, password: body.currentPassword });
-    if (badPw) throw Errors.badRequest("auth/wrong-password", "Current password is incorrect", "currentPassword");
-    const { error } = await getSupabase().auth.admin.updateUserById(profile.authUserId, { password: body.newPassword });
-    if (error) throw Errors.badRequest("auth/change-password-failed", error.message);
+    const provider = await getAuthProvider(projectId);
+    await provider.changePassword(profile.authUserId, profile.email, body.currentPassword, body.newPassword);
     // Invalidate all existing sessions, then hand back a fresh one.
     await revokeAllForProfile(profile.id);
     logger.info({ projectId, userId: profile.id }, "auth: password changed (all sessions revoked)");
@@ -162,23 +149,34 @@ export const authRoutes = new Hono<{ Variables: Variables }>()
   })
   .post("/request-password-reset", async (c) => {
     const body = parseBody(emailSchema, await c.req.json().catch(() => ({})), "auth");
-    // Always 200 (avoid email enumeration). Supabase sends the reset email.
-    await getSupabaseAnon().auth.resetPasswordForEmail(body.email).catch(() => {});
+    const provider = await getAuthProvider(c.var.projectId);
+    await provider.startPasswordReset(c.var.projectId, body.email);
+    return c.json({ success: true });
+  })
+  .post("/reset-password", async (c) => {
+    const projectId = c.var.projectId;
+    const body = parseBody(resetPasswordSchema, await c.req.json().catch(() => ({})), "auth");
+    const provider = await getAuthProvider(projectId);
+    const { authUserId } = await provider.confirmPasswordReset(projectId, body.token, body.newPassword);
+    const [profile] = await db.select({ id: profiles.id }).from(profiles)
+      .where(and(eq(profiles.projectId, projectId), eq(profiles.authUserId, authUserId))).limit(1);
+    if (profile) await revokeAllForProfile(profile.id);
+    logger.info({ projectId }, "auth: password reset completed");
     return c.json({ success: true });
   })
   .post("/verify-email", async (c) => {
     const projectId = c.var.projectId;
     const body = parseBody(verifyEmailSchema, await c.req.json().catch(() => ({})), "auth");
-    const { data, error } = await getSupabaseAnon().auth.verifyOtp({ token_hash: body.tokenHash, type: body.type ?? "email" });
-    if (error || !data.user) throw Errors.badRequest("auth/verify-failed", error?.message ?? "Verification failed");
-    await db.update(profiles).set({ isVerified: true })
-      .where(and(eq(profiles.projectId, projectId), eq(profiles.authUserId, data.user.id)));
+    const provider = await getAuthProvider(projectId);
+    const { authUserId } = await provider.confirmEmail(projectId, body.tokenHash, body.type);
+    await db.update(profiles).set({ isVerified: true }).where(and(eq(profiles.projectId, projectId), eq(profiles.authUserId, authUserId)));
     logger.info({ projectId }, "auth: email verified");
     return c.json({ success: true });
   })
   .post("/send-verification-email", async (c) => {
     const body = parseBody(emailSchema, await c.req.json().catch(() => ({})), "auth");
-    await getSupabaseAnon().auth.resend({ type: "signup", email: body.email }).catch(() => {});
+    const provider = await getAuthProvider(c.var.projectId);
+    await provider.resendConfirmation(c.var.projectId, body.email);
     return c.json({ success: true });
   })
   .post("/verify-external-user", async (c) => {
