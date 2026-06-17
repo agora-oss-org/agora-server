@@ -4,7 +4,7 @@
 import { SignJWT } from "jose";
 
 const P = "11111111-1111-1111-1111-111111111111";
-const ALICE = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"; // owns entity e1111… "Hello Agora"
+const ALICE = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"; // owns entity e1111… "hellol, world"
 const BOB = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
 const ENTITY = "e1111111-1111-1111-1111-111111111111";
 const secret = new TextEncoder().encode(process.env.ACCESS_TOKEN_SECRET);

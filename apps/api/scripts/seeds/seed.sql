@@ -28,7 +28,7 @@ insert into profiles (id, project_id, username, name) values
 -- ── entity by alice ──────────────────────────────────────────────────────────
 insert into entities (id, project_id, user_id, short_id, content)
   values ('e1111111-1111-1111-1111-111111111111', '11111111-1111-1111-1111-111111111111',
-          'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'ent1', 'Hello Agora')
+          'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'ent1', 'hello, world')
   on conflict (id) do nothing;
 
 do $$ begin

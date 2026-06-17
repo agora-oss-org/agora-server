@@ -63,7 +63,17 @@
     { "handle": "c7",  "author": "june", "entity": "trailrun", "content": "Congrats! Which trail did you run?" },
     { "handle": "c8",  "author": "evy",  "entity": "monstera", "content": "Gorgeous variegation on that leaf." },
     { "handle": "c9",  "author": "finn", "entity": "keyboard", "content": "What switches did you go with?" },
-    { "handle": "c10", "author": "ivan", "entity": "keyboard", "parent": "c9", "content": "Holy Pandas — tactile heaven, worth the lube job." }
+    { "handle": "c10", "author": "ivan", "entity": "keyboard", "parent": "c9", "content": "Holy Pandas — tactile heaven, worth the lube job." },
+    { "handle": "c11", "author": "hana", "entity": "filmvscam", "content": "Thirty-six frames really does change how you shoot — less spray-and-pray, more intention." },
+    { "handle": "c12", "author": "alice", "entity": "filmvscam", "parent": "c11", "content": "Exactly. Every frame costs something, so each one has to earn its place." },
+    { "handle": "c13", "author": "kofi", "entity": "sourdough", "content": "Welcome to the cult. Agnes is going to outlive all of us." },
+    { "handle": "c14", "author": "lena", "entity": "sourdough", "content": "Doubling in four hours is a strong, healthy starter — you're ready to bake." },
+    { "handle": "c15", "author": "cara", "entity": "sourdough", "parent": "c14", "content": "Fingers crossed for the weekend loaf. I'll post the crumb shot." },
+    { "handle": "c16", "author": "bob",  "entity": "miso",      "content": "Adding the miso off the heat is the step everyone skips. Respect." },
+    { "handle": "c17", "author": "hana", "entity": "tidepool",  "content": "A shy octopus?! The cove is showing off. Did you get the nudibranch shots?" },
+    { "handle": "c18", "author": "june", "entity": "tidepool",  "parent": "c17", "content": "Got three — posting the macro set once I clean them up." },
+    { "handle": "c19", "author": "gia",  "entity": "stargaze",  "content": "Andromeda naked-eye is a proper dark-sky flex. Deeply jealous." },
+    { "handle": "c20", "author": "ivan", "entity": "vinyl",     "content": "A fresh ground wire killing the hum is so satisfying. Which cartridge did you land on?" }
   ],
 
   "follows": [
@@ -121,6 +131,24 @@
     { "by": "hana", "on": { "post": "trailrun" },  "type": "upvote" },
     { "by": "alice","on": { "comment": "c1" },     "type": "upvote" },
     { "by": "cara", "on": { "comment": "c5" },     "type": "love" },
-    { "by": "ivan", "on": { "comment": "c9" },     "type": "funny" }
+    { "by": "ivan", "on": { "comment": "c9" },     "type": "funny" },
+    { "by": "evy",  "on": { "post": "filmvscam" }, "type": "love" },
+    { "by": "finn", "on": { "post": "filmvscam" }, "type": "upvote" },
+    { "by": "ivan", "on": { "post": "filmvscam" }, "type": "downvote" },
+    { "by": "kofi", "on": { "post": "miso" },      "type": "love" },
+    { "by": "cara", "on": { "post": "miso" },      "type": "upvote" },
+    { "by": "bob",  "on": { "post": "tidepool" },  "type": "wow" },
+    { "by": "gia",  "on": { "post": "tidepool" },  "type": "wow" },
+    { "by": "lena", "on": { "post": "tidepool" },  "type": "sad" },
+    { "by": "hana", "on": { "post": "vinyl" },     "type": "love" },
+    { "by": "june", "on": { "post": "stargaze" },  "type": "wow" },
+    { "by": "lena", "on": { "post": "sourdough" }, "type": "love" },
+    { "by": "alice","on": { "post": "ribs" },      "type": "upvote" },
+    { "by": "alice","on": { "comment": "c11" },    "type": "upvote" },
+    { "by": "cara", "on": { "comment": "c13" },    "type": "funny" },
+    { "by": "kofi", "on": { "comment": "c14" },    "type": "upvote" },
+    { "by": "evy",  "on": { "comment": "c16" },    "type": "like" },
+    { "by": "evy",  "on": { "comment": "c19" },    "type": "love" },
+    { "by": "hana", "on": { "comment": "c20" },    "type": "upvote" }
   ]
 }

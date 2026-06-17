@@ -68,7 +68,7 @@ async function http(method, url, { token, json, form, label } = {}) {
 const manifest = JSON.parse(readFileSync(MANIFEST_PATH, "utf8"));
 const realized = structuredClone(manifest); // annotated in place as nodes are created
 
-const DEFAULT_PASSWORD = manifest.meta?.defaultPassword || process.env.DEMO_PASSWORD || "SeedPass123!";
+const DEFAULT_PASSWORD = manifest.meta?.defaultPassword || process.env.DEMO_PASSWORD || "DemoPass123!";
 
 // Per-type handle → record index (records live inside `realized`, so annotating one annotates both).
 const index = { users: new Map(), spaces: new Map(), posts: new Map(), comments: new Map() };
