@@ -14,6 +14,7 @@ import { secureConversationMembers, secureDevices } from "../db/schema/index.js"
 import { jwtVerify } from "jose";
 import { env } from "../lib/env.js";
 import { hasActiveSuspension } from "../lib/suspensions.js";
+import { logger } from "../lib/logger.js";
 import type { SecureMessageModel, SecureHandshakeModel } from "@agora-server/contract";
 
 export interface SecureServerToClientEvents {
@@ -71,25 +72,34 @@ export function attachSecureRealtime(io: Server): SecureNamespace {
     try {
       const token = socket.handshake.auth?.token as string | undefined;
       const projectId = socket.handshake.query?.projectId as string | undefined;
-      if (!token || !projectId) return next(new Error("unauthorized"));
+      if (!token || !projectId) {
+        logger.trace({ projectId: projectId ?? null, hasToken: !!token }, "secure-socket: handshake rejected (missing token/projectId)");
+        return next(new Error("unauthorized"));
+      }
       const { payload } = await jwtVerify(token, accessSecret, { algorithms: ["HS256"] });
-      if (!payload.sub) return next(new Error("unauthorized"));
+      if (!payload.sub) {
+        logger.trace({ projectId }, "secure-socket: handshake rejected (no subject)");
+        return next(new Error("unauthorized"));
+      }
       // Enforce suspensions here too — the /secure namespace must not let a suspended user keep
       // receiving E2E traffic (mirrors middleware/auth.ts requireAuth). Operators AND project
       // owners bypass (deployment god-view / no owner self-lockout).
       const privileged = payload.operator === true || payload.powner === true;
       if (!privileged && (await hasActiveSuspension(payload.sub))) {
+        logger.debug({ projectId, userId: payload.sub }, "secure-socket: handshake rejected (suspended)");
         return next(new Error("suspended"));
       }
       socket.data.userId = payload.sub;
       socket.data.projectId = projectId;
       next();
     } catch {
+      logger.trace("secure-socket: handshake rejected (token verify failed)");
       next(new Error("unauthorized"));
     }
   });
 
   secure.on("connection", (socket: SecureSocket) => {
+    logger.trace({ projectId: socket.data.projectId, userId: socket.data.userId, socketId: socket.id }, "secure-socket: connected");
     // Auto-join the device rooms for every active device this user owns, so targeted Welcomes arrive.
     void (async () => {
       const devices = await db.select({ id: secureDevices.id }).from(secureDevices)
@@ -99,15 +109,21 @@ export function attachSecureRealtime(io: Server): SecureNamespace {
           isNull(secureDevices.revokedAt),
         ));
       for (const d of devices) socket.join(deviceRoom(d.id));
+      // Diagnostic for the "waiting for key update" failure: a targeted Welcome only arrives in
+      // realtime if THIS socket joined that device's room. The set of joined device-row ids tells
+      // you exactly whether the browser's live device is reachable — and surfaces device churn
+      // (many stale rows ⇒ Welcomes addressed to a device this connection no longer represents).
+      logger.debug({ projectId: socket.data.projectId, userId: socket.data.userId, socketId: socket.id, deviceRooms: devices.map((d) => d.id) }, "secure-socket: device rooms auto-joined");
     })();
 
     socket.on("join:secure-conversation", async ({ conversationId }) => {
-      if (await isSecureMember(socket.data.projectId, conversationId, socket.data.userId)) {
-        socket.join(convRoom(conversationId));
-      }
+      const ok = await isSecureMember(socket.data.projectId, conversationId, socket.data.userId);
+      if (ok) socket.join(convRoom(conversationId));
+      logger.trace({ projectId: socket.data.projectId, userId: socket.data.userId, conversationId, joined: ok }, "secure-socket: join conversation");
     });
     socket.on("leave:secure-conversation", ({ conversationId }) => {
       socket.leave(convRoom(conversationId));
+      logger.trace({ projectId: socket.data.projectId, userId: socket.data.userId, conversationId }, "secure-socket: leave conversation");
     });
     socket.on("join:secure-device", async ({ deviceId }) => {
       // Only join a device room the caller actually owns.
@@ -118,6 +134,7 @@ export function attachSecureRealtime(io: Server): SecureNamespace {
           eq(secureDevices.userId, socket.data.userId),
         )).limit(1);
       if (own) socket.join(deviceRoom(deviceId));
+      logger.trace({ projectId: socket.data.projectId, userId: socket.data.userId, deviceId, joined: !!own }, "secure-socket: join device room");
     });
     socket.on("secure:typing:start", ({ conversationId }) => {
       socket.to(convRoom(conversationId)).emit("secure:typing:start", { userId: socket.data.userId, conversationId });
@@ -136,6 +153,7 @@ export function emitToSecureConversation<E extends keyof SecureServerToClientEve
   event: E,
   ...args: Parameters<SecureServerToClientEvents[E]>
 ) {
+  logger.trace({ conversationId, event, attached: !!secureRef }, "secure-socket: emit to conversation");
   secureRef?.to(convRoom(conversationId)).emit(event, ...args);
 }
 
@@ -144,5 +162,6 @@ export function emitToSecureDevice<E extends keyof SecureServerToClientEvents>(
   event: E,
   ...args: Parameters<SecureServerToClientEvents[E]>
 ) {
+  logger.trace({ deviceId, event, attached: !!secureRef }, "secure-socket: emit to device");
   secureRef?.to(deviceRoom(deviceId)).emit(event, ...args);
 }

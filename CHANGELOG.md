@@ -34,6 +34,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a clean DB** (no idempotency/ledger). Kept out of the `pnpm seed` orchestrator (different paradigm,
   creates its own users).
 
+### Changed
+- **Secure-chat observability** — `routes/secure-chat.ts` + `realtime/secure-socket.ts` now emit
+  structured `debug`/`trace` logs at every boundary (previously only device-register + conversation-
+  create logged). Two tiers: `debug` covers lifecycle/state-transitions and **every expected
+  rejection** — device register/revoke, key-package publish/claim/exhaustion, conversation create
+  (with seeded `initialEpoch`), member add/remove, **epoch-conflicts** (logs attempted vs DS epoch),
+  message send, device-mismatch, epoch-out-of-range, key-backup store; `trace` covers the
+  high-frequency firehose — handshake polls (with per-row `seq/kind/epoch/targeted` breakdown), socket
+  fan-outs (with no-op detection), key-package counts/low-water nudges, key-backup hit/miss, and the
+  socket **device-room auto-join set** on connect (the smoking gun for the "waiting for key update"
+  device-churn failure). Opaque bytes are never logged — only byte lengths; all bigint epochs/seqs are
+  stringified. No API/contract change; default `LOG_LEVEL=debug` so the lifecycle tier is on in dev.
+
 ### Fixed
 - **`PATCH /v7/:projectId/users/:id` returned 500 on a taken username** instead of a clean conflict.
   The `(project_id, username)` unique violation (Postgres `23505`, wrapped by Drizzle) is now mapped
