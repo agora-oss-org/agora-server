@@ -225,7 +225,7 @@ export const miscRoutes = new Hono<{ Variables: Variables }>()
     const next: Record<string, any> = { ...current };
     for (const k of [
       "privacyTier", "graphEnabled", "weatherEnabled", "constellationEnabled", "constellationKFloor",
-      "neighborhoodEnabled", "influenceScoresEnabled", "siloDetectionEnabled", "engagementScoresEnabled",
+      "neighborhoodEnabled", "neighborhoodIncludeInteractions", "influenceScoresEnabled", "siloDetectionEnabled", "engagementScoresEnabled",
       "frictionVisibleToStewards", "frictionAnalyticsEnabled", "readAffinityEnabled", "readReceiptsAllowed",
       "warmthHalfLifeDays", "frictionHalfLifeDays",
     ] as const) {

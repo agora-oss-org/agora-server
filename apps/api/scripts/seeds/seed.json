@@ -1,0 +1,126 @@
+{
+  "meta": {
+    "defaultPassword": "SeedPass123!",
+    "description": "Hand-authored seed manifest for the Agora seed engine. Run ONCE on a clean DB via `pnpm seed:graph`. Handles are manifest-local reference keys; the field name implies the namespace (author -> users, entity -> posts). Reactions discriminate target via on:{post|comment}."
+  },
+
+  "users": [
+    { "handle": "alice", "email": "alice@seed.test", "name": "Alice Rivera",  "username": "alicerivera", "bio": "Bike commuter & film photographer.",    "avatar": "https://i.pravatar.cc/300?u=alice" },
+    { "handle": "bob",   "email": "bob@seed.test",   "name": "Bob Chen",      "username": "bobchen",  "bio": "Coffee nerd. Cold brew evangelist.",        "avatar": "https://i.pravatar.cc/300?u=bob" },
+    { "handle": "cara",  "email": "cara@seed.test",  "name": "Cara Diaz",     "username": "caradiaz", "bio": "Sourdough, ferments, and slow mornings.",   "avatar": "https://i.pravatar.cc/300?u=cara" },
+    { "handle": "dan",   "email": "dan@seed.test",   "name": "Dan Okafor",    "username": "danok",    "bio": "Trail runner. Mountain person.",            "avatar": "https://i.pravatar.cc/300?u=dan" },
+    { "handle": "evy",   "email": "evy@seed.test",   "name": "Evy Larsson",   "username": "evyl",     "bio": "Watercolors & overstuffed sketchbooks.",    "avatar": "https://i.pravatar.cc/300?u=evy" },
+    { "handle": "finn",  "email": "finn@seed.test",  "name": "Finn Murphy",   "username": "finnm",    "bio": "Vinyl collector, jazz mostly.",             "avatar": "https://i.pravatar.cc/300?u=finn" },
+    { "handle": "gia",   "email": "gia@seed.test",   "name": "Gia Romano",    "username": "giar",     "bio": "Houseplants gone too far.",                 "avatar": "https://i.pravatar.cc/300?u=gia" },
+    { "handle": "hana",  "email": "hana@seed.test",  "name": "Hana Kim",      "username": "hanak",    "bio": "Stargazer & amateur astronomer.",           "avatar": "https://i.pravatar.cc/300?u=hana" },
+    { "handle": "ivan",  "email": "ivan@seed.test",  "name": "Ivan Petrov",   "username": "ivanp",    "bio": "Mechanical keyboards & a hot soldering iron.","avatar": "https://i.pravatar.cc/300?u=ivan" },
+    { "handle": "june",  "email": "june@seed.test",  "name": "June Adeyemi",  "username": "junea",    "bio": "Tidepools & marine biology.",               "avatar": "https://i.pravatar.cc/300?u=june" },
+    { "handle": "kofi",  "email": "kofi@seed.test",  "name": "Kofi Mensah",   "username": "kofim",    "bio": "BBQ, low and slow.",                        "avatar": "https://i.pravatar.cc/300?u=kofi" },
+    { "handle": "lena",  "email": "lena@seed.test",  "name": "Lena Fischer",  "username": "lenaf",    "bio": "Miso, ramen, and weeknight cooking.",       "avatar": "https://i.pravatar.cc/300?u=lena" }
+  ],
+
+  "spaces": [
+    { "handle": "general",     "owner": "alice", "name": "General",        "slug": "general",     "description": "Say hi and talk about anything." },
+    { "handle": "photography", "owner": "alice", "name": "Photography",    "slug": "photography", "description": "Film, digital, and everything in between.", "parent": "general" },
+    { "handle": "food",        "owner": "cara",  "name": "Food & Cooking", "slug": "food",        "description": "Recipes, bakes, and kitchen wins." },
+    { "handle": "outdoors",    "owner": "dan",   "name": "The Outdoors",   "slug": "outdoors",    "description": "Trails, tides, and night skies — members post.", "postingPermission": "members" }
+  ],
+
+  "memberships": [
+    { "space": "photography", "user": "bob" },
+    { "space": "photography", "user": "evy" },
+    { "space": "photography", "user": "hana" },
+    { "space": "food",        "user": "lena" },
+    { "space": "food",        "user": "kofi" },
+    { "space": "food",        "user": "bob" },
+    { "space": "outdoors",    "user": "june" },
+    { "space": "outdoors",    "user": "hana" },
+    { "space": "outdoors",    "user": "gia" }
+  ],
+
+  "posts": [
+    { "handle": "sunset",    "author": "evy",  "space": "photography", "title": "Golden hour at the pier", "content": "Got down to the water just as the light went amber. Twelve frames, one keeper — but what a keeper.", "image": "https://picsum.photos/seed/sunset/1200/800" },
+    { "handle": "filmvscam", "author": "alice","space": "photography", "title": "Why I still shoot film", "content": "Slower, more deliberate, and the grain does something digital still can't fake for me. Thirty-six frames keeps me honest." },
+    { "handle": "coldbrew",  "author": "bob",  "space": "food", "title": "Cold brew that doesn't taste like battery acid", "content": "Coarse grind, 1:8 coffee to water, 16 hours in the fridge, then dilute to taste. Smooth, low-acid, no bitterness.", "image": "https://picsum.photos/seed/coldbrew/1200/800" },
+    { "handle": "sourdough", "author": "cara", "space": "food", "title": "Day 7: my starter is finally alive", "content": "Doubling in four hours and smelling like tangy yogurt. Named her Agnes. First loaf this weekend." },
+    { "handle": "ribs",      "author": "kofi", "space": "food", "title": "Low-and-slow BBQ ribs", "content": "Six hours at 225, a light glaze in the last thirty minutes. The bark held and they pulled clean off the bone." },
+    { "handle": "miso",      "author": "lena", "space": "food", "title": "Weeknight miso soup", "content": "Dashi, a spoon of white miso off the heat so it stays alive, tofu, wakame, scallions. Ten minutes, big comfort." },
+    { "handle": "trailrun",  "author": "dan",  "space": "outdoors", "title": "First trail 10k in the books", "content": "Roots, switchbacks, and one creek crossing I did not stick. Slower than road pace and twice as fun." },
+    { "handle": "tidepool",  "author": "june", "space": "outdoors", "title": "Low tide treasures at the cove", "content": "Anemones, a shy octopus, and more nudibranchs than I could photograph before the water came back." },
+    { "handle": "stargaze",  "author": "hana", "space": "outdoors", "title": "Backyard stargazing on a clear night", "content": "Saturn's rings held steady at 150x and the Andromeda smudge was naked-eye. Worth the cold fingers." },
+    { "handle": "keyboard",  "author": "ivan", "title": "Built my first mechanical keyboard", "content": "Hand-wired, lubed switches, a little wobble on the stabilizers I'll fix later. Typing on it right now and grinning." },
+    { "handle": "monstera",  "author": "gia",  "title": "New monstera leaf just unfurled", "content": "Biggest fenestrations yet. Three years from a grocery-store cutting to this monster in the corner." },
+    { "handle": "vinyl",     "author": "finn", "title": "Dialing in my turntable setup", "content": "New cartridge, careful tracking-force, and a fresh ground wire killed the hum. Kind of Blue has never sounded better." }
+  ],
+
+  "comments": [
+    { "handle": "c1",  "author": "bob",  "entity": "sunset",   "content": "The light is unreal here." },
+    { "handle": "c2",  "author": "evy",  "entity": "sunset",   "parent": "c1", "content": "Thanks! Portra 400, pushed a stop." },
+    { "handle": "c3",  "author": "hana", "entity": "sunset",   "content": "What time did you get down there?" },
+    { "handle": "c4",  "author": "cara", "entity": "coldbrew", "content": "What ratio are you running?" },
+    { "handle": "c5",  "author": "bob",  "entity": "coldbrew", "parent": "c4", "content": "1:8 concentrate, then dilute 1:1 with water or milk." },
+    { "handle": "c6",  "author": "lena", "entity": "ribs",     "content": "That bark looks perfect." },
+    { "handle": "c7",  "author": "june", "entity": "trailrun", "content": "Congrats! Which trail did you run?" },
+    { "handle": "c8",  "author": "evy",  "entity": "monstera", "content": "Gorgeous variegation on that leaf." },
+    { "handle": "c9",  "author": "finn", "entity": "keyboard", "content": "What switches did you go with?" },
+    { "handle": "c10", "author": "ivan", "entity": "keyboard", "parent": "c9", "content": "Holy Pandas — tactile heaven, worth the lube job." }
+  ],
+
+  "follows": [
+    { "follower": "bob",  "following": "alice" },
+    { "follower": "cara", "following": "alice" },
+    { "follower": "dan",  "following": "alice" },
+    { "follower": "evy",  "following": "alice" },
+    { "follower": "gia",  "following": "alice" },
+    { "follower": "hana", "following": "alice" },
+    { "follower": "alice","following": "bob" },
+    { "follower": "cara", "following": "bob" },
+    { "follower": "bob",  "following": "cara" },
+    { "follower": "lena", "following": "cara" },
+    { "follower": "kofi", "following": "cara" },
+    { "follower": "june", "following": "dan" },
+    { "follower": "hana", "following": "dan" },
+    { "follower": "alice","following": "evy" },
+    { "follower": "gia",  "following": "evy" },
+    { "follower": "evy",  "following": "gia" },
+    { "follower": "finn", "following": "ivan" },
+    { "follower": "ivan", "following": "finn" },
+    { "follower": "hana", "following": "june" },
+    { "follower": "june", "following": "hana" },
+    { "follower": "lena", "following": "kofi" },
+    { "follower": "kofi", "following": "lena" },
+    { "follower": "alice","following": "hana" },
+    { "follower": "bob",  "following": "lena" }
+  ],
+
+  "connections": [
+    { "from": "alice", "to": "bob",  "accept": true },
+    { "from": "cara",  "to": "lena", "accept": true },
+    { "from": "dan",   "to": "june", "accept": true },
+    { "from": "evy",   "to": "gia",  "accept": true },
+    { "from": "finn",  "to": "ivan", "accept": true },
+    { "from": "kofi",  "to": "cara", "accept": true },
+    { "from": "hana",  "to": "alice" }
+  ],
+
+  "reactions": [
+    { "by": "bob",  "on": { "post": "sunset" },    "type": "love" },
+    { "by": "hana", "on": { "post": "sunset" },    "type": "love" },
+    { "by": "gia",  "on": { "post": "sunset" },    "type": "wow" },
+    { "by": "cara", "on": { "post": "coldbrew" },  "type": "upvote" },
+    { "by": "lena", "on": { "post": "coldbrew" },  "type": "upvote" },
+    { "by": "bob",  "on": { "post": "sourdough" }, "type": "love" },
+    { "by": "alice","on": { "post": "stargaze" },  "type": "wow" },
+    { "by": "evy",  "on": { "post": "stargaze" },  "type": "wow" },
+    { "by": "lena", "on": { "post": "ribs" },      "type": "upvote" },
+    { "by": "bob",  "on": { "post": "ribs" },      "type": "upvote" },
+    { "by": "finn", "on": { "post": "keyboard" },  "type": "funny" },
+    { "by": "evy",  "on": { "post": "monstera" },  "type": "like" },
+    { "by": "hana", "on": { "post": "monstera" },  "type": "like" },
+    { "by": "june", "on": { "post": "trailrun" },  "type": "upvote" },
+    { "by": "hana", "on": { "post": "trailrun" },  "type": "upvote" },
+    { "by": "alice","on": { "comment": "c1" },     "type": "upvote" },
+    { "by": "cara", "on": { "comment": "c5" },     "type": "love" },
+    { "by": "ivan", "on": { "comment": "c9" },     "type": "funny" }
+  ]
+}

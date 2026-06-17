@@ -27,6 +27,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ties (default off; adds neighbors at the floor brightness, contributes 0 warmth/friction). Neo4j-only —
   no Postgres migration.
 - **Release script** (`scripts/release.sh`) — automated version bumping for monorepo releases. Bumps all `package.json` versions (root + contract + api + admin), commits with `chore(release): vX.Y.Z`, and creates a git tag. Fixes the gap where v0.12.0 tagged before package versions were bumped, so npm-publish published 0.11.0 instead. See `docs/RELEASE.md` for usage.
+- **Manifest-driven seed engine** (`apps/api/scripts/seeds/seed-engine.mjs` + `seed.json`, run via
+  `pnpm seed:graph`) — a declarative dev seeder that creates an interconnected fixture set (users,
+  spaces, memberships, posts, comments, follows, connections, reactions) over the live API in fixed
+  dependency order, so manifest handles resolve to real IDs by construction. Intended to run **once on
+  a clean DB** (no idempotency/ledger). Kept out of the `pnpm seed` orchestrator (different paradigm,
+  creates its own users).
+
+### Fixed
+- **`PATCH /v7/:projectId/users/:id` returned 500 on a taken username** instead of a clean conflict.
+  The `(project_id, username)` unique violation (Postgres `23505`, wrapped by Drizzle) is now mapped
+  to **409 `users/username-taken`** (field `username`) rather than leaking an unhandled
+  `DrizzleQueryError`.
+- **`PATCH /v7/:projectId/settings/social` silently dropped `neighborhoodIncludeInteractions`** — the
+  key was missing from the handler's update allow-list, so the admin Settings toggle reverted to
+  disabled after every save. The field is now persisted (server) and the toggle sticks (admin UI).
 
 ## [0.12.0] - 2026-06-16
 

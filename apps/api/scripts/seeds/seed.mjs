@@ -16,8 +16,11 @@ import { spawnSync } from "node:child_process";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const SELF = "seed.mjs";
+// The manifest-driven seed engine is run on its own (`pnpm seed:graph`), not as part of this
+// orchestrator — it's a different paradigm (declarative manifest) and creates its own users.
+const EXCLUDE = new Set([SELF, "seed-engine.mjs"]);
 
-const all = readdirSync(here).filter((f) => f.endsWith(".mjs") && f !== SELF).sort();
+const all = readdirSync(here).filter((f) => f.endsWith(".mjs") && !EXCLUDE.has(f)).sort();
 // Account-creating scripts before the post seeders that depend on them.
 const userFirst = all.filter((f) => f.includes("user"));
 const rest = all.filter((f) => !f.includes("user"));

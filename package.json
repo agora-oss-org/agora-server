@@ -21,7 +21,9 @@
     "db:migrate": "pnpm --filter @agora/api db:migrate:run",
     "db:generate": "pnpm --filter @agora/api db:generate",
     "genesis": "pnpm --filter @agora/api genesis",
-    "genesis:test": "pnpm --filter @agora/api genesis:test"
+    "genesis:test": "pnpm --filter @agora/api genesis:test",
+    "seed": "pnpm --filter @agora/api seed",
+    "seed:graph": "pnpm --filter @agora/api seed:graph"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

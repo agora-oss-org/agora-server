@@ -70,17 +70,28 @@ export const userRoutes = new Hono<{ Variables: Variables }>()
     const body = parseBody(updateProfileSchema, await c.req.json().catch(() => ({})), "users");
     const check = await webhooks.validate(c.var.projectId, "user.updated", { ...body, id });
     if (!check.valid) throw Errors.forbidden("users/rejected", check.message ?? "Profile update rejected by validation webhook");
-    const [row] = await db
-      .update(profiles)
-      .set({
-        ...(body.name !== undefined ? { name: body.name } : {}),
-        ...(body.username !== undefined ? { username: body.username } : {}),
-        ...(body.avatar !== undefined ? { avatar: body.avatar } : {}),
-        ...(body.bio !== undefined ? { bio: body.bio } : {}),
-        ...(body.metadata !== undefined ? { metadata: body.metadata } : {}),
-      })
-      .where(and(eq(profiles.projectId, c.var.projectId), eq(profiles.id, id)))
-      .returning();
+    let row: typeof profiles.$inferSelect | undefined;
+    try {
+      [row] = await db
+        .update(profiles)
+        .set({
+          ...(body.name !== undefined ? { name: body.name } : {}),
+          ...(body.username !== undefined ? { username: body.username } : {}),
+          ...(body.avatar !== undefined ? { avatar: body.avatar } : {}),
+          ...(body.bio !== undefined ? { bio: body.bio } : {}),
+          ...(body.metadata !== undefined ? { metadata: body.metadata } : {}),
+        })
+        .where(and(eq(profiles.projectId, c.var.projectId), eq(profiles.id, id)))
+        .returning();
+    } catch (e: any) {
+      // A taken username trips the (project_id, username) unique constraint. Drizzle wraps the
+      // postgres.js error, so the code lives on `.cause`. Map it to a clean 409 instead of leaking
+      // the raw DrizzleQueryError (SQL + params) as an unhandled 500.
+      if (e?.code === "23505" || e?.cause?.code === "23505") {
+        throw Errors.conflict("users/username-taken", "That username is already taken", "username");
+      }
+      throw e;
+    }
     if (!row) throw Errors.notFound("users/not-found", "User not found");
     const shaped = shapeUser(row);
     webhooks.broadcast(c.var.projectId, "user.updated.complete", shaped);
