@@ -48,8 +48,9 @@ function classify({ method, cpath, msg }) {
   if (m.includes("key packages published") || m.includes("replenished key-packages")) return "keypackages.publish";
   if (m.includes("handshakes delivered") || m.includes("handshakes polled")) return "handshakes.poll";
   if (m.startsWith("catch-up") || m.includes("re-joined socket") || m === "ready") return "handshakes.catchup";
-  if (m.includes("connecting") && m.includes("namespace")) return "socket.connect";
   if (m.includes("connect_error")) return "socket.error";
+  if (m.includes("socket connected")) return "socket.connected";
+  if (m.includes("connecting") && m.includes("namespace")) return "socket.connect";
   if (m.includes("conversation created")) return "conversation.create";
   if (m.includes("member added") || m.includes("member removed")) return "membership";
   if (m.includes("message sent")) return "message.send";
@@ -203,38 +204,47 @@ function report(events) {
 
   // 2) Op-level reachability (id-agnostic): did each client request reach the server?
   out.push("");
+  const haveServer = server.length > 0;
   out.push("─ op reachability (client request → server handled) ───────────────────────");
+  if (!haveServer) out.push("  (client-only log — no server side to correlate; 'srv' column is N/A)");
   out.push(`  ${pad("op", 22)}${pad("c.req", 7)}${pad("c.res", 7)}${pad("srv", 6)}gap?`);
   const ops = [...new Set(events.filter((e) => e.dir !== "event").map((e) => e.op))].sort();
   for (const op of ops) {
     const creq = client.filter((e) => e.op === op && e.dir === "req").length;
     const cres = client.filter((e) => e.op === op && e.dir === "res").length;
     const srv = server.filter((e) => e.op === op && e.dir === "res").length;
-    const gap = creq > 0 && srv === 0 ? "⚠ never reached server" : creq > srv ? `⚠ ${creq - srv} unmatched` : "ok";
-    out.push(`  ${pad(op, 22)}${pad(creq, 7)}${pad(cres, 7)}${pad(srv, 6)}${gap}`);
+    const gap = !haveServer ? "—" : creq > 0 && srv === 0 ? "⚠ never reached server" : creq > srv ? `⚠ ${creq - srv} unmatched` : "ok";
+    out.push(`  ${pad(op, 22)}${pad(creq, 7)}${pad(cres, 7)}${pad(haveServer ? srv : "—", 6)}${gap}`);
   }
 
   // 3) Socket health.
   const sockErr = client.filter((e) => e.op === "socket.error");
   const sockConn = client.filter((e) => e.op === "socket.connect").length;
+  const sockOk = client.filter((e) => e.op === "socket.connected").length;
   const srvConnected = server.filter((e) => /connected|device rooms/.test(e.msg || "")).length;
   out.push("");
   out.push("─ realtime (/secure socket) ───────────────────────────────────────────────");
   out.push(`  client connect attempts : ${sockConn}`);
+  out.push(`  client CONNECTED ok     : ${sockOk}` + (sockOk ? "  ✓ realtime UP (client side)" : ""));
   out.push(`  client connect errors   : ${sockErr.length}` +
     (sockErr.length ? `  → "${[...new Set(sockErr.map((e) => e.fields.message))].join('", "')}"` : ""));
   out.push(`  server-side connections : ${srvConnected}` +
-    (sockErr.length && srvConnected === 0 ? "  ⚠ namespace rejected before handshake — realtime DOWN" : ""));
+    (sockErr.length && srvConnected === 0 && !sockOk ? "  ⚠ namespace rejected before handshake — realtime DOWN" : ""));
 
   // 4) Notable field flags.
   out.push("");
   out.push("─ flags ───────────────────────────────────────────────────────────────────");
-  const cursors = client.filter((e) => e.fields.fromCursor && e.fields.fromCursor !== "0");
+  // A cursor of 0 / null / undefined is a CORRECT fresh start. Only a non-zero leftover is the
+  // finding-#3 bug (a new device inheriting a prior session's persisted cursor → skips its Welcome).
+  const isStale = (v) => v && !["0", "null", "undefined"].includes(v);
+  const cursors = client.filter((e) => isStale(e.fields.fromCursor));
   for (const e of cursors) {
-    out.push(`  ⚠ catch-up resumes from stale cursor ${e.fields.fromCursor} on fresh device ` +
+    out.push(`  ⚠ catch-up resumes from STALE cursor ${e.fields.fromCursor} on fresh device ` +
       `${(e.deviceRowId || "?").slice(0, 8)} — a new device should start at 0; persisted cursor`);
     out.push(`    survives reload but device identity does not → can skip its own Welcome.`);
   }
+  const freshCursors = client.filter((e) => e.op === "handshakes.catchup" && e.msg?.startsWith("catch-up start") && !isStale(e.fields.fromCursor));
+  if (freshCursors.length) out.push(`  • ${freshCursors.length} catch-up(s) started from a clean cursor (null/0) — no stale-cursor bug this run.`);
   const zeroKp = client.filter((e) => e.op === "keypackages.count" && e.fields.available === "0");
   if (zeroKp.length) out.push(`  • key-packages/count returned available:0 ${zeroKp.length}× → fresh device, replenished after.`);
   if (!cursors.length && !zeroKp.length) out.push("  (none)");

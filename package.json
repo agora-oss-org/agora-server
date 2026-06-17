@@ -16,6 +16,7 @@
     "test:integration": "pnpm --filter @agora/api test:integration",
     "dev:contract": "pnpm --filter @agora-server/contract dev",
     "dev:api": "pnpm --filter @agora/api dev",
+    "dev:api:log": "LOG_LEVEL=trace pnpm dev:api 2>&1 | tee /tmp/agora-api.log",
     "dev:admin": "pnpm --filter @agora/admin dev",
     "contract:build": "pnpm --filter @agora-server/contract build",
     "db:migrate": "pnpm --filter @agora/api db:migrate:run",
