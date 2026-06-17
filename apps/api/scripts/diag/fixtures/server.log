@@ -1,0 +1,21 @@
+[2026-06-17 06:13:56] INFO : request {"method":"OPTIONS","path":"/v7/11111111-1111-1111-1111-111111111111/auth/request-new-access-token","status":204,"durationMs":0.1}
+[2026-06-17 06:13:56] INFO : request {"method":"GET","path":"/v7/11111111-1111-1111-1111-111111111111/projects/lean","status":200,"durationMs":297.3}
+[2026-06-17 06:13:56] INFO : request {"method":"GET","path":"/v7/11111111-1111-1111-1111-111111111111/projects/lean","status":200,"durationMs":304.8}
+[2026-06-17 06:13:56] DEBUG: auth: refresh rotated {"projectId":"11111111-1111-1111-1111-111111111111","profileId":"c09dde27-bffc-44ea-8ca2-3a93ae6603cf","familyId":"8f1b2eb9-8460-420b-aa77-c3a9b0bc9142"}
+[2026-06-17 06:13:57] INFO : request {"method":"POST","path":"/v7/11111111-1111-1111-1111-111111111111/auth/request-new-access-token","status":200,"durationMs":1088}
+[2026-06-17 06:13:57] INFO : request {"method":"OPTIONS","path":"/v7/11111111-1111-1111-1111-111111111111/chat/conversations/unread-count","status":204,"durationMs":0.3}
+[2026-06-17 06:13:57] INFO : request {"method":"OPTIONS","path":"/v7/11111111-1111-1111-1111-111111111111/secure-chat/devices","status":204,"durationMs":0.2}
+[2026-06-17 06:13:57] INFO : request {"method":"OPTIONS","path":"/v7/11111111-1111-1111-1111-111111111111/secure-chat/devices/72739e34-f219-4851-a0d9-eebf56e0c0e7/handshakes","status":204,"durationMs":0.1}
+[2026-06-17 06:13:57] INFO : request {"method":"GET","path":"/v7/11111111-1111-1111-1111-111111111111/chat/conversations/unread-count","status":200,"durationMs":307.6}
+[2026-06-17 06:13:57] DEBUG: secure-chat: device registered {"projectId":"11111111-1111-1111-1111-111111111111","userId":"c09dde27-bffc-44ea-8ca2-3a93ae6603cf","deviceId":"88ebc52e-8b15-4fd7-bdd1-b08d809cc4d5","deviceRowId":"01d9ea63-e8d0-4c02-a682-54d4a295e2d2","ciphersuite":1,"hasDisplayName":false}
+[2026-06-17 06:13:57] INFO : request {"method":"POST","path":"/v7/11111111-1111-1111-1111-111111111111/secure-chat/devices","status":201,"durationMs":311.7}
+[2026-06-17 06:13:57] INFO : request {"method":"OPTIONS","path":"/v7/11111111-1111-1111-1111-111111111111/secure-chat/devices/01d9ea63-e8d0-4c02-a682-54d4a295e2d2/key-packages/count","status":204,"durationMs":0.2}
+[2026-06-17 06:13:57] INFO : request {"method":"OPTIONS","path":"/v7/11111111-1111-1111-1111-111111111111/secure-chat/devices/01d9ea63-e8d0-4c02-a682-54d4a295e2d2/handshakes","status":204,"durationMs":0.3}
+[2026-06-17 06:13:57] INFO : request {"method":"GET","path":"/v7/11111111-1111-1111-1111-111111111111/secure-chat/devices/72739e34-f219-4851-a0d9-eebf56e0c0e7/handshakes","status":200,"durationMs":613.6}
+[2026-06-17 06:13:58] INFO : request {"method":"GET","path":"/v7/11111111-1111-1111-1111-111111111111/secure-chat/devices/01d9ea63-e8d0-4c02-a682-54d4a295e2d2/key-packages/count","status":200,"durationMs":453.7}
+[2026-06-17 06:13:58] INFO : request {"method":"OPTIONS","path":"/v7/11111111-1111-1111-1111-111111111111/secure-chat/devices/01d9ea63-e8d0-4c02-a682-54d4a295e2d2/key-packages","status":204,"durationMs":0.2}
+[2026-06-17 06:13:58] INFO : request {"method":"OPTIONS","path":"/v7/11111111-1111-1111-1111-111111111111/entities","status":204,"durationMs":0.2}
+[2026-06-17 06:13:58] INFO : request {"method":"GET","path":"/v7/11111111-1111-1111-1111-111111111111/secure-chat/devices/01d9ea63-e8d0-4c02-a682-54d4a295e2d2/handshakes","status":200,"durationMs":601.7}
+[2026-06-17 06:13:58] DEBUG: secure-chat: key packages published {"projectId":"11111111-1111-1111-1111-111111111111","deviceRowId":"01d9ea63-e8d0-4c02-a682-54d4a295e2d2","submitted":20,"published":20}
+[2026-06-17 06:13:58] INFO : request {"method":"POST","path":"/v7/11111111-1111-1111-1111-111111111111/secure-chat/devices/01d9ea63-e8d0-4c02-a682-54d4a295e2d2/key-packages","status":201,"durationMs":465.6}
+[2026-06-17 06:13:59] INFO : request {"method":"GET","path":"/v7/11111111-1111-1111-1111-111111111111/entities","status":200,"durationMs":941.4}

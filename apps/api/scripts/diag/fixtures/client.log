@@ -1,0 +1,42 @@
+[secure-chat] debug logging ON (level=trace). Lines use console.debug — enable "Verbose" in the DevTools console to see them.
+debug.ts:112 [secure-chat:rest] debug → POST /devices
+debug.ts:113 [secure-chat:rest] trace → POST /devices body {deviceId: '819d2c07-bede-4a95-86c5-28d059fe7e7e', signaturePublicKey: 'K1Jy2A5frzqsxbkwzUk9VI6vlN3aeUKPtrqS6WlrrMs=', credential: 'ODE5ZDJjMDctYmVkZS00YTk1LTg2YzUtMjhkMDU5ZmU3ZTdl', ciphersuite: 1}
+debug.ts:113 [secure-chat:socket] debug connecting /secure namespace {origin: 'http://localhost:4000/v7', projectId: '11111111-1111-1111-1111-111111111111'}
+debug.ts:113 [secure-chat:socket] debug connecting /secure namespace {origin: 'http://localhost:4000/v7', projectId: '11111111-1111-1111-1111-111111111111'}
+debug.ts:113 [secure-chat:handshakes] debug catch-up start {deviceId: '9e0381bc-e95f-455c-97c3-25eaa2705946', fromCursor: '11', pageSize: 100}
+debug.ts:113 [secure-chat:rest] debug → GET /devices/9e0381bc-e95f-455c-97c3-25eaa2705946/handshakes {since: '11', limit: 100}
+debug.ts:112 [secure-chat:rest] trace → GET /devices/9e0381bc-e95f-455c-97c3-25eaa2705946/handshakes body
+debug.ts:113 [secure-chat:socket] debug socket connect_error {message: 'Invalid namespace'}
+debug.ts:113 [secure-chat:socket] debug socket connect_error {message: 'Invalid namespace'}
+debug.ts:113 [secure-chat:rest] debug ← 201 POST /devices {id: '72739e34-f219-4851-a0d9-eebf56e0c0e7', projectId: '11111111-1111-1111-1111-111111111111', userId: 'c09dde27-bffc-44ea-8ca2-3a93ae6603cf', deviceId: '819d2c07-bede-4a95-86c5-28d059fe7e7e', displayName: null, …}
+debug.ts:113 [secure-chat:rest] trace ← POST /devices body {id: '72739e34-f219-4851-a0d9-eebf56e0c0e7', projectId: '11111111-1111-1111-1111-111111111111', userId: 'c09dde27-bffc-44ea-8ca2-3a93ae6603cf', deviceId: '819d2c07-bede-4a95-86c5-28d059fe7e7e', displayName: null, …}
+debug.ts:113 [secure-chat:device] debug registered device {deviceId: '819d2c07-bede-4a95-86c5-28d059fe7e7e', ciphersuite: 1}
+debug.ts:113 [secure-chat:socket] debug connecting /secure namespace {origin: 'http://localhost:4000/v7', projectId: '11111111-1111-1111-1111-111111111111'}
+debug.ts:112 [secure-chat:rest] debug → GET /devices/72739e34-f219-4851-a0d9-eebf56e0c0e7/key-packages/count
+debug.ts:112 [secure-chat:rest] trace → GET /devices/72739e34-f219-4851-a0d9-eebf56e0c0e7/key-packages/count body
+debug.ts:113 [secure-chat:socket] debug connecting /secure namespace {origin: 'http://localhost:4000/v7', projectId: '11111111-1111-1111-1111-111111111111'}
+debug.ts:113 [secure-chat:socket] debug connecting /secure namespace {origin: 'http://localhost:4000/v7', projectId: '11111111-1111-1111-1111-111111111111'}
+debug.ts:113 [secure-chat:handshakes] debug catch-up start {deviceId: '72739e34-f219-4851-a0d9-eebf56e0c0e7', fromCursor: '11', pageSize: 100}
+debug.ts:113 [secure-chat:rest] debug → GET /devices/72739e34-f219-4851-a0d9-eebf56e0c0e7/handshakes {since: '11', limit: 100}
+debug.ts:112 [secure-chat:rest] trace → GET /devices/72739e34-f219-4851-a0d9-eebf56e0c0e7/handshakes body
+debug.ts:113 [secure-chat:socket] debug socket connect_error {message: 'Invalid namespace'}
+debug.ts:113 [secure-chat:socket] debug socket connect_error {message: 'Invalid namespace'}
+debug.ts:113 [secure-chat:socket] debug socket connect_error {message: 'Invalid namespace'}
+debug.ts:113 [secure-chat:rest] debug ← 200 GET /devices/72739e34-f219-4851-a0d9-eebf56e0c0e7/key-packages/count {available: 0}
+debug.ts:113 [secure-chat:rest] trace ← GET /devices/72739e34-f219-4851-a0d9-eebf56e0c0e7/key-packages/count body {available: 0}
+debug.ts:112 [secure-chat:rest] debug → POST /devices/72739e34-f219-4851-a0d9-eebf56e0c0e7/key-packages
+debug.ts:113 [secure-chat:rest] trace → POST /devices/72739e34-f219-4851-a0d9-eebf56e0c0e7/key-packages body {keyPackages: Array(20)}
+debug.ts:113 [secure-chat:rest] debug ← 200 GET /devices/72739e34-f219-4851-a0d9-eebf56e0c0e7/handshakes {handshakes: '[0]', hasMore: false}
+debug.ts:113 [secure-chat:rest] trace ← GET /devices/72739e34-f219-4851-a0d9-eebf56e0c0e7/handshakes body {handshakes: Array(0), hasMore: false}
+debug.ts:113 [secure-chat:handshakes] trace catch-up page {page: 1, count: 0, hasMore: false}
+debug.ts:113 [secure-chat:handshakes] debug catch-up done {deviceId: '72739e34-f219-4851-a0d9-eebf56e0c0e7', pages: 1, fetched: 0, toCursor: '11', replayBuffered: 0}
+debug.ts:113 [secure-chat:handshakes] debug re-joined socket rooms for known groups {count: 0}
+debug.ts:113 [secure-chat:handshakes] debug ready {deviceId: '72739e34-f219-4851-a0d9-eebf56e0c0e7', cursor: '11'}
+debug.ts:113 [secure-chat:rest] debug ← 200 GET /devices/9e0381bc-e95f-455c-97c3-25eaa2705946/handshakes {handshakes: '[0]', hasMore: false}
+debug.ts:113 [secure-chat:rest] trace ← GET /devices/9e0381bc-e95f-455c-97c3-25eaa2705946/handshakes body {handshakes: Array(0), hasMore: false}
+debug.ts:113 [secure-chat:handshakes] trace catch-up page {page: 1, count: 0, hasMore: false}
+debug.ts:113 [secure-chat:handshakes] debug catch-up done {deviceId: '9e0381bc-e95f-455c-97c3-25eaa2705946', pages: 1, fetched: 0, toCursor: '11', replayBuffered: 0}
+debug.ts:113 [secure-chat:handshakes] debug re-joined socket rooms for known groups {count: 0}
+debug.ts:113 [secure-chat:rest] debug ← 201 POST /devices/72739e34-f219-4851-a0d9-eebf56e0c0e7/key-packages {published: 20}
+debug.ts:113 [secure-chat:rest] trace ← POST /devices/72739e34-f219-4851-a0d9-eebf56e0c0e7/key-packages body {published: 20}
+debug.ts:113 [secure-chat:device] debug replenished key-packages {available: 0, target: 20, deficit: 20, published: 20}

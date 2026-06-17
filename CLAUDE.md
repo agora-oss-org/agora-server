@@ -298,6 +298,35 @@ Voyage/Anthropic calls); `match_content` is covered offline with synthetic vecto
 > `mkdir -p "$HOME/.cache/agora-tmp"` once, then prefix with `TMPDIR="$HOME/.cache/agora-tmp"`
 > (e.g. `TMPDIR="$HOME/.cache/agora-tmp" pnpm test:integration`).
 
+## Diagnostics
+
+**Secure-chat log correlator** (`apps/api/scripts/diag/secure-chat-log-normalize.mjs`). When secure
+chat misbehaves, the two log streams — the **client SDK** console (`[secure-chat:LAYER] LEVEL → /…`
+from `@agora-sdk/secure-chat-*` `debug.ts`) and the **API server** (`[ISO] LEVEL : request {json}`
+from wonder-logger) — name the same operation with **different identifiers** (device-row churn) and
+the client emits **no timestamps**, so they can't be eyeballed into alignment. This script lifts both
+into one common event schema, auto-detecting each line's format (arg order is free; a single
+interleaved file works), then prints a correlation report.
+
+```bash
+cd apps/api
+# capture the server stream to a file first (the new debug/trace logs live behind LOG_LEVEL):
+LOG_LEVEL=trace pnpm dev 2>&1 | tee /tmp/agora-api.log     # then reproduce in the browser
+# paste the browser console (Verbose on) into client.log, then correlate:
+node scripts/diag/secure-chat-log-normalize.mjs client.log /tmp/agora-api.log   # human report
+node scripts/diag/secure-chat-log-normalize.mjs --ndjson client.log /tmp/agora-api.log   # raw events
+cat client.log /tmp/agora-api.log | node scripts/diag/secure-chat-log-normalize.mjs -    # stdin
+```
+
+The report answers the questions hand-reading can't: **device-row id overlap** (client set vs server
+set → is this even one run, or churn?), **op reachability** (did every client REST request reach the
+server, or die locally?), **realtime health** (`/secure` socket connect attempts vs errors vs
+server-side connections), and **flags** (stale catch-up cursor on a fresh device, `available:0`
+key-package counts). Worked fixtures live in `scripts/diag/fixtures/`. The server tier of the logs is
+on at the default `LOG_LEVEL=debug`; use `trace` for the full firehose (per **Log with intent** +
+`routes/secure-chat.ts` / `realtime/secure-socket.ts`). The longer-term plan (a shared `traceparent`
+correlation id + the `chat-diag` harness emitting this schema natively) is `docs/SECURE-CHAT-DIAG-HARNESS.md`.
+
 ## Database migrations (Drizzle)
 
 Schema lives in `apps/api/src/db/schema/*.ts`, the single source of truth for tables. To change it:
