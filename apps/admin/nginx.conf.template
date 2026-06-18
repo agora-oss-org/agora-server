@@ -24,6 +24,30 @@ server {
         try_files $uri =404;
     }
 
+    # E2E secure-chat is its OWN service (@agora/secure-chat). This REGEX location matches BEFORE the
+    # /v7/ prefix location below (nginx evaluates regex locations first), so the secure REST surface
+    # routes to the secure-chat upstream while the rest of /v7 stays on the api. Lazy-resolved, so when
+    # secure-chat isn't deployed these requests 502 (the feature is simply absent) rather than crash nginx.
+    location ~ ^/v7/[^/]+/secure-chat/ {
+        set $secure_upstream "${SECURE_CHAT_UPSTREAM}";
+        proxy_pass $secure_upstream$request_uri;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # secure-chat realtime — its OWN engine.io path "/secure-socket/" (distinct from /socket.io/), the
+    # routable split point that lets this proxy send secure realtime to a different backend than the api's
+    # socket server. WebSocket upgrade headers.
+    location /secure-socket/ {
+        set $secure_upstream_ws "${SECURE_CHAT_UPSTREAM}";
+        proxy_pass $secure_upstream_ws$request_uri;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+    }
+
     # Reverse-proxy the Agora API (same origin → no CORS, no build-time API URL).
     location /v7/ {
         set $api_upstream "${API_UPSTREAM}";

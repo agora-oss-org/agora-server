@@ -16,15 +16,46 @@ services:
     init: true
     restart: unless-stopped
 
-  # OPTIONAL shared rate-limit store. Only needed when running MORE THAN ONE `agora` replica — a single
-  # replica limits fine in-process. Gated behind the `scale` profile so the default deploy stays
-  # Redis-free:  docker compose --profile scale up
-  # Then set REDIS_URL=redis://redis:6379 in .env (least-privilege ACL: see apps/api/README.md). The api
-  # fail-opens to in-memory if Redis is unreachable. No persistence — these are throwaway counters.
+  # Shared Redis. Two consumers: (1) the OPTIONAL cross-replica rate-limit store (only needed with MORE
+  # THAN ONE `agora` replica — a single replica limits fine in-process; the api fail-opens to in-memory),
+  # and (2) the secure-chat suspension index (a HARD dependency of @agora/secure-chat — fail-closed). Gated
+  # behind BOTH the `scale` and `secure` profiles so the default api-only deploy stays Redis-free:
+  #   docker compose --profile scale up      (rate limiting)
+  #   docker compose --profile secure up     (secure-chat — brings up redis + secure-chat)
+  # Then set REDIS_URL=redis://redis:6379 in .env (least-privilege ACL: see apps/api/README.md).
   redis:
     image: redis:7-alpine
-    profiles: ["scale"]
+    profiles: ["scale", "secure"]
     command: ["redis-server", "--save", "", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru"]
+    # Real readiness probe so dependents waiting on `condition: service_healthy` (secure-chat) don't start
+    # before Redis accepts commands — secure-chat hydrates its suspension index against it on boot.
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    init: true
+    restart: unless-stopped
+
+  # ── @agora/secure-chat ─────────────────────────────────────────────────────────────────────────
+  # The blind MLS (E2E) Delivery Service — an INDEPENDENT process split from the api (load-balancing /
+  # solo deploys). Shares the same Postgres (DATABASE_URL) + Redis as the api. Serves
+  # /v7/:projectId/secure-chat/* (REST) + the /secure realtime on engine.io path /secure-socket/ (the
+  # admin nginx routes both here). Redis is a HARD dependency (the fail-closed suspension index): set
+  # REDIS_URL=redis://redis:6379 in .env. Gated behind the `secure` profile (also brings up redis):
+  #   docker compose --profile secure up
+  secure-chat:
+    build:
+      context: .
+      dockerfile: apps/secure-chat/Dockerfile
+    image: agora-secure-chat
+    profiles: ["secure"]
+    env_file: .env
+    ports:
+      - "${SECURE_CHAT_PORT:-4002}:4002"
+    depends_on:
+      redis:
+        condition: service_healthy
     init: true
     restart: unless-stopped
 
@@ -160,6 +191,10 @@ services:
       # The scorer-worker serves the same /v1/:projectId/moderation/* surface the admin nginx proxies,
       # so only this upstream value changes (env name kept as MODERATOR_UPSTREAM for the foundation).
       MODERATOR_UPSTREAM: http://scorer-worker:4001
+      # secure-chat upstream: the admin nginx routes /v7/:projectId/secure-chat/* + the /secure-socket/
+      # realtime path here. Resolved lazily (variable proxy_pass + resolver), so when secure-chat isn't
+      # deployed (no `secure` profile) those routes simply 502 instead of crashing nginx at boot.
+      SECURE_CHAT_UPSTREAM: http://secure-chat:4002
     ports:
       - "${ADMIN_PORT:-8080}:80"
     depends_on:
