@@ -4,8 +4,8 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { serve } from "@hono/node-server";
 import { io as connectClient, type Socket } from "socket.io-client";
-import { createApp } from "../../src/app.js";
-import { attachRealtime } from "../../src/realtime/socket.js";
+import { createSecureApp } from "../../src/app.js";
+import { attachSecureRealtime } from "../../src/realtime/secure-socket.js";
 import { api, createProject, createUser, deleteProject, base } from "./helpers.js";
 import { provisionDevice, claimKeyPackage, b64e, b64d, enc } from "./secure-helpers.js";
 
@@ -13,7 +13,7 @@ let projectId: string;
 let alice: { id: string; token: string };
 let bob: { id: string; token: string };
 let server: ReturnType<typeof serve>;
-let io: ReturnType<typeof attachRealtime>;
+let io: ReturnType<typeof attachSecureRealtime>;
 let port: number;
 
 let aliceDev: Awaited<ReturnType<typeof provisionDevice>>;
@@ -24,6 +24,7 @@ let conversationId: string;
 function connect(token: string): Promise<Socket> {
   return new Promise((resolve, reject) => {
     const s = connectClient(`http://localhost:${port}/secure`, {
+      path: "/secure-socket/", // secure realtime owns its OWN engine.io path (not the default /socket.io/)
       auth: { token }, query: { projectId }, transports: ["websocket"], reconnection: false,
     });
     s.on("connect", () => resolve(s));
@@ -43,11 +44,11 @@ beforeAll(async () => {
   projectId = await createProject();
   alice = await createUser(projectId);
   bob = await createUser(projectId);
-  const app = createApp();
+  const app = createSecureApp();
   await new Promise<void>((resolve) => {
     server = serve({ fetch: app.fetch, port: 0 }, (info) => { port = info.port; resolve(); });
   });
-  io = attachRealtime(server as unknown as Parameters<typeof attachRealtime>[0]);
+  io = attachSecureRealtime(server as unknown as Parameters<typeof attachSecureRealtime>[0]);
 
   aliceDev = await provisionDevice(projectId, alice, "alice-web");
   bobDev = await provisionDevice(projectId, bob, "bob-web");

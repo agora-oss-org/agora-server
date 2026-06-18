@@ -8,25 +8,26 @@
 // NOTE: deliberately no umami/embedding/moderation calls here — secure chat is private by design.
 import { Hono } from "hono";
 import { and, eq, desc, asc, count, gt, lt, or, inArray, isNull, sql } from "drizzle-orm";
-import type { Variables } from "../http/context.js";
-import { Errors } from "../http/errors.js";
-import { requireAuth } from "../middleware/auth.js";
-import { db } from "../db/index.js";
+import type { Variables } from "@agora/core/http/context";
+import { Errors } from "@agora/core/http/errors";
+import { requireAuth } from "@agora/core/middleware/auth";
+import { db } from "@agora/core/db";
 import {
   secureDevices, secureKeyPackages, secureConversations, secureConversationMembers,
-  secureMessages, secureHandshakeMessages, secureKeyBackups, spaces, spaceMembers,
-} from "../db/schema/index.js";
+  secureMessages, secureHandshakeMessages, secureKeyBackups,
+} from "@agora/core/db/schema";
 import {
   shapeSecureDevice, shapeSecureConversation, shapeSecureConversationMember,
   shapeSecureMessage, shapeSecureHandshake, shapeSecureKeyBackup,
 } from "../lib/secure-chat-shape.js";
+import { assertSpaceAccess } from "../lib/space-access.js";
 import {
   parseBody, registerDeviceSchema, publishKeyPackagesSchema, createSecureConversationSchema,
   addSecureMemberSchema, removeSecureMemberSchema, sendSecureMessageSchema, uploadKeyBackupSchema,
-} from "../lib/validation.js";
+} from "@agora/core/lib/validation";
 import { emitToSecureConversation, emitToSecureDevice } from "../realtime/secure-socket.js";
-import { env } from "../lib/env.js";
-import { logger } from "../lib/logger.js";
+import { env } from "@agora/core/lib/env";
+import { logger } from "@agora/core/lib/logger";
 
 type DeviceRow = typeof secureDevices.$inferSelect;
 type ConversationRow = typeof secureConversations.$inferSelect;
@@ -77,16 +78,6 @@ async function requireSecureMember(c: any, conversationId: string): Promise<Memb
   return m;
 }
 
-// Channel conversations are gated by space membership (owner ⇒ allowed), mirroring chat.ts.
-async function assertSpaceAccess(c: any, spaceId: string): Promise<void> {
-  const [space] = await db.select().from(spaces)
-    .where(and(eq(spaces.projectId, c.var.projectId), eq(spaces.id, spaceId))).limit(1);
-  if (!space) throw Errors.notFound("secure-chat/space-not-found", "Space not found");
-  if (space.userId === c.var.auth.userId) return;
-  const [sm] = await db.select().from(spaceMembers)
-    .where(and(eq(spaceMembers.projectId, c.var.projectId), eq(spaceMembers.spaceId, spaceId), eq(spaceMembers.userId, c.var.auth.userId))).limit(1);
-  if (!sm || sm.status !== "active") throw Errors.forbidden("secure-chat/space-not-member", "Join the space to access its channel");
-}
 
 export const secureChatRoutes = new Hono<{ Variables: Variables }>()
   // ── devices ─────────────────────────────────────────────────────────────────
@@ -262,7 +253,7 @@ export const secureChatRoutes = new Hono<{ Variables: Variables }>()
     const body = parseBody(createSecureConversationSchema, await c.req.json().catch(() => ({})), "secure-chat");
     if (body.type === "channel") {
       if (!body.spaceId) throw Errors.badRequest("secure-chat/channel-needs-space", "Channels require a spaceId", "spaceId");
-      await assertSpaceAccess(c, body.spaceId);
+      await assertSpaceAccess(c.var.projectId, body.spaceId, c.var.auth!.userId);
     } else if (body.spaceId) {
       throw Errors.badRequest("secure-chat/space-only-channel", "spaceId is only valid for channels", "spaceId");
     }

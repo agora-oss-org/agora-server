@@ -4,8 +4,8 @@
 // reaches ONLY its target device.
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { eq } from "drizzle-orm";
-import { db } from "../../src/db/index.js";
-import { secureMessages } from "../../src/db/schema/index.js";
+import { db } from "@agora/core/db";
+import { secureMessages } from "@agora/core/db/schema";
 import { api, createProject, createUser, deleteProject, base } from "./helpers.js";
 import { provisionDevice, claimKeyPackage, b64e, b64d, enc, dec } from "./secure-helpers.js";
 

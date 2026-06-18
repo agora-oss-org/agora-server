@@ -11,7 +11,6 @@ import { jwtVerify } from "jose";
 import { env } from "../lib/env.js";
 import { hasActiveSuspension } from "../lib/suspensions.js";
 import { logger } from "../lib/logger.js";
-import { attachSecureRealtime } from "./secure-socket.js";
 
 // ── Event payload contracts (mirror @replyke/core/src/types/socket.ts) ──────────
 export interface ServerToClientEvents {
@@ -94,9 +93,6 @@ export function attachRealtime(httpServer: HttpServer) {
     { cors: { origin: env.CORS_ORIGIN } }
   );
   ioRef = io;
-
-  // Secure chat (E2E) gets its own "/secure" namespace on the same server (ciphertext only).
-  attachSecureRealtime(io);
 
   // Authenticate from handshake auth.token + scope by query.projectId.
   io.use(async (socket, next) => {

@@ -7,14 +7,15 @@
 // Rooms:
 //   secure:conv:{conversationId}  — membership-gated; broadcast Commits + application messages
 //   secure:device:{deviceId}      — auto-joined for each device the user owns; targeted Welcomes
-import { type Server, type Namespace, type Socket } from "socket.io";
+import { Server, type Namespace, type Socket } from "socket.io";
+import { type Server as HttpServer } from "node:http";
 import { and, eq, isNull } from "drizzle-orm";
-import { db } from "../db/index.js";
-import { secureConversationMembers, secureDevices } from "../db/schema/index.js";
+import { db } from "@agora/core/db";
+import { secureConversationMembers, secureDevices } from "@agora/core/db/schema";
 import { jwtVerify } from "jose";
-import { env } from "../lib/env.js";
-import { hasActiveSuspension } from "../lib/suspensions.js";
-import { logger } from "../lib/logger.js";
+import { env } from "@agora/core/lib/env";
+import { hasActiveSuspension } from "@agora/core/lib/suspensions";
+import { logger } from "@agora/core/lib/logger";
 import type { SecureMessageModel, SecureHandshakeModel } from "@agora-server/contract";
 
 export interface SecureServerToClientEvents {
@@ -90,8 +91,17 @@ async function isSecureMember(projectId: string, conversationId: string, userId:
   return !!m;
 }
 
-// Attach the /secure namespace to the shared socket.io server (called from attachRealtime).
-export function attachSecureRealtime(io: Server): SecureNamespace {
+// Stand up the secure realtime server (called from index.ts with the Node HTTP server).
+//
+// Unlike the plaintext chat socket, @agora/secure-chat runs in its OWN process, so it owns its OWN
+// socket.io server. socket.io namespaces ("/secure") multiplex over a single engine.io PATH and the
+// namespace is in the Socket.IO packet, NOT the URL — so a path-routing reverse proxy can't split a
+// shared "/socket.io/" between two backends. We therefore give this server a DISTINCT engine.io path,
+// "/secure-socket/", which the edge CAN route to this process. The namespace name "/secure" and every
+// event name stay byte-identical to the contract (docs/MANIFEST.md §4); only the connection path moves.
+// SDK consumers connect with: io(`${secureOrigin}/secure`, { path: "/secure-socket/", auth, query }).
+export function attachSecureRealtime(httpServer: HttpServer): Server {
+  const io = new Server(httpServer, { path: "/secure-socket/", cors: { origin: env.CORS_ORIGIN } });
   const secure = io.of("/secure") as unknown as SecureNamespace;
   secureRef = secure;
 
@@ -183,7 +193,9 @@ export function attachSecureRealtime(io: Server): SecureNamespace {
     });
   });
 
-  return secure;
+  // Return the socket.io Server (not the namespace) so callers/tests can close it; the module-level
+  // `secureRef` namespace is what the REST fan-out helpers use.
+  return io;
 }
 
 // REST handlers call these after writing to Postgres. No-op if the namespace isn't attached (tests).

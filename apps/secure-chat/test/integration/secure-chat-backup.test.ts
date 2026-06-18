@@ -4,8 +4,8 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { eq } from "drizzle-orm";
 import { MockSecureChatCrypto } from "@agora-sdk/secure-chat-crypto/testing";
-import { db } from "../../src/db/index.js";
-import { secureKeyBackups } from "../../src/db/schema/index.js";
+import { db } from "@agora/core/db";
+import { secureKeyBackups } from "@agora/core/db/schema";
 import { api, createProject, createUser, deleteProject, base } from "./helpers.js";
 import { b64e, b64d, enc, dec } from "./secure-helpers.js";
 

@@ -5,7 +5,7 @@
 import type {
   secureDevices, secureConversations, secureConversationMembers,
   secureMessages, secureHandshakeMessages, secureKeyBackups, secureKeyPackages,
-} from "../db/schema/index.js";
+} from "@agora/core/db/schema";
 import type {
   SecureDeviceModel, SecureConversationModel, SecureConversationMemberModel,
   SecureMessageModel, SecureHandshakeModel, SecureKeyBackupModel, SecureKeyPackageClaim,
