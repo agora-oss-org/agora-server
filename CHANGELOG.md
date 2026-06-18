@@ -48,6 +48,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   stringified. No API/contract change; default `LOG_LEVEL=debug` so the lifecycle tier is on in dev.
 
 ### Fixed
+- **Metrics flush no longer fails (and double-counts) when a project is deleted mid-flight.** The
+  `api_usage` meter buffers per-request deltas and flushes them ~10s later (`lib/metrics.ts`); if a
+  project was deleted between a request and its flush (the e2e teardown race, but also any prod
+  project-delete with requests in flight), the `api_usage → projects` FK rejected the insert. The old
+  catch then merged the **entire** snapshot back — re-queuing already-inserted buckets (double-count)
+  and a deleted-project bucket that could never land (poison pill spamming `[metrics] flush failed`
+  every 10s forever). Now each bucket flushes independently: an FK violation (`23503`, project gone)
+  **drops** that metric (`debug`-logged), a transient error re-queues only its own bucket, and one
+  bad project can't corrupt another's counts. Covered by new `lib/metrics.test.ts`.
 - **A malformed socket event could crash the entire API process.** An async socket.io listener that
   rejected (e.g. `join:secure-conversation` / `join:conversation` with an `undefined` `conversationId`,
   which fed `undefined` to a Drizzle query → postgres `UNDEFINED_VALUE`) became an **unhandled

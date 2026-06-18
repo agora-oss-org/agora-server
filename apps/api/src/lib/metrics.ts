@@ -52,6 +52,14 @@ function mergeBack(snapshot: [string, Bucket][]): void {
 
 let flushing = false;
 
+/** Postgres `foreign_key_violation`. Drizzle wraps the driver error, so walk the cause chain. */
+function isForeignKeyViolation(e: unknown): boolean {
+  for (let cur = e; cur != null; cur = (cur as { cause?: unknown }).cause) {
+    if ((cur as { code?: unknown }).code === "23503") return true;
+  }
+  return false;
+}
+
 /** Flush accumulated deltas to `api_usage`. Safe to call concurrently (guarded). */
 export async function flushMetrics(): Promise<void> {
   if (flushing || buckets.size === 0) return;
@@ -59,25 +67,37 @@ export async function flushMetrics(): Promise<void> {
   const snapshot = [...buckets.entries()];
   buckets.clear();
   try {
+    // Flush each bucket independently: one project's failure must not poison the others. A bucket
+    // that throws is handled on its own — merged back only if the error is transient. (A single
+    // try/catch around the whole loop would re-merge already-inserted buckets, double-counting them.)
     for (const [key, b] of snapshot) {
       const [projectId, month] = key.split("|") as [string, string];
-      // duration_ms_total is bigint; the accumulator carries fractional ms (performance.now()), so
-      // round at the DB boundary. Sub-ms loss on a summed total is irrelevant to avg-latency.
-      await db.execute(sql`
-        insert into api_usage (project_id, month, requests, egress_bytes, duration_ms_total, errors)
-        values (${projectId}::uuid, ${month}::date, ${b.requests}, ${b.egressBytes}, ${Math.round(b.durationMs)}, ${b.errors})
-        on conflict (project_id, month) do update set
-          requests          = api_usage.requests + excluded.requests,
-          egress_bytes      = api_usage.egress_bytes + excluded.egress_bytes,
-          duration_ms_total = api_usage.duration_ms_total + excluded.duration_ms_total,
-          errors            = api_usage.errors + excluded.errors,
-          updated_at        = now()
-      `);
+      try {
+        // duration_ms_total is bigint; the accumulator carries fractional ms (performance.now()), so
+        // round at the DB boundary. Sub-ms loss on a summed total is irrelevant to avg-latency.
+        await db.execute(sql`
+          insert into api_usage (project_id, month, requests, egress_bytes, duration_ms_total, errors)
+          values (${projectId}::uuid, ${month}::date, ${b.requests}, ${b.egressBytes}, ${Math.round(b.durationMs)}, ${b.errors})
+          on conflict (project_id, month) do update set
+            requests          = api_usage.requests + excluded.requests,
+            egress_bytes      = api_usage.egress_bytes + excluded.egress_bytes,
+            duration_ms_total = api_usage.duration_ms_total + excluded.duration_ms_total,
+            errors            = api_usage.errors + excluded.errors,
+            updated_at        = now()
+        `);
+      } catch (e) {
+        // Project deleted while requests were in flight (FK violation) — the row can never land, so
+        // drop this metric rather than merge it back into a poison-pill bucket that fails forever.
+        // Best-effort telemetry must tolerate a vanished project; it must never block or self-perpetuate.
+        if (isForeignKeyViolation(e)) {
+          logger.debug({ projectId }, "[metrics] dropping flush for deleted project");
+          continue;
+        }
+        mergeBack([[key, b]]); // transient error — re-queue just this bucket so nothing is lost
+        logger.error("[metrics] flush failed");
+        logger.debug({ err: e }, "[metrics] flush failed");
+      }
     }
-  } catch (e) {
-    mergeBack(snapshot); // don't lose counts on a transient DB error
-    logger.error("[metrics] flush failed");
-    logger.debug({ err: e }, "[metrics] flush failed");
   } finally {
     flushing = false;
   }
