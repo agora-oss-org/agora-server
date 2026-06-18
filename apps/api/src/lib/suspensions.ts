@@ -1,28 +1,16 @@
-// User suspensions: the active-suspension predicate + the read/write helpers behind enforcement
-// (middleware/auth.ts) and the operator suspend/lift endpoints (routes/users.ts). A suspension is
-// ACTIVE when it has started and not yet ended; a null endDate is indefinite. Suspending revokes the
-// user's refresh families too, so the session can't be renewed once the access token lapses.
+// Suspension WRITE helpers (list / suspend / lift) used by the operator endpoints (routes/users.ts),
+// plus a re-export of the shared READ path from @agora/core. The writes stay here because they revoke
+// the user's refresh-token families (lib/tokens.ts — api-owned auth), which must not be pulled into the
+// shared kernel. The read predicate + hasActiveSuspension live in @agora/core (shared with secure-chat).
 import { and, eq, gt, isNull, or } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { userSuspensions } from "../db/schema/index.js";
 import { revokeAllForProfile } from "./tokens.js";
+import { addSuspended, removeSuspended } from "@agora/core/lib/suspension-index";
+
+export { isActiveSuspension, hasActiveSuspension } from "@agora/core/lib/suspensions";
 
 type SuspensionRow = typeof userSuspensions.$inferSelect;
-
-/** Pure predicate — the one place the "active" semantics live. startDate <= now < endDate (null=∞). */
-export function isActiveSuspension(now: Date, row: { startDate: Date; endDate: Date | null }): boolean {
-  return row.startDate.getTime() <= now.getTime() && (row.endDate === null || row.endDate.getTime() > now.getTime());
-}
-
-/** True when the profile has any currently-active suspension. Indexed point lookup by profile_id. */
-export async function hasActiveSuspension(profileId: string): Promise<boolean> {
-  const rows = await db
-    .select({ startDate: userSuspensions.startDate, endDate: userSuspensions.endDate })
-    .from(userSuspensions)
-    .where(eq(userSuspensions.profileId, profileId));
-  const now = new Date();
-  return rows.some((r) => isActiveSuspension(now, r));
-}
 
 /** All suspension rows (active + history) for a profile, newest first. */
 export async function listSuspensions(profileId: string): Promise<SuspensionRow[]> {
@@ -38,6 +26,7 @@ export async function suspendUser(profileId: string, opts: { reason?: string | n
     endDate: opts.endDate ?? null,
   }).returning();
   await revokeAllForProfile(profileId);
+  await addSuspended(profileId); // Redis index write-through for instant enforcement (no-op if disabled)
   return row!;
 }
 
@@ -52,5 +41,6 @@ export async function liftSuspensions(profileId: string): Promise<number> {
       or(isNull(userSuspensions.endDate), gt(userSuspensions.endDate, now)),
     ))
     .returning({ id: userSuspensions.id });
+  await removeSuspended(profileId); // Redis index write-through (no-op if disabled)
   return lifted.length;
 }

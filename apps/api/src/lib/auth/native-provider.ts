@@ -3,7 +3,7 @@
 // random, stored hashed, single-use, expiring. Anti-enumeration on sign-up/reset/resend.
 import { and, eq, gt, isNull } from "drizzle-orm";
 import { db } from "../../db/index.js";
-import { authCredentials, authEmailTokens } from "../../db/schema/auth.js";
+import { authCredentials, authEmailTokens } from "../../db/schema/index.js";
 import { Errors } from "../../http/errors.js";
 import { hashPassword, verifyPassword } from "./password.js";
 import { generateEmailToken, hashEmailToken } from "./email-token.js";

@@ -1,0 +1,59 @@
+# Wonder Logger config for @agora/api. Phase 2: structured logging + full OpenTelemetry (traces,
+# metrics, OTLP log export, trace↔log correlation). Loaded by src/lib/logger.ts (logger) and
+# src/instrument.ts (telemetry SDK — imported FIRST in index.ts so auto-instrumentation patches
+# http/db before they load).
+#
+# ⚠️ Env interpolation ${VAR:-default} is STRING-ONLY; booleans/numbers must be literals
+#    (`enabled: true`, `port: 9464`). `console.variant` is a string enum → env-switchable.
+# ⚠️ OTLP exporters default to a local collector (localhost:4318). Without a collector running you'll
+#    see periodic export warnings — point OTEL_*_ENDPOINT at your collector, or set OTEL_SDK_DISABLED=true.
+service:
+  name: ${SERVICE_NAME:-agora-api}
+  version: ${SERVICE_VERSION:-0.3.0}
+  environment: ${NODE_ENV:-development}
+
+logger:
+  enabled: true
+  level: ${LOG_LEVEL:-debug}
+  redact:
+    - password
+    - token
+    - authorization
+    - cookie
+    - refreshToken
+    - accessToken
+    - secret
+    - webhookSecret
+  transports:
+    # Aligned console (colorized, single-line). variant env-switchable: set LOG_CONSOLE=json in prod.
+    - type: console
+      variant: ${LOG_CONSOLE:-aligned}
+      level: ${LOG_LEVEL:-debug}
+      alignedOptions:
+        dataFormat: json
+        colorize: true
+        showTimestamp: true
+    # OTLP log transport (collector → Loki).
+    - type: otel
+      endpoint: ${OTEL_LOGS_ENDPOINT:-http://localhost:4318/v1/logs}
+  plugins:
+    traceContext: true # inject trace_id/span_id into every log line
+
+otel:
+  enabled: true
+  tracing:
+    enabled: true
+    exporter: ${OTEL_TRACE_EXPORTER:-otlp}
+    endpoint: ${OTEL_TRACES_ENDPOINT:-http://localhost:4318/v1/traces}
+    sampleRate: 1.0
+  metrics:
+    enabled: true
+    exporters:
+      - type: prometheus
+        port: 9464
+      - type: otlp
+        endpoint: ${OTEL_METRICS_ENDPOINT:-http://localhost:4318/v1/metrics}
+        exportIntervalMillis: 60000
+  instrumentation:
+    auto: true
+    http: true

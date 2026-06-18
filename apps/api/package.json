@@ -27,6 +27,7 @@
   },
   "dependencies": {
     "@agora-server/contract": "workspace:*",
+    "@agora/core": "workspace:*",
     "@hono/node-server": "^1.19.14",
     "@jenova-marie/wonder-logger": "^2.0.18",
     "@node-rs/argon2": "^2.0.2",
@@ -43,7 +44,6 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
-    "@agora-sdk/secure-chat-crypto": "^0.4.0",
     "@types/node": "^22.19.20",
     "@vitest/coverage-v8": "^4.1.8",
     "drizzle-kit": "^0.31.10",
