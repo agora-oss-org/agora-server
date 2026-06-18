@@ -96,10 +96,24 @@ Supabase Postgres   schema + triggers + RPC + pgvector + PostGIS
 
 ## Monorepo
 
-pnpm workspaces (corepack-pinned `pnpm@10.14.0`). Three pnpm packages — plus the `services/scorer`
+pnpm workspaces (corepack-pinned `pnpm@10.14.0`). Five pnpm packages — plus the `services/scorer`
 Python sibling:
 
 - `apps/api` — `@agora/api`, the Hono backend (everything below; the reference package).
+- `apps/secure-chat` — `@agora/secure-chat`, the **blind MLS (E2E) Delivery Service** as its OWN
+  deployable process (own Hono server + own socket.io server), split out of the api for load-balancing
+  / solo deploys. Serves `/v7/:projectId/secure-chat/*` (REST) + the `/secure` realtime on its OWN
+  engine.io path **`/secure-socket/`** (socket.io namespaces can't be path-split across processes, so a
+  distinct path is what the proxy routes). v1 shares the main Postgres + Redis; onion / standalone-DB is
+  v2. See `apps/secure-chat/README.md` + `docs/SECURE_CHAT.md`. **The secure-chat route/socket/shape code
+  lives here now, NOT in `apps/api`.**
+- `packages/core` — `@agora/core`, the **shared server kernel** both `@agora/api` and `@agora/secure-chat`
+  consume: env schema, logger (+ `wonder-logger.yaml`), the Drizzle **db client + full schema** (single
+  source of truth for all tables, incl. `secure_*`), http error/context, auth + project middleware,
+  validation/`parseBody`, suspensions (read + Redis index), and the Redis client. `apps/api` re-exports
+  each moved module via a thin shim at its old path (e.g. `src/db/index.ts` → `export * from
+  "@agora/core/db"`), so existing import sites are unchanged. Build order: contract → core → (api,
+  secure-chat). **Never redefine a kernel module locally — edit it in core.**
 - `apps/admin` — `@agora/admin`, a Vite + React + TS admin frontend that consumes the API.
 - `services/scorer` — the Python **content-moderation + social-graph subsystem** (NOT a pnpm package),
   which **replaces the retired `apps/moderator`**. Two responsibilities off one pgmq consumer loop:
@@ -123,11 +137,13 @@ Python sibling:
 `validation.ts` / `envelope.ts` / `context.ts` re-export the contract symbols so existing call sites
 are unchanged — never redefine a contract type locally (that reintroduces drift).
 
-Root `.env` is the single source (direnv `dotenv`), symlinked from `apps/api/.env -> ../../.env`.
-`docker-compose.yml` lives at the repo root; the api image builds from the repo root context. Two
-optional profiles: `--profile scale` adds Redis (cross-replica rate limiting), `--profile edge` adds a
-**Caddy** TLS front door (auto-HTTPS + HSTS/headers + body cap + authoritative `X-Forwarded-For` →
-admin; `deploy/proxy/`, set `RATE_LIMIT_TRUSTED_HOPS=2` behind it).
+Root `.env` is the single source (direnv `dotenv`), symlinked from `apps/api/.env -> ../../.env`
+(and `apps/secure-chat/.env -> ../../.env`). `docker-compose.yml` lives at the repo root; each app
+image builds from the repo root context. Optional profiles: `--profile scale` adds Redis (cross-replica
+rate limiting), `--profile secure` brings up **Redis + `secure-chat`** (the admin nginx routes
+`/v7/:projectId/secure-chat/*` + `/secure-socket/` to it; set `REDIS_URL=redis://redis:6379`),
+`--profile edge` adds a **Caddy** TLS front door (auto-HTTPS + HSTS/headers + body cap + authoritative
+`X-Forwarded-For` → admin; `deploy/proxy/`, set `RATE_LIMIT_TRUSTED_HOPS=2` behind it).
 
 ## Ecosystem (sibling repos)
 
@@ -309,13 +325,15 @@ into one common event schema, auto-detecting each line's format (arg order is fr
 interleaved file works), then prints a correlation report.
 
 ```bash
-cd apps/api
-# capture the server stream to a file first (the new debug/trace logs live behind LOG_LEVEL):
+# Secure-chat now runs as @agora/secure-chat (its own process) — capture ITS stream. The diag script
+# still lives under apps/api/scripts/diag. Build the kernel first (apps consume @agora/core's dist).
+cd apps/secure-chat
+# capture the server stream to a file first (the debug/trace logs live behind LOG_LEVEL):
 LOG_LEVEL=trace pnpm dev 2>&1 | tee /tmp/agora-api.log     # then reproduce in the browser
-# paste the browser console (Verbose on) into client.log, then correlate:
-node scripts/diag/secure-chat-log-normalize.mjs client.log /tmp/agora-api.log   # human report
-node scripts/diag/secure-chat-log-normalize.mjs --ndjson client.log /tmp/agora-api.log   # raw events
-cat client.log /tmp/agora-api.log | node scripts/diag/secure-chat-log-normalize.mjs -    # stdin
+# paste the browser console (Verbose on) into client.log, then correlate (diag script lives in api):
+node ../api/scripts/diag/secure-chat-log-normalize.mjs client.log /tmp/agora-api.log   # human report
+node ../api/scripts/diag/secure-chat-log-normalize.mjs --ndjson client.log /tmp/agora-api.log   # raw events
+cat client.log /tmp/agora-api.log | node ../api/scripts/diag/secure-chat-log-normalize.mjs -    # stdin
 ```
 
 The report answers the questions hand-reading can't: **device-row id overlap** (client set vs server
@@ -324,7 +342,7 @@ server, or die locally?), **realtime health** (`/secure` socket connect attempts
 server-side connections), and **flags** (stale catch-up cursor on a fresh device, `available:0`
 key-package counts). Worked fixtures live in `scripts/diag/fixtures/`. The server tier of the logs is
 on at the default `LOG_LEVEL=debug`; use `trace` for the full firehose (per **Log with intent** +
-`routes/secure-chat.ts` / `realtime/secure-socket.ts`). The longer-term plan (a shared `traceparent`
+`apps/secure-chat/src/routes/secure-chat.ts` / `apps/secure-chat/src/realtime/secure-socket.ts`). The longer-term plan (a shared `traceparent`
 correlation id + the `chat-diag` harness emitting this schema natively) is `docs/SECURE-CHAT-DIAG-HARNESS.md`.
 
 ## Database migrations (Drizzle)

@@ -71,7 +71,7 @@ The orchestration is already fully mapped:
 | --- | --- |
 | Real MLS crypto (Node) | `createTsMlsSecureChatCrypto()` — `secure-chat-crypto/ts-mls` (runs under plain Node; ESM-only) |
 | REST transport | `SecureChatRestClient` — `core/src/transport/rest.ts` (lazy `getBaseUrl`/`getAccessToken`/`projectId`; standalone-usable) |
-| Realtime | `SecureChatSocketClient` — `core/src/transport/socket.ts` (`/secure` namespace) |
+| Realtime | `SecureChatSocketClient` — `core/src/transport/socket.ts` (namespace `/secure` on engine.io path `/secure-socket/`, targeting the `@agora/secure-chat` service) |
 | Persistence façade | `SecureChatRepository` — `core/src/persistence/repository.ts` (keys: `device`, `group:{convId}`, `handshake:cursor`) |
 | Store | `MemoryStore` exists (`core/src/persistence/memory-store.ts`); **harness wants a new filesystem store** so two processes + reloads persist (see below) |
 
@@ -140,7 +140,12 @@ contract* it exercises.
 ## Related
 
 - `docs/SECURE_CHAT.md` — the secure-chat subsystem design.
-- `apps/api/src/routes/secure-chat.ts` — the server REST surface it drives.
+- `apps/secure-chat/src/routes/secure-chat.ts` — the server REST surface it drives (now in the separate
+  **`@agora/secure-chat`** service, no longer `apps/api`). The realtime it correlates is the `/secure`
+  namespace on engine.io path **`/secure-socket/`**, served by that same service — so the **server-stream
+  logs to capture come from the secure-chat app's process**, not `@agora/api`. The diag *script* itself
+  stays at `apps/api/scripts/diag/secure-chat-log-normalize.mjs`.
 - `../agora-sdk-plus/e2e/secure-chat.e2e.ts` — the in-process e2e to learn the flow from / reuse bootstrap.
 - Server-side logging gaps worth closing regardless: no logs today on key-package claim, member
-  add/remove, message send, handshake delivery, or any 409 epoch-conflict (`secure-chat.ts`).
+  add/remove, message send, handshake delivery, or any 409 epoch-conflict
+  (`apps/secure-chat/src/routes/secure-chat.ts`).

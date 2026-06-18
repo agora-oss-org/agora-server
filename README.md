@@ -92,8 +92,10 @@ standard, the same family of guarantees as Signal but designed for large, dynami
 - **No AI in your DMs — on purpose.** Secure chat runs **no** LLM moderation, embeddings, or semantic
   search. Those features require reading content, which is exactly the thing we're refusing to do. That
   trade is the point, not a limitation.
-- **A separate path, zero contract drift.** Secure chat lives at `/v7/:projectId/secure-chat/*`, entirely
-  apart from the Replyke-compatible plaintext chat (which is untouched). Use whichever a conversation needs.
+- **A separate path *and* a separate process, zero contract drift.** Secure chat lives at
+  `/v7/:projectId/secure-chat/*`, entirely apart from the Replyke-compatible plaintext chat (which is
+  untouched), and runs as its own deployable service ([`@agora/secure-chat`](apps/secure-chat)) so the
+  blind relay can be isolated and scaled on its own. Use whichever a conversation needs.
 - **Your keys, your history.** Keys live on the client; an optional **passphrase-encrypted backup** (which
   the server also can't decrypt) restores history on a new device. The schema is multi-device-ready.
 - **The crypto stays swappable.** All MLS lives behind a small `SecureChatCrypto` interface, so the
@@ -165,13 +167,15 @@ Match these exactly or the SDK's hooks break — that discipline is what makes t
 
 ## What's inside
 
-Agora is a **pnpm monorepo** — two apps and one shared contract package. Each has its own README
+Agora is a **pnpm monorepo** — three apps and two shared packages. Each app has its own README
 with setup, configuration, and development details:
 
 | Package | What it is | Docs |
 |---|---|---|
 | **[`@agora/api`](apps/api)** | The backend — Hono + Supabase + socket.io. Every endpoint, permission check, and bit of business logic. The reference package. | [apps/api/README.md](apps/api/README.md) |
+| **[`@agora/secure-chat`](apps/secure-chat)** | The **independently-deployable end-to-end-encrypted chat service** — its own Hono + socket.io process serving `/v7/:projectId/secure-chat/*` (a reverse proxy routes that prefix to it) and the `/secure` realtime namespace on engine.io path `/secure-socket/`. A blind MLS delivery service that stores/relays only ciphertext; consumes `@agora/core`. | [apps/secure-chat/README.md](apps/secure-chat/README.md) |
 | **[`@agora/admin`](apps/admin)** | The admin dashboard — Vite + React. Moderation queue + AI queue, the **stewardship caseload** (cases, mediation channels, steward grants), feed tuning, webhook config, community & analytics dashboards, plus the optional **Social Graph** panel + **Community Weather** card (gated on `VITE_SOCIAL_GRAPH_ENABLED`). | [apps/admin/README.md](apps/admin/README.md) |
+| **`@agora/core`** | The **shared kernel** consumed by both `@agora/api` and `@agora/secure-chat`: env schema, logger, the Drizzle db client + full schema (single source of truth for all tables), http error/context, auth + project middleware, validation, suspensions (incl. the Redis fail-closed index), and the Redis client. | — |
 | **`@agora-server/contract`** | Shared API types + zod request schemas (no hono/drizzle). Built first; consumed across the workspace — and the permissive (Apache-2.0) wire surface the SDK builds on. | — |
 
 ```
@@ -184,10 +188,12 @@ agora/
 │   ├── SOCIAL-GRAPH.md      # the optional Neo4j social-graph layer ("the Garden")
 │   └── DOZERDB.md           # DozerDB + OpenGDS setup (plugins, memory tuning, TLS)
 ├── packages/
-│   └── contract/            # @agora-server/contract — shared API types + zod schemas
+│   ├── contract/            # @agora-server/contract — shared API types + zod schemas
+│   └── core/                # @agora/core   — shared kernel (env · logger · db+schema · auth · suspensions · redis)
 └── apps/
-    ├── api/                 # @agora/api   — the backend
-    └── admin/               # @agora/admin — the admin frontend
+    ├── api/                 # @agora/api          — the backend
+    ├── secure-chat/         # @agora/secure-chat  — the E2E-encrypted chat service (own process)
+    └── admin/               # @agora/admin        — the admin frontend
 ```
 
 > The **client** secure-chat packages (`@agora-sdk/secure-chat-crypto` — the `SecureChatCrypto` seam +
@@ -265,7 +271,7 @@ complete** — no stubbed endpoints remain.
 | **reports** | report queue + resolution (entities, comments, chat messages) |
 | **auth** | sign-up/in/out, refresh rotation + reuse-detection, change/reset password, email verify, external RS256, OAuth provider sign-in/link |
 | **chat** | conversations (direct/group/space), members, messages, reactions, typing, read state — **socket.io realtime** |
-| **secure chat** | **end-to-end-encrypted** chat (MLS / RFC 9420) on a separate path — the server stores/relays only ciphertext and never reads content; 1:1 + groups + space channels, one-time key packages, passphrase key backup, a dedicated `/secure` socket.io namespace ([`docs/SECURE_CHAT.md`](docs/SECURE_CHAT.md)) |
+| **secure chat** | **end-to-end-encrypted** chat (MLS / RFC 9420) on a separate path **and a separate process** (the independently-deployable [`@agora/secure-chat`](apps/secure-chat) service) — the server stores/relays only ciphertext and never reads content; 1:1 + groups + space channels, one-time key packages, passphrase key backup, a dedicated `/secure` socket.io namespace (engine.io path `/secure-socket/`) ([`docs/SECURE_CHAT.md`](docs/SECURE_CHAT.md)) |
 | **search** | semantic content search across entities/comments/messages (Voyage + pgvector), RAG `/ask` (Anthropic, SSE), text search for spaces/users |
 | **storage** | file uploads + image variants (sharp → webp, 5 sizing modes) |
 | **webhooks** | project webhooks (HMAC validation gates + `*.complete` broadcasts) + per-space digests |
@@ -314,6 +320,14 @@ docker compose run --rm agora node scripts/migrate.mjs  # apply migrations (one-
 
 The admin service is the Vite SPA on nginx, reverse-proxying `/v7` + `/socket.io` to the api
 (same origin, no CORS). Each app's README documents building and running its image standalone.
+
+The optional **`secure`** profile brings up **Redis** + the **[`@agora/secure-chat`](apps/secure-chat)**
+service (`:4002`); the admin nginx then routes `/v7/:projectId/secure-chat/*` and the WebSocket
+`/secure-socket/` to it (instead of the api):
+
+```bash
+docker compose --profile secure up --build                  # from the repo root
+```
 
 For production, an **optional TLS edge proxy** (Caddy) gives the stack a single HTTPS front door with
 **automatic Let's Encrypt certs**, HSTS + security headers, a body-size cap, and an authoritative

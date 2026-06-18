@@ -8,6 +8,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Secure-chat extracted into its own deployable app** (`apps/secure-chat`, `@agora/secure-chat`) —
+  the blind MLS (E2E) Delivery Service is now an **independent process** split out of `@agora/api`
+  (own Hono server + own socket.io server + own entrypoint), so it can be load-balanced and deployed
+  separately (v1 shares the main Postgres + Redis; onion / standalone-DB is a planned v2). Same REST
+  surface (`/v7/:projectId/secure-chat/*`) and same `/secure` socket events, but the realtime now runs
+  on its **own engine.io path `/secure-socket/`** (socket.io namespaces can't be path-split across
+  processes) — the admin nginx routes `/v7/:projectId/secure-chat/*` + `/secure-socket/` to the new
+  service. **SDK coordination:** the secure client (`../agora-sdk`) must target the secure-chat origin +
+  `path:"/secure-socket/"` + namespace `/secure` (events unchanged).
+- **`@agora/core` shared kernel** (`packages/core`) — a new internal package holding the env schema,
+  logger (+ `wonder-logger.yaml`), Drizzle db client + full schema, http error/context, auth + project
+  middleware, validation/`parseBody`, suspensions (read), and the Redis client. Both `@agora/api` and
+  `@agora/secure-chat` consume it; `@agora/api` re-exports each moved module via thin shims so existing
+  import sites are unchanged. Build order is now contract → core → (api, secure-chat).
+- **Redis-backed, fail-closed suspension index** — suspension enforcement (`hasActiveSuspension`, on
+  every authed request + socket handshake) now goes through a Redis SET (`suspended:profiles`) for an
+  O(1) check when `REDIS_URL` is set; unset → the authoritative DB read (hermetic for tests + single
+  replica). **Fail-closed:** a configured-but-unreachable Redis → `503` (never a silent allow, no DB
+  fallback). Maintained by hydrate-on-boot (atomic rebuild) + write-through on suspend/lift + a
+  reconcile cron `POST /internal/cron/sync-suspensions` (+ `scripts/sync-suspensions.mjs`, scheduled
+  every 5 min). `@agora/secure-chat` treats Redis as a hard dependency with a `/health` readiness gate
+  (refuses traffic until the index hydrates, so an empty set can't fail open).
 - **Per-space read receipts** (corporate tier, PR 8) — compliance surface answering "did members
   see the policy announcement?". New `read_receipts` table (`(projectId, entityId, userId)` PK, RLS
   deny-all, migration `0047`) + `spaces.read_receipts_enabled` boolean opt-in. **`POST

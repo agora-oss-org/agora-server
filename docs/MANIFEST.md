@@ -398,6 +398,17 @@ io(socketUrl, { auth: { token: accessToken }, query: { projectId }, autoConnect:
 message/typing/member events to that conversation room. Read state via REST
 `POST /chat/conversations/:id/read`.
 
+> **Secure chat (Agora extension — not an SDK contract surface).** The end-to-end-encrypted secure-chat
+> surface lives outside this manifest; its full REST + realtime contract is in
+> [`docs/SECURE_CHAT.md`](SECURE_CHAT.md). Two notes that touch the shape above: its REST stays at
+> `/v7/:projectId/secure-chat/*` (unchanged), but as of the service split it is served by the **separate
+> `@agora/secure-chat` process** (a reverse proxy routes that prefix to it, not to the API). Its realtime
+> is a **distinct socket.io namespace `/secure`** with its **own event names**, and — because it is a
+> separate process — it runs on the engine.io **path `/secure-socket/`** (not the default `/socket.io/`),
+> so the secure client connects with
+> `io(`${secureChatOrigin}/secure`, { path: "/secure-socket/", auth, query })`. None of this changes the
+> plaintext-chat contract documented here.
+
 ---
 
 ## 5. Entity feed filters (query params on `GET /entities`)

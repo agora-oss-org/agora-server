@@ -7,9 +7,15 @@
 Agora's **secure chat** is a genuinely end-to-end-encrypted messaging surface where **the server can
 never read message content**. It is a *separate path* from the Replyke-compatible plaintext chat
 ([`apps/api/src/routes/chat.ts`](../apps/api/src/routes/chat.ts)) — that surface is untouched, so the
-1:1 SDK contract never drifts. This document is the full technical reference: rationale, threat model,
-architecture, schema, wire contract, the crypto seam, the REST + realtime API, key-lifecycle flows,
-testing, and the open design questions.
+1:1 SDK contract never drifts. As of the service split it is also a *separate process* — its own
+deployable app, **`@agora/secure-chat`** (`apps/secure-chat`), running its own Hono + socket.io
+server and consuming the shared kernel package **`@agora/core`** — so the blind relay can be isolated,
+scaled, and (v2) moved onto its own infrastructure independently of the main API. The REST contract
+and event names are byte-identical to before the split; see [§3](#3-architecture--the-blind-delivery-service),
+[§5](#5-where-the-code-lives), [§17](#17-suspension-enforcement-fail-closed),
+and [§18](#18-v2-deferrals-seams-only). This document is the full technical reference: rationale, threat
+model, architecture, schema, wire contract, the crypto seam, the REST + realtime API, key-lifecycle
+flows, testing, and the open design questions.
 
 ---
 
@@ -74,20 +80,29 @@ This is the **Signal-server model**: the relay learns *envelope* metadata, not c
 
 ## 3. Architecture — the blind Delivery Service
 
-In MLS terms the Agora server is purely a **Delivery Service (DS)**: it stores and relays MLS objects,
-linearizes group state changes, and enforces *authorization* (who may relay through which conversation)
-— but it runs **no MLS cryptography** and depends on **no crypto library**.
+In MLS terms the secure-chat service is purely a **Delivery Service (DS)**: it stores and relays MLS
+objects, linearizes group state changes, and enforces *authorization* (who may relay through which
+conversation) — but it runs **no MLS cryptography** and depends on **no crypto library**.
+
+The DS is its own process — **`@agora/secure-chat`** (`apps/secure-chat`) — not part of `@agora/api`.
+A reverse proxy (the admin nginx) routes the secure-chat REST prefix and the realtime path to it; the
+main API no longer mounts `/secure-chat` or attaches the secure socket. In v1 the two processes share
+one Supabase Postgres (one migrator) and one Redis; the split is what lets v2 move secure-chat onto
+standalone infrastructure (see [§18](#18-v2-deferrals-seams-only)).
 
 ```
  Client A (holds MLS group state + keys)          Client B (holds MLS group state + keys)
         │  encrypt/decrypt, create/commit groups          ▲
         │  (all crypto here)                               │
         ▼                                                  │
-   base64 over HTTPS  ──▶  @agora/api  /v7/:projectId/secure-chat/*  ──▶  (socket.io /secure)
-                              │   stores/relays OPAQUE bytea blobs
-                              │   enforces membership + epoch ordering
-                              ▼
-                       Supabase Postgres   secure_* tables (ciphertext only, RLS deny-all)
+   base64 over HTTPS  ─▶  reverse proxy (admin nginx)                            (engine.io path
+        │  /v7/:projectId/secure-chat/*                    │                      /secure-socket/)
+        ▼  routes the secure prefix + /secure-socket/      │
+   @agora/secure-chat  (own Hono + own socket.io)  ──▶  (socket.io namespace /secure)
+        │   consumes @agora/core (env · logger · db+schema · auth · suspensions · redis)
+        │   stores/relays OPAQUE bytea blobs; enforces membership + epoch ordering
+        ▼
+   Supabase Postgres   secure_* tables (ciphertext only, RLS deny-all)   +   Redis (suspension index)
 ```
 
 Because the DS is crypto-agnostic, the **entire server side is buildable and testable without choosing
@@ -96,7 +111,8 @@ as a test devDependency from its `/testing` subpath) stands in for real crypto i
 which asserts the stored bytes never contain the plaintext.
 
 **Key principle:** any future change must preserve "the server cannot read content." No endpoint
-accepts or returns plaintext; no column stores it.
+accepts or returns plaintext; no column stores it. The process split does not weaken this — the
+secure-chat service is the same blind relay, now isolated from the API.
 
 ---
 
@@ -122,25 +138,34 @@ every one of them as an opaque blob.
 
 ## 5. Where the code lives
 
+The secure-chat service is its own app, **`@agora/secure-chat`** (`apps/secure-chat`), consuming the
+shared kernel **`@agora/core`** (`packages/core`). The route handler, the secure socket, the shapers,
+and the direct-SQL space-access provider live under `apps/secure-chat/src/`; the `secure_*` Drizzle
+**schema** is the single source of truth in `@agora/core`; the secure **migrations** stay in
+`apps/api/drizzle` under the single v1 migrator.
+
 | Concern | File |
 |---|---|
-| REST delivery service | [`apps/api/src/routes/secure-chat.ts`](../apps/api/src/routes/secure-chat.ts) |
-| Realtime `/secure` namespace | [`apps/api/src/realtime/secure-socket.ts`](../apps/api/src/realtime/secure-socket.ts) |
-| DB schema (7 tables) | [`apps/api/src/db/schema/secure-chat.ts`](../apps/api/src/db/schema/secure-chat.ts) |
-| Row → API shapers (bytea→base64) | [`apps/api/src/lib/secure-chat-shape.ts`](../apps/api/src/lib/secure-chat-shape.ts) |
-| Migrations | `apps/api/drizzle/0031_*.sql` (tables) + `0032_secure_chat_rls_triggers.sql` (RLS + trigger) |
+| REST delivery service | [`apps/secure-chat/src/routes/secure-chat.ts`](../apps/secure-chat/src/routes/secure-chat.ts) |
+| Realtime `/secure` namespace (engine.io path `/secure-socket/`) | [`apps/secure-chat/src/realtime/secure-socket.ts`](../apps/secure-chat/src/realtime/secure-socket.ts) |
+| Row → API shapers (bytea→base64) | [`apps/secure-chat/src/lib/secure-chat-shape.ts`](../apps/secure-chat/src/lib/secure-chat-shape.ts) |
+| Direct-SQL space access (v1) | [`apps/secure-chat/src/lib/space-access.ts`](../apps/secure-chat/src/lib/space-access.ts) |
+| Dockerfile | [`apps/secure-chat/Dockerfile`](../apps/secure-chat/Dockerfile) |
+| DB schema (7 tables) — single source of truth | [`packages/core/src/db/schema/secure-chat.ts`](../packages/core/src/db/schema/secure-chat.ts) |
+| Migrations (stay with the v1 migrator) | `apps/api/drizzle/0031_*.sql` (tables) + `0032_secure_chat_rls_triggers.sql` (RLS + trigger) |
 | Wire contract (zod + types) | [`packages/contract/src/secure-chat.ts`](../packages/contract/src/secure-chat.ts) |
-| Crypto seam (interface + mock) | **`@agora-sdk/secure-chat-crypto`** — in the `agora-sdk-plus` repo, *not* here (this repo devDepends on its `/testing` mock for tests) |
-| Integration tests | `apps/api/test/integration/secure-chat-*.test.ts` |
+| Crypto seam (interface + mock) | **`@agora-sdk/secure-chat-crypto`** — in the `agora-sdk-plus` repo, *not* here (the test suite devDepends on its `/testing` mock) |
+| Integration tests | `apps/secure-chat/test/integration/secure-chat-*.test.ts` |
 
 ---
 
 ## 6. Data model
 
-Seven `bytea`-backed tables in [`db/schema/secure-chat.ts`](../apps/api/src/db/schema/secure-chat.ts).
+Seven `bytea`-backed tables in [`db/schema/secure-chat.ts`](../packages/core/src/db/schema/secure-chat.ts)
+(the schema lives in `@agora/core`, the single source of truth for all tables).
 Binary columns use a Drizzle `customType` mapping `Buffer ↔ bytea` (≈33% smaller at rest than
 base64-text; commits/welcomes for big groups get large). Enums live in
-[`_shared.ts`](../apps/api/src/db/schema/_shared.ts): `secure_conversation_type` (`dm|group|channel`),
+[`_shared.ts`](../packages/core/src/db/schema/_shared.ts): `secure_conversation_type` (`dm|group|channel`),
 `secure_member_role` (`admin|member`), `secure_handshake_kind` (`welcome|commit|proposal`).
 
 | Table | Purpose | Notable columns |
@@ -235,9 +260,12 @@ secure — it exists to exercise the relay.
 
 ## 9. REST API
 
-Base path `/v7/:projectId/secure-chat` (reuses the project resolver, optional-auth, metering, and
-`/v7/*` rate limiting). **Every endpoint is `requireAuth`.** Every query is scoped to
-`c.var.projectId`. Errors use the standard `{ error, code, field? }` envelope with `secure-chat/*` codes.
+Base path `/v7/:projectId/secure-chat` — **unchanged by the service split** (same paths, methods, and
+request/response shapes); the reverse proxy simply routes this prefix to `@agora/secure-chat` instead
+of `@agora/api`. The service reuses the shared project resolver, auth, and middleware from `@agora/core`.
+**Every endpoint is `requireAuth`**, and every authed request runs the suspension check
+([§17](#17-suspension-enforcement-fail-closed)). Every query is scoped to `c.var.projectId`. Errors use
+the standard `{ error, code, field? }` envelope with `secure-chat/*` codes.
 
 ### Devices
 
@@ -314,10 +342,25 @@ device's realtime room.
 
 ## 10. Realtime — the `/secure` socket.io namespace
 
-[`realtime/secure-socket.ts`](../apps/api/src/realtime/secure-socket.ts) attaches a **separate**
-socket.io namespace `/secure` to the same server (defense-in-depth: ciphertext events never mix with
-the plaintext handlers). Handshake auth is identical to the main namespace (`auth.token` HS256 over
-`ACCESS_TOKEN_SECRET` + `query.projectId`).
+[`realtime/secure-socket.ts`](../apps/secure-chat/src/realtime/secure-socket.ts) runs the **`/secure`**
+socket.io namespace on the secure-chat service's **own** socket.io server. The namespace and **every
+event name are byte-identical** to before the split, but because secure-chat is now its own process
+its socket.io server uses a **distinct engine.io path `/secure-socket/`** instead of the default
+`/socket.io/`. Handshake auth is identical to the main namespace (`auth.token` HS256 over
+`ACCESS_TOKEN_SECRET` + `query.projectId`), and every handshake also runs the suspension check
+([§17](#17-suspension-enforcement-fail-closed)).
+
+> **Why a distinct engine.io path?** socket.io namespaces *multiplex over a single engine.io path* —
+> the namespace lives in the Socket.IO packet, not the URL — so a path-routing reverse proxy cannot
+> split a shared `/socket.io/` across two backend processes. A distinct path is the routable split
+> point: the proxy sends `/secure-socket/` to `@agora/secure-chat` and the plaintext `/socket.io/` to
+> `@agora/api`.
+>
+> **SDK coordination (in the separate `../agora-sdk` repo — not in this repo):** the secure client must
+> connect targeting the secure-chat origin **and** the new path, keeping the `/secure` namespace:
+> ```js
+> io(`${secureChatOrigin}/secure`, { path: "/secure-socket/", auth: { token }, query: { projectId } })
+> ```
 
 **Rooms**
 - `secure:conv:{conversationId}` — membership-gated join (`join:secure-conversation`); broadcast
@@ -358,7 +401,8 @@ fully validate MLS state. Clients buffer messages whose epoch they haven't reach
 
 ## 12. Size limits
 
-Decoded-byte caps live in [`lib/env.ts`](../apps/api/src/lib/env.ts), enforced on the base64-decoded
+Decoded-byte caps live in the shared env schema in `@agora/core`
+([`packages/core/src/env.ts`](../packages/core/src/env.ts)), enforced on the base64-decoded
 length (never the plaintext — there is none server-side). These are **separate from** the 25 MiB upload
 cap (which would invite DoS here):
 
@@ -373,11 +417,11 @@ cap (which would invite DoS here):
 Unit + integration suites (vitest):
 
 - **Contract** `packages/contract/src/secure-chat.test.ts` — zod accept/reject.
-- **Shapers** `apps/api/src/lib/secure-chat-shape.test.ts` — bytea→base64, no private-column leak,
-  bigint→string epochs.
+- **Shapers** `apps/secure-chat/src/lib/secure-chat-shape.test.ts` — bytea→base64, no private-column
+  leak, bigint→string epochs.
 - **Mock crypto** — lives with the seam in the SDK (`@agora-sdk/secure-chat-crypto`): cross-device
-  round-trip + plaintext-hiding + passphrase backup. The server consumes it via the `/testing` subpath.
-- **Integration** `apps/api/test/integration/secure-chat-*.test.ts` (real Postgres, project-scoped;
+  round-trip + plaintext-hiding + passphrase backup. The service consumes it via the `/testing` subpath.
+- **Integration** `apps/secure-chat/test/integration/secure-chat-*.test.ts` (real Postgres, project-scoped;
   import the mock from `@agora-sdk/secure-chat-crypto/testing`):
   - `devices` — register, public-fields-only listing, publish/count/claim, exhaustion `409`, revoke,
     cross-user publish refusal.
@@ -447,7 +491,8 @@ See [`CHAT_TODO.md`](../CHAT_TODO.md) for the live checklist.
    group-info message. **Network-layer** metadata (client IP, geolocation, ISP traffic correlation) is
    outside E2E entirely; the complement is **onion routing** — serving the API as a Tor hidden service
    (`.onion`) and/or routing the client transport through Tor, for both secure chat and normal browsing.
-   It's transport/deploy-only (no schema/contract changes) — tracked under "Future exploration" in
+   It's transport/deploy-only (no schema/contract changes) — now a **v2 deferral seam**
+   ([§18](#18-v2-deferrals-seams-only)) and tracked under "Future exploration" in
    [`CHAT_TODO.md`](../CHAT_TODO.md), with the one gotcha that IP-based rate limiting degenerates behind a
    single onion address.
 5. **Backup passphrase strength.** The server holds the ciphertext blob, so a weak passphrase is
@@ -457,3 +502,47 @@ See [`CHAT_TODO.md`](../CHAT_TODO.md) for the live checklist.
    cursor-only. Add it only if server-side handshake GC needs it.
 7. **Cross-tenant isolation.** Every secure table carries `project_id` (cascade FK); every query filters
    on `c.var.projectId`. Any new endpoint must keep that scoping (especially cross-user device reads).
+
+---
+
+## 17. Suspension enforcement (fail-closed)
+
+A suspended user must not be able to relay through the blind DS. The suspension check
+(`hasActiveSuspension`, from `@agora/core`) runs on **every authed REST request and every socket
+handshake** in `@agora/secure-chat`. It is backed by a **Redis SET `suspended:profiles`** when
+`REDIS_URL` is set (an O(1) membership test, no per-request DB hit); when Redis is **not** configured it
+falls back to the authoritative DB read (so a single-replica API and the hermetic test suite still work
+without Redis).
+
+**Fail-closed.** A *configured-but-unreachable* Redis throws **`503`** — the request is denied, never
+silently allowed. There is **no DB fallback for a configured-but-down Redis** (a DB fallback would be a
+fail-open hole if Redis were unreachable mid-incident). The index is kept correct by three writers, all
+owned by `@agora/api` (which owns the suspension write endpoints):
+
+- **Hydrate-on-boot** — an atomic rebuild of the SET from the DB on startup.
+- **Write-through** — `SADD`/`SREM` on suspend/lift.
+- **Reconcile cron** — `POST /internal/cron/sync-suspensions` (also `apps/api/scripts/sync-suspensions.mjs`,
+  scheduled every 5 min in `apps/api/crontab`) re-derives the SET from the DB to self-heal drift.
+
+Because `@agora/secure-chat` treats Redis as a **hard dependency**, it exposes a **`/health` readiness
+gate** that returns `503` until the index has hydrated on boot — so an *empty* set can never fail open
+(the service won't accept traffic before it knows who is suspended).
+
+---
+
+## 18. v2 deferrals (seams only)
+
+The process split is what makes the following **v2** moves tractable; each is a *seam* in v1, **not
+built**:
+
+1. **Onion / Tor transport.** Serve the secure-chat service as a Tor hidden service and/or route the
+   client transport through Tor (closes the network-layer metadata gap in [§16](#16-open-decisions--risks)
+   item 4). Transport/deploy-only — no schema or contract change.
+2. **Standalone secure Postgres.** Move the `secure_*` tables onto their own database, isolated from the
+   main API's Postgres. Requires relaxing the `secure_*` foreign keys to **plain uuids** (no cross-DB FK).
+3. **Asymmetric JWT (RS256 / JWKS).** Verify access tokens against a published JWKS so the secure-chat
+   node holds **no minting secret** — it can verify but not mint, shrinking its blast radius.
+4. **API-callback `SpaceAccessProvider`.** v1 channel space-access is **direct SQL** in
+   [`apps/secure-chat/src/lib/space-access.ts`](../apps/secure-chat/src/lib/space-access.ts); v2 swaps in a
+   provider that calls back to the API, so a standalone secure DB (deferral 2) needn't replicate the
+   space/membership tables.
