@@ -48,6 +48,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   stringified. No API/contract change; default `LOG_LEVEL=debug` so the lifecycle tier is on in dev.
 
 ### Fixed
+- **A malformed socket event could crash the entire API process.** An async socket.io listener that
+  rejected (e.g. `join:secure-conversation` / `join:conversation` with an `undefined` `conversationId`,
+  which fed `undefined` to a Drizzle query → postgres `UNDEFINED_VALUE`) became an **unhandled
+  rejection**, which Node turns into a fatal uncaught exception — taking the whole server down. Now:
+  (1) both realtime namespaces (`realtime/socket.ts`, `realtime/secure-socket.ts`) validate
+  client-supplied ids at the boundary and fail closed, and wrap every handler (and the device-room
+  auto-join) so a failure is logged and contained instead of escaping; (2) `index.ts` installs
+  process-level `unhandledRejection`/`uncaughtException` guards as a last-resort net so no stray
+  background rejection can crash the API. Realtime is best-effort — a bad event no longer brings the
+  server down.
 - **`PATCH /v7/:projectId/users/:id` returned 500 on a taken username** instead of a clean conflict.
   The `(project_id, username)` unique violation (Postgres `23505`, wrapped by Drizzle) is now mapped
   to **409 `users/username-taken`** (field `username`) rather than leaking an unhandled

@@ -10,6 +10,7 @@ import type { Server as HttpServer } from "node:http";
 import { jwtVerify } from "jose";
 import { env } from "../lib/env.js";
 import { hasActiveSuspension } from "../lib/suspensions.js";
+import { logger } from "../lib/logger.js";
 import { attachSecureRealtime } from "./secure-socket.js";
 
 // ── Event payload contracts (mirror @replyke/core/src/types/socket.ts) ──────────
@@ -44,6 +45,34 @@ const accessSecret = new TextEncoder().encode(env.ACCESS_TOKEN_SECRET);
 const room = (conversationId: string) => `conversation:${conversationId}`;
 
 type AgoraIO = Server<ClientToServerEvents, ServerToClientEvents, Record<string, never>, SocketData>;
+type AgoraSocket = Socket<ClientToServerEvents, ServerToClientEvents, Record<string, never>, SocketData>;
+
+// Client-supplied ids are untrusted: reject a malformed payload at the boundary rather than feed
+// `undefined` to a query (postgres then throws `UNDEFINED_VALUE`).
+const isId = (v: unknown): v is string => typeof v === "string" && v.length > 0;
+
+// socket.io does NOT catch rejections from async listeners — an unhandled one crashes the process.
+// Wrap each handler so a failure is logged (message-only `error` + raw `err` on `debug`) and contained.
+function safeOn<E extends keyof ClientToServerEvents>(
+  socket: AgoraSocket,
+  event: E,
+  handler: (...args: Parameters<ClientToServerEvents[E]>) => void | Promise<void>,
+) {
+  const on = socket.on.bind(socket) as (e: E, l: (...a: Parameters<ClientToServerEvents[E]>) => void) => void;
+  on(event, (...args) => {
+    try {
+      const r = handler(...args);
+      if (r instanceof Promise) r.catch((err) => logHandlerFailure(event, err));
+    } catch (err) {
+      logHandlerFailure(event, err);
+    }
+  });
+}
+
+function logHandlerFailure(event: string, err: unknown) {
+  logger.error(`socket: handler "${event}" failed`);
+  logger.debug({ err, event }, `socket: handler "${event}" failed`);
+}
 
 async function isConversationMember(projectId: string, conversationId: string, userId: string): Promise<boolean> {
   const [m] = await db.select({ id: conversationMembers.id }).from(conversationMembers)
@@ -93,19 +122,23 @@ export function attachRealtime(httpServer: HttpServer) {
   });
 
   io.on("connection", (socket: Socket<ClientToServerEvents, ServerToClientEvents, Record<string, never>, SocketData>) => {
-    socket.on("join:conversation", async ({ conversationId }) => {
+    safeOn(socket, "join:conversation", async ({ conversationId }) => {
+      if (!isId(conversationId)) return;
       // Only members may subscribe to a conversation's room.
       if (await isConversationMember(socket.data.projectId, conversationId, socket.data.userId)) {
         socket.join(room(conversationId));
       }
     });
-    socket.on("leave:conversation", ({ conversationId }) => {
+    safeOn(socket, "leave:conversation", ({ conversationId }) => {
+      if (!isId(conversationId)) return;
       socket.leave(room(conversationId));
     });
-    socket.on("typing:start", ({ conversationId }) => {
+    safeOn(socket, "typing:start", ({ conversationId }) => {
+      if (!isId(conversationId)) return;
       socket.to(room(conversationId)).emit("typing:start", { userId: socket.data.userId, conversationId });
     });
-    socket.on("typing:stop", ({ conversationId }) => {
+    safeOn(socket, "typing:stop", ({ conversationId }) => {
+      if (!isId(conversationId)) return;
       socket.to(room(conversationId)).emit("typing:stop", { userId: socket.data.userId, conversationId });
     });
   });

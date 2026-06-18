@@ -10,6 +10,19 @@ import { logger } from "./lib/logger.js";
 import { startMetricsFlush } from "./lib/metrics.js";
 import { startRateLimitSweep } from "./lib/rate-limit.js";
 
+// Last-resort safety net: a stray rejection/throw from a background task (socket handler, fan-out,
+// fire-and-forget index/embeds) must NOT take the whole API down. Node's default is to crash on an
+// unhandled rejection — log it (message-only `error` + raw `err` on `debug`, per Log-with-intent)
+// and keep serving. Handlers still catch their own errors; this only catches what slips past them.
+process.on("unhandledRejection", (reason) => {
+  logger.error("unhandled promise rejection (contained — server stays up)");
+  logger.debug({ err: reason }, "unhandled promise rejection (contained — server stays up)");
+});
+process.on("uncaughtException", (err) => {
+  logger.error("uncaught exception (contained — server stays up)");
+  logger.debug({ err }, "uncaught exception (contained — server stays up)");
+});
+
 const app = createApp();
 startMetricsFlush(); // periodic flush of request-metering deltas → api_usage
 startRateLimitSweep(); // evict elapsed rate-limit windows so the map stays bounded

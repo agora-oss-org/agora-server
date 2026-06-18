@@ -48,6 +48,34 @@ const accessSecret = new TextEncoder().encode(env.ACCESS_TOKEN_SECRET);
 const convRoom = (conversationId: string) => `secure:conv:${conversationId}`;
 const deviceRoom = (deviceId: string) => `secure:device:${deviceId}`;
 
+// Client-supplied ids are untrusted: a malformed payload (e.g. `{ conversationId: undefined }`)
+// must be rejected at the boundary — never fed to a query, where postgres throws `UNDEFINED_VALUE`.
+const isId = (v: unknown): v is string => typeof v === "string" && v.length > 0;
+
+// socket.io does NOT catch rejections from async listeners — an unhandled one crashes the process.
+// Wrap every handler so a thrown/rejected handler logs (message-only `error` + raw `err` on `debug`,
+// per Log-with-intent) and is contained. Realtime is best-effort; a bad event must not take the API down.
+function safeOn<E extends keyof SecureClientToServerEvents>(
+  socket: SecureSocket,
+  event: E,
+  handler: (...args: Parameters<SecureClientToServerEvents[E]>) => void | Promise<void>,
+) {
+  const on = socket.on.bind(socket) as (e: E, l: (...a: Parameters<SecureClientToServerEvents[E]>) => void) => void;
+  on(event, (...args) => {
+    try {
+      const r = handler(...args);
+      if (r instanceof Promise) r.catch((err) => logHandlerFailure(event, err));
+    } catch (err) {
+      logHandlerFailure(event, err);
+    }
+  });
+}
+
+function logHandlerFailure(event: string, err: unknown) {
+  logger.error(`secure-socket: handler "${String(event)}" failed`);
+  logger.debug({ err, event }, `secure-socket: handler "${String(event)}" failed`);
+}
+
 // Module-level handle so REST handlers can fan out without threading the namespace through.
 let secureRef: SecureNamespace | null = null;
 
@@ -114,18 +142,27 @@ export function attachSecureRealtime(io: Server): SecureNamespace {
       // you exactly whether the browser's live device is reachable — and surfaces device churn
       // (many stale rows ⇒ Welcomes addressed to a device this connection no longer represents).
       logger.debug({ projectId: socket.data.projectId, userId: socket.data.userId, socketId: socket.id, deviceRooms: devices.map((d) => d.id) }, "secure-socket: device rooms auto-joined");
-    })();
+    })().catch((err) => logHandlerFailure("connection", err)); // a DB hiccup here must not crash the server
 
-    socket.on("join:secure-conversation", async ({ conversationId }) => {
+    safeOn(socket, "join:secure-conversation", async ({ conversationId }) => {
+      if (!isId(conversationId)) {
+        logger.trace({ projectId: socket.data.projectId, userId: socket.data.userId }, "secure-socket: join conversation rejected (invalid conversationId)");
+        return;
+      }
       const ok = await isSecureMember(socket.data.projectId, conversationId, socket.data.userId);
       if (ok) socket.join(convRoom(conversationId));
       logger.trace({ projectId: socket.data.projectId, userId: socket.data.userId, conversationId, joined: ok }, "secure-socket: join conversation");
     });
-    socket.on("leave:secure-conversation", ({ conversationId }) => {
+    safeOn(socket, "leave:secure-conversation", ({ conversationId }) => {
+      if (!isId(conversationId)) return;
       socket.leave(convRoom(conversationId));
       logger.trace({ projectId: socket.data.projectId, userId: socket.data.userId, conversationId }, "secure-socket: leave conversation");
     });
-    socket.on("join:secure-device", async ({ deviceId }) => {
+    safeOn(socket, "join:secure-device", async ({ deviceId }) => {
+      if (!isId(deviceId)) {
+        logger.trace({ projectId: socket.data.projectId, userId: socket.data.userId }, "secure-socket: join device rejected (invalid deviceId)");
+        return;
+      }
       // Only join a device room the caller actually owns.
       const [own] = await db.select({ id: secureDevices.id }).from(secureDevices)
         .where(and(
@@ -136,10 +173,12 @@ export function attachSecureRealtime(io: Server): SecureNamespace {
       if (own) socket.join(deviceRoom(deviceId));
       logger.trace({ projectId: socket.data.projectId, userId: socket.data.userId, deviceId, joined: !!own }, "secure-socket: join device room");
     });
-    socket.on("secure:typing:start", ({ conversationId }) => {
+    safeOn(socket, "secure:typing:start", ({ conversationId }) => {
+      if (!isId(conversationId)) return;
       socket.to(convRoom(conversationId)).emit("secure:typing:start", { userId: socket.data.userId, conversationId });
     });
-    socket.on("secure:typing:stop", ({ conversationId }) => {
+    safeOn(socket, "secure:typing:stop", ({ conversationId }) => {
+      if (!isId(conversationId)) return;
       socket.to(convRoom(conversationId)).emit("secure:typing:stop", { userId: socket.data.userId, conversationId });
     });
   });
