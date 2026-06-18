@@ -68,6 +68,17 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
+    # Self-hosted object storage (MinIO) — public media for the fully self-contained stack. Only used
+    # when STORAGE_PROVIDER=s3 with S3_PUBLIC_URL pointed at this origin's /media (e.g.
+    # https://host/media). Rewrites /media/<key> → /<bucket>/<key> on the MinIO upstream. Lazy-resolved
+    # like the others, so a Supabase deploy (no minio service) just 502s these — they're simply unused.
+    location /media/ {
+        set $minio_upstream "${MINIO_UPSTREAM}";
+        rewrite ^/media/(.*)$ /${S3_BUCKET}/$1 break;
+        proxy_pass $minio_upstream;
+        proxy_set_header Host $host;
+    }
+
     # socket.io (chat realtime) — needs the WebSocket upgrade headers.
     location /socket.io/ {
         set $api_upstream_ws "${API_UPSTREAM}";

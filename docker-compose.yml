@@ -1,7 +1,9 @@
-# Runs the Agora API container + a supercronic scheduler sidecar. Postgres/Auth/Storage are
-# hosted on Supabase, so there is no local DB service — the containers just need the env
-# (DATABASE_URL etc.) from your root .env file.
+# Runs the Agora API container + a supercronic scheduler sidecar. By DEFAULT, Postgres + Storage are
+# hosted on Supabase — the containers just need the env (DATABASE_URL etc.) from your root .env file:
 #   docker compose up --build
+# For a FULLY self-contained stack (no Supabase), the `selfhost` profile adds local Postgres (`db`) +
+# object storage (`minio`); point DATABASE_URL/STORAGE_PROVIDER at them. See docs/SELF-HOSTING.md:
+#   docker compose --profile selfhost up --build
 # Apply migrations once (one-off, drizzle-kit-free):
 #   docker compose run --rm agora node scripts/migrate.mjs
 services:
@@ -34,6 +36,62 @@ services:
       interval: 10s
       timeout: 3s
       retries: 5
+    init: true
+    restart: unless-stopped
+
+  # ── self-hosted backends (no Supabase) ───────────────────────────────────────────────────────────
+  # The `selfhost` profile brings up local replacements for the two Supabase-hosted dependencies so the
+  # SAME api image runs fully self-contained: `db` (Postgres) + `minio` (object storage). Opt-in; the
+  # default deploy still points DATABASE_URL/STORAGE_PROVIDER at Supabase and never starts these.
+  #   docker compose --profile selfhost up
+  # Then in .env: DATABASE_URL=postgres://postgres:<pw>@db:5432/postgres, STORAGE_PROVIDER=s3, the S3_*
+  # block (S3_ENDPOINT=http://minio:9000, S3_PUBLIC_URL=<public-origin>/media, creds = MINIO_ROOT_*),
+  # and DEFAULT_AUTH_PROVIDER=native. See docs/SELF-HOSTING.md.
+
+  # Postgres for self-hosting. The supabase/postgres image bundles what the migrations assume —
+  # pgvector + PostGIS + pgmq extensions and the authenticated/anon/service_role roles + auth.uid() — so
+  # the schema + RLS migrations apply unchanged against it. Apply migrations once after `up`:
+  #   docker compose run --rm agora node scripts/migrate.mjs
+  db:
+    image: supabase/postgres:15.8.1.060
+    profiles: ["selfhost"]
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-please_change_me}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    init: true
+    restart: unless-stopped
+
+  # MinIO — S3-compatible object storage for self-hosting (STORAGE_PROVIDER=s3). The api creates the
+  # bucket + public-read policy in-code on first upload (lib/storage/s3.ts), so no `mc` bootstrap sidecar
+  # is needed. Public objects are served to browsers through the admin nginx /media route (never :9000
+  # directly). Console on :9001. Credentials = MINIO_ROOT_USER/PASSWORD, also used as the api's S3_* creds.
+  minio:
+    image: minio/minio:latest
+    profiles: ["selfhost"]
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-agora}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-please_change_me}
+    ports:
+      - "${MINIO_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     init: true
     restart: unless-stopped
 
@@ -195,6 +253,11 @@ services:
       # realtime path here. Resolved lazily (variable proxy_pass + resolver), so when secure-chat isn't
       # deployed (no `secure` profile) those routes simply 502 instead of crashing nginx at boot.
       SECURE_CHAT_UPSTREAM: http://secure-chat:4002
+      # Self-hosted object storage: the admin nginx serves public media at /media → MinIO (only used
+      # when STORAGE_PROVIDER=s3; a Supabase deploy never hits this route). Lazy-resolved, so the admin
+      # starts fine without the `selfhost` profile up. S3_BUCKET names the bucket the key lives under.
+      MINIO_UPSTREAM: http://minio:9000
+      S3_BUCKET: ${S3_BUCKET:-agora}
     ports:
       - "${ADMIN_PORT:-8080}:80"
     depends_on:
@@ -248,3 +311,5 @@ volumes:
   caddy-data:
   caddy-config:
   scorer-hf-cache: # HF model downloads for the two scorer model servers (persist across recreate)
+  db-data:         # self-hosted Postgres data (selfhost profile)
+  minio-data:      # self-hosted object storage (selfhost profile)
