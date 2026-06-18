@@ -55,6 +55,10 @@ export const miscRoutes = new Hono<{ Variables: Variables }>()
   // the code with Supabase, upsert the profile, mint Agora tokens, and redirect to the host app
   // with the tokens in the URL fragment (where the SDK's handleOAuthCallback() reads them).
   .get("/oauth/callback", async (c) => {
+    // OAuth is brokered by Supabase, so a Supabase-less (self-contained) deploy can't serve it. Gate
+    // here explicitly — /oauth/authorize already rejects, so no real callback should land, but a clean
+    // oauth/not-configured beats the misleading "invalid-state"/"oauth_failed" the path would emit.
+    if (!oauthConfigured()) throw Errors.badRequest("oauth/not-configured", "OAuth is not configured (Supabase keys unset)");
     const projectId = c.var.projectId;
     const aid = c.req.query("aid");
     if (!aid) throw Errors.badRequest("oauth/missing-state", "Missing state id");

@@ -56,10 +56,18 @@ const seedSql = readFileSync(join(here, "seeds", "seed.sql"), "utf8")
   .filter((line) => !/^\s*\\/.test(line))
   .join("\n");
 
+// Identity backend for the seeded project. A Supabase-less (self-contained) deploy sets
+// DEFAULT_AUTH_PROVIDER=native so the fixture project uses the in-API password backend out of the box;
+// otherwise it stays the column default ('supabase'). An existing project switches later via admin
+// settings / SQL — getAuthProvider() reads projects.auth_provider, never the env.
+const SEED_PROJECT_ID = "11111111-1111-1111-1111-111111111111";
+const authProvider = process.env.DEFAULT_AUTH_PROVIDER === "native" ? "native" : "supabase";
+
 const sql = postgres(url, { max: 1, prepare: false, onnotice() {} });
 try {
   await sql.unsafe(seedSql).simple();
-  console.log("\n✅ genesis complete — schema rebuilt, fixtures seeded, triggers + RPC validated.");
+  await sql`update projects set auth_provider = ${authProvider}::auth_provider where id = ${SEED_PROJECT_ID}`;
+  console.log(`\n✅ genesis complete — schema rebuilt, fixtures seeded (auth_provider=${authProvider}), triggers + RPC validated.`);
 } catch (err) {
   console.error("\n✗ seed.sql failed:", err.message);
   process.exitCode = 1;
