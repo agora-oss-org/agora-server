@@ -76,7 +76,8 @@ export async function flushMetrics(): Promise<void> {
     }
   } catch (e) {
     mergeBack(snapshot); // don't lose counts on a transient DB error
-    logger.error({ err: e }, "[metrics] flush failed");
+    logger.error("[metrics] flush failed");
+    logger.debug({ err: e }, "[metrics] flush failed");
   } finally {
     flushing = false;
   }

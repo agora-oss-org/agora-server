@@ -136,7 +136,8 @@ export function createApp() {
     if (err instanceof ApiError) {
       return c.json({ error: err.message, code: err.code, ...(err.field ? { field: err.field } : {}) }, err.status);
     }
-    logger.error({ err }, "unhandled error");
+    logger.error("unhandled error");
+    logger.debug({ err }, "unhandled error");
     return c.json({ error: "Internal server error", code: "common/internal" }, 500);
   });
 

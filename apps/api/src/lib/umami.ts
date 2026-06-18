@@ -49,5 +49,5 @@ export function trackEvent(name: string, data?: Record<string, unknown>): void {
     } catch (e) {
       logger.debug({ err: e, name }, "umami: send failed");
     }
-  })();
+  })().catch((err) => logger.debug({ err }, "umami: send failed"));
 }

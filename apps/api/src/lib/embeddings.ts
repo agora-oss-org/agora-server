@@ -44,7 +44,10 @@ export async function indexContent(projectId: string, sourceType: SourceType, so
 
 /** Fire-and-forget indexing for write paths — never let embedding failures break the request. */
 export function indexContentAsync(projectId: string, sourceType: SourceType, sourceId: string, text: string | null | undefined): void {
-  indexContent(projectId, sourceType, sourceId, text).catch((e) => logger.error({ err: e, sourceType }, "indexContent failed"));
+  indexContent(projectId, sourceType, sourceId, text).catch((e) => {
+    logger.error("indexContent failed");
+    logger.debug({ err: e, sourceType }, "indexContent failed");
+  });
 }
 
 /** Back-compat convenience for entity write paths. */

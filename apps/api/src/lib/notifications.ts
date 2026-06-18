@@ -174,7 +174,8 @@ export async function notifyOnComment(
       notified.add(uid);
     }
   } catch (err) {
-    logger.error({ err }, "[notifications] notifyOnComment failed");
+    logger.error("[notifications] notifyOnComment failed");
+    logger.debug({ err }, "[notifications] notifyOnComment failed");
   }
 }
 
@@ -198,7 +199,8 @@ export async function notifyOnEntityMentions(
       });
     }
   } catch (err) {
-    logger.error({ err }, "[notifications] notifyOnEntityMentions failed");
+    logger.error("[notifications] notifyOnEntityMentions failed");
+    logger.debug({ err }, "[notifications] notifyOnEntityMentions failed");
   }
 }
 
@@ -292,7 +294,8 @@ export async function notifyOnReaction(args: {
       });
     }
   } catch (err) {
-    logger.error({ err }, "[notifications] notifyOnReaction failed");
+    logger.error("[notifications] notifyOnReaction failed");
+    logger.debug({ err }, "[notifications] notifyOnReaction failed");
   }
 }
 
@@ -303,7 +306,8 @@ export async function notifyOnFollow(projectId: string, followerId: string, foll
     if (!actor) return;
     await insert(projectId, followedId, followerId, "new-follow", "open-profile", { ...actor });
   } catch (err) {
-    logger.error({ err }, "[notifications] notifyOnFollow failed");
+    logger.error("[notifications] notifyOnFollow failed");
+    logger.debug({ err }, "[notifications] notifyOnFollow failed");
   }
 }
 
@@ -375,7 +379,8 @@ export async function notifyStewardCaseEvent(
     const notes = stewardCaseRecipients(notifyPolicy, args.kind, args.outcome ?? null, args);
     for (const n of notes) await insert(projectId, n.recipientId, args.actorId, n.type, n.action, n.metadata);
   } catch (err) {
-    logger.error({ err }, "[notifications] notifyStewardCaseEvent failed");
+    logger.error("[notifications] notifyStewardCaseEvent failed");
+    logger.debug({ err }, "[notifications] notifyStewardCaseEvent failed");
   }
 }
 
@@ -395,7 +400,8 @@ export async function notifyMediationInvite(
       mediationRole: args.role,
     });
   } catch (err) {
-    logger.error({ err }, "[notifications] notifyMediationInvite failed");
+    logger.error("[notifications] notifyMediationInvite failed");
+    logger.debug({ err }, "[notifications] notifyMediationInvite failed");
   }
 }
 
@@ -415,6 +421,7 @@ export async function notifyOnSpaceApproved(
       spaceAvatar: space.avatar,
     });
   } catch (err) {
-    logger.error({ err }, "[notifications] notifyOnSpaceApproved failed");
+    logger.error("[notifications] notifyOnSpaceApproved failed");
+    logger.debug({ err }, "[notifications] notifyOnSpaceApproved failed");
   }
 }

@@ -138,5 +138,5 @@ export function broadcast(projectId: string, type: string, data: unknown): void 
     } catch {
       /* broadcast is best-effort */
     }
-  })();
+  })().catch(() => {}); // best-effort; unhandled rejections (e.g., from getConfig) are silent
 }

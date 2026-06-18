@@ -1,4 +1,5 @@
 import { getSupabase, getSupabaseAnon } from "../supabase.js";
+import { logger } from "../logger.js";
 import { Errors } from "../../http/errors.js";
 import type { AuthProvider, SignUpResult } from "./provider.js";
 
@@ -22,7 +23,9 @@ export class SupabaseAuthProvider implements AuthProvider {
     if (error) throw Errors.badRequest("auth/change-password-failed", error.message);
   }
   async startPasswordReset(_projectId: string, email: string): Promise<void> {
-    await getSupabaseAnon().auth.resetPasswordForEmail(email).catch(() => {});
+    await getSupabaseAnon().auth.resetPasswordForEmail(email).catch((err) => {
+      logger.debug({ err }, "resetPasswordForEmail failed (best-effort)");
+    });
   }
   async confirmPasswordReset(_projectId: string, token: string, newPassword: string) {
     const { data, error } = await getSupabaseAnon().auth.verifyOtp({ token_hash: token, type: "recovery" });
@@ -37,6 +40,8 @@ export class SupabaseAuthProvider implements AuthProvider {
     return { authUserId: data.user.id };
   }
   async resendConfirmation(_projectId: string, email: string): Promise<void> {
-    await getSupabaseAnon().auth.resend({ type: "signup", email }).catch(() => {});
+    await getSupabaseAnon().auth.resend({ type: "signup", email }).catch((err) => {
+      logger.debug({ err }, "resend confirmation failed (best-effort)");
+    });
   }
 }
