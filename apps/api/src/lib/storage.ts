@@ -1,10 +1,9 @@
-// Supabase Storage helpers. Bytes live in a public bucket; the `files` table holds metadata.
-import { getSupabase } from "./supabase.js";
+// Storage facade. Bytes live in a public bucket; the `files` table holds metadata. The backing store
+// (Supabase Storage or any S3-compatible store, e.g. MinIO) is chosen by STORAGE_PROVIDER behind the
+// StorageProvider seam (lib/storage/), so callers here are backend-agnostic.
+import { getStorage } from "./storage/index.js";
 import { env } from "./env.js";
 import { Errors } from "../http/errors.js";
-
-const BUCKET = "agora";
-let bucketReady = false;
 
 /** Reject oversized uploads (413) before buffering/processing — app-level cap, defense-in-depth
  *  behind the proxy's body limit. Uses File.size (no need to read the body first). */
@@ -14,23 +13,14 @@ export function assertUploadSize(file: { size: number }): void {
   }
 }
 
-async function ensureBucket(): Promise<void> {
-  if (bucketReady) return;
-  const sb = getSupabase();
-  const { data } = await sb.storage.getBucket(BUCKET);
-  if (!data) await sb.storage.createBucket(BUCKET, { public: true });
-  bucketReady = true;
-}
-
 export async function uploadBytes(path: string, bytes: Uint8Array, contentType: string): Promise<string> {
-  await ensureBucket();
-  const { error } = await getSupabase().storage.from(BUCKET).upload(path, bytes, { contentType, upsert: true });
-  if (error) throw new Error(`storage upload failed: ${error.message}`);
-  return publicUrl(path);
+  const store = getStorage();
+  await store.init?.();
+  return store.put(path, bytes, contentType);
 }
 
 export function publicUrl(path: string): string {
-  return getSupabase().storage.from(BUCKET).getPublicUrl(path).data.publicUrl;
+  return getStorage().publicUrl(path);
 }
 
 export function inferFileType(mime: string | undefined): "image" | "video" | "document" | "other" {

@@ -14,6 +14,11 @@ const schema = z.object({
   SUPABASE_SERVICE_ROLE_KEY: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
   SUPABASE_ANON_KEY: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
   SUPABASE_JWT_SECRET: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
+  // Default identity backend stamped onto a NEW project at genesis (scripts/genesis.mjs). There is no
+  // project-creation route, so this is how a Supabase-less deployment makes its first project use the
+  // native (in-API password) auth backend instead of Supabase. Existing projects switch via admin
+  // settings / SQL; getAuthProvider() reads projects.auth_provider, never this. Empty=unset→supabase.
+  DEFAULT_AUTH_PROVIDER: z.preprocess((v) => (v === "" ? undefined : v), z.enum(["supabase", "native"]).default("supabase")),
   ACCESS_TOKEN_TTL: z.coerce.number().default(1800),
   REFRESH_TOKEN_TTL: z.coerce.number().default(2592000),
   // HS256 signing key for access JWTs — must be high-entropy. Generate: `openssl rand -base64 48`.
@@ -61,6 +66,29 @@ const schema = z.object({
   // Max accepted upload size (bytes) for /storage + multipart image attachments. Defense-in-depth
   // behind the proxy's body cap (the bundled Caddy edge caps at MAX_BODY_SIZE). Default 25 MiB.
   MAX_UPLOAD_BYTES: z.coerce.number().int().positive().default(26_214_400),
+  // Object-storage backend for uploaded media (lib/storage.ts). `supabase` (default) → Supabase Storage
+  // public bucket; `s3` → any S3-compatible store (MinIO for fully self-hosted, or real AWS S3). The
+  // self-contained stack runs MinIO behind `s3`. Keys are unguessable UUID paths in a public-read bucket
+  // (same posture as the Supabase public bucket — see SECURITY.md). Empty=unset→supabase.
+  STORAGE_PROVIDER: z.preprocess((v) => (v === "" ? undefined : v), z.enum(["supabase", "s3"]).default("supabase")),
+  // S3-compatible storage config — only consulted when STORAGE_PROVIDER=s3 (validated lazily in
+  // lib/storage/s3.ts so a Supabase deploy never needs them). S3_ENDPOINT is the API origin
+  // (e.g. http://minio:9000); S3_PUBLIC_URL is the browser-reachable base the public object URL is built
+  // from (e.g. https://media.example.com or the edge's /media mount). S3_FORCE_PATH_STYLE stays true for
+  // MinIO (path-style buckets); set false only for a vhost-style provider.
+  S3_ENDPOINT: z.preprocess((v) => (v === "" ? undefined : v), z.string().url().optional()),
+  S3_REGION: z.string().default("us-east-1"),
+  S3_ACCESS_KEY_ID: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
+  S3_SECRET_ACCESS_KEY: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
+  S3_BUCKET: z.string().default("agora"),
+  S3_PUBLIC_URL: z.preprocess((v) => (v === "" ? undefined : v), z.string().url().optional()),
+  // NB: a plain z.coerce.boolean() would read the STRING "false" as true — parse the truthy/falsy
+  // tokens explicitly so S3_FORCE_PATH_STYLE=false actually disables path-style.
+  S3_FORCE_PATH_STYLE: z.preprocess((v) => {
+    if (v === "" || v === undefined) return true;
+    if (typeof v === "string") return !["false", "0", "no", "off"].includes(v.toLowerCase());
+    return v;
+  }, z.boolean()),
   // Secure-chat (E2E) ciphertext caps, enforced on the DECODED byte length. Deliberately NOT the
   // 25 MiB upload cap — that would invite DoS. App messages are small (default 256 KiB); MLS
   // handshakes (Welcome/Commit) scale with group size so they get a larger, separate cap (4 MiB).
