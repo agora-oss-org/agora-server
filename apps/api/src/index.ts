@@ -9,6 +9,7 @@ import { attachRealtime } from "./realtime/socket.js";
 import { logger } from "./lib/logger.js";
 import { startMetricsFlush } from "./lib/metrics.js";
 import { startRateLimitSweep } from "./lib/rate-limit.js";
+import { hydrateSuspensionIndex } from "@agora/core/lib/suspensions";
 
 // Last-resort safety net: a stray rejection/throw from a background task (socket handler, fan-out,
 // fire-and-forget index/embeds) must NOT take the whole API down. Node's default is to crash on an
@@ -26,6 +27,15 @@ process.on("uncaughtException", (err) => {
 const app = createApp();
 startMetricsFlush(); // periodic flush of request-metering deltas → api_usage
 startRateLimitSweep(); // evict elapsed rate-limit windows so the map stays bounded
+// Hydrate the Redis suspension index on boot (no-op without REDIS_URL). Best-effort: a failure is logged
+// but doesn't stop the api — with a configured-but-down Redis, authed reads fail closed until it recovers
+// and the reconcile cron re-hydrates. The shared index is also read by @agora/secure-chat.
+hydrateSuspensionIndex()
+  .then((result) => logger.info({ result }, "suspension index hydrated"))
+  .catch((err) => {
+    logger.error("suspension index hydrate failed at boot");
+    logger.debug({ err }, "suspension index hydrate failed at boot");
+  });
 
 const server = serve({ fetch: app.fetch, port: env.PORT }, (info) => {
   logger.info({ port: info.port, url: `http://localhost:${info.port}/v7` }, "🏛️  Agora API listening");

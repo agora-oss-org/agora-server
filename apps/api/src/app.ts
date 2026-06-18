@@ -18,6 +18,7 @@ import { rollupCommunityStats } from "./lib/community-stats.js";
 import { rollupConstellation } from "./lib/social-constellation.js";
 import { rollupAnalytics } from "./lib/social-analytics.js";
 import { applyClientModeration } from "./lib/client-moderation.js";
+import { hydrateSuspensionIndex } from "@agora/core/lib/suspensions";
 
 function safeEqual(a: string, b: string): boolean {
   const ab = Buffer.from(a);
@@ -103,6 +104,17 @@ export function createApp() {
     const blocked = cronGuard(c); if (blocked) return blocked;
     const result = await rollupAnalytics();
     logger.info({ result }, "cron: admin analytics materialized");
+    return c.json(result);
+  });
+
+  // Reconcile the Redis suspension index against the DB: one atomic rebuild catches new suspensions,
+  // lifts, AND endDate expiries (no diffing). No-op when REDIS_URL is unset. Also runs standalone via
+  // scripts/sync-suspensions.mjs. The api owns the suspension write endpoints + this reconcile; the
+  // shared index is read by @agora/secure-chat too.
+  app.post("/internal/cron/sync-suspensions", async (c) => {
+    const blocked = cronGuard(c); if (blocked) return blocked;
+    const result = await hydrateSuspensionIndex();
+    logger.info({ result }, "cron: suspension index reconciled");
     return c.json(result);
   });
 

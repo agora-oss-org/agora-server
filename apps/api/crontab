@@ -10,6 +10,11 @@
 # for hot/top/query-time it is a cheap consistency pass (scores already refresh on vote).
 */15 * * * * sh -c 'curl -fsS -m 60 -X POST -H "X-Cron-Secret: $CRON_SECRET" "$AGORA_URL/internal/cron/recompute-scores"'
 
+# Every 5 minutes: reconcile the Redis suspension index against the DB (atomic rebuild — catches new
+# suspensions, lifts, AND endDate expiries). No-op without REDIS_URL. Bounds any write-through drift and
+# keeps @agora/secure-chat's fail-closed enforcement fresh (it reads the same shared index).
+*/5 * * * * sh -c 'curl -fsS -m 30 -X POST -H "X-Cron-Secret: $CRON_SECRET" "$AGORA_URL/internal/cron/sync-suspensions"'
+
 # Weekly (Sunday 04:00 UTC): re-materialize the Constellation snapshot. The endpoint's ~6-week per-project
 # epoch gate makes most runs a cheap no-op (and self-heals a missed week); the long timeout covers GDS
 # Louvain over the whole graph. §12 keeps this deliberately slow ("seasonal", never per-load).
