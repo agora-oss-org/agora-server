@@ -143,7 +143,18 @@ image builds from the repo root context. Optional profiles: `--profile scale` ad
 rate limiting), `--profile secure` brings up **Redis + `secure-chat`** (the admin nginx routes
 `/v7/:projectId/secure-chat/*` + `/secure-socket/` to it; set `REDIS_URL=redis://redis:6379`),
 `--profile edge` adds a **Caddy** TLS front door (auto-HTTPS + HSTS/headers + body cap + authoritative
-`X-Forwarded-For` → admin; `deploy/proxy/`, set `RATE_LIMIT_TRUSTED_HOPS=2` behind it).
+`X-Forwarded-For` → admin; `deploy/proxy/`, set `RATE_LIMIT_TRUSTED_HOPS=2` behind it),
+`--profile selfhost` adds local **Postgres** (`supabase/postgres`) + **MinIO** so the SAME api runs
+fully self-contained (no Supabase) — point `DATABASE_URL` at `db`, set `STORAGE_PROVIDER=s3` + the
+`S3_*` block at `minio` (the admin nginx serves public media at `/media`), and `DEFAULT_AUTH_PROVIDER=native`. See `docs/SELF-HOSTING.md`.
+
+**Storage is pluggable** (`lib/storage/` provider seam): `STORAGE_PROVIDER` picks `supabase` (default,
+Supabase Storage) or `s3` (any S3-compatible store — MinIO/AWS). `lib/storage.ts`'s
+`uploadBytes`/`publicUrl` delegate to `getStorage()`, so call sites + the `files` table (stores the
+resolved URL in `original_path`) are backend-agnostic. The S3 provider creates the bucket +
+public-read policy in-code on first upload (same posture as the Supabase public bucket — `SECURITY.md`).
+Auth is likewise per-project (`projects.auth_provider` native|supabase, `getAuthProvider()`); OAuth is
+Supabase-brokered (returns `oauth/not-configured` when unset).
 
 ## Ecosystem (sibling repos)
 
@@ -184,7 +195,8 @@ Project id is the seed UUID `11111111-1111-1111-1111-111111111111`.
 - `apps/api/src/routes/` — one router per domain; `realtime/socket.ts` — socket.io server
   (module singleton; REST handlers fan out via `emitToConversation()`).
 - `apps/api/src/lib/` — also `tokens.ts` (mint/rotate Agora tokens), `embeddings.ts` (Voyage),
-  `storage.ts` (Supabase Storage uploads), `supabase.ts` (lazy `getSupabase()`).
+  `storage.ts` (upload facade → the `storage/` provider seam: Supabase Storage or S3/MinIO, picked by
+  `STORAGE_PROVIDER`), `supabase.ts` (lazy `getSupabase()`).
 - `apps/api/src/lib/neo4j.ts` — `neo4jEnabled()` + lazy driver; returns `null` when `NEO4J_URI`
   unset. `lib/social-config.ts` — cached `getSocialConfig()` resolver + tier defaults/clamping.
   `lib/social-weather.ts` — Weather computation (warmth + FRICTION fold, decay, band hysteresis,
@@ -438,8 +450,9 @@ and `CHANGELOG.md` for what each migration did. Only the non-obvious conventions
 - ✅ **Search**: `search.ts` — `/content` (Voyage `voyage-3.5` @ 1024 dims embed query → `match_entities`
   pgvector RPC), `/spaces` + `/users` (ILIKE). `lib/embeddings.ts` embeds entities on create/update
   (fire-and-forget `indexEntityAsync`). Embedding column is `vector(1024)`; set `VOYAGE_API_KEY` to enable.
-- ✅ **Storage**: `storage.ts` — POST `/storage` (multipart → Supabase Storage `agora` bucket → `files` row),
-  POST `/storage/images` (sharp → webp original + thumbnail/small/medium variants). `lib/storage.ts`.
+- ✅ **Storage**: `storage.ts` — POST `/storage` (multipart → the configured backend's `agora` bucket →
+  `files` row), POST `/storage/images` (sharp → webp original + thumbnail/small/medium variants).
+  Backend is pluggable via the `lib/storage/` seam (`STORAGE_PROVIDER` = `supabase` | `s3`).
 - ✅ **Misc**: `misc.ts` — `/oauth/identities` (list/delete), `/projects/lean`, `/utils/get-metadata`
   (OG/link preview, SSRF-guarded). Only `crypto/sign-testing-jwt` remains a stub (dev convenience).
 - **REST surface is complete** and the backend is feature-complete.

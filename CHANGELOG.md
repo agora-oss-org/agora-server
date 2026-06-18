@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Pluggable storage + fully self-hosted (no-Supabase) deploy.** The same `@agora/api` now runs either
+  on Supabase (default, unchanged) or fully self-contained. Object storage is abstracted behind a
+  `StorageProvider` seam (`apps/api/src/lib/storage/`): `STORAGE_PROVIDER=supabase` (default) keeps
+  Supabase Storage; `STORAGE_PROVIDER=s3` uses any S3-compatible store (MinIO for self-hosting, or AWS
+  S3) — bucket + public-read policy auto-created in-code on first upload. `lib/storage.ts`'s
+  `uploadBytes`/`publicUrl` delegate to the seam, so all call sites (`lib/images.ts`, `routes/storage`,
+  …) and the `files` table are unchanged. A new `selfhost` compose profile adds local Postgres
+  (`supabase/postgres`) + MinIO; the admin nginx serves public media at `/media` → MinIO. New env:
+  `STORAGE_PROVIDER`, `S3_*`, `DEFAULT_AUTH_PROVIDER` (stamps a genesis project's auth backend),
+  `POSTGRES_PASSWORD`, `MINIO_ROOT_*`. OAuth (Supabase-brokered) cleanly returns `oauth/not-configured`
+  when unconfigured. See `docs/SELF-HOSTING.md`.
 - **Secure-chat extracted into its own deployable app** (`apps/secure-chat`, `@agora/secure-chat`) —
   the blind MLS (E2E) Delivery Service is now an **independent process** split out of `@agora/api`
   (own Hono server + own socket.io server + own entrypoint), so it can be load-balanced and deployed

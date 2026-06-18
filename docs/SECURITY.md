@@ -117,6 +117,11 @@ bound uploads and JSON bodies.
   exposure is a **leaked URL** (a forwarded link, a referrer header, a log). So: **don't upload secrets**,
   and be aware that a leaked URL to a **private** attachment (DM / private-space) is world-readable. If
   that matters for your deployment, put private uploads behind your own signed-URL/download gate.
+- The **self-hosted storage backend** (`STORAGE_PROVIDER=s3` → MinIO/S3, `docs/SELF-HOSTING.md`) carries
+  the **identical posture**: the api creates the bucket with an anonymous **public-read** policy and the
+  same unguessable-UUID keys — same accepted trade-off, same "don't upload secrets" caveat. Serve it
+  through the admin nginx `/media` mount (never expose MinIO `:9000` publicly), and treat the MinIO root
+  credentials + `POSTGRES_PASSWORD` as real secrets (strong values, `.env` out of VCS).
 - Verify Supabase **automated backups** (or your own `pg_dump` schedule) and test a restore.
 
 ### 9. Keep the stack patched
