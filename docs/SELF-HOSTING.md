@@ -60,7 +60,43 @@ The `selfhost` compose profile brings up the two local backends. They're opt-in:
    For a dev box you can instead `node scripts/genesis.mjs` (drop → rebuild → seed); it stamps the seed
    project's `auth_provider` from `DEFAULT_AUTH_PROVIDER`.
 
-4. **Done.** The admin SPA is on `:8080` (or behind the `edge` Caddy proxy on `:443`). Uploads land in
+4. **Bootstrap the first admin.** A virgin DB has no users, and native auth gates sign-in on email
+   confirmation (the default `ConsoleEmailSender` only *logs* the confirm link — no SMTP). So seed a
+   **pre-confirmed** native credential directly, then make it an operator:
+
+   ```bash
+   # the credential is confirmed in-DB (no email round-trip); -it gives the prompt a TTY
+   docker compose run --rm -it agora node scripts/seeds/seed-native-admin.mjs
+   #   Admin email: you@example.com
+   #   Admin password (hidden): ********   (not echoed, asked twice)
+   ```
+
+   The script **prompts** for the email and password (password hidden, entered twice) so no secret
+   touches the command line, `ps`, or shell history. For non-interactive/CI use, set `ADMIN_EMAIL` +
+   `ADMIN_PASSWORD` in the env instead and it skips the prompt.
+
+   > **Keeping an inline secret out of shell history.** If you do pass `ADMIN_PASSWORD=… node …` on the
+   > command line, prefix the whole line with a **single leading space** so your shell skips recording it.
+   > That only works once the shell is configured for it (**oh-my-zsh enables this by default** via its
+   > `lib/history.zsh`). Otherwise set it in your `~/.bashrc` / `~/.zshrc`:
+   >
+   > ```bash
+   > # bash — also drops duplicate lines:
+   > export HISTCONTROL=ignorespace        # (or ignoreboth)
+   > # plain zsh (oh-my-zsh already does this):
+   > setopt HIST_IGNORE_SPACE
+   > ```
+   >
+   > Then `  ADMIN_PASSWORD='…' docker compose run … ` (note the leading space) won't land in history.
+   > It's still visible to `ps` / `/proc` while the process runs, so the interactive prompt above is
+   > still the safer default — this is only for the env/CI path.
+
+   Then add that email to **`OPERATOR_EMAILS`** in `.env` (god-view is the env allowlist, not a DB row —
+   see "Auth" below) and restart `agora`. Sign in at the admin SPA; the `profiles` row auto-creates on
+   first sign-in. Re-run with `--reset` to set a new password if you lock yourself out. (This is the
+   native counterpart of `seed-demo-user.mjs`, which is Supabase-only.)
+
+5. **Done.** The admin SPA is on `:8080` (or behind the `edge` Caddy proxy on `:443`). Uploads land in
    MinIO and are served back through `https://your-host/media/<key>`.
 
 ## How each seam works
@@ -97,6 +133,15 @@ update projects set auth_provider = 'native' where id = '<project-id>';
 **OAuth (social login) is Supabase-brokered** and therefore unavailable in a Supabase-less deploy:
 `/oauth/authorize` and `/oauth/callback` return `oauth/not-configured`. Native email/password is the
 full self-hosted auth surface.
+
+**Operator (god-view) is an env allowlist, not a DB role.** `OPERATOR_EMAILS` / `OPERATOR_USER_IDS`
+(`lib/operators.ts`) are matched at token-mint time and stamped as `isOperator` in the access JWT — a
+project-wide admin with no DB grant. So "the admin" is simply a user whose email is in `OPERATOR_EMAILS`;
+that's why bootstrapping is *create a native user* (step 4) *+ add its email to the allowlist*, not a
+migration. (Within-project owner/admin/steward grants are separate DB roles in `project_roles` — see
+`CLAUDE.md`.) There is no native-mode confirmation email transport by default: the `ConsoleEmailSender`
+logs confirm/reset links at `debug`, so either run `seed-native-admin.mjs` (pre-confirmed) or read the
+link out of the server log.
 
 ### Database (`DATABASE_URL`)
 

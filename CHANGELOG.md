@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Native admin bootstrap seed** (`apps/api/scripts/seeds/seed-native-admin.mjs`) — the no-Supabase
+  counterpart of `seed-demo-user.mjs`. Inserts a **pre-confirmed** `auth_credentials` row (Argon2id, the
+  same hash the app verifies) directly into the DB so a fully self-hosted (`auth_provider='native'`)
+  deploy has a working email/password login on a virgin DB — no SMTP / email-confirmation round-trip
+  needed (the default `ConsoleEmailSender` only logs the link). **Prompts** for the email + password
+  (password hidden, entered twice) so no secret hits argv/`ps`/shell history; `ADMIN_EMAIL` +
+  `ADMIN_PASSWORD` env override the prompt for CI. Idempotent; `--reset` rotates the password, `--test`
+  targets `TEST_DATABASE_URL`. Pair the email with `OPERATOR_EMAILS` for god-view; the `profiles` row
+  auto-creates on first sign-in. See `docs/SELF-HOSTING.md`.
 - **Pluggable storage + fully self-hosted (no-Supabase) deploy.** The same `@agora/api` now runs either
   on Supabase (default, unchanged) or fully self-contained. Object storage is abstracted behind a
   `StorageProvider` seam (`apps/api/src/lib/storage/`): `STORAGE_PROVIDER=supabase` (default) keeps
