@@ -51,11 +51,18 @@ The `selfhost` compose profile brings up the two local backends. They're opt-in:
 
 3. **Apply migrations once** (the schema + RLS + triggers + RPC). The `supabase/postgres` image bundles
    everything the migrations assume — **pgvector**, **PostGIS**, **pgmq**, and the
-   `authenticated`/`anon`/`service_role` roles + `auth.uid()` — so they apply unchanged:
+   `authenticated`/`anon`/`service_role` roles + `auth.uid()` — so they apply unchanged (validated against
+   `supabase/postgres:15.8.1.060`):
 
    ```bash
    docker compose run --rm agora node scripts/migrate.mjs
    ```
+
+   > **Use the `postgres` database — don't create your own.** The `auth` schema, `auth.uid()`, and the
+   > `anon`/`authenticated`/`service_role` roles are provisioned by the image **only in the default
+   > `postgres` database** (schemas are per-database, so a `CREATE DATABASE agora` would be missing them
+   > and the RLS migrations would fail with `schema "auth" does not exist`). That's why `DATABASE_URL`
+   > points at `…@db:5432/postgres`.
 
    For a dev box you can instead `node scripts/genesis.mjs` (drop → rebuild → seed); it stamps the seed
    project's `auth_provider` from `DEFAULT_AUTH_PROVIDER`.

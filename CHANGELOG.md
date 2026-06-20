@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Migration 0027 (pgmq enqueue) failed on a self-hosted Postgres where pgmq wasn't pre-installed.**
+  `CREATE EXTENSION pgmq` runs an install script that resets the session `search_path` to `''` (non-local
+  `set_config`); because the migrator applies all migrations in one transaction, the next unqualified
+  `create function` then failed with `no schema has been selected to create in`. Added the same
+  `SET search_path TO public, extensions;` re-pin that 0000/0001/0007 already do after their
+  `CREATE EXTENSION`. Never surfaced on Supabase (pgmq is pre-installed there, so `if not exists`
+  short-circuits). Validated by applying the full migration chain against `supabase/postgres:15.8.1.060`.
+  The edit is a no-op on already-migrated DBs (the migrator gates on the journal watermark, not file hash).
+
 ### Added
 - **Native admin bootstrap seed** (`apps/api/scripts/seeds/seed-native-admin.mjs`) — the no-Supabase
   counterpart of `seed-demo-user.mjs`. Inserts a **pre-confirmed** `auth_credentials` row (Argon2id, the
