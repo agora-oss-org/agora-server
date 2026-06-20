@@ -546,3 +546,39 @@ built**:
    [`apps/secure-chat/src/lib/space-access.ts`](../apps/secure-chat/src/lib/space-access.ts); v2 swaps in a
    provider that calls back to the API, so a standalone secure DB (deferral 2) needn't replicate the
    space/membership tables.
+5. **Pluggable, encrypted-at-rest persistence (SQLite).** Generalize deferral 2 from "standalone
+   Postgres" to a **DB-backend seam**: the `secure_*` tables behind an interface so a node runs on
+   **either Postgres or an encrypted SQLite file** (SQLCipher / libSQL encryption-at-rest). The MLS
+   payloads are already E2E ciphertext, so at-rest encryption's job is **metadata** — conversation
+   membership, device + key-package rows, handshake state, timestamps — on an untrusted or seized-disk
+   (`.onion`) host. Needs: a SQLite-dialect Drizzle schema mirroring `secure_*` (uuid→text, jsonb→text,
+   timestamptz→integer, bytea→blob), its **own** migration path (no RLS/triggers — secure-chat is its own
+   trust boundary, not the RLS-bypassing owner), and a key-management story (passphrase / keyfile, never
+   committed). Pairs naturally with the spaceless mode (deferral 6) and onion transport (deferral 1) for a
+   small single-node deploy that runs **no Postgres at all**.
+6. **Spaceless standalone mode.** A deploy-time flag declaring **there are no `spaces`/`space_members`**
+   for this node. secure-chat then serves **1:1 and 1:\* (group)** conversations only — space-gated
+   *channels* are off entirely, so `assertSpaceAccess` is a no-op and even deferral 4's API-callback isn't
+   needed. This is the simplest route to a node with no shared-Postgres dependency: the only cross-DB reads
+   left are suspensions ([§17](#17-suspension-enforcement-fail-closed)), sourced via the core API or run
+   without cross-tenant suspension enforcement on a single-tenant node.
+
+### The standalone secure node (composite)
+
+Deferrals 1 + 5 + 6 (and optionally 2/3/4) compose into a **standalone secure-chat node**: its own
+(optionally encrypted, optionally SQLite) `secure_*` store, its own transport (optionally `.onion`), no
+shared Postgres. Two caveats define its boundary and are part of this future scope:
+
+- **The core API still creates sessions — this node is delivery + storage, not an identity origin.**
+  secure-chat is a *blind delivery service*: account/identity, access-token **minting**, and the
+  *creation* of conversations/sessions still flow through the core API (`@agora/api`). A standalone secure
+  node is therefore **paired with** the core API, not a replacement for it — what it gains is an isolated
+  (and optionally encrypted/SQLite) secure store + transport. Fully severing the core API (a self-sovereign
+  identity origin for secure-chat) is a **larger, separate** project beyond these seams.
+- **A "chat-only" admin/client surface.** The operator UI for such a deployment is a slimmed frontend —
+  a reduced [`@agora/admin`](../apps/admin) build or a dedicated app — whose only job is to let users
+  connect to a secure-chat node and **create/join** these 1:1 / 1:\* sessions (no spaces, feed, moderation,
+  or social surfaces). This is its own deliverable alongside the node itself.
+
+**Status: not built — design-only.** These are recorded here so the seams stay honest in v1; none of
+deferrals 5–6 or the composite node exist yet.
