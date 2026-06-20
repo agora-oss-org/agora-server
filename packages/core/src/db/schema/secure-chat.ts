@@ -156,3 +156,23 @@ export const secureKeyBackups = pgTable("secure_key_backups", {
 }, (t) => [
   unique("secure_key_backups_user_device_unique").on(t.userId, t.deviceId),
 ]);
+
+// IUC restore-blob courier (ENVELOPE history restore). An EPHEMERAL, targeted, opaque drop-box: device
+// A uploads a client-sealed AEAD blob addressed to a re-provisioned device B; only B fetches it; it is
+// DELETEd on confirm and TTL-swept otherwise. The server is blind — there are deliberately NO key /
+// sha256 / count / transferId columns (those ride MLS only). RLS deny-all ships in the creating
+// migration (the one-time 0017 enablement guard doesn't cover new tables). See docs/RESTORE.md.
+export const secureRestoreBlobs = pgTable("secure_restore_blobs", {
+  id: uuid("id").primaryKey().defaultRandom(),         // this IS the blobId
+  projectId: uuid("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  conversationId: uuid("conversation_id").notNull().references(() => secureConversations.id, { onDelete: "cascade" }),
+  fromDeviceId: uuid("from_device_id").notNull().references(() => secureDevices.id, { onDelete: "cascade" }),     // uploader A
+  targetDeviceId: uuid("target_device_id").notNull().references(() => secureDevices.id, { onDelete: "cascade" }), // recipient B
+  blob: bytea("blob").notNull(),                        // opaque XChaCha20-Poly1305 ciphertext
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  index("secure_restore_blobs_target_idx").on(t.targetDeviceId, t.createdAt),   // B's authz lookup + per-target count
+  index("secure_restore_blobs_pair_idx").on(t.fromDeviceId, t.targetDeviceId),  // per-pair quota count
+  index("secure_restore_blobs_expiry_idx").on(t.expiresAt),                     // cron TTL sweep
+]);

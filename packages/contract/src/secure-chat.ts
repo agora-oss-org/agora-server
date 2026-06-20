@@ -97,6 +97,31 @@ export const uploadKeyBackupSchema = z.object({
   version: z.number().int().positive(),
 });
 
+// Restore blobs are bulk history (up to MAX_SECURE_RESTORE_BLOB_BYTES, default 16 MiB ≈ 22.4M base64
+// chars) — larger than `base64`'s ~12 MiB pre-decode guard. Use a roomier guard sized above the default
+// server cap so the REAL limit is enforced server-side as a 413 (secure-chat/restore-blob-too-large) —
+// the SDK's chunk/INLINE fallback signal — instead of being preempted here as a 400. The absurd-length
+// fast-fail still applies.
+const MAX_RESTORE_B64_CHARS = 33_554_432; // ~24 MiB decoded
+const restoreBlobBase64 = z
+  .string()
+  .min(1)
+  .max(MAX_RESTORE_B64_CHARS)
+  .regex(/^[A-Za-z0-9+/]+={0,2}$/, "must be base64");
+
+// Upload a restore-history blob (IUC "history restore on a re-provisioned device", ENVELOPE variant):
+// one opaque, client-sealed AEAD blob that device A couriers to a re-joined device B off the MLS
+// channel. The decryption key K travels ONLY over MLS — it is NEVER a field here. fromDeviceId /
+// targetDeviceId are device ROW ids; the server enforces caller-owns-fromDeviceId + both devices'
+// users are members of conversationId. The real DECODED byte cap is server-side
+// (MAX_SECURE_RESTORE_BLOB_BYTES). See apps/secure-chat/docs/RESTORE.md.
+export const uploadRestoreBlobSchema = z.object({
+  conversationId: z.string().uuid(),
+  fromDeviceId: z.string().uuid(),
+  targetDeviceId: z.string().uuid(),
+  blob: restoreBlobBase64,
+});
+
 // ─── request body types (z.input: .default()/.nullish() fields are optional client-side) ─
 export type RegisterDeviceBody = z.input<typeof registerDeviceSchema>;
 export type PublishKeyPackagesBody = z.input<typeof publishKeyPackagesSchema>;
@@ -105,6 +130,7 @@ export type AddSecureMemberBody = z.input<typeof addSecureMemberSchema>;
 export type RemoveSecureMemberBody = z.input<typeof removeSecureMemberSchema>;
 export type SendSecureMessageBody = z.input<typeof sendSecureMessageSchema>;
 export type UploadKeyBackupBody = z.input<typeof uploadKeyBackupSchema>;
+export type UploadRestoreBlobBody = z.input<typeof uploadRestoreBlobSchema>;
 export type WelcomeEnvelope = z.input<typeof welcomeSchema>;
 export type HandshakeBlob = z.input<typeof handshakeBlobSchema>;
 
@@ -198,4 +224,22 @@ export interface SecureKeyBackupModel {
   version: number;
   createdAt: string;
   updatedAt: string;
+}
+
+// IUC restore-blob courier (ENVELOPE variant) — ephemeral, targeted, opaque. The GET response B
+// fetches. The server stores/relays the sealed bytes ONLY: no K, sha256, count, or transferId (those
+// are MLS-only). See apps/secure-chat/docs/RESTORE.md.
+export interface RestoreBlobModel {
+  blobId: string;
+  conversationId: string;
+  fromDeviceId: string;
+  blob: string; // base64 (opaque XChaCha20-Poly1305 ciphertext; the server cannot decrypt)
+  createdAt: string;
+  expiresAt: string;
+}
+
+// POST /restore-blobs response (A's upload acknowledgement).
+export interface UploadRestoreBlobResponse {
+  blobId: string;
+  expiresAt: string;
 }

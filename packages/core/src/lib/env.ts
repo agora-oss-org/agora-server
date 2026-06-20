@@ -94,6 +94,15 @@ const schema = z.object({
   // handshakes (Welcome/Commit) scale with group size so they get a larger, separate cap (4 MiB).
   MAX_SECURE_MESSAGE_BYTES: z.coerce.number().int().positive().default(262_144),
   MAX_SECURE_HANDSHAKE_BYTES: z.coerce.number().int().positive().default(4_194_304),
+  // IUC restore-blob courier (ENVELOPE history restore) — an ephemeral, targeted, opaque drop-box.
+  // The per-blob byte cap is CHUNK granularity, not a ceiling on total restorable history (a large
+  // history is N independent blobs reassembled client-side). TTL is the sweep backstop for a blob the
+  // recipient never explicitly DELETEs. Quotas bound outstanding (unexpired) blobs per (uploader→target)
+  // pair and per target device. See apps/secure-chat/docs/RESTORE.md.
+  MAX_SECURE_RESTORE_BLOB_BYTES: z.coerce.number().int().positive().default(16_777_216), // 16 MiB
+  SECURE_RESTORE_BLOB_TTL_SECONDS: z.coerce.number().int().positive().default(900), // 15 min
+  MAX_SECURE_RESTORE_BLOBS_PER_PAIR: z.coerce.number().int().positive().default(16),
+  MAX_SECURE_RESTORE_BLOBS_PER_TARGET: z.coerce.number().int().positive().default(64),
   // Embeddings (Voyage AI). Optional until semantic search is used.
   VOYAGE_API_KEY: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
   VOYAGE_MODEL: z.string().default("voyage-3.5"),
