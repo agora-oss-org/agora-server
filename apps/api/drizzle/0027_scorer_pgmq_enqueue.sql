@@ -19,6 +19,14 @@
 
 create extension if not exists pgmq;
 --> statement-breakpoint
+-- Re-pin search_path: when pgmq is NOT already installed, CREATE EXTENSION pgmq runs its install
+-- script which resets the session search_path to '' (a non-local set_config). The migrator applies
+-- every migration in ONE transaction, so that empty search_path would persist and make the unqualified
+-- `create function` below fail with "no schema has been selected to create in". (Doesn't bite on
+-- Supabase, where pgmq is pre-installed so CREATE EXTENSION short-circuits.) Mirrors the re-pin that
+-- 0000/0001/0007 already do after their CREATE EXTENSION calls.
+SET search_path TO public, extensions;
+--> statement-breakpoint
 -- Create the queue idempotently (pgmq.create raises if it already exists).
 do $$ begin
   perform pgmq.create('scorer_jobs');
