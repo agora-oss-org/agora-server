@@ -14,6 +14,9 @@ import { requestLog } from "@agora/core/middleware/request-log";
 import { resolveProject } from "@agora/core/middleware/project";
 import { hydrateSuspensionIndex } from "@agora/core/lib/suspensions";
 import { suspensionIndexReady } from "@agora/core/lib/suspension-index";
+import { db } from "@agora/core/db";
+import { secureRestoreBlobs } from "@agora/core/db/schema";
+import { lte } from "drizzle-orm";
 import { secureChatRoutes } from "./routes/secure-chat.js";
 
 function safeEqual(a: string, b: string): boolean {
@@ -62,6 +65,18 @@ export function createSecureApp() {
     const result = await hydrateSuspensionIndex();
     logger.info({ result }, "cron: suspension index reconciled");
     return c.json(result);
+  });
+
+  // TTL backstop for IUC restore blobs: delete any blob past its expiry (the recipient never DELETEd it,
+  // or never came online). Lazy-expiry already hides expired blobs on read, so this only reclaims storage.
+  // 503 until CRON_SECRET is set; also runs standalone via scripts/purge-restore-blobs.mjs.
+  app.post("/internal/cron/purge-restore-blobs", async (c) => {
+    const blocked = cronGuard(c); if (blocked) return blocked;
+    const deleted = await db.delete(secureRestoreBlobs)
+      .where(lte(secureRestoreBlobs.expiresAt, new Date()))
+      .returning({ id: secureRestoreBlobs.id });
+    logger.info({ purged: deleted.length }, "cron: expired restore blobs purged");
+    return c.json({ purged: deleted.length });
   });
 
   // Project-scoped: /v7/:projectId/secure-chat/*. Every secure route carries its own requireAuth, so we

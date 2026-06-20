@@ -4,11 +4,11 @@
 // ever emit ciphertext/opaque bytes — there is no plaintext to leak.
 import type {
   secureDevices, secureConversations, secureConversationMembers,
-  secureMessages, secureHandshakeMessages, secureKeyBackups, secureKeyPackages,
+  secureMessages, secureHandshakeMessages, secureKeyBackups, secureKeyPackages, secureRestoreBlobs,
 } from "@agora/core/db/schema";
 import type {
   SecureDeviceModel, SecureConversationModel, SecureConversationMemberModel,
-  SecureMessageModel, SecureHandshakeModel, SecureKeyBackupModel, SecureKeyPackageClaim,
+  SecureMessageModel, SecureHandshakeModel, SecureKeyBackupModel, SecureKeyPackageClaim, RestoreBlobModel,
 } from "@agora-server/contract";
 
 const iso = (d: Date | null | undefined): string | null => (d instanceof Date ? d.toISOString() : null);
@@ -21,6 +21,7 @@ type MessageRow = typeof secureMessages.$inferSelect;
 type HandshakeRow = typeof secureHandshakeMessages.$inferSelect;
 type KeyBackupRow = typeof secureKeyBackups.$inferSelect;
 type KeyPackageRow = typeof secureKeyPackages.$inferSelect;
+type RestoreBlobRow = typeof secureRestoreBlobs.$inferSelect;
 
 export function shapeSecureDevice(row: DeviceRow): SecureDeviceModel {
   return {
@@ -128,5 +129,17 @@ export function shapeSecureKeyBackup(row: KeyBackupRow): SecureKeyBackupModel {
     version: row.version,
     createdAt: iso(row.createdAt)!,
     updatedAt: iso(row.updatedAt)!,
+  };
+}
+
+// IUC restore-blob courier (GET response B fetches). `blobId` is the row id; `blob` is opaque base64.
+export function shapeSecureRestoreBlob(row: RestoreBlobRow): RestoreBlobModel {
+  return {
+    blobId: row.id,
+    conversationId: row.conversationId,
+    fromDeviceId: row.fromDeviceId,
+    blob: b64(row.blob),
+    createdAt: iso(row.createdAt)!,
+    expiresAt: iso(row.expiresAt)!,
   };
 }

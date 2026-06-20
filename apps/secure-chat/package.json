@@ -13,7 +13,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:integration": "vitest run -c vitest.integration.config.ts",
-    "db:clean:secure-chat": "node scripts/clean-secure-chat.mjs"
+    "db:clean:secure-chat": "node scripts/clean-secure-chat.mjs",
+    "db:purge:restore-blobs": "node scripts/purge-restore-blobs.mjs"
   },
   "dependencies": {
     "@agora-server/contract": "workspace:*",

@@ -27,6 +27,9 @@ export interface SecureServerToClientEvents {
   "secure:key-packages-low": (p: { deviceId: string; available: number }) => void;
   "secure:typing:start": (p: { userId: string; conversationId: string }) => void;
   "secure:typing:stop": (p: { userId: string; conversationId: string }) => void;
+  // IUC: a restore blob is waiting for this device. Carries ONLY conversationId — never the blobId or
+  // key (B learns blobId from the MLS iuc/restore-envelope message). A latency nicety, not required.
+  "secure:restore-blob-available": (p: { conversationId: string }) => void;
 }
 
 export interface SecureClientToServerEvents {

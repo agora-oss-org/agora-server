@@ -29,6 +29,11 @@ export default defineConfig({
       ACCESS_TOKEN_SECRET:
         process.env.ACCESS_TOKEN_SECRET ?? "integration-test-secret-integration-test-secret",
       REDIS_URL: "", // suspension index disabled in tests → DB read (hermetic)
+      // Small IUC restore-blob caps so the size (413) + quota (429) paths are cheap to exercise; only
+      // the restore-blob test reads these. CRON_SECRET enables the purge-restore-blobs sweep endpoint.
+      MAX_SECURE_RESTORE_BLOB_BYTES: "1024",
+      MAX_SECURE_RESTORE_BLOBS_PER_PAIR: "3",
+      CRON_SECRET: "integration-cron-secret",
     },
   },
 });

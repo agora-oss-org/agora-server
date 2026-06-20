@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   shapeSecureDevice, shapeSecureMessage, shapeSecureConversation,
-  shapeSecureHandshake, shapeSecureKeyBackup, shapeSecureKeyPackageClaim,
+  shapeSecureHandshake, shapeSecureKeyBackup, shapeSecureKeyPackageClaim, shapeSecureRestoreBlob,
 } from "./secure-chat-shape.js";
 
 const now = new Date("2026-06-06T12:00:00.000Z");
@@ -75,5 +75,22 @@ describe("secure-chat shapers", () => {
     expect(out.keyPackage).toBe(buf("kp-bytes").toString("base64"));
     expect(out.deviceId).toBe("d1");
     expect(out.ciphersuite).toBe(2);
+  });
+
+  it("shapes a restore blob: blobId from row id, opaque base64 blob, ISO dates, no key/target surface", () => {
+    const out = shapeSecureRestoreBlob({
+      id: "rb1", projectId: "p1", conversationId: "c1", fromDeviceId: "dA", targetDeviceId: "dB",
+      blob: buf("opaque-history"), expiresAt: now, createdAt: now,
+    } as any);
+    expect(out.blobId).toBe("rb1");
+    expect(out.conversationId).toBe("c1");
+    expect(out.fromDeviceId).toBe("dA");
+    expect(out.blob).toBe(buf("opaque-history").toString("base64"));
+    expect(out.createdAt).toBe("2026-06-06T12:00:00.000Z");
+    expect(out.expiresAt).toBe("2026-06-06T12:00:00.000Z");
+    // Opaque courier only — no decryption key, integrity digest, or even the target device leaks out.
+    expect(out).not.toHaveProperty("targetDeviceId");
+    expect(out).not.toHaveProperty("key");
+    expect(out).not.toHaveProperty("sha256");
   });
 });

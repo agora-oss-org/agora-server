@@ -14,16 +14,17 @@ import { requireAuth } from "@agora/core/middleware/auth";
 import { db } from "@agora/core/db";
 import {
   secureDevices, secureKeyPackages, secureConversations, secureConversationMembers,
-  secureMessages, secureHandshakeMessages, secureKeyBackups,
+  secureMessages, secureHandshakeMessages, secureKeyBackups, secureRestoreBlobs,
 } from "@agora/core/db/schema";
 import {
   shapeSecureDevice, shapeSecureConversation, shapeSecureConversationMember,
-  shapeSecureMessage, shapeSecureHandshake, shapeSecureKeyBackup,
+  shapeSecureMessage, shapeSecureHandshake, shapeSecureKeyBackup, shapeSecureRestoreBlob,
 } from "../lib/secure-chat-shape.js";
 import { assertSpaceAccess } from "../lib/space-access.js";
 import {
   parseBody, registerDeviceSchema, publishKeyPackagesSchema, createSecureConversationSchema,
   addSecureMemberSchema, removeSecureMemberSchema, sendSecureMessageSchema, uploadKeyBackupSchema,
+  uploadRestoreBlobSchema,
 } from "@agora/core/lib/validation";
 import { emitToSecureConversation, emitToSecureDevice } from "../realtime/secure-socket.js";
 import { env } from "@agora/core/lib/env";
@@ -76,6 +77,38 @@ async function requireSecureMember(c: any, conversationId: string): Promise<Memb
     )).limit(1);
   if (!m) throw Errors.forbidden("secure-chat/not-a-member", "Not a member of this conversation");
   return m;
+}
+
+// Restore-blob fetch/delete authz: does the CALLER own this (non-revoked) device row? Tokens are
+// user-scoped, so "only device B may fetch" is enforced at USER granularity (docs/RESTORE.md §3).
+async function callerOwnsDevice(c: any, deviceId: string): Promise<boolean> {
+  const [row] = await db.select({ id: secureDevices.id }).from(secureDevices)
+    .where(and(
+      eq(secureDevices.projectId, c.var.projectId),
+      eq(secureDevices.id, deviceId),
+      eq(secureDevices.userId, c.var.auth.userId),
+      isNull(secureDevices.revokedAt),
+    )).limit(1);
+  return !!row;
+}
+
+// Resolve a restore-blob target device + assert its owning user is an active member. A missing/revoked
+// device OR a non-member owner both throw the SAME 404 — no existence/membership oracle for the target.
+async function assertTargetDeviceMember(c: any, conversationId: string, targetDeviceId: string): Promise<void> {
+  const [dev] = await db.select({ userId: secureDevices.userId }).from(secureDevices)
+    .where(and(
+      eq(secureDevices.projectId, c.var.projectId),
+      eq(secureDevices.id, targetDeviceId),
+      isNull(secureDevices.revokedAt),
+    )).limit(1);
+  const ok = dev && (await db.select({ id: secureConversationMembers.id }).from(secureConversationMembers)
+    .where(and(
+      eq(secureConversationMembers.projectId, c.var.projectId),
+      eq(secureConversationMembers.conversationId, conversationId),
+      eq(secureConversationMembers.userId, dev.userId),
+      eq(secureConversationMembers.isActive, true),
+    )).limit(1)).length > 0;
+  if (!ok) throw Errors.notFound("secure-chat/restore-target-not-member", "Target device is not a member of this conversation");
 }
 
 
@@ -246,6 +279,68 @@ export const secureChatRoutes = new Hono<{ Variables: Variables }>()
     }
     logger.trace({ projectId: c.var.projectId, userId: me, deviceId }, "secure-chat: key backup fetched");
     return c.json(shapeSecureKeyBackup(row));
+  })
+  // ── IUC restore blobs (ephemeral, targeted, opaque courier — docs/RESTORE.md) ─
+  .post("/restore-blobs", requireAuth, async (c) => {
+    const body = parseBody(uploadRestoreBlobSchema, await c.req.json().catch(() => ({})), "secure-chat");
+    // Caller owns uploader A (404), is a member (403), and the target's user is a member (404).
+    await getMyDevice(c, body.fromDeviceId);
+    await requireSecureMember(c, body.conversationId);
+    await assertTargetDeviceMember(c, body.conversationId, body.targetDeviceId);
+    const blob = assertSize(body.blob, env.MAX_SECURE_RESTORE_BLOB_BYTES, "secure-chat/restore-blob-too-large");
+    // Quota over UNEXPIRED outstanding blobs: per (A→B) pair, then aggregate per target B (429).
+    const now = new Date();
+    const [{ pair } = { pair: 0 }] = await db.select({ pair: count() }).from(secureRestoreBlobs)
+      .where(and(
+        eq(secureRestoreBlobs.fromDeviceId, body.fromDeviceId),
+        eq(secureRestoreBlobs.targetDeviceId, body.targetDeviceId),
+        gt(secureRestoreBlobs.expiresAt, now),
+      ));
+    if (pair >= env.MAX_SECURE_RESTORE_BLOBS_PER_PAIR) {
+      logger.debug({ projectId: c.var.projectId, fromDeviceId: body.fromDeviceId, targetDeviceId: body.targetDeviceId, outstanding: pair, cap: env.MAX_SECURE_RESTORE_BLOBS_PER_PAIR }, "secure-chat: restore-blob pair quota exceeded");
+      throw Errors.rateLimited("Too many outstanding restore blobs for this recipient");
+    }
+    const [{ tgt } = { tgt: 0 }] = await db.select({ tgt: count() }).from(secureRestoreBlobs)
+      .where(and(eq(secureRestoreBlobs.targetDeviceId, body.targetDeviceId), gt(secureRestoreBlobs.expiresAt, now)));
+    if (tgt >= env.MAX_SECURE_RESTORE_BLOBS_PER_TARGET) {
+      logger.debug({ projectId: c.var.projectId, targetDeviceId: body.targetDeviceId, outstanding: tgt, cap: env.MAX_SECURE_RESTORE_BLOBS_PER_TARGET }, "secure-chat: restore-blob target quota exceeded");
+      throw Errors.rateLimited("Too many outstanding restore blobs for this recipient");
+    }
+    const expiresAt = new Date(now.getTime() + env.SECURE_RESTORE_BLOB_TTL_SECONDS * 1000);
+    const [row] = await db.insert(secureRestoreBlobs)
+      .values({ projectId: c.var.projectId, conversationId: body.conversationId, fromDeviceId: body.fromDeviceId, targetDeviceId: body.targetDeviceId, blob, expiresAt })
+      .returning({ id: secureRestoreBlobs.id });
+    // Latency nicety: nudge the target device. Payload is conversationId ONLY (no blobId/key).
+    emitToSecureDevice(body.targetDeviceId, "secure:restore-blob-available", { conversationId: body.conversationId });
+    logger.debug({ projectId: c.var.projectId, conversationId: body.conversationId, fromDeviceId: body.fromDeviceId, targetDeviceId: body.targetDeviceId, blobId: row!.id, blobBytes: blob.length, expiresAt: expiresAt.toISOString() }, "secure-chat: restore blob uploaded");
+    return c.json({ blobId: row!.id, expiresAt: expiresAt.toISOString() }, 201);
+  })
+  .get("/restore-blobs/:blobId", requireAuth, async (c) => {
+    // Non-destructive (B may retry before persisting). 404 on miss/expired OR caller-not-owner — one
+    // code, no existence oracle for non-recipients.
+    const [row] = await db.select().from(secureRestoreBlobs)
+      .where(and(
+        eq(secureRestoreBlobs.projectId, c.var.projectId),
+        eq(secureRestoreBlobs.id, c.req.param("blobId")),
+        gt(secureRestoreBlobs.expiresAt, new Date()),
+      )).limit(1);
+    if (!row || !(await callerOwnsDevice(c, row.targetDeviceId))) {
+      logger.trace({ projectId: c.var.projectId, userId: c.var.auth!.userId, blobId: c.req.param("blobId"), found: !!row }, "secure-chat: restore blob fetch miss");
+      throw Errors.notFound("secure-chat/restore-blob-not-found", "Restore blob not found");
+    }
+    logger.trace({ projectId: c.var.projectId, blobId: row.id, targetDeviceId: row.targetDeviceId }, "secure-chat: restore blob fetched");
+    return c.json(shapeSecureRestoreBlob(row));
+  })
+  .delete("/restore-blobs/:blobId", requireAuth, async (c) => {
+    // Confirm + remove (after B has persisted). Same authz + single 404 code as GET.
+    const [row] = await db.select({ id: secureRestoreBlobs.id, targetDeviceId: secureRestoreBlobs.targetDeviceId }).from(secureRestoreBlobs)
+      .where(and(eq(secureRestoreBlobs.projectId, c.var.projectId), eq(secureRestoreBlobs.id, c.req.param("blobId")))).limit(1);
+    if (!row || !(await callerOwnsDevice(c, row.targetDeviceId))) {
+      throw Errors.notFound("secure-chat/restore-blob-not-found", "Restore blob not found");
+    }
+    await db.delete(secureRestoreBlobs).where(eq(secureRestoreBlobs.id, row.id));
+    logger.debug({ projectId: c.var.projectId, blobId: row.id, targetDeviceId: row.targetDeviceId }, "secure-chat: restore blob deleted");
+    return c.body(null, 204);
   })
   // ── conversations ────────────────────────────────────────────────────────────
   .post("/conversations", requireAuth, async (c) => {
