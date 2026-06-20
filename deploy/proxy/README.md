@@ -35,13 +35,50 @@ docker compose --profile full --profile edge up --build
 With the default `SERVER_NAME=localhost`, Caddy uses its **own internal CA** — `https://localhost` works
 with no setup. Use `curl -k`, or run `caddy trust` to add the local CA to your trust store.
 
+## Onion / static-cert mode
+
+Tor hidden services (and any deploy where Let's Encrypt can't reach you) need a **cert supplied at
+startup** instead of auto-ACME — Let's Encrypt has no way to issue for a `.onion`. A second Caddyfile,
+[`Caddyfile.onion`](./Caddyfile.onion), serves a cert you mount in (`tls /certs/site.pem /certs/site.key`)
+and never attempts ACME. You select it with the `CADDYFILE` env var — same `edge` profile, no new compose
+service:
+
+```bash
+# in .env:
+SERVER_NAME=youraddress.onion                  # the hidden-service address
+CADDYFILE=./deploy/proxy/Caddyfile.onion        # swap the auto-ACME file for the static-cert one
+CADDY_CERTS_DIR=./deploy/proxy/certs            # optional; this is the default
+RATE_LIMIT_TRUSTED_HOPS=2
+
+# place your cert + key (these are gitignored — never commit private keys):
+cp your-chain.pem   deploy/proxy/certs/site.pem
+cp your-key.pem     deploy/proxy/certs/site.key
+
+docker compose --profile full --profile edge up --build
+```
+
+Then map the onion's TLS port to Caddy in your `torrc` so `:443` reaches the proxy's TLS listener:
+
+```
+HiddenServicePort 443 <caddy-host>:443
+```
+
+- **Why a cert at all, if Tor already encrypts?** Tor secures the *transport*, and Tor Browser treats
+  `.onion` as a secure context even over plain HTTP — but a real cert gives a secure context in
+  **non-Tor** browsers too, which secure-chat's WebCrypto (`crypto.subtle`) requires.
+- **Rotation is yours.** With an explicit `tls <cert> <key>`, Caddy uses the files as-is — replace them
+  and reload Caddy (`docker compose restart proxy`) when they near expiry. No ACME, no auto-renew.
+- A self-signed cert is fine here (Tor authenticates the origin via the `.onion` address itself); use
+  `tls internal` in the Caddyfile instead if you'd rather Caddy generate one.
+
 ## Optional / advanced
 
-- **ACME expiry-notice email:** add `email you@example.com` to the global options block in
-  `deploy/proxy/Caddyfile` (certs issue fine without it).
-- **Manual / external certs** (CDN-terminated TLS, corporate PKI, air-gapped): replace the
-  `reverse_proxy` site's TLS by adding a [`tls`](https://caddyserver.com/docs/caddyfile/directives/tls)
-  directive, e.g. `tls /etc/caddy/certs/cert.pem /etc/caddy/certs/key.pem`, and mount the certs in.
+- **ACME expiry-notice email:** set `ACME_EMAIL` in `.env` **and** uncomment `email {$ACME_EMAIL}` in the
+  global options block of `deploy/proxy/Caddyfile` (certs issue fine without it; an *empty* `email` arg
+  errors, which is why the line stays commented until you opt in).
+- **Manual / external certs** (`.onion`, CDN-terminated TLS, corporate PKI, air-gapped): use the
+  [`Caddyfile.onion`](./Caddyfile.onion) static-cert variant via `CADDYFILE` — see **Onion / static-cert
+  mode** above. It's the general "I bring my own cert" path, not onion-specific.
 - **DNS-01 challenge** (wildcards, or when `:80` isn't publicly reachable): use a Caddy DNS-provider
   build + a `tls { dns <provider> <token> }` block. Not wired by default.
 - **Content-Security-Policy:** a strict CSP is SPA-specific — a commented starting point is in the

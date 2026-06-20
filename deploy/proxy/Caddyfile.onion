@@ -1,0 +1,43 @@
+# Mounted-cert edge proxy for Agora — the ONION / static-cert variant of deploy/proxy/Caddyfile.
+# Select it by pointing the compose mount at this file:  CADDYFILE=./deploy/proxy/Caddyfile.onion
+#
+# WHY a separate file: the default Caddyfile uses automatic ACME (Let's Encrypt), which CANNOT issue
+# for a `.onion` address (no HTTP-01/DNS-01 path). This variant instead serves a cert you supply at
+# startup — Caddy uses it as-is and never attempts ACME. Drop your cert + key in the certs dir mounted
+# at /certs (host default ./deploy/proxy/certs, override with CADDY_CERTS_DIR) as `site.pem` + `site.key`.
+#
+# Tor wiring: put the hidden-service address in SERVER_NAME and map the onion's :443 to this proxy, e.g.
+#   HiddenServicePort 443 <caddy-host>:443
+# so the onion's TLS port reaches Caddy's TLS listener. (Tor already encrypts the transport; the cert
+# gives browsers a real secure context — required for secure-chat's WebCrypto outside Tor Browser.)
+#
+# Behind this edge, set RATE_LIMIT_TRUSTED_HOPS=2 in .env (caddy + admin are the two trusted proxies).
+{$SERVER_NAME} {
+	# Serve the operator-supplied cert + key (mounted read-only at /certs). No ACME is attempted for an
+	# explicit `tls <cert> <key>` — issuance/renewal is YOUR responsibility (rotate the files + reload).
+	tls /certs/site.pem /certs/site.key
+
+	encode gzip
+
+	# Cap request bodies (uploads / JSON) at the edge — bounds storage abuse + sharp OOM before the app.
+	request_body {
+		max_size {$MAX_BODY_SIZE:25MB}
+	}
+
+	# Security headers (HSTS only meaningfully applies once served over real HTTPS).
+	header {
+		Strict-Transport-Security "max-age=63072000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		X-Frame-Options "SAMEORIGIN"
+		-Server
+		# A strict CSP is SPA-specific — enable + tune for your build, e.g.:
+		# Content-Security-Policy "default-src 'self'; img-src 'self' data: https:; connect-src 'self' https: wss:"
+	}
+
+	# Everything goes to the admin nginx (SPA + /v7 + /socket.io + /secure-socket + /moderator). WebSocket
+	# upgrades are handled automatically. Caddy sets X-Forwarded-For to the REAL client and — with no
+	# `trusted_proxies` configured — ignores any client-supplied X-Forwarded-For, so it can't be spoofed to
+	# poison rate limiting downstream. The admin appends its hop; the app reads RATE_LIMIT_TRUSTED_HOPS=2.
+	reverse_proxy {$ADMIN_UPSTREAM:http://admin:80}
+}

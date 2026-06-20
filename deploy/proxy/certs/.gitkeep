@@ -1,0 +1,4 @@
+# Mount point for operator-supplied TLS certs used by deploy/proxy/Caddyfile.onion.
+# Place `site.pem` (cert chain) + `site.key` (private key) here for the onion / static-cert edge.
+# This dir is mounted read-only at /certs in the Caddy container (override with CADDY_CERTS_DIR).
+# Private keys MUST NOT be committed — everything here except this file is gitignored.

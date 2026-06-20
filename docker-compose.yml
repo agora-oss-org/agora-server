@@ -296,8 +296,18 @@ services:
       SERVER_NAME: ${SERVER_NAME:-localhost}
       ADMIN_UPSTREAM: http://admin:80
       MAX_BODY_SIZE: ${MAX_BODY_SIZE:-25MB}
+      # ACME expiry-notice email — only consumed if you uncomment `email {$ACME_EMAIL}` in the auto-TLS
+      # Caddyfile's global block. Left empty by default (an empty `email` arg would make Caddy error,
+      # which is why the Caddyfile line stays commented until you opt in). Unused by the onion variant.
+      ACME_EMAIL: ${ACME_EMAIL:-}
     volumes:
-      - ./deploy/proxy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # The active Caddyfile. Default = automatic ACME (deploy/proxy/Caddyfile). For a `.onion` / static
+      # cert, set CADDYFILE=./deploy/proxy/Caddyfile.onion (ACME can't issue for .onion — that variant
+      # serves a cert you drop in the certs dir below).
+      - ${CADDYFILE:-./deploy/proxy/Caddyfile}:/etc/caddy/Caddyfile:ro
+      # Operator-supplied TLS certs for the onion/static-cert variant, mounted read-only at /certs
+      # (site.pem + site.key). Harmless empty mount for the default auto-ACME file, which never reads it.
+      - ${CADDY_CERTS_DIR:-./deploy/proxy/certs}:/certs:ro
       - caddy-data:/data # persists issued certs + ACME account — survives restarts (avoids LE rate limits)
       - caddy-config:/config
     ports:

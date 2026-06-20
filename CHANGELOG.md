@@ -32,6 +32,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The edit is a no-op on already-migrated DBs (the migrator gates on the journal watermark, not file hash).
 
 ### Added
+- **Edge proxy: onion / static-cert mode via a second Caddyfile** (`deploy/proxy/Caddyfile.onion`).
+  Let's Encrypt can't issue for a `.onion`, so the new variant serves a cert you supply at startup
+  (`tls /certs/site.pem /certs/site.key`) and never attempts ACME. Selected without a new compose
+  service: the `proxy` mount is now `${CADDYFILE:-./deploy/proxy/Caddyfile}` (default = today's auto-TLS
+  behavior, unchanged) plus a read-only `${CADDY_CERTS_DIR:-./deploy/proxy/certs}:/certs` mount. New
+  `.env` knobs: `CADDYFILE`, `CADDY_CERTS_DIR`, and `ACME_EMAIL` (opt-in LE expiry notices — also
+  uncomment `email {$ACME_EMAIL}` in the auto Caddyfile). Cert/key files under `deploy/proxy/certs/` are
+  gitignored (private keys never committed). Docs: `deploy/proxy/README.md` (onion workflow + Tor
+  `HiddenServicePort 443 → caddy:443` mapping + WebCrypto secure-context rationale), `.env.example`.
 - **Native admin bootstrap seed** (`apps/api/scripts/seeds/seed-native-admin.mjs`) — the no-Supabase
   counterpart of `seed-demo-user.mjs`. Inserts a **pre-confirmed** `auth_credentials` row (Argon2id, the
   same hash the app verifies) directly into the DB so a fully self-hosted (`auth_provider='native'`)
