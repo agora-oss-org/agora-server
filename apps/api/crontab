@@ -15,6 +15,12 @@
 # keeps @agora/secure-chat's fail-closed enforcement fresh (it reads the same shared index).
 */5 * * * * sh -c 'curl -fsS -m 30 -X POST -H "X-Cron-Secret: $CRON_SECRET" "$AGORA_URL/internal/cron/sync-suspensions"'
 
+# Every 5 minutes: sweep expired IUC restore blobs (TTL backstop for a blob the recipient never DELETEd).
+# This endpoint lives on the SECURE-CHAT process, not the API — target SECURE_CHAT_URL (e.g.
+# http://secure-chat:4002). No-op when SECURE_CHAT_URL is unset (API-only deploys / secure-chat elsewhere);
+# lazy-expiry hides expired blobs on read regardless, so a missed sweep only delays storage reclamation.
+*/5 * * * * sh -c '[ -n "$SECURE_CHAT_URL" ] && curl -fsS -m 30 -X POST -H "X-Cron-Secret: $CRON_SECRET" "$SECURE_CHAT_URL/internal/cron/purge-restore-blobs" || true'
+
 # Weekly (Sunday 04:00 UTC): re-materialize the Constellation snapshot. The endpoint's ~6-week per-project
 # epoch gate makes most runs a cheap no-op (and self-heals a missed week); the long timeout covers GDS
 # Louvain over the whole graph. §12 keeps this deliberately slow ("seasonal", never per-load).

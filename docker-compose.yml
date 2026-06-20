@@ -334,6 +334,9 @@ services:
     env_file: .env # CRON_SECRET
     environment:
       AGORA_URL: http://agora:4000
+      # IUC restore-blob TTL sweep targets the secure-chat process (run with --profile secure). Unset →
+      # that one cron line is a harmless no-op; lazy-expiry still hides expired blobs on read.
+      SECURE_CHAT_URL: ${SECURE_CHAT_URL:-http://secure-chat:4002}
     depends_on:
       - agora
     init: true
