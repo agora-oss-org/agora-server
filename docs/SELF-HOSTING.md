@@ -12,8 +12,9 @@ Three things are pluggable, each chosen by config (nothing is replaced — flip 
 | Storage  | Supabase Storage public bucket      | MinIO container (`minio`), S3 API            | `STORAGE_PROVIDER=s3`  |
 | Auth     | Supabase Auth (passwords + OAuth)   | Native in-API passwords (`auth_provider`)    | `DEFAULT_AUTH_PROVIDER`|
 
-The `selfhost` compose profile brings up the two local backends. They're opt-in: the default
-`docker compose up` never starts them.
+The `selfhost` compose profile brings up the two local backends; run it alongside `full` (the API
+stack). They're opt-in — a Supabase-backed deploy just runs `--profile full` and points the env at
+Supabase. (Compose services are all profile-gated, so a bare `docker compose up` starts nothing.)
 
 ## Quick start (whole stack, no Supabase)
 
@@ -40,10 +41,11 @@ The `selfhost` compose profile brings up the two local backends. They're opt-in:
    ACCESS_TOKEN_SECRET=<openssl rand -base64 48>
    ```
 
-2. **Bring the stack up** (add `secure`/`edge`/`scale` profiles as needed):
+2. **Bring the stack up** — `full` (the API stack) + `selfhost` (local db + minio); add
+   `secure`/`edge`/`scale` as needed:
 
    ```bash
-   docker compose --profile selfhost up --build
+   docker compose --profile full --profile selfhost up --build
    ```
 
    This starts `db`, `minio`, `agora`, `admin` (+ `cron`). `agora` has `restart: unless-stopped`, so if

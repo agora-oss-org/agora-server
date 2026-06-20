@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Compose: every service is now profile-gated; added a `full` profile for the API stack.** A bare
+  `docker compose up` no longer starts anything — `agora`, `admin`, the three `scorer-*`, `neo4j`, and
+  `cron` moved behind a new **`full`** profile (`docker compose --profile full up`). This makes the
+  **`secure`** profile a true **standalone secure-chat deploy** — `docker compose --profile secure up`
+  brings up just `redis` + `secure-chat` (no API stack). Like `agora`, secure-chat doesn't bundle a DB;
+  it persists `secure_*` to whatever `DATABASE_URL` points at (v1 shares the main Postgres / Supabase;
+  add `--profile selfhost` for a local `db`).
+  Combine profiles for everything else: `--profile full --profile selfhost` (no-Supabase stack),
+  `--profile full --profile edge` (TLS front door), `--profile full --profile scale` (Redis rate-limit
+  store). The `proxy`→`admin` dependency is now `required: false` so requesting `edge` without `full`
+  stays a valid project. Migration/seed one-offs (`docker compose run --rm agora …`) are unchanged
+  (naming `agora` auto-enables `full`). Docs updated (README, SELF-HOSTING, deploy/proxy, CLAUDE.md).
+
 ### Fixed
 - **Migration 0027 (pgmq enqueue) failed on a self-hosted Postgres where pgmq wasn't pre-installed.**
   `CREATE EXTENSION pgmq` runs an install script that resets the session `search_path` to `''` (non-local

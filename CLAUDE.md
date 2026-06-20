@@ -139,14 +139,21 @@ are unchanged — never redefine a contract type locally (that reintroduces drif
 
 Root `.env` is the single source (direnv `dotenv`), symlinked from `apps/api/.env -> ../../.env`
 (and `apps/secure-chat/.env -> ../../.env`). `docker-compose.yml` lives at the repo root; each app
-image builds from the repo root context. Optional profiles: `--profile scale` adds Redis (cross-replica
-rate limiting), `--profile secure` brings up **Redis + `secure-chat`** (the admin nginx routes
-`/v7/:projectId/secure-chat/*` + `/secure-socket/` to it; set `REDIS_URL=redis://redis:6379`),
-`--profile edge` adds a **Caddy** TLS front door (auto-HTTPS + HSTS/headers + body cap + authoritative
-`X-Forwarded-For` → admin; `deploy/proxy/`, set `RATE_LIMIT_TRUSTED_HOPS=2` behind it),
+image builds from the repo root context. **Every service is profile-gated, so a bare `docker compose up`
+starts nothing** — pick profiles (additive/OR). `--profile full` is the **API stack** (agora + admin +
+scorer ×3 + neo4j + cron) — the normal deploy: `docker compose --profile full up`. `--profile secure` is
+the **standalone secure-chat** deploy — **Redis + `secure-chat`** (no API). Like `agora` it does NOT
+bundle a DB: it persists `secure_*` to whatever `DATABASE_URL` points at (v1 **shares the main Postgres**
+/ Supabase, already migrated; add `--profile selfhost` for a local `db`). Alongside the API it's
+`--profile full --profile secure` (the admin nginx routes `/v7/:projectId/secure-chat/*` +
+`/secure-socket/` to it; set `REDIS_URL=redis://redis:6379`).
+`--profile scale` adds Redis as the cross-replica rate-limit store (with `full`). `--profile edge` adds a
+**Caddy** TLS front door (auto-HTTPS + HSTS/headers + body cap + authoritative `X-Forwarded-For` → admin;
+`deploy/proxy/`, set `RATE_LIMIT_TRUSTED_HOPS=2`; fronts the stack → run with `full`).
 `--profile selfhost` adds local **Postgres** (`supabase/postgres`) + **MinIO** so the SAME api runs
-fully self-contained (no Supabase) — point `DATABASE_URL` at `db`, set `STORAGE_PROVIDER=s3` + the
-`S3_*` block at `minio` (the admin nginx serves public media at `/media`), and `DEFAULT_AUTH_PROVIDER=native`. See `docs/SELF-HOSTING.md`.
+fully self-contained (no Supabase, run with `full`) — point `DATABASE_URL` at `db`, set
+`STORAGE_PROVIDER=s3` + the `S3_*` block at `minio` (the admin nginx serves public media at `/media`),
+and `DEFAULT_AUTH_PROVIDER=native`. See `docs/SELF-HOSTING.md`.
 
 **Storage is pluggable** (`lib/storage/` provider seam): `STORAGE_PROVIDER` picks `supabase` (default,
 Supabase Storage) or `s3` (any S3-compatible store — MinIO/AWS). `lib/storage.ts`'s

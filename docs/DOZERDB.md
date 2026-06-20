@@ -86,7 +86,7 @@ is passed straight through to Neo4j as its auth setting.
 
 ## Verify both plugins loaded
 
-After `docker compose up`:
+After `docker compose --profile full up` (or `docker compose up neo4j`):
 
 ```bash
 # Check GDS version (should return 2.12.0)

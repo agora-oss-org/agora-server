@@ -309,7 +309,7 @@ for a single nginx/CDN edge (the default, e.g. the admin `nginx.conf.template` w
 **Multi-replica (optional Redis).** The default store is in-process, so behind **N** replicas the
 ceiling is ~N×limit. Set **`REDIS_URL`** to count in a shared store instead, so the cap holds across
 replicas. A single replica needs no Redis. If Redis is unreachable the limiter **fail-opens** to
-in-memory (it never 500s a request). In Docker, `docker compose --profile scale up` starts a bundled
+in-memory (it never 500s a request). In Docker, `docker compose --profile full --profile scale up` starts a bundled
 `redis` service.
 
 ### Redis ACL

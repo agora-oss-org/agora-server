@@ -443,7 +443,7 @@ After deploying, run the smoke test in `docs/SCORER.md` to confirm resource usag
 
 ```bash
 docker compose build agora scorer-toxicity scorer-relationship scorer-worker neo4j
-docker compose up -d
+docker compose --profile full up -d
 docker compose run --rm agora node scripts/migrate.mjs
 
 # Create content (fires enqueue trigger)

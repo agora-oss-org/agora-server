@@ -310,36 +310,48 @@ Full detail (including the OAuth callback setup) lives in
 
 ## Docker
 
-The repo's `docker-compose.yml` builds and wires the whole stack — api (`:4000`) and admin (`:8080`).
-Postgres/Auth/Storage are on Supabase, so there's no local DB to run.
+The repo's `docker-compose.yml` builds and wires the whole stack. Every service is **profile-gated**, so
+a bare `docker compose up` starts nothing — pick a profile. The **`full`** profile is the API stack —
+api (`:4000`) + admin (`:8080`) + the scorer services + neo4j + cron. With Supabase backing
+Postgres/Auth/Storage there's no local DB to run:
 
 ```bash
-docker compose up --build                               # from the repo root
-docker compose run --rm agora node scripts/migrate.mjs  # apply migrations (one-off, drizzle-kit-free)
+docker compose --profile full up --build                # the API stack, from the repo root
+docker compose run --rm agora node scripts/migrate.mjs  # apply migrations (naming agora enables `full`)
 ```
 
 The admin service is the Vite SPA on nginx, reverse-proxying `/v7` + `/socket.io` to the api
 (same origin, no CORS). Each app's README documents building and running its image standalone.
 
-The optional **`secure`** profile brings up **Redis** + the **[`@agora/secure-chat`](apps/secure-chat)**
-service (`:4002`); the admin nginx then routes `/v7/:projectId/secure-chat/*` and the WebSocket
-`/secure-socket/` to it (instead of the api):
+The **`secure`** profile is the **standalone [`@agora/secure-chat`](apps/secure-chat)** deploy — Redis +
+the secure-chat process (`:4002`), no API stack. Like `agora`, it doesn't bundle a database: it persists
+the `secure_*` tables to whatever **`DATABASE_URL`** points at, which in v1 is the **shared main Postgres**
+(or Supabase) — already migrated. (Run it alongside the API with `--profile full --profile secure`, where
+the admin nginx routes `/v7/:projectId/secure-chat/*` + the WebSocket `/secure-socket/` to it.)
 
 ```bash
-docker compose --profile secure up --build                  # from the repo root
+docker compose --profile secure up --build                       # DATABASE_URL → shared/Supabase Postgres
+docker compose --profile secure --profile selfhost up --build    # + a LOCAL db (minio tags along, unused)
+```
+
+For a **fully self-contained** stack (no Supabase) add **`selfhost`** (local Postgres + MinIO) — see
+[`docs/SELF-HOSTING.md`](docs/SELF-HOSTING.md):
+
+```bash
+docker compose --profile full --profile selfhost up --build
 ```
 
 For production, an **optional TLS edge proxy** (Caddy) gives the stack a single HTTPS front door with
 **automatic Let's Encrypt certs**, HSTS + security headers, a body-size cap, and an authoritative
-`X-Forwarded-For`. It's gated behind the `edge` compose profile (default deploy is unchanged):
+`X-Forwarded-For`. It's the `edge` profile, run alongside `full`:
 
 ```bash
 # in .env: SERVER_NAME=your.domain  and  RATE_LIMIT_TRUSTED_HOPS=2
-docker compose --profile edge up --build
+docker compose --profile full --profile edge up --build
 ```
 
-See [`deploy/proxy/README.md`](deploy/proxy/README.md). (Optionally `--profile scale` adds Redis for
-cross-replica rate limiting.)
+See [`deploy/proxy/README.md`](deploy/proxy/README.md). (Optionally add `--profile scale` for Redis as
+the cross-replica rate-limit store.)
 
 ## Ecosystem
 

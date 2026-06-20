@@ -5,7 +5,8 @@ edge that becomes the single public entrypoint: **automatic HTTPS** (Let's Encry
 HSTS + security headers, a request-body cap, and an authoritative `X-Forwarded-For`, reverse-proxying to
 the `admin` nginx (which serves the SPA and routes `/v7`, `/socket.io`, `/moderator`).
 
-It's **opt-in**, gated behind the `edge` compose profile, so the default `docker compose up` is unchanged.
+It's **opt-in**, gated behind the `edge` compose profile. It fronts the API stack, so run it alongside
+the `full` profile (`--profile full --profile edge`).
 
 ```
 client ──HTTPS:443──▶ proxy (Caddy) ──HTTP──▶ admin (nginx) ──▶ agora / scorer-worker
@@ -19,7 +20,7 @@ SERVER_NAME=agora.example.com      # your real domain (drives cert issuance)
 RATE_LIMIT_TRUSTED_HOPS=2          # caddy + admin are the two trusted proxies in front of the api
 # MAX_BODY_SIZE=25MB               # optional; default 25MB
 
-docker compose --profile edge up --build
+docker compose --profile full --profile edge up --build
 ```
 
 - Point your domain's **DNS at this host** and make sure ports **80 and 443 are publicly reachable** —
