@@ -32,6 +32,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The edit is a no-op on already-migrated DBs (the migrator gates on the journal watermark, not file hash).
 
 ### Added
+- **Secure-chat: IUC restore-blob relay** — a targeted, ephemeral, opaque courier so a peer device can
+  hand a re-provisioned device its encrypted back-history off the MLS channel (the "ENVELOPE" history-
+  restore variant). New `POST/GET/DELETE /v7/:projectId/secure-chat/restore-blobs` on `@agora/secure-chat`:
+  the uploader must own `fromDeviceId` and be a conversation member, the target device's owner must be a
+  member, and only the target's owner may fetch/delete (user-scoped authz with a non-distinguishing 404 —
+  no existence oracle). The server stores opaque bytes only (new `secure_restore_blobs` table, RLS
+  deny-all; no key/sha256/transferId columns). Lifecycle: explicit `DELETE` on confirm + a TTL backstop
+  swept by `POST /internal/cron/purge-restore-blobs` (lazy-expiry hides expired blobs on read regardless)
+  + standalone `scripts/purge-restore-blobs.mjs`. New env knobs: `MAX_SECURE_RESTORE_BLOB_BYTES` (16 MiB),
+  `SECURE_RESTORE_BLOB_TTL_SECONDS` (900), `MAX_SECURE_RESTORE_BLOBS_PER_PAIR` (16),
+  `MAX_SECURE_RESTORE_BLOBS_PER_TARGET` (64). Contract bumped to **0.13.0** (`uploadRestoreBlobSchema`,
+  `RestoreBlobModel`, `UploadRestoreBlobResponse`). Migration `0048`. SDK integration guide:
+  `apps/secure-chat/docs/RESTORE.md`; design: `docs/superpowers/specs/2026-06-20-iuc-restore-blob-design.md`.
 - **Edge proxy: onion / static-cert mode via a second Caddyfile** (`deploy/proxy/Caddyfile.onion`).
   Let's Encrypt can't issue for a `.onion`, so the new variant serves a cert you supply at startup
   (`tls /certs/site.pem /certs/site.key`) and never attempts ACME. Selected without a new compose
