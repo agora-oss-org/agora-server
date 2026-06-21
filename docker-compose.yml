@@ -19,6 +19,11 @@ services:
       dockerfile: apps/api/Dockerfile
     image: agora-api
     env_file: .env
+    environment:
+      # On the compose network, address Neo4j by service name — `.env`'s NEO4J_URI uses `localhost`
+      # for host-side dev, which inside a container is the container itself. The API reads NEO4J_URI
+      # for the /social/* surfaces. Override via NEO4J_URI_DOCKER if Neo4j lives elsewhere.
+      NEO4J_URI: ${NEO4J_URI_DOCKER:-bolt://neo4j:7687}
     ports:
       - "${PORT:-4000}:4000"
     init: true
@@ -195,6 +200,10 @@ services:
       SCORER_TOXICITY_URL: http://scorer-toxicity:8001
       SCORER_RELATIONSHIP_URL: http://scorer-relationship:8002
       SCORER_ADMIN_PORT: "4001"
+      # Address Neo4j by service name on the compose network — `.env`'s NEO4J_URI uses `localhost`
+      # for host-side dev (which resolves to this container inside Docker). Override via
+      # NEO4J_URI_DOCKER if Neo4j lives elsewhere.
+      NEO4J_URI: ${NEO4J_URI_DOCKER:-bolt://neo4j:7687}
       LOG_LEVEL: ${LOG_LEVEL:-info}
     ports:
       - "${SCORER_ADMIN_PORT:-4001}:4001"

@@ -22,6 +22,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (naming `agora` auto-enables `full`). Docs updated (README, SELF-HOSTING, deploy/proxy, CLAUDE.md).
 
 ### Fixed
+- **`scorer-worker` (and the API's `/social/*`) couldn't reach Neo4j under Docker** — `.env`'s
+  `NEO4J_URI=bolt://localhost:7687` is correct for host-side dev but inside a container `localhost`
+  is the container itself, so the scorer logged `failed to ensure neo4j constraints (gave up)`
+  (`Connect call failed ('127.0.0.1', 7687)`). The `agora` and `scorer-worker` compose services now
+  override `NEO4J_URI` to the service-name address `bolt://neo4j:7687` (configurable via
+  `NEO4J_URI_DOCKER`), matching how their other in-network URLs are wired. `.env` keeps `localhost`
+  for host tooling. Other services that carry the var via `env_file` but never open a Bolt connection
+  (classifiers, cron, secure-chat) are unaffected.
 - **Migration 0027 (pgmq enqueue) failed on a self-hosted Postgres where pgmq wasn't pre-installed.**
   `CREATE EXTENSION pgmq` runs an install script that resets the session `search_path` to `''` (non-local
   `set_config`); because the migrator applies all migrations in one transaction, the next unqualified
