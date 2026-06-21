@@ -96,8 +96,11 @@ standard, the same family of guarantees as Signal but designed for large, dynami
   `/v7/:projectId/secure-chat/*`, entirely apart from the Replyke-compatible plaintext chat (which is
   untouched), and runs as its own deployable service ([`@agora/secure-chat`](apps/secure-chat)) so the
   blind relay can be isolated and scaled on its own. Use whichever a conversation needs.
-- **Your keys, your history.** Keys live on the client; an optional **passphrase-encrypted backup** (which
-  the server also can't decrypt) restores history on a new device. The schema is multi-device-ready.
+- **Your keys, your history.** Keys live on the client. Two recovery paths — both opaque to the server —
+  restore history onto a re-provisioned device: an optional **passphrase-encrypted backup**, and
+  **device-to-device history restore** (a peer seals your back-history into an ephemeral, targeted blob
+  the server relays blindly; see [`apps/secure-chat/docs/RESTORE.md`](apps/secure-chat/docs/RESTORE.md)).
+  The schema is multi-device-ready.
 - **The crypto stays swappable.** All MLS lives behind a small `SecureChatCrypto` interface, so the
   concrete core (ts-mls vs OpenMLS-WASM) is a deferred, reversible choice — the server never changes.
 
@@ -185,7 +188,9 @@ agora/
 │   ├── MODELS.md            # field-level response shapes (drive both the API and the schema)
 │   ├── SECURE_CHAT.md       # the end-to-end-encrypted chat design + reference
 │   ├── STEWARDSHIP.md       # the conflict-resolution caseload design
+│   ├── SCORER.md            # the Python moderation + social-graph subsystem (services/scorer)
 │   ├── SOCIAL-GRAPH.md      # the optional Neo4j social-graph layer ("the Garden")
+│   ├── SELF-HOSTING.md      # run fully self-contained (native auth · S3/MinIO · local Postgres)
 │   └── DOZERDB.md           # DozerDB + OpenGDS setup (plugins, memory tuning, TLS)
 ├── packages/
 │   ├── contract/            # @agora-server/contract — shared API types + zod schemas
@@ -214,7 +219,7 @@ pnpm -r build            # build every package (contract first, topologically)
 # Backend — the only hard requirement is a Supabase DATABASE_URL
 cd apps/api
 cp .env.example .env      # fill in DATABASE_URL
-pnpm db:migrate           # apply migrations (idempotent; safe to re-run)
+pnpm db:migrate:run       # apply migrations (idempotent; safe to re-run)
 pnpm dev                  # http://localhost:4000/v7   (GET /health to verify)
 
 # Admin dashboard (optional)
@@ -250,6 +255,11 @@ Supabase Postgres   schema · triggers · RPC · pgvector · PostGIS · RLS
   defense-in-depth with public-read policies.
 - **Multi-tenant by `project_id`** — every table has it; the SDK addresses `/v7/:projectId/...`. A
   single-project deployment just has one `projects` row.
+- **Supabase is the default, not a hard dependency.** Auth and Storage sit behind provider seams
+  (`getAuthProvider()` / `getStorage()`): choose **native** email/password auth
+  (`DEFAULT_AUTH_PROVIDER=native`) and an **S3-compatible** object store (`STORAGE_PROVIDER=s3` →
+  MinIO/AWS) and the *same* server runs fully self-contained on a local Postgres — no Supabase at all.
+  See [`docs/SELF-HOSTING.md`](docs/SELF-HOSTING.md).
 
 See [apps/api/README.md](apps/api/README.md#architecture) for the full backend architecture and
 handler conventions.
@@ -271,9 +281,9 @@ complete** — no stubbed endpoints remain.
 | **reports** | report queue + resolution (entities, comments, chat messages) |
 | **auth** | sign-up/in/out, refresh rotation + reuse-detection, change/reset password, email verify, external RS256, OAuth provider sign-in/link |
 | **chat** | conversations (direct/group/space), members, messages, reactions, typing, read state — **socket.io realtime** |
-| **secure chat** | **end-to-end-encrypted** chat (MLS / RFC 9420) on a separate path **and a separate process** (the independently-deployable [`@agora/secure-chat`](apps/secure-chat) service) — the server stores/relays only ciphertext and never reads content; 1:1 + groups + space channels, one-time key packages, passphrase key backup, a dedicated `/secure` socket.io namespace (engine.io path `/secure-socket/`) ([`docs/SECURE_CHAT.md`](docs/SECURE_CHAT.md)) |
+| **secure chat** | **end-to-end-encrypted** chat (MLS / RFC 9420) on a separate path **and a separate process** (the independently-deployable [`@agora/secure-chat`](apps/secure-chat) service) — the server stores/relays only ciphertext and never reads content; 1:1 + groups + space channels, one-time key packages, passphrase + device-to-device history restore, a dedicated `/secure` socket.io namespace (engine.io path `/secure-socket/`) ([`docs/SECURE_CHAT.md`](docs/SECURE_CHAT.md)) |
 | **search** | semantic content search across entities/comments/messages (Voyage + pgvector), RAG `/ask` (Anthropic, SSE), text search for spaces/users |
-| **storage** | file uploads + image variants (sharp → webp, 5 sizing modes) |
+| **storage** | file uploads + image variants (sharp → webp, 5 sizing modes); **pluggable backend** — Supabase Storage or any S3-compatible store (MinIO/AWS) via `STORAGE_PROVIDER` |
 | **webhooks** | project webhooks (HMAC validation gates + `*.complete` broadcasts) + per-space digests |
 | **moderation** | report resolution + server-enforced removed-content hiding (lists, single reads, **and** the search RPC); space-moderator + operator roles; **AI Agent Moderator** that flags inappropriate content on post — configurable violation categories, confidence thresholds, and auto-actions (immediate hide or human review) — tunable per-project in Settings; escalation to Stewards for conflict resolution |
 | **stewardship** | first-class **conflict resolution** — a DB-granted steward role (between member and operator), a caseload (`open → in_mediation → closed`), transformative outcomes, a "targeting" power-imbalance flag, **private mediation channels** (caucus + consensual joint room, built on chat), **configurable participant notifications** (power-aware/symmetric/resolution-only, never leaking who raised a case), append-only timeline, and escalate-to-removal for posts/comments/chat messages ([`docs/STEWARDSHIP.md`](docs/STEWARDSHIP.md)) |
@@ -334,8 +344,10 @@ docker compose --profile secure up --build                       # DATABASE_URL 
 docker compose --profile secure --profile selfhost up --build    # + a LOCAL db (minio tags along, unused)
 ```
 
-For a **fully self-contained** stack (no Supabase) add **`selfhost`** (local Postgres + MinIO) — see
-[`docs/SELF-HOSTING.md`](docs/SELF-HOSTING.md):
+For a **fully self-contained** stack (no Supabase at all) add **`selfhost`** (local Postgres + MinIO).
+Agora swaps Supabase out through its provider seams — **native** email/password auth
+(`DEFAULT_AUTH_PROVIDER=native`) and **S3-compatible** storage (`STORAGE_PROVIDER=s3` → MinIO/AWS) — so
+the *same* server image runs against either backend. See [`docs/SELF-HOSTING.md`](docs/SELF-HOSTING.md):
 
 ```bash
 docker compose --profile full --profile selfhost up --build
@@ -350,7 +362,10 @@ For production, an **optional TLS edge proxy** (Caddy) gives the stack a single 
 docker compose --profile full --profile edge up --build
 ```
 
-See [`deploy/proxy/README.md`](deploy/proxy/README.md). (Optionally add `--profile scale` for Redis as
+For Tor hidden services — or any deploy where Let's Encrypt can't reach you — a second
+[`Caddyfile.onion`](deploy/proxy/Caddyfile.onion) serves a cert you supply at startup instead of
+auto-ACME (selected via the `CADDYFILE` env var, same `edge` profile). See
+[`deploy/proxy/README.md`](deploy/proxy/README.md). (Optionally add `--profile scale` for Redis as
 the cross-replica rate-limit store.)
 
 ## Ecosystem
@@ -397,7 +412,10 @@ pass a `projectId` + a signed user token to the provider; the SDK's typed hooks 
   **Neighborhood** are live and env-gated behind `NEO4J_URI` (scorer writes the `INTERACTED` / `FOLLOWS`
   / `CONNECTED` / `FRICTION` edges, the API reads them); Constellation + admin graph analytics are
   designed and next ([`docs/SOCIAL-GRAPH.md`](docs/SOCIAL-GRAPH.md)).
-- ✅ Idempotent Drizzle migrations `0000`–`0039`; unit + integration test suites green.
+- ✅ **Supabase-optional** — provider seams run the same server on **native** email/password auth
+  (`DEFAULT_AUTH_PROVIDER=native`) + **S3-compatible** storage (`STORAGE_PROVIDER=s3`) + a local
+  Postgres, fully self-contained; DB layer validated end-to-end ([`docs/SELF-HOSTING.md`](docs/SELF-HOSTING.md)).
+- ✅ Idempotent Drizzle migrations `0000`–`0048`; unit + integration test suites green.
 - ✅ Client SDK published + repointed — validated 1:1 by the
   [`agora-demo`](https://github.com/jenova-marie/agora-demo) compatibility harness.
 - ⬜ Ops backlog: deployment guides, and RLS write policies (only needed if the Supabase Data API is
