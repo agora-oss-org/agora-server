@@ -29,6 +29,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `apps/api/perf/README.md`. Requires k6 (`brew install k6`); no other new deps.
 
 ### Changed
+- **CI: publish `agora-proxy` instead of `agora-admin`.** The `docker-publish` workflow built the
+  admin image from `apps/admin/Dockerfile`, which the front-door collapse deleted — so tagged releases
+  failed with `failed to read dockerfile`. The matrix now builds the Caddy front door from
+  `deploy/proxy/Dockerfile` (admin SPA baked into `/srv`) and publishes it as
+  `ghcr.io/jenova-marie/agora-proxy` + `docker.io/agoraserver/agora-proxy`. Bumped `actions/checkout`
+  to `v5` (Node 24). **The `agora-admin` image is retired** — pull `agora-proxy`.
 - **Single Caddy front door — collapsed the two-layer proxy.** The admin nginx no longer exists as its
   own service. The **`proxy`** (Caddy) is now the single public entrypoint: it serves
   the admin SPA static build (baked into a new [`deploy/proxy/Dockerfile`](deploy/proxy/Dockerfile)) AND
