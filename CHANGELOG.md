@@ -48,6 +48,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `apps/api/perf/README.md`. Requires k6 (`brew install k6`); no other new deps.
 
 ### Changed
+- **Bake the default front-door config into the `agora-proxy` image.** The auto-ACME `Caddyfile` and the
+  shared `agora-routes.caddy` routing snippet are now `COPY`-ed into the image (next to the SPA), so the
+  common HTTPS deploy needs **no proxy config files on the host** — the default ACME/HTTPS path is just
+  `docker-compose.prod.yml` + `.env`. Everything still resolves at runtime (`SERVER_NAME` drives the TLS
+  mode: real domain → Let's Encrypt, `localhost` → internal CA, `:80` → plain HTTP/no ACME). The dev
+  `docker-compose.yml` keeps bind-mounting the repo copies so routing/headers stay hot-editable without a
+  rebuild (mount wins over the baked file); `docker-compose.prod.yml` drops those mounts. The `.onion` /
+  static-cert variant stays an advanced opt-in: mount `Caddyfile.onion` (+ certs) over the baked defaults.
 - **CI: publish `agora-proxy` instead of `agora-admin`.** The `docker-publish` workflow built the
   admin image from `apps/admin/Dockerfile`, which the front-door collapse deleted — so tagged releases
   failed with `failed to read dockerfile`. The matrix now builds the Caddy front door from

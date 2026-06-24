@@ -26,7 +26,13 @@ RUN pnpm --filter @agora-server/contract build && pnpm --filter @agora/admin bui
 FROM caddy:2-alpine AS runtime
 # Static SPA served from /srv (matches `root * /srv` in deploy/proxy/agora-routes.caddy).
 COPY --from=builder /repo/apps/admin/dist /srv
+# Bake the DEFAULT auto-ACME Caddyfile + the shared routing snippet so a bare `docker run` (or a
+# mount-free compose) Just Works on the common HTTPS path — no host-side config files required. Both
+# resolve everything at RUNTIME: {$SERVER_NAME:localhost} drives cert issuance (real domain → Let's
+# Encrypt; localhost → internal CA; `:80` → plain HTTP, no ACME), and the upstreams are {$ENV:default}
+# placeholders. Operators can still MOUNT over either at /etc/caddy to override — e.g. the .onion /
+# static-cert variant (advanced; mount Caddyfile.onion → /etc/caddy/Caddyfile + certs). See deploy/proxy/README.md.
+COPY deploy/proxy/Caddyfile /etc/caddy/Caddyfile
+COPY deploy/proxy/agora-routes.caddy /etc/caddy/agora-routes.caddy
 EXPOSE 80 443
-# The Caddyfile (auto-ACME or onion variant) AND the shared routing snippet are MOUNTED at /etc/caddy
-# by docker-compose.yml — NOT baked — so operators can swap variants / edit routing without a rebuild.
 # The base caddy image's entrypoint runs `caddy run --config /etc/caddy/Caddyfile --adapter caddyfile`.

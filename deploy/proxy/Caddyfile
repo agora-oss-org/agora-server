@@ -15,9 +15,9 @@
 	# email {$ACME_EMAIL}
 }
 
-# Loads the (agora-site) snippet so the site block below can `import agora-site`. NOTE: this file MUST
-# be mounted into the container alongside the Caddyfile (see docker-compose.yml) — `import` resolves
-# relative to /etc/caddy, so the snippet lands at /etc/caddy/agora-routes.caddy.
+# Loads the (agora-site) snippet so the site block below can `import agora-site`. This Caddyfile AND the
+# snippet are BAKED into the agora-proxy image at /etc/caddy (the dev docker-compose.yml also mounts them
+# for hot-editing without a rebuild) — `import` resolves relative to /etc/caddy.
 import agora-routes.caddy
 
 # Site address drives certificate issuance: a real domain → public Let's Encrypt; localhost/IP →

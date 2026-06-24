@@ -308,12 +308,12 @@ services:
       MINIO_UPSTREAM: http://minio:9000
       S3_BUCKET: ${S3_BUCKET:-agora}
     volumes:
-      # The active Caddyfile. Default = automatic ACME (deploy/proxy/Caddyfile). For a `.onion` / static
-      # cert, set CADDYFILE=./deploy/proxy/Caddyfile.onion (ACME can't issue for .onion — that variant
-      # serves a cert you drop in the certs dir below).
+      # The default Caddyfile + routing snippet are BAKED into the agora-proxy image; these two mounts
+      # just overlay the repo copies so you can HOT-EDIT routing/headers in dev without a rebuild (the
+      # mount wins over the baked file). For a `.onion` / static cert, set
+      # CADDYFILE=./deploy/proxy/Caddyfile.onion (ACME can't issue for .onion — that variant serves a
+      # cert you drop in the certs dir below). Production (docker-compose.prod.yml) drops these mounts.
       - ${CADDYFILE:-./deploy/proxy/Caddyfile}:/etc/caddy/Caddyfile:ro
-      # The shared routing snippet, imported by both Caddyfile variants. REQUIRED — `import` resolves
-      # relative to /etc/caddy, so the snippet must land here or the front door fails to load.
       - ./deploy/proxy/agora-routes.caddy:/etc/caddy/agora-routes.caddy:ro
       # Operator-supplied TLS certs for the onion/static-cert variant, mounted read-only at /certs
       # (site.pem + site.key). Harmless empty mount for the default auto-ACME file, which never reads it.

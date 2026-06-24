@@ -19,12 +19,13 @@
 #      host port. (db/minio/neo4j consoles stay internal too — tunnel in if you need them.)
 #   3. RATE_LIMIT_TRUSTED_HOPS=1 is the correct setting (one proxy hop). Set it in .env.
 #
-# DEPLOY BUNDLE (a pull-only host still needs a few mounted files — copy them next to this compose):
+# DEPLOY BUNDLE — the ACME/HTTPS path needs ONLY this compose file + .env. The default Caddyfile + the
+# routing snippet are BAKED into the agora-proxy image, so no proxy config files are required on the host.
+# A couple of files are needed only for opt-in cases:
 #   • .env                                  — the single config source (see .env.example / docs/CHEAT-SHEET.md)
-#   • deploy/proxy/Caddyfile                — front-door TLS + routing entrypoint (or Caddyfile.onion)
-#   • deploy/proxy/agora-routes.caddy       — shared routing snippet imported by the Caddyfile
-#   • deploy/proxy/certs/                   — only for the .onion / static-cert variant (site.pem + site.key)
 #   • neo4j/plugins/open-gds-*.jar          — only with --profile scorer/full (DozerDB GDS plugin)
+#   • deploy/proxy/Caddyfile.onion + certs/ — only for the ADVANCED .onion / static-cert variant, mounted
+#                                             over the baked defaults (see the proxy service below)
 # For a real domain: set SERVER_NAME=<your.domain> (DNS → this host so ACME can validate on :80). Plain
 # HTTP / behind an external TLS terminator: SERVER_NAME=:80. See docs/SELF-HOSTING.md + docs/CHEAT-SHEET.md.
 services:
@@ -202,10 +203,10 @@ services:
     init: true
     restart: unless-stopped
 
-  # Single public front door (Caddy) — TLS + the admin SPA (baked into the image at /srv) + ALL service
-  # routing. The ONLY service that publishes host ports (80/443). Mount the Caddyfile + routing snippet
-  # (see DEPLOY BUNDLE above) — they are NOT baked, so the ACME ↔ onion swap survives. ONE proxy hop →
-  # set RATE_LIMIT_TRUSTED_HOPS=1 in .env.
+  # Single public front door (Caddy) — TLS + the admin SPA + the default Caddyfile/routing snippet, ALL
+  # baked into the image. The ONLY service that publishes host ports (80/443). SERVER_NAME drives the TLS
+  # mode (real domain → Let's Encrypt; localhost → internal CA; `:80` → plain HTTP, no ACME). ONE proxy
+  # hop → set RATE_LIMIT_TRUSTED_HOPS=1 in .env.
   proxy:
     profiles: ["supabase", "selfhost"]
     image: agoraserver/agora-proxy:${AGORA_TAG:-latest}
@@ -221,13 +222,11 @@ services:
       MINIO_UPSTREAM: http://minio:9000
       S3_BUCKET: ${S3_BUCKET:-agora}
     volumes:
-      # Default = automatic ACME. For a .onion / static cert set CADDYFILE=./deploy/proxy/Caddyfile.onion.
-      - ${CADDYFILE:-./deploy/proxy/Caddyfile}:/etc/caddy/Caddyfile:ro
-      # REQUIRED — `import` resolves relative to /etc/caddy; missing it = the front door fails to load.
-      - ./deploy/proxy/agora-routes.caddy:/etc/caddy/agora-routes.caddy:ro
-      # Operator-supplied TLS certs for the onion/static-cert variant (site.pem + site.key). Harmless
-      # empty mount for the default auto-ACME file, which never reads it.
-      - ${CADDY_CERTS_DIR:-./deploy/proxy/certs}:/certs:ro
+      # No proxy config mounts needed — the default auto-ACME Caddyfile + routing snippet are baked in.
+      # ADVANCED .onion / static-cert: mount your variant + certs OVER the baked defaults (uncomment),
+      # and set SERVER_NAME to the .onion address. See deploy/proxy/README.md.
+      # - ./deploy/proxy/Caddyfile.onion:/etc/caddy/Caddyfile:ro
+      # - ./deploy/proxy/certs:/certs:ro
       - caddy-data:/data    # persists issued certs + ACME account across restarts (avoids LE rate limits)
       - caddy-config:/config
     ports:

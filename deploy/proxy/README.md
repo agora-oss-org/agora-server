@@ -13,6 +13,12 @@ It replaces the old admin nginx (which did the SPA + routing) — so there is no
 two. The routing + SPA-serving config lives in the shared snippet
 [`agora-routes.caddy`](./agora-routes.caddy), imported by both Caddyfile variants.
 
+**The default Caddyfile + snippet are baked into the `agora-proxy` image** (alongside the SPA), so the
+common HTTPS/ACME deploy needs **no proxy config files on the host** — `SERVER_NAME` (+ the upstream env)
+is all the runtime config. The dev `docker-compose.yml` also bind-mounts the repo copies over the baked
+ones so you can hot-edit routing/headers without a rebuild; `docker-compose.prod.yml` drops those mounts
+and runs purely on the baked config. Only the `.onion` / static-cert variant mounts (below).
+
 It rides the data-plane profiles (`supabase`/`selfhost`) — it's up whenever the API is (it's how the SPA is served, so it's not optional):
 
 ```
@@ -55,14 +61,16 @@ terminator chains in front of Caddy).
 Tor hidden services (and any deploy where Let's Encrypt can't reach you) need a **cert supplied at
 startup** instead of auto-ACME — Let's Encrypt has no way to issue for a `.onion`. A second Caddyfile,
 [`Caddyfile.onion`](./Caddyfile.onion), serves a cert you mount in (`tls /certs/site.pem /certs/site.key`)
-and never attempts ACME. It imports the same [`agora-routes.caddy`](./agora-routes.caddy) snippet, so the
-routing is identical — only the TLS source differs. You select it with the `CADDYFILE` env var, no new
-compose service:
+and never attempts ACME. It imports the same baked [`agora-routes.caddy`](./agora-routes.caddy) snippet,
+so the routing is identical — only the TLS source differs. You select it by **mounting it over the baked
+Caddyfile** — in the **dev** `docker-compose.yml` via the `CADDYFILE` env var; in
+**`docker-compose.prod.yml`** by uncommenting the two `proxy` volume lines (the `Caddyfile.onion` + certs
+mounts). No new compose service either way:
 
 ```bash
-# in .env:
+# in .env (dev docker-compose.yml):
 SERVER_NAME=youraddress.onion                  # the hidden-service address
-CADDYFILE=./deploy/proxy/Caddyfile.onion        # swap the auto-ACME file for the static-cert one
+CADDYFILE=./deploy/proxy/Caddyfile.onion        # swap the baked auto-ACME file for the static-cert one
 CADDY_CERTS_DIR=./deploy/proxy/certs            # optional; this is the default
 RATE_LIMIT_TRUSTED_HOPS=1
 

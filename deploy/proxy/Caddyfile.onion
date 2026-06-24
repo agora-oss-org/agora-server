@@ -1,5 +1,6 @@
-# Mounted-cert front door for Agora — the ONION / static-cert variant of deploy/proxy/Caddyfile.
-# Select it by pointing the compose mount at this file:  CADDYFILE=./deploy/proxy/Caddyfile.onion
+# Mounted-cert front door for Agora — the ONION / static-cert variant of the BAKED-IN deploy/proxy/Caddyfile.
+# Select it by mounting this file OVER the baked Caddyfile at /etc/caddy/Caddyfile: uncomment the mount in
+# docker-compose.prod.yml (proxy service), or set CADDYFILE=./deploy/proxy/Caddyfile.onion in the dev compose.
 #
 # WHY a separate file: the default Caddyfile uses automatic ACME (Let's Encrypt), which CANNOT issue
 # for a `.onion` address (no HTTP-01/DNS-01 path). This variant instead serves a cert you supply at
@@ -16,7 +17,8 @@
 #
 # ONE proxy hop now (just Caddy), so set RATE_LIMIT_TRUSTED_HOPS=1 in .env.
 
-# Loads the (agora-site) snippet; must be mounted at /etc/caddy/agora-routes.caddy (see docker-compose.yml).
+# Loads the (agora-site) snippet — BAKED into the image at /etc/caddy/agora-routes.caddy, so the onion
+# variant only needs to mount THIS file (over the Caddyfile) + the certs, not the snippet.
 import agora-routes.caddy
 
 {$SERVER_NAME} {

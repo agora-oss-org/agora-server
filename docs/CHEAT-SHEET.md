@@ -48,9 +48,11 @@ internal (only the proxy's `80`/`443` are public), and you can pin a release wit
 AGORA_TAG=v0.13.0 docker compose -f docker-compose.prod.yml --profile full --profile supabase up -d
 ```
 
-Same profiles, same `.env`. A pull-only host still needs a few mounted files alongside the compose:
-`.env`, `deploy/proxy/Caddyfile` + `deploy/proxy/agora-routes.caddy` (front-door config), and — only with
-`scorer`/`full` — `neo4j/plugins/open-gds-*.jar`. The header of `docker-compose.prod.yml` lists the bundle.
+Same profiles, same `.env`. The default HTTPS/ACME path needs **only** the compose file + `.env` — the
+front-door config (Caddyfile + routing snippet) is **baked into the `agora-proxy` image**. The only extra
+host files are opt-in: `neo4j/plugins/open-gds-*.jar` (with `scorer`/`full`) and, for the advanced `.onion`
+/ static-cert variant, `deploy/proxy/Caddyfile.onion` + certs. The header of `docker-compose.prod.yml`
+lists the bundle.
 
 ---
 
