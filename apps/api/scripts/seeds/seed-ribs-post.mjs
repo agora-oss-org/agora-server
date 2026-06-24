@@ -11,8 +11,7 @@ const BASE = (process.env.API_BASE_URL || "http://localhost:4000").replace(/\/$/
 const PROJECT_ID = process.env.PROJECT_ID || "11111111-1111-1111-1111-111111111111";
 const EMAIL = process.env.DEMO_EMAIL || "agora-admin@gmail.com";
 const PASSWORD = process.env.DEMO_PASSWORD || "DemoPass123!";
-const IMAGE_URL = process.env.RIBS_IMAGE_URL ||
-  "https://www.tastingtable.com/img/gallery/the-13-hands-down-best-bbq-ribs-in-the-us/l-intro-1763611717.jpg";
+const IMAGE_URL = process.env.RIBS_IMAGE_URL || "https://picsum.photos/seed/ribs/1200/800";
 // Some publishers block non-browser user-agents on their image hosts.
 const BROWSER_UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
 
