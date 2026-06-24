@@ -1,7 +1,12 @@
 import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
+import { readFileSync } from "node:fs";
 import path from "node:path";
+
+// The admin app version (shown in the Topbar) is the single source of truth in package.json — read it
+// here and inject as the `__APP_VERSION__` global so the bundle carries it without a runtime fetch.
+const pkg = JSON.parse(readFileSync(path.resolve(__dirname, "package.json"), "utf8")) as { version: string };
 
 // @agora-server/contract resolves through the pnpm workspace symlink + its `exports` map (built dist/).
 // Tailwind v4 is wired via its Vite plugin (CSS-first config lives in src/index.css `@theme`).
@@ -22,6 +27,9 @@ export default defineConfig(({ mode }) => {
       : "";
 
   return {
+    define: {
+      __APP_VERSION__: JSON.stringify(pkg.version),
+    },
     plugins: [
       react(),
       tailwindcss(),

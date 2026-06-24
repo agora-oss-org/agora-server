@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Admin: app version shown in the header.** The Topbar renders the `@agora/admin` `package.json`
+  version (e.g. `v0.12.1`) next to the project id. The value is injected at build time as the
+  `__APP_VERSION__` global via Vite `define` (no runtime fetch). Bump `apps/admin/package.json`'s
+  `version` to update it.
 - **API load-test harness for performance baselines (`apps/api/perf/`).** A reproducible k6 workload
   + deterministic fixture seeder for tracking latency/throughput as the API evolves. `pnpm perf:seed`
   bulk-builds an isolated corpus (its own throwaway `project_id`: profiles + entities + multi-level
