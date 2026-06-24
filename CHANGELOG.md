@@ -21,7 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **Single Caddy front door — collapsed the two-layer proxy.** The admin nginx no longer exists as its
-  own service. The `full` profile's **`proxy`** (Caddy) is now the single public entrypoint: it serves
+  own service. The **`proxy`** (Caddy) is now the single public entrypoint: it serves
   the admin SPA static build (baked into a new [`deploy/proxy/Dockerfile`](deploy/proxy/Dockerfile)) AND
   reverse-proxies every service itself — `/v7` + `/socket.io` → agora, `/v7/:projectId/secure-chat/*` +
   `/secure-socket/` → secure-chat, `/moderator` → scorer-worker, `/media` → minio. The routing + SPA
@@ -32,23 +32,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `SERVER_NAME=:80` (Caddy serves HTTP, skips ACME) — this replaces the old bare-admin-nginx-on-`:8080`
   mode. Docs updated (README, SELF-HOSTING, SECURITY, SCORER, SECURE_CHAT, deploy/proxy, CLAUDE.md, both
   app READMEs).
-- **Compose: every service is now profile-gated; added a `full` profile for the API stack.** A bare
-  `docker compose up` no longer starts anything — `agora`, `admin`, the three `scorer-*`, `neo4j`, and
-  `cron` moved behind a new **`full`** profile (`docker compose --profile full up`). This makes the
-  **`secure`** profile a true **standalone secure-chat deploy** — `docker compose --profile secure up`
-  brings up just `redis` + `secure-chat` (no API stack). Like `agora`, secure-chat doesn't bundle a DB;
-  it persists `secure_*` to whatever `DATABASE_URL` points at (v1 shares the main Postgres / Supabase;
-  add `--profile selfhost` for a local `db`).
-  Combine profiles for everything else: `--profile full --profile selfhost` (no-Supabase stack),
-  `--profile full --profile scale` (Redis rate-limit store). Migration/seed one-offs
-  (`docker compose run --rm agora …`) are unchanged (naming `agora` auto-enables `full`). Docs updated
-  (README, SELF-HOSTING, deploy/proxy, CLAUDE.md).
+- **Compose: a two-axis profile model (replaces the single `full`-is-the-API-stack scheme).** A bare
+  `docker compose up` starts nothing. **Axis 1 — data plane + API (required, pick exactly one):**
+  `--profile supabase` (external Supabase Postgres + Storage) or `--profile selfhost` (local Postgres +
+  MinIO); either brings up the API itself (`agora` + `proxy` + `cron`). **Axis 2 — optional add-ons
+  (compose freely):** `--profile scorer` (the three `scorer-*` + `neo4j`), `--profile secure-chat` (the
+  E2E delivery process + `redis`, **renamed from the old `secure` profile**), `--profile scale` (Redis
+  rate-limit store), and `--profile full` = all add-ons at once. So "just the API" is now
+  `docker compose --profile supabase up` (or `--profile selfhost`); "everything" is
+  `--profile full --profile <supabase|selfhost>`. **`secure-chat` now rides `full`**, so a full deploy
+  brings the E2E delivery process up behind the Caddy front door automatically (the standalone
+  `docker compose --profile secure-chat up` still runs just `redis` + `secure-chat` against a remote
+  `DATABASE_URL`). Migration/seed one-offs (`docker compose run --rm agora …`) are unchanged. Docs
+  updated (README, SELF-HOSTING, SECURITY, SCORER, DOZERDB, deploy/proxy, CLAUDE.md, app READMEs).
 
 ### Removed
 - **The `admin` nginx service, the `edge` profile, and `ADMIN_UPSTREAM`/`ADMIN_PORT`.** Folded into the
   single Caddy front door (see Changed): `apps/admin/Dockerfile` + `apps/admin/nginx.conf.template` are
   deleted (the admin SPA is built by `deploy/proxy/Dockerfile` now), the optional `edge` profile is gone
-  (the front door is part of `full`), and the `ADMIN_UPSTREAM`/`ADMIN_PORT` env vars are no longer used.
+  (the front door rides the data-plane profiles), and the `ADMIN_UPSTREAM`/`ADMIN_PORT` env vars are no
+  longer used.
 
 ### Fixed
 - **`scorer-worker` (and the API's `/social/*`) couldn't reach Neo4j under Docker** — `.env`'s

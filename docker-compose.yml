@@ -1,21 +1,29 @@
-# Agora compose. Every service belongs to a PROFILE, so a bare `docker compose up` starts NOTHING —
-# pick what you want to run:
-#   --profile full       the API stack: agora + proxy (Caddy front door) + scorer (×3) + neo4j + cron
-#   --profile secure     secure-chat ONLY (its own E2E delivery process) + redis  — the standalone deploy
-#   --profile selfhost   local Postgres (db) + MinIO instead of Supabase; combine with `full`
-#   --profile scale      redis as the cross-replica rate-limit store; combine with `full`
-# Profiles are additive (OR), so you compose them. Common invocations (from the repo root):
-#   docker compose --profile full up --build                       # the whole API stack (Supabase-backed)
-#   docker compose --profile full --profile selfhost up --build    # fully self-contained, no Supabase
-#   docker compose --profile secure up --build                     # secure-chat solo (+ redis), nothing else
-#   docker compose run --rm agora node scripts/migrate.mjs         # migrations (naming agora enables `full`)
+# Agora compose. TWO-AXIS profile model — a bare `docker compose up` starts NOTHING.
+#
+# Axis 1 — DATA PLANE + API (REQUIRED, pick EXACTLY ONE; mutually exclusive):
+#   --profile supabase   the API (agora + proxy + cron) against EXTERNAL Supabase Postgres + Storage
+#   --profile selfhost   the API PLUS local Postgres (db) + MinIO — fully self-contained, no Supabase
+#
+# Axis 2 — OPTIONAL ADD-ONS (compose freely on top of a data plane):
+#   --profile scorer       content-moderation + social-graph: scorer (×3) + neo4j
+#   --profile secure-chat  the blind MLS E2E delivery process + redis
+#   --profile scale        redis as the cross-replica rate-limit store (multi-replica API)
+#   --profile full         shorthand for ALL optional add-ons (= scorer + secure-chat)
+#
+# Profiles are additive (OR). Common invocations (from the repo root):
+#   docker compose --profile supabase up --build                   # just the API, Supabase-backed
+#   docker compose --profile selfhost up --build                   # just the API, fully self-contained
+#   docker compose --profile full --profile supabase up --build    # everything, Supabase-backed
+#   docker compose --profile full --profile selfhost up --build    # everything, self-contained
+#   docker compose --profile secure-chat up --build                # split secure-chat box (remote DATABASE_URL)
+#   docker compose run --rm agora node scripts/migrate.mjs         # migrations
 # The `proxy` service (Caddy) is the single public front door — it terminates TLS, serves the admin SPA,
 # AND routes /v7 + /socket.io + secure-chat + /moderator + /media to the backends (ONE hop →
 # RATE_LIMIT_TRUSTED_HOPS=1). Plain HTTP / behind an external TLS terminator: set SERVER_NAME=:80.
 # See docs/SELF-HOSTING.md and apps/secure-chat/README.md.
 services:
   agora:
-    profiles: ["full"]
+    profiles: ["supabase", "selfhost"]
     build:
       context: .
       dockerfile: apps/api/Dockerfile
@@ -34,13 +42,14 @@ services:
   # Shared Redis. Two consumers: (1) the OPTIONAL cross-replica rate-limit store (only needed with MORE
   # THAN ONE `agora` replica — a single replica limits fine in-process; the api fail-opens to in-memory),
   # and (2) the secure-chat suspension index (a HARD dependency of @agora/secure-chat — fail-closed). Gated
-  # behind BOTH the `scale` and `secure` profiles so a `full` API deploy stays Redis-free unless asked:
-  #   docker compose --profile full --profile scale up   (rate limiting alongside the API)
-  #   docker compose --profile secure up                 (secure-chat solo — redis + secure-chat only)
+  # behind the `secure-chat`, `scale`, and `full` profiles (secure-chat's hard dep travels with it, so a
+  # plain `--profile supabase`/`--profile selfhost` API deploy stays Redis-free unless you add one):
+  #   docker compose --profile supabase --profile scale up   (rate limiting alongside the API)
+  #   docker compose --profile secure-chat up                (secure-chat solo — redis + secure-chat only)
   # Then set REDIS_URL=redis://redis:6379 in .env (least-privilege ACL: see apps/api/README.md).
   redis:
     image: redis:7-alpine
-    profiles: ["scale", "secure"]
+    profiles: ["secure-chat", "scale", "full"]
     command: ["redis-server", "--save", "", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru"]
     # Real readiness probe so dependents waiting on `condition: service_healthy` (secure-chat) don't start
     # before Redis accepts commands — secure-chat hydrates its suspension index against it on boot.
@@ -52,11 +61,14 @@ services:
     init: true
     restart: unless-stopped
 
-  # ── self-hosted backends (no Supabase) ───────────────────────────────────────────────────────────
-  # The `selfhost` profile brings up local replacements for the two Supabase-hosted dependencies so the
-  # SAME api image runs fully self-contained: `db` (Postgres) + `minio` (object storage). Combine with
-  # `full`; a Supabase-backed deploy points DATABASE_URL/STORAGE_PROVIDER at Supabase and omits this.
-  #   docker compose --profile full --profile selfhost up
+  # ── self-hosted data plane (no Supabase) ─────────────────────────────────────────────────────────
+  # `selfhost` is one of the two mutually-exclusive DATA PLANES (the other is `supabase`). On top of the
+  # API (agora + proxy + cron, which ride the data-plane profiles) it adds local replacements for the two
+  # Supabase-hosted dependencies so the SAME api image runs fully self-contained: `db` (Postgres) +
+  # `minio` (object storage). The `supabase` data plane has no containers — it points DATABASE_URL /
+  # STORAGE_PROVIDER at Supabase instead.
+  #   docker compose --profile selfhost up                 # the API, fully self-contained
+  #   docker compose --profile full --profile selfhost up  # + every optional add-on
   # Then in .env: DATABASE_URL=postgres://postgres:<pw>@db:5432/postgres, STORAGE_PROVIDER=s3, the S3_*
   # block (S3_ENDPOINT=http://minio:9000, S3_PUBLIC_URL=<public-origin>/media, creds = MINIO_ROOT_*),
   # and DEFAULT_AUTH_PROVIDER=native. See docs/SELF-HOSTING.md.
@@ -113,19 +125,18 @@ services:
   # solo deploys). Shares the same Postgres (DATABASE_URL) + Redis as the api. Serves
   # /v7/:projectId/secure-chat/* (REST) + the /secure realtime on engine.io path /secure-socket/ (the
   # Caddy front door routes both here). Redis is a HARD dependency (the fail-closed suspension index): set
-  # REDIS_URL=redis://redis:6379 in .env. The `secure` profile starts the secure-chat PROCESS + redis
-  # (no API stack). Like `agora`, it does NOT bundle a database — it persists the secure_* tables to
-  # whatever DATABASE_URL points at, which in v1 is the SHARED main Postgres (or Supabase); that DB must
-  # already have the migrations applied. So the standalone deploy is:
-  #   docker compose --profile secure up                       # DATABASE_URL → shared/Supabase Postgres
-  #   docker compose --profile secure --profile selfhost up    # + a LOCAL db (minio tags along, unused)
-  # (Alongside the full API it's `--profile full --profile secure up`.)
+  # REDIS_URL=redis://redis:6379 in .env. In the `secure-chat` profile it starts the secure-chat PROCESS +
+  # redis with NO API stack — a standalone/split box that points DATABASE_URL at a REMOTE Postgres
+  # (Supabase or the API box). It does NOT bundle a database; the target DB must already be migrated.
+  #   docker compose --profile secure-chat up                  # split box → remote DATABASE_URL, no API
+  # Alongside the API it travels in `full`, so `--profile full --profile <supabase|selfhost>` brings it up
+  # behind the Caddy front door automatically (no separate flag needed).
   secure-chat:
     build:
       context: .
       dockerfile: apps/secure-chat/Dockerfile
     image: agora-secure-chat
-    profiles: ["secure"]
+    profiles: ["secure-chat", "full"]
     env_file: .env
     ports:
       - "${SECURE_CHAT_PORT:-4002}:4002"
@@ -135,7 +146,7 @@ services:
     init: true
     restart: unless-stopped
 
-  # ── services/scorer ──────────────────────────────────────────────────────────────────────────
+  # ── services/scorer (the `scorer` profile) ───────────────────────────────────────────────────
   # Python content-moderation + social-graph subsystem. Async, post-publish: Postgres triggers enqueue
   # jobs on pgmq; the worker (1) scores content with two RoBERTa classifiers + Claude Haiku escalation
   # and writes removals back through the API, and (2) projects INTERACTED/FOLLOWS/CONNECTED/FRICTION
@@ -145,7 +156,7 @@ services:
   # contention with the relationship server. cpuset values are HOST-SPECIFIC — adjust to your core layout.
   # See docs/SCORER-REQUIREMENTS.md for deployment-specific configs.
   scorer-toxicity:
-    profiles: ["full"]
+    profiles: ["scorer", "full"]
     build:
       context: .
       dockerfile: services/scorer/Dockerfile.model-server
@@ -168,7 +179,7 @@ services:
 
   # RoBERTa relationship-quality (sentiment) classifier — same image, different model + core.
   scorer-relationship:
-    profiles: ["full"]
+    profiles: ["scorer", "full"]
     build:
       context: .
       dockerfile: services/scorer/Dockerfile.model-server
@@ -191,7 +202,7 @@ services:
   # /v1/:projectId/moderation/* on :4001 (the admin upstream). Shares DATABASE_URL + ACCESS_TOKEN_SECRET
   # + MODERATION_SERVICE_SECRET with the api; needs ANTHROPIC_API_KEY (Haiku) + NEO4J_* in .env.
   scorer-worker:
-    profiles: ["full"]
+    profiles: ["scorer", "full"]
     build:
       context: .
       dockerfile: services/scorer/Dockerfile.worker
@@ -223,9 +234,10 @@ services:
     restart: unless-stopped
 
   # Neo4j / DozerDB — social-graph database. The scorer writes INTERACTED/FOLLOWS/CONNECTED/FRICTION
-  # edges; the API reads them for GET /social/weather and GET /social/neighborhood.
+  # edges; the API reads them for GET /social/weather and GET /social/neighborhood. Rides the `scorer`
+  # profile (scorer-worker hard-depends on it); without it the API's /social/* reads return 503.
   neo4j:
-    profiles: ["full"]
+    profiles: ["scorer", "full"]
     image: graphstack/dozerdb:5.26.3.0
     # No env_file here — Neo4j maps every NEO4J_* var to a config key, so passing NEO4J_URI
     # (which the API/scorer use to connect) would crash it with "Unrecognized setting: URI".
@@ -269,12 +281,13 @@ services:
   # authoritative X-Forwarded-For, serves the SPA from the baked-in build, and reverse-proxies
   # /v7 + /socket.io → agora, /v7/:projectId/secure-chat/* + /secure-socket/ → secure-chat,
   # /moderator → scorer-worker, /media → minio (routing lives in deploy/proxy/agora-routes.caddy).
-  # It IS how the SPA is served, so it's part of `--profile full` — there is ONE proxy hop now, so set
+  # It IS the API's front door (serves the SPA + routes everything), so it rides the data-plane profiles
+  # (`supabase`/`selfhost`) — up whenever the API is. There is ONE proxy hop now, so set
   # RATE_LIMIT_TRUSTED_HOPS=1 in .env. For a real domain set SERVER_NAME (DNS → this host so ACME can
   # validate on :80) and firewall the now-internal 4000/4001 host ports. Plain HTTP / behind an external
   # TLS terminator: set SERVER_NAME=:80 (Caddy serves HTTP, skips ACME).
   proxy:
-    profiles: ["full"]
+    profiles: ["supabase", "selfhost"]
     build:
       context: .
       dockerfile: deploy/proxy/Dockerfile
@@ -326,7 +339,7 @@ services:
   # Scheduler: fires the secret-gated /internal/cron/* endpoints over the internal network on the
   # schedule in apps/api/crontab. Requires CRON_SECRET in .env (without it the endpoints return 503).
   cron:
-    profiles: ["full"]
+    profiles: ["supabase", "selfhost"]
     build:
       context: .
       dockerfile: apps/api/Dockerfile.cron
@@ -334,8 +347,9 @@ services:
     env_file: .env # CRON_SECRET
     environment:
       AGORA_URL: http://agora:4000
-      # IUC restore-blob TTL sweep targets the secure-chat process (run with --profile secure). Unset →
-      # that one cron line is a harmless no-op; lazy-expiry still hides expired blobs on read.
+      # IUC restore-blob TTL sweep targets the secure-chat process (up under --profile full or
+      # --profile secure-chat). When it's absent that one cron line is a harmless no-op; lazy-expiry
+      # still hides expired blobs on read.
       SECURE_CHAT_URL: ${SECURE_CHAT_URL:-http://secure-chat:4002}
     depends_on:
       - agora
