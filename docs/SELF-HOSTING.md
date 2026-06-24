@@ -12,9 +12,10 @@ Three things are pluggable, each chosen by config (nothing is replaced — flip 
 | Storage  | Supabase Storage public bucket      | MinIO container (`minio`), S3 API            | `STORAGE_PROVIDER=s3`  |
 | Auth     | Supabase Auth (passwords + OAuth)   | Native in-API passwords (`auth_provider`)    | `DEFAULT_AUTH_PROVIDER`|
 
-The `selfhost` compose profile brings up the two local backends; run it alongside `full` (the API
-stack). They're opt-in — a Supabase-backed deploy just runs `--profile full` and points the env at
-Supabase. (Compose services are all profile-gated, so a bare `docker compose up` starts nothing.)
+The `selfhost` compose profile is one of the two data planes: it brings up the API itself plus the two
+local backends (you do NOT pair it with `full` to get the API). It's opt-in — a Supabase-backed deploy
+runs `--profile supabase` instead and points the env at Supabase. (Compose services are all
+profile-gated, so a bare `docker compose up` starts nothing.)
 
 ## Quick start (whole stack, no Supabase)
 
@@ -41,14 +42,16 @@ Supabase. (Compose services are all profile-gated, so a bare `docker compose up`
    ACCESS_TOKEN_SECRET=<openssl rand -base64 48>
    ```
 
-2. **Bring the stack up** — `full` (the API stack, incl. the Caddy front door) + `selfhost` (local db +
-   minio); add `secure`/`scale` as needed:
+2. **Bring the stack up** — `--profile selfhost` is the API + local db + minio (incl. the Caddy front
+   door); add `--profile full` for all optional add-ons, or `--profile scorer`/`--profile secure-chat`/
+   `--profile scale` individually:
 
    ```bash
-   docker compose --profile full --profile selfhost up --build
+   docker compose --profile selfhost up --build
    ```
 
-   This starts `db`, `minio`, `agora`, `admin` (+ `cron`). `agora` has `restart: unless-stopped`, so if
+   This starts `db`, `minio`, `agora`, `proxy` (the Caddy front door that serves the admin SPA) (+ `cron`).
+   `agora` has `restart: unless-stopped`, so if
    it boots before `db` is ready it crash-loops briefly, then connects — no manual ordering needed.
 
 3. **Apply migrations once** (the schema + RLS + triggers + RPC). The `supabase/postgres` image bundles
@@ -173,6 +176,7 @@ self-hosted means migrating the data, which is out of scope for the seam:
 The S3 public bucket carries the **same posture as the Supabase public bucket** documented in
 `SECURITY.md`: media is public-read by design, protected by unguessable UUID keys, never by ACLs.
 Don't put private data behind it. MinIO root credentials and `POSTGRES_PASSWORD` are real secrets —
-set strong values and keep `.env` out of version control. In production the `full` profile's Caddy front
-door (auto-HTTPS + HSTS + body cap) is the public entrypoint — firewall the now-internal `:4000`/`:4001`/
+set strong values and keep `.env` out of version control. In production the Caddy front door (which
+rides the data-plane profiles — it comes up with the API; auto-HTTPS + HSTS + body cap) is the public
+entrypoint — firewall the now-internal `:4000`/`:4001`/
 `:9000` host ports.

@@ -46,7 +46,7 @@ written to be the trust boundary (see [Security model](#-security-model)), but i
 transport security, TLS, and network isolation to your infrastructure**. This checklist is the contract.
 
 ### 1. Terminate TLS — never serve the API over plain HTTP
-> **Bundled shortcut:** `docker compose --profile full up` includes a **Caddy** front door that does all of
+> **Bundled shortcut:** `docker compose --profile supabase up` (or `--profile selfhost`) brings up the API with a **Caddy** front door that does all of
 > this automatically — **auto-HTTPS** (Let's Encrypt, auto-renewed), `http → https` redirect, HSTS +
 > security headers, WebSocket upgrade, body-size cap, and an authoritative `X-Forwarded-For` — and it also
 > serves the admin SPA + routes every service (one hop). Set `SERVER_NAME` + `RATE_LIMIT_TRUSTED_HOPS=1`.

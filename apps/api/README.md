@@ -302,14 +302,14 @@ default 60) mounted on `/v7/*`; over-limit → `429 { code:"common/rate-limited"
 **Client IP (spoof-resistant).** The key is the real client IP, read **`RATE_LIMIT_TRUSTED_HOPS` hops
 from the right** of `X-Forwarded-For` — i.e. the entries your trusted proxies actually appended, never
 a client-supplied left-most value. Set it to the number of trusted proxies in front of the app: **1**
-for a single edge — the bundled Caddy front door (`docker compose --profile full`) or one CDN/LB; **2**
+for a single edge — the bundled Caddy front door (`docker compose --profile supabase`) or one CDN/LB; **2**
 when you chain two proxies (e.g. a CDN in front of the Caddy front door). Falls back to `X-Real-IP` then
 `"unknown"`.
 
 **Multi-replica (optional Redis).** The default store is in-process, so behind **N** replicas the
 ceiling is ~N×limit. Set **`REDIS_URL`** to count in a shared store instead, so the cap holds across
 replicas. A single replica needs no Redis. If Redis is unreachable the limiter **fail-opens** to
-in-memory (it never 500s a request). In Docker, `docker compose --profile full --profile scale up` starts a bundled
+in-memory (it never 500s a request). In Docker, `docker compose --profile supabase --profile scale up` starts a bundled
 `redis` service.
 
 ### Redis ACL

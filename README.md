@@ -320,53 +320,57 @@ Full detail (including the OAuth callback setup) lives in
 
 ## Docker
 
-The repo's `docker-compose.yml` builds and wires the whole stack. Every service is **profile-gated**, so
-a bare `docker compose up` starts nothing — pick a profile. The **`full`** profile is the API stack —
-api (`:4000`) + admin (`:8080`) + the scorer services + neo4j + cron. With Supabase backing
-Postgres/Auth/Storage there's no local DB to run:
+The repo's `docker-compose.yml` builds and wires the whole stack with a **two-axis profile model**, so a
+bare `docker compose up` starts nothing:
+
+- **Axis 1 — data plane + API (required, pick exactly one):** `supabase` (external Supabase Postgres +
+  Storage) or `selfhost` (local Postgres + MinIO). Either brings up the API itself — api (`:4000`), the
+  Caddy front door (`proxy`), and cron.
+- **Axis 2 — optional add-ons (compose freely on top):** `scorer` (moderation + social graph: scorer ×3 +
+  neo4j), `secure-chat` (the E2E delivery process + redis), `scale` (Redis rate-limit store), or `full` =
+  every add-on at once.
+
+With Supabase backing Postgres/Auth/Storage there's no local DB to run:
 
 ```bash
-docker compose --profile full up --build                # the API stack, from the repo root
-docker compose run --rm agora node scripts/migrate.mjs  # apply migrations (naming agora enables `full`)
+docker compose --profile supabase up --build            # just the API, Supabase-backed
+docker compose run --rm agora node scripts/migrate.mjs  # apply migrations
 ```
 
-The admin service is the Vite SPA on nginx, reverse-proxying `/v7` + `/socket.io` to the api
-(same origin, no CORS). Each app's README documents building and running its image standalone.
+The **`proxy`** service is a **Caddy front door** — the single public entrypoint that serves the admin SPA
+(baked into its image) and routes every service (`/v7` + `/socket.io` → api, secure-chat, `/moderator`,
+`/media`), with **automatic Let's Encrypt certs**, HSTS + security headers, a body-size cap, and an
+authoritative `X-Forwarded-For` (one hop → set `RATE_LIMIT_TRUSTED_HOPS=1`). It rides the data-plane
+profiles, so it's up whenever the API is. Each app's README documents building its image standalone.
 
-The **`secure`** profile is the **standalone [`@agora/secure-chat`](apps/secure-chat)** deploy — Redis +
-the secure-chat process (`:4002`), no API stack. Like `agora`, it doesn't bundle a database: it persists
+The **`secure-chat`** profile is the **standalone [`@agora/secure-chat`](apps/secure-chat)** deploy — Redis
++ the secure-chat process (`:4002`), no API stack. Like `agora`, it doesn't bundle a database: it persists
 the `secure_*` tables to whatever **`DATABASE_URL`** points at, which in v1 is the **shared main Postgres**
-(or Supabase) — already migrated. (Run it alongside the API with `--profile full --profile secure`, where
-the Caddy front door routes `/v7/:projectId/secure-chat/*` + the WebSocket `/secure-socket/` to it.)
+(or Supabase) — already migrated. Alongside the API it travels in `full`, so a `full` deploy routes
+`/v7/:projectId/secure-chat/*` + the WebSocket `/secure-socket/` to it through the Caddy front door
+automatically.
 
 ```bash
-docker compose --profile secure up --build                       # DATABASE_URL → shared/Supabase Postgres
-docker compose --profile secure --profile selfhost up --build    # + a LOCAL db (minio tags along, unused)
+docker compose --profile secure-chat up --build         # split box → remote DATABASE_URL, no API
+docker compose --profile full --profile supabase up     # everything (incl. secure-chat), Supabase-backed
 ```
 
-For a **fully self-contained** stack (no Supabase at all) add **`selfhost`** (local Postgres + MinIO).
+For a **fully self-contained** stack (no Supabase at all) use **`selfhost`** (local Postgres + MinIO).
 Agora swaps Supabase out through its provider seams — **native** email/password auth
 (`DEFAULT_AUTH_PROVIDER=native`) and **S3-compatible** storage (`STORAGE_PROVIDER=s3` → MinIO/AWS) — so
 the *same* server image runs against either backend. See [`docs/SELF-HOSTING.md`](docs/SELF-HOSTING.md):
 
 ```bash
-docker compose --profile full --profile selfhost up --build
+docker compose --profile selfhost up --build            # just the API, self-contained
+docker compose --profile full --profile selfhost up     # + every optional add-on
 ```
 
-The `full` profile includes a **Caddy front door** (`proxy` service) — the single public entrypoint that
-serves the admin SPA and routes every service, with **automatic Let's Encrypt certs**, HSTS + security
-headers, a body-size cap, and an authoritative `X-Forwarded-For`:
-
-```bash
-# in .env: SERVER_NAME=your.domain  and  RATE_LIMIT_TRUSTED_HOPS=1
-docker compose --profile full up --build
-```
-
-For Tor hidden services — or any deploy where Let's Encrypt can't reach you — a second
+For a real domain set `SERVER_NAME=your.domain` (DNS → this host so ACME can validate on :80). For Tor
+hidden services — or any deploy where Let's Encrypt can't reach you — a second
 [`Caddyfile.onion`](deploy/proxy/Caddyfile.onion) serves a cert you supply at startup instead of
-auto-ACME (selected via the `CADDYFILE` env var). See
-[`deploy/proxy/README.md`](deploy/proxy/README.md). (Optionally add `--profile scale` for Redis as
-the cross-replica rate-limit store.)
+auto-ACME (selected via the `CADDYFILE` env var); plain HTTP behind your own TLS terminator: set
+`SERVER_NAME=:80`. See [`deploy/proxy/README.md`](deploy/proxy/README.md). (Optionally add `--profile
+scale` for Redis as the cross-replica rate-limit store.)
 
 ## Ecosystem
 

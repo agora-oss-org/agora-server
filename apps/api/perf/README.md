@@ -26,7 +26,7 @@ thing that should differ between two runs is your code. Everything here exists t
 From the repo root, bring up an isolated, self-contained stack (local Postgres + MinIO, no Supabase):
 
 ```bash
-docker compose --profile full --profile selfhost up -d --build
+docker compose --profile selfhost up -d --build
 ```
 
 Point the harness at it: `PERF_BASE_URL` at the API, and `.env`'s `DATABASE_URL` at the same local

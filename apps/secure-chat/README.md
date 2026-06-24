@@ -107,13 +107,15 @@ pnpm --filter @agora/secure-chat db:clean:secure-chat # dry-run wipe of the 7 se
 ### Docker
 
 ```bash
-# The `secure` profile is the STANDALONE deploy — redis + secure-chat, no API stack. It does NOT bundle
-# a DB: it persists the secure_* tables to whatever DATABASE_URL points at (v1 = the SHARED main Postgres
-# or Supabase, already migrated). Set REDIS_URL=redis://redis:6379 in .env first.
-docker compose --profile secure up --build                       # DATABASE_URL -> shared/Supabase Postgres
-docker compose --profile secure --profile selfhost up --build    # + a LOCAL db (minio tags along, unused)
-# Alongside the API (so the Caddy front door routes /secure-chat/* + /secure-socket/ to it):
-docker compose --profile full --profile secure up --build
+# The `secure-chat` profile is the STANDALONE deploy — redis + secure-chat, no API stack. It does NOT bundle
+# a DB: it persists the secure_* tables to whatever DATABASE_URL points at — point it at a REMOTE Postgres
+# (v1 = the SHARED main Postgres or Supabase, already migrated). Set REDIS_URL=redis://redis:6379 in .env first.
+docker compose --profile secure-chat up --build                  # DATABASE_URL -> remote shared/Supabase Postgres
+# Everything self-contained (API + db + minio, with secure-chat riding `full`):
+docker compose --profile full --profile selfhost up --build
+# Alongside the API (so the Caddy front door routes /secure-chat/* + /secure-socket/ to it) — secure-chat
+# rides `full`, so no separate flag is needed:
+docker compose --profile full --profile supabase up --build
 ```
 
 ## Endpoints

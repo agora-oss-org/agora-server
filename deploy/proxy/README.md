@@ -13,7 +13,7 @@ It replaces the old admin nginx (which did the SPA + routing) — so there is no
 two. The routing + SPA-serving config lives in the shared snippet
 [`agora-routes.caddy`](./agora-routes.caddy), imported by both Caddyfile variants.
 
-It's part of the `full` profile (it's how the SPA is served, so it's not optional):
+It rides the data-plane profiles (`supabase`/`selfhost`) — it's up whenever the API is (it's how the SPA is served, so it's not optional):
 
 ```
 client ──HTTPS:443──▶ proxy (Caddy: TLS + SPA + router) ──▶ agora / secure-chat / scorer-worker / minio
@@ -27,7 +27,7 @@ SERVER_NAME=agora.example.com      # your real domain (drives cert issuance)
 RATE_LIMIT_TRUSTED_HOPS=1          # one proxy in front of the api (just Caddy)
 # MAX_BODY_SIZE=25MB               # optional; default 25MB
 
-docker compose --profile full up --build
+docker compose --profile supabase up --build
 ```
 
 - Point your domain's **DNS at this host** and make sure ports **80 and 443 are publicly reachable** —
@@ -70,7 +70,7 @@ RATE_LIMIT_TRUSTED_HOPS=1
 cp your-chain.pem   deploy/proxy/certs/site.pem
 cp your-key.pem     deploy/proxy/certs/site.key
 
-docker compose --profile full up --build
+docker compose --profile supabase up --build
 ```
 
 Then map the onion's TLS port to Caddy in your `torrc` so `:443` reaches the proxy's TLS listener:
@@ -100,7 +100,7 @@ HiddenServicePort 443 <caddy-host>:443
 - **Per-service upstreams** default to the compose service names (`agora:4000`, `secure-chat:4002`,
   `scorer-worker:4001`, `minio:9000`); override via `API_UPSTREAM` / `SECURE_CHAT_UPSTREAM` /
   `MODERATOR_UPSTREAM` / `MINIO_UPSTREAM` on the `proxy` service. Absent upstreams (secure-chat without
-  `--profile secure`, minio without `--profile selfhost`) simply 502 their routes — Caddy resolves
+  `--profile secure-chat`, minio without `--profile selfhost`) simply 502 their routes — Caddy resolves
   upstream DNS per request, so a missing service never crashes the front door.
 - **Content-Security-Policy:** a strict CSP is SPA-specific — a commented starting point is in the
   `header { … }` block of [`agora-routes.caddy`](./agora-routes.caddy); tune it to your build and uncomment.
