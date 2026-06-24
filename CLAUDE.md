@@ -255,7 +255,7 @@ url=$(grep '^DATABASE_URL=' .env | cut -d= -f2-); psql "$url" -v ON_ERROR_STOP=1
 are validated as optional: `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` + `SUPABASE_ANON_KEY`
 (Auth + Storage), `VOYAGE_API_KEY` (semantic search), `RATE_LIMIT_MAX`/`RATE_LIMIT_AUTH_MAX` (edge
 rate limiting, off unless set), `OPERATOR_USER_IDS`/`OPERATOR_EMAILS` (deployment-operator allowlist),
-`NEO4J_URI`/`NEO4J_USER`/`NEO4J_PASSWORD` (social graph — both scorer writes and API reads; unset →
+`NEO4J_URI`/`NEO4J_AUTH` (social graph — both scorer writes and API reads; unset →
 scorer skips edge writes, `/social/*` endpoints return 503). Empty strings are treated as unset.
 
 **Operators (deployment god-view).** `OPERATOR_USER_IDS`/`OPERATOR_EMAILS` (comma-separated profile
