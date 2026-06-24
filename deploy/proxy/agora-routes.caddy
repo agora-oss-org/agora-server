@@ -1,0 +1,86 @@
+# Shared site body for the Agora single front door — imported by BOTH deploy/proxy/Caddyfile
+# (auto-ACME) and deploy/proxy/Caddyfile.onion (static cert). Defines a (agora-site) snippet:
+# security headers, body cap, gzip, the per-service reverse proxies, and the SPA static server.
+# Invoke inside a site block with `import agora-site`.
+#
+# Upstreams are {$ENV:default} placeholders (same names the old admin nginx used). A STATIC
+# `reverse_proxy host:port` resolves DNS PER REQUEST (the Go dialer resolves on dial), so an absent
+# service (secure-chat / minio when their profiles aren't up) 502s instead of failing config load —
+# mirroring the old nginx `resolver` behavior. No `dynamic` upstream module needed.
+#
+# Route precedence note: Caddy does NOT honor source order — it sorts by a fixed global directive
+# order + matcher specificity. We wrap every route in a mutually-exclusive `handle` block so
+# precedence is deterministic (first matching handle wins; a bare `handle` is the catch-all). The
+# secure-chat regex lives in its OWN handle so a secure-chat request can never fall through to /v7/*.
+
+(agora-site) {
+	encode gzip
+
+	# Edge body cap (uploads / JSON) — bounds storage abuse + sharp OOM before the app.
+	request_body {
+		max_size {$MAX_BODY_SIZE:25MB}
+	}
+
+	# Security headers (HSTS only meaningfully applies once served over real HTTPS).
+	header {
+		Strict-Transport-Security "max-age=63072000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		X-Frame-Options "SAMEORIGIN"
+		-Server
+		# A strict CSP is SPA-specific — enable + tune for your build, e.g.:
+		# Content-Security-Policy "default-src 'self'; img-src 'self' data: https:; connect-src 'self' https: wss:"
+	}
+
+	# secure-chat REST: /v7/<projectId>/secure-chat/... — MUST win over /v7/* (nginx evaluated this
+	# regex before the /v7 prefix). Mirrors the nginx `^/v7/[^/]+/secure-chat/`.
+	@securechat path_regexp ^/v7/[^/]+/secure-chat/
+
+	# 1. secure-chat REST (regex) — its own handle so it never falls through to /v7/*. WS auto-upgraded.
+	handle @securechat {
+		reverse_proxy {$SECURE_CHAT_UPSTREAM:http://secure-chat:4002}
+	}
+
+	# 2. secure-chat realtime (its own engine.io path, distinct from /socket.io/). WS auto-upgraded.
+	handle /secure-socket/* {
+		reverse_proxy {$SECURE_CHAT_UPSTREAM:http://secure-chat:4002}
+	}
+
+	# 3. socket.io realtime → api. WS auto-upgraded (no nginx Upgrade/Connection boilerplate needed).
+	handle /socket.io/* {
+		reverse_proxy {$API_UPSTREAM:http://agora:4000}
+	}
+
+	# 4. moderator → scorer-worker. handle_path strips the /moderator prefix; re-prepend /v1 so it
+	#    lands on the scorer's /v1/:projectId/moderation/* routes (== nginx `rewrite ^/moderator/(.*)$ /v1/$1`).
+	handle_path /moderator/* {
+		rewrite * /v1{uri}
+		reverse_proxy {$MODERATOR_UPSTREAM:http://scorer-worker:4001}
+	}
+
+	# 5. media → MinIO. handle_path strips /media; re-prepend the bucket so /media/<key> → /<bucket>/<key>
+	#    (== nginx `rewrite ^/media/(.*)$ /${S3_BUCKET}/$1`). Only used when STORAGE_PROVIDER=s3.
+	handle_path /media/* {
+		rewrite * /{$S3_BUCKET:agora}{uri}
+		reverse_proxy {$MINIO_UPSTREAM:http://minio:9000}
+	}
+
+	# 6. the rest of the API surface → agora. (secure-chat is already consumed by handle #1.)
+	handle /v7/* {
+		reverse_proxy {$API_UPSTREAM:http://agora:4000}
+	}
+
+	# 7. Immutable hashed Vite assets — cache hard.
+	handle /assets/* {
+		header Cache-Control "public, immutable, max-age=31536000"
+		root * /srv
+		file_server
+	}
+
+	# 8. Catch-all: SPA static + client-side-routing fallback. Bare `handle` = lowest precedence.
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+}

@@ -1,15 +1,17 @@
 # Agora compose. Every service belongs to a PROFILE, so a bare `docker compose up` starts NOTHING —
 # pick what you want to run:
-#   --profile full       the API stack: agora + admin + scorer (×3) + neo4j + cron
+#   --profile full       the API stack: agora + proxy (Caddy front door) + scorer (×3) + neo4j + cron
 #   --profile secure     secure-chat ONLY (its own E2E delivery process) + redis  — the standalone deploy
 #   --profile selfhost   local Postgres (db) + MinIO instead of Supabase; combine with `full`
 #   --profile scale      redis as the cross-replica rate-limit store; combine with `full`
-#   --profile edge       Caddy TLS front door; combine with `full`
 # Profiles are additive (OR), so you compose them. Common invocations (from the repo root):
 #   docker compose --profile full up --build                       # the whole API stack (Supabase-backed)
 #   docker compose --profile full --profile selfhost up --build    # fully self-contained, no Supabase
 #   docker compose --profile secure up --build                     # secure-chat solo (+ redis), nothing else
 #   docker compose run --rm agora node scripts/migrate.mjs         # migrations (naming agora enables `full`)
+# The `proxy` service (Caddy) is the single public front door — it terminates TLS, serves the admin SPA,
+# AND routes /v7 + /socket.io + secure-chat + /moderator + /media to the backends (ONE hop →
+# RATE_LIMIT_TRUSTED_HOPS=1). Plain HTTP / behind an external TLS terminator: set SERVER_NAME=:80.
 # See docs/SELF-HOSTING.md and apps/secure-chat/README.md.
 services:
   agora:
@@ -83,8 +85,8 @@ services:
 
   # MinIO — S3-compatible object storage for self-hosting (STORAGE_PROVIDER=s3). The api creates the
   # bucket + public-read policy in-code on first upload (lib/storage/s3.ts), so no `mc` bootstrap sidecar
-  # is needed. Public objects are served to browsers through the admin nginx /media route (never :9000
-  # directly). Console on :9001. Credentials = MINIO_ROOT_USER/PASSWORD, also used as the api's S3_* creds.
+  # is needed. Public objects are served to browsers through the Caddy front door's /media route (never
+  # :9000 directly). Console on :9001. Credentials = MINIO_ROOT_USER/PASSWORD, also the api's S3_* creds.
   minio:
     image: minio/minio:latest
     profiles: ["selfhost"]
@@ -110,7 +112,7 @@ services:
   # The blind MLS (E2E) Delivery Service — an INDEPENDENT process split from the api (load-balancing /
   # solo deploys). Shares the same Postgres (DATABASE_URL) + Redis as the api. Serves
   # /v7/:projectId/secure-chat/* (REST) + the /secure realtime on engine.io path /secure-socket/ (the
-  # admin nginx routes both here). Redis is a HARD dependency (the fail-closed suspension index): set
+  # Caddy front door routes both here). Redis is a HARD dependency (the fail-closed suspension index): set
   # REDIS_URL=redis://redis:6379 in .env. The `secure` profile starts the secure-chat PROCESS + redis
   # (no API stack). Like `agora`, it does NOT bundle a database — it persists the secure_* tables to
   # whatever DATABASE_URL points at, which in v1 is the SHARED main Postgres (or Supabase); that DB must
@@ -261,59 +263,45 @@ services:
     init: true
     restart: unless-stopped
 
-  # Admin frontend (Vite SPA on nginx). Serves the static build and reverse-proxies /v7 + /socket.io
-  # to the api over the internal network (same origin → no CORS, no build-time API URL).
-  admin:
+  # Single public front door (Caddy) — TLS termination + the admin SPA static build + ALL service
+  # routing, replacing the old admin nginx. Terminates HTTPS with AUTOMATIC Let's Encrypt certs
+  # (auto-renewed; internal CA for localhost), adds HSTS + security headers + a request-body cap + an
+  # authoritative X-Forwarded-For, serves the SPA from the baked-in build, and reverse-proxies
+  # /v7 + /socket.io → agora, /v7/:projectId/secure-chat/* + /secure-socket/ → secure-chat,
+  # /moderator → scorer-worker, /media → minio (routing lives in deploy/proxy/agora-routes.caddy).
+  # It IS how the SPA is served, so it's part of `--profile full` — there is ONE proxy hop now, so set
+  # RATE_LIMIT_TRUSTED_HOPS=1 in .env. For a real domain set SERVER_NAME (DNS → this host so ACME can
+  # validate on :80) and firewall the now-internal 4000/4001 host ports. Plain HTTP / behind an external
+  # TLS terminator: set SERVER_NAME=:80 (Caddy serves HTTP, skips ACME).
+  proxy:
     profiles: ["full"]
     build:
       context: .
-      dockerfile: apps/admin/Dockerfile
-    image: agora-admin
-    environment:
-      API_UPSTREAM: http://agora:4000
-      # The scorer-worker serves the same /v1/:projectId/moderation/* surface the admin nginx proxies,
-      # so only this upstream value changes (env name kept as MODERATOR_UPSTREAM for the foundation).
-      MODERATOR_UPSTREAM: http://scorer-worker:4001
-      # secure-chat upstream: the admin nginx routes /v7/:projectId/secure-chat/* + the /secure-socket/
-      # realtime path here. Resolved lazily (variable proxy_pass + resolver), so when secure-chat isn't
-      # deployed (no `secure` profile) those routes simply 502 instead of crashing nginx at boot.
-      SECURE_CHAT_UPSTREAM: http://secure-chat:4002
-      # Self-hosted object storage: the admin nginx serves public media at /media → MinIO (only used
-      # when STORAGE_PROVIDER=s3; a Supabase deploy never hits this route). Lazy-resolved, so the admin
-      # starts fine without the `selfhost` profile up. S3_BUCKET names the bucket the key lives under.
-      MINIO_UPSTREAM: http://minio:9000
-      S3_BUCKET: ${S3_BUCKET:-agora}
-    ports:
-      - "${ADMIN_PORT:-8080}:80"
-    depends_on:
-      - agora
-      - scorer-worker
-    init: true
-    restart: unless-stopped
-
-  # OPTIONAL TLS edge proxy (Caddy) — the single public front door. Terminates HTTPS with AUTOMATIC
-  # Let's Encrypt certs (auto-renewed; internal CA for localhost), adds HSTS + security headers + a
-  # request-body cap + an authoritative X-Forwarded-For, and reverse-proxies to the admin nginx. Gated
-  # behind the `edge` profile; it fronts the API stack, so run it WITH `full`:
-  #   docker compose --profile full --profile edge up
-  # When using it: point your domain's DNS at this host (so ACME can validate on :80), set SERVER_NAME +
-  # RATE_LIMIT_TRUSTED_HOPS=2 in .env, and firewall the now-internal 4000/4001/8080 host ports.
-  proxy:
-    image: caddy:2-alpine
-    profiles: ["edge"]
+      dockerfile: deploy/proxy/Dockerfile
+    image: agora-proxy
     environment:
       SERVER_NAME: ${SERVER_NAME:-localhost}
-      ADMIN_UPSTREAM: http://admin:80
       MAX_BODY_SIZE: ${MAX_BODY_SIZE:-25MB}
       # ACME expiry-notice email — only consumed if you uncomment `email {$ACME_EMAIL}` in the auto-TLS
       # Caddyfile's global block. Left empty by default (an empty `email` arg would make Caddy error,
       # which is why the Caddyfile line stays commented until you opt in). Unused by the onion variant.
       ACME_EMAIL: ${ACME_EMAIL:-}
+      # Per-service upstreams (same env names the old admin nginx used). Caddy resolves these LAZILY
+      # (per-request DNS), so a service that isn't deployed (secure-chat without `--profile secure`,
+      # minio without `--profile selfhost`) simply 502s on its routes instead of crashing the proxy.
+      API_UPSTREAM: http://agora:4000
+      MODERATOR_UPSTREAM: http://scorer-worker:4001
+      SECURE_CHAT_UPSTREAM: http://secure-chat:4002
+      MINIO_UPSTREAM: http://minio:9000
+      S3_BUCKET: ${S3_BUCKET:-agora}
     volumes:
       # The active Caddyfile. Default = automatic ACME (deploy/proxy/Caddyfile). For a `.onion` / static
       # cert, set CADDYFILE=./deploy/proxy/Caddyfile.onion (ACME can't issue for .onion — that variant
       # serves a cert you drop in the certs dir below).
       - ${CADDYFILE:-./deploy/proxy/Caddyfile}:/etc/caddy/Caddyfile:ro
+      # The shared routing snippet, imported by both Caddyfile variants. REQUIRED — `import` resolves
+      # relative to /etc/caddy, so the snippet must land here or the front door fails to load.
+      - ./deploy/proxy/agora-routes.caddy:/etc/caddy/agora-routes.caddy:ro
       # Operator-supplied TLS certs for the onion/static-cert variant, mounted read-only at /certs
       # (site.pem + site.key). Harmless empty mount for the default auto-ACME file, which never reads it.
       - ${CADDY_CERTS_DIR:-./deploy/proxy/certs}:/certs:ro
@@ -322,11 +310,14 @@ services:
     ports:
       - "${HTTP_PORT:-80}:80"
       - "${HTTPS_PORT:-443}:443"
-    # admin lives in the `full` profile; required:false keeps the project valid when edge is requested
-    # without it (the edge is meant to run WITH the stack: `--profile full --profile edge`). Caddy
-    # resolves the admin upstream lazily, so it just 502s until admin is up.
+    # Upstreams are in the same `full` profile; required:false keeps the project valid when an upstream's
+    # own profile (secure / selfhost) isn't requested. Caddy resolves upstreams lazily, so it just 502s
+    # the affected routes until they're up.
     depends_on:
-      admin:
+      agora:
+        condition: service_started
+        required: false
+      scorer-worker:
         condition: service_started
         required: false
     init: true

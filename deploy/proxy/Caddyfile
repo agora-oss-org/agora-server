@@ -1,42 +1,27 @@
-# Bundled TLS-terminating edge proxy for Agora (docker-compose `proxy` service, `--profile edge`).
-# Caddy provisions + auto-renews Let's Encrypt certs for a real SERVER_NAME (and uses its own internal CA
-# for `localhost`/IPs, so local dev gets HTTPS with no setup). It's the single public front door: TLS,
-# security headers, a request-body cap, and an authoritative X-Forwarded-For, reverse-proxying to the
-# admin nginx (which serves the SPA + routes /v7, /socket.io, /moderator). Caddy substitutes {$ENV:default}
-# placeholders itself — no envsubst.
+# Single public front door for Agora (docker-compose `proxy` service, part of `--profile full`).
+# Caddy provisions + auto-renews Let's Encrypt certs for a real SERVER_NAME (internal CA for
+# `localhost`/IPs, so local dev gets HTTPS with no setup), terminates TLS, serves the admin SPA, AND
+# routes every service itself — there is no longer a separate admin nginx. The full routing + the SPA
+# static server live in the shared (agora-site) snippet (deploy/proxy/agora-routes.caddy). Caddy
+# substitutes {$ENV:default} placeholders itself — no envsubst.
 #
-# Behind this edge, set RATE_LIMIT_TRUSTED_HOPS=2 in .env (caddy + admin are the two trusted proxies).
+# ONE proxy hop now (just Caddy), so set RATE_LIMIT_TRUSTED_HOPS=1 in .env.
+#
+# Plain-HTTP / behind-an-external-TLS-terminator: set SERVER_NAME=:80 so Caddy serves HTTP only and
+# skips ACME (replaces the old bare-nginx-on-8080 mode).
 {
 	# ACME account email for Let's Encrypt expiry notices (optional; certs issue fine without it).
 	# Uncomment + set, or add `email you@example.com` here:
 	# email {$ACME_EMAIL}
 }
 
-# Site address drives certificate issuance: a real domain → public Let's Encrypt; localhost/IP → Caddy's
-# internal CA (trust it with `caddy trust`, or use `curl -k`, for local testing).
+# Loads the (agora-site) snippet so the site block below can `import agora-site`. NOTE: this file MUST
+# be mounted into the container alongside the Caddyfile (see docker-compose.yml) — `import` resolves
+# relative to /etc/caddy, so the snippet lands at /etc/caddy/agora-routes.caddy.
+import agora-routes.caddy
+
+# Site address drives certificate issuance: a real domain → public Let's Encrypt; localhost/IP →
+# Caddy's internal CA (trust it with `caddy trust`, or use `curl -k`); `:80` → plain HTTP, no ACME.
 {$SERVER_NAME:localhost} {
-	encode gzip
-
-	# Cap request bodies (uploads / JSON) at the edge — bounds storage abuse + sharp OOM before the app.
-	request_body {
-		max_size {$MAX_BODY_SIZE:25MB}
-	}
-
-	# Security headers (HSTS only meaningfully applies once served over real HTTPS).
-	header {
-		Strict-Transport-Security "max-age=63072000; includeSubDomains"
-		X-Content-Type-Options "nosniff"
-		Referrer-Policy "strict-origin-when-cross-origin"
-		X-Frame-Options "SAMEORIGIN"
-		-Server
-		# A strict CSP is SPA-specific — enable + tune for your build, e.g.:
-		# Content-Security-Policy "default-src 'self'; img-src 'self' data: https:; connect-src 'self' https: wss:"
-	}
-
-	# Everything goes to the admin nginx (SPA + /v7 + /socket.io + /moderator). WebSocket upgrades are
-	# handled automatically. Caddy sets X-Forwarded-For to the REAL client by default and — with no
-	# `trusted_proxies` configured — ignores any client-supplied X-Forwarded-For, so it can't be spoofed
-	# to poison rate limiting downstream. The admin then appends its hop; the app reads
-	# RATE_LIMIT_TRUSTED_HOPS=2 from the right.
-	reverse_proxy {$ADMIN_UPSTREAM:http://admin:80}
+	import agora-site
 }

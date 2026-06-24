@@ -20,6 +20,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `apps/api/perf/README.md`. Requires k6 (`brew install k6`); no other new deps.
 
 ### Changed
+- **Single Caddy front door — collapsed the two-layer proxy.** The admin nginx no longer exists as its
+  own service. The `full` profile's **`proxy`** (Caddy) is now the single public entrypoint: it serves
+  the admin SPA static build (baked into a new [`deploy/proxy/Dockerfile`](deploy/proxy/Dockerfile)) AND
+  reverse-proxies every service itself — `/v7` + `/socket.io` → agora, `/v7/:projectId/secure-chat/*` +
+  `/secure-socket/` → secure-chat, `/moderator` → scorer-worker, `/media` → minio. The routing + SPA
+  config lives in a shared [`deploy/proxy/agora-routes.caddy`](deploy/proxy/agora-routes.caddy) snippet
+  imported by both `Caddyfile` (auto-ACME) and `Caddyfile.onion` (static cert), so there's zero routing
+  duplication. There is now **one proxy hop instead of two** → set **`RATE_LIMIT_TRUSTED_HOPS=1`** (was
+  `2` behind the old caddy-edge + admin chain). For plain HTTP behind your own TLS terminator, set
+  `SERVER_NAME=:80` (Caddy serves HTTP, skips ACME) — this replaces the old bare-admin-nginx-on-`:8080`
+  mode. Docs updated (README, SELF-HOSTING, SECURITY, SCORER, SECURE_CHAT, deploy/proxy, CLAUDE.md, both
+  app READMEs).
 - **Compose: every service is now profile-gated; added a `full` profile for the API stack.** A bare
   `docker compose up` no longer starts anything — `agora`, `admin`, the three `scorer-*`, `neo4j`, and
   `cron` moved behind a new **`full`** profile (`docker compose --profile full up`). This makes the
@@ -28,10 +40,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   it persists `secure_*` to whatever `DATABASE_URL` points at (v1 shares the main Postgres / Supabase;
   add `--profile selfhost` for a local `db`).
   Combine profiles for everything else: `--profile full --profile selfhost` (no-Supabase stack),
-  `--profile full --profile edge` (TLS front door), `--profile full --profile scale` (Redis rate-limit
-  store). The `proxy`→`admin` dependency is now `required: false` so requesting `edge` without `full`
-  stays a valid project. Migration/seed one-offs (`docker compose run --rm agora …`) are unchanged
-  (naming `agora` auto-enables `full`). Docs updated (README, SELF-HOSTING, deploy/proxy, CLAUDE.md).
+  `--profile full --profile scale` (Redis rate-limit store). Migration/seed one-offs
+  (`docker compose run --rm agora …`) are unchanged (naming `agora` auto-enables `full`). Docs updated
+  (README, SELF-HOSTING, deploy/proxy, CLAUDE.md).
+
+### Removed
+- **The `admin` nginx service, the `edge` profile, and `ADMIN_UPSTREAM`/`ADMIN_PORT`.** Folded into the
+  single Caddy front door (see Changed): `apps/admin/Dockerfile` + `apps/admin/nginx.conf.template` are
+  deleted (the admin SPA is built by `deploy/proxy/Dockerfile` now), the optional `edge` profile is gone
+  (the front door is part of `full`), and the `ADMIN_UPSTREAM`/`ADMIN_PORT` env vars are no longer used.
 
 ### Fixed
 - **`scorer-worker` (and the API's `/social/*`) couldn't reach Neo4j under Docker** — `.env`'s
