@@ -125,6 +125,71 @@ script share one implementation.
 
 ---
 
+## 5. Push a new conversation to its members in realtime (`conversation:created`)
+
+**Tag:** 🔴 Hard divergence · **Priority:** Medium · **Effort:** Medium · **Depends on:** §2 (per-user room)
+
+**Problem.** When user A starts a chat with user B — `POST /chat/conversations/direct` (DM),
+`POST /chat/conversations` (group), or `POST /chat/conversations/:id/members` (add to existing) — B
+gets **no realtime signal**. The first two routes emit nothing at all; the member-add route emits
+`member:joined` via `emitToConversation(...)`, i.e. only to the *conversation room*, which B has not
+joined (rooms are joined on demand via `join:conversation` when a thread is opened). There is no
+per-user channel in the chat realtime layer, so B's conversation list stays stale until a manual
+refresh / remount. A's new chat simply doesn't appear on B's screen.
+
+This is the **plaintext-chat analog of a fix we already shipped for secure chat**: the secure DS
+emits `secure:welcome` to the recipient's (auto-joined) device room on conversation create, and the
+secure SDK hook (`useSecureConversations`) listens for it and refreshes the list — so a new secure DM
+appears on the peer's screen instantly. Plaintext chat has no equivalent server emit, so the same
+client-side listener has nothing to hear; closing the gap **requires a server change**.
+
+**Demo workaround.** None today (the symptom that prompted this). The only client-side option is to
+poll `refresh()` on an interval in `agora-demo/src/Chat.tsx` (the pattern `Connections.tsx` /
+`Follows.tsx` already use) — fidelity-preserving but not realtime, and it adds list-refetch load.
+
+**Proposed change.** Reusing §2's per-user room (`user:<userId>`) + `emitToUser(userId, event, …)`:
+add a net-new server→client event `conversation:created` and emit it to **each member added at
+creation time** (excluding the actor, who already has the conversation from the REST response):
+
+- `POST /chat/conversations/direct` — emit to the other participant. **Only on genuine create** —
+  the route is get-or-create and returns early when the DM already exists; don't re-emit then.
+- `POST /chat/conversations` — emit to every `memberIds` entry except the creator.
+- `POST /chat/conversations/:id/members` — emit to the newly added `body.userId` (this *replaces*
+  the effective gap, since today's `member:joined` never reaches the new member).
+
+**Payload (recommended): the shaped conversation, per recipient** — exactly the shape a list item
+has, so the client upserts it directly with no follow-up GET. The server already has everything: for
+a brand-new conversation the per-recipient fields are trivial — `unreadCount: 0`, `lastMessage: null`,
+`currentMember` = the member row just inserted for that user. i.e. emit
+`shapeConversation(convo, { unreadCount: 0, lastMessage: null, currentMember: <their member row>, memberCount })`.
+Because the emit is per-user-room, the recipient is known, so `currentMember` is correct per target.
+
+> **Lightweight alternative:** emit `{ conversationId }` and let the client call its list `refresh()`
+> (this is exactly what the secure-chat fix does with `secure:welcome`). Simpler server, but one
+> extra `GET /chat/conversations` per recipient and a brief stale window. Prefer the rich payload to
+> avoid the refetch and the prepend race; fall back to this if shaping-per-recipient is unwanted.
+
+**Client/SDK side (our follow-up, not the server's work).** In the forked `@agora-sdk`,
+`chat-context.tsx` already owns the socket and maintains the conversation-list slice (it handles
+`message:created`, `conversation:updated`, …). Add one handler: `socket.on("conversation:created", …)`
+→ `dispatch(upsertConversationPreview(...))` (rich payload) or trigger a list refresh (lightweight).
+Then `agora-demo/src/Chat.tsx` needs **zero changes** — `useConversations` reads the slice. Also add
+the event to `@agora-sdk` `types/socket.ts`. (Mirrors where the secure fix lived:
+`useSecureConversations`, not the demo.)
+
+**Files.** `server/src/realtime/socket.ts` (the `conversation:created` event type; per-user room +
+`emitToUser` come from §2), `server/src/routes/chat.ts` (the three emit sites above),
+`docs/MANIFEST.md` / `docs/MODELS.md`; **and** the forked SDK (`@agora-sdk` `types/socket.ts` +
+`chat-context.tsx` listener) → shares §2's `SYNCING.md` divergence + rebuild.
+
+**Contract note.** Net-new socket event the stock Replyke SDK doesn't have → hard divergence, same
+class as §2. **Do this together with §2**: both ride the identical per-user-room primitive and the
+same SDK fork touch-point, so landing them as one unit amortizes the divergence cost (one
+`SYNCING.md` entry, one rebuild) instead of paying it twice. If §2 is deferred, this item carries the
+per-user-room introduction itself.
+
+---
+
 ## Considered, but not recommended
 
 - **Accept a username in the connection-request endpoint.** The demo resolves `@username → id`
