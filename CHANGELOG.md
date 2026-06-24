@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`docs/CHEAT-SHEET.md` — deployment recipes ↔ env vars ↔ where to get the values.** A one-page operator
+  reference mapping each compose recipe (the two-axis profile model) to the env it requires, marking
+  required vs optional and compose-injected vars, and naming the source for every value (Supabase
+  dashboard paths, `openssl rand`, Voyage/Anthropic consoles, etc.) — plus minimal `.env` templates per
+  recipe. Linked from `README.md` and `.env.example`.
 - **Admin: app version shown in the header.** The Topbar renders the `@agora/admin` `package.json`
   version (e.g. `v0.12.1`) next to the project id. The value is injected at build time as the
   `__APP_VERSION__` global via Vite `define` (no runtime fetch). Bump `apps/admin/package.json`'s

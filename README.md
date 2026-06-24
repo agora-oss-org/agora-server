@@ -320,6 +320,9 @@ Full detail (including the OAuth callback setup) lives in
 
 ## Docker
 
+> 📋 **[`docs/CHEAT-SHEET.md`](docs/CHEAT-SHEET.md)** maps every deployment recipe to the env vars it needs and
+> where to obtain each value — start there if you just want to stand a stack up.
+
 The repo's `docker-compose.yml` builds and wires the whole stack with a **two-axis profile model**, so a
 bare `docker compose up` starts nothing:
 

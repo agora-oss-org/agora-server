@@ -1,0 +1,182 @@
+# Agora Deployment Cheat-Sheet
+
+A one-page map of **what to run** (compose profiles) and **what to set** (env vars) for each
+deployment shape — and **where to get** each value. The full, commented env reference is
+[`.env.example`](../.env.example); the architecture lives in [`CLAUDE.md`](../CLAUDE.md) and
+[`docs/SELF-HOSTING.md`](SELF-HOSTING.md).
+
+> **Golden rule:** in `.env`, an **empty string == unset** (optional features stay off when blank).
+> Only **`DATABASE_URL`** and **`ACCESS_TOKEN_SECRET`** are hard requirements; everything else gates a
+> specific feature.
+
+---
+
+## 1. Pick a recipe (compose)
+
+The compose model is **two axes**: choose **exactly one data plane** (Axis 1, brings up the API), then
+add **optional services** (Axis 2). A bare `docker compose up` starts nothing.
+
+| Goal | Command |
+|---|---|
+| Just the API, **Supabase**-backed | `docker compose --profile supabase up` |
+| Just the API, **self-contained** (local Postgres + MinIO) | `docker compose --profile selfhost up` |
+| **Everything**, Supabase-backed | `docker compose --profile full --profile supabase up` |
+| **Everything**, self-contained | `docker compose --profile full --profile selfhost up` |
+| API + moderation only | `docker compose --profile scorer --profile supabase up` |
+| Standalone / split **secure-chat** box | `docker compose --profile secure-chat up` *(remote `DATABASE_URL`)* |
+| Apply migrations (any time) | `docker compose run --rm agora node scripts/migrate.mjs` |
+
+### Profiles → services
+
+| Profile | Axis | Starts | Pairs with |
+|---|---|---|---|
+| `supabase` | data plane + API | `agora` + `proxy` (Caddy) + `cron` | — *(external Supabase)* |
+| `selfhost` | data plane + API | `agora` + `proxy` + `cron` + `db` + `minio` | — |
+| `scorer` | add-on | `scorer-toxicity` + `scorer-relationship` + `scorer-worker` + `neo4j` | a data plane |
+| `secure-chat` | add-on | `secure-chat` + `redis` | a data plane *(or remote DB)* |
+| `scale` | add-on | `redis` | a data plane |
+| `full` | add-on shorthand | = `scorer` + `secure-chat` | a data plane |
+
+---
+
+## 2. Env by configuration
+
+Set these in the root **`.env`** (single source; symlinked to `apps/api/.env` and shared with
+`services/scorer`). ✅ = required for that configuration · ◻️ = optional. Values that compose **injects
+for you** in the Docker path are marked *(compose-set)* — you don't put them in `.env`.
+
+### 2.0 — Always required (every deployment)
+
+| Var | | Value & where to get it |
+|---|---|---|
+| `DATABASE_URL` | ✅ | Postgres connection string. **Supabase:** Dashboard → *Project Settings → Database → Connection string → **Transaction pooler** (port `6543`)*. **Self-host:** `postgres://postgres:<POSTGRES_PASSWORD>@db:5432/postgres`. |
+| `ACCESS_TOKEN_SECRET` | ✅ | HS256 signing secret, **≥ 32 chars**. Generate: `openssl rand -base64 48`. Must be **identical** across `agora` + `scorer` + `secure-chat`. |
+
+### 2.1 — Data plane A: **Supabase** (`--profile supabase`)
+
+For Supabase-backed **Auth** (passwords / confirmation emails) and **Storage** uploads. The DB-backed
+server boots without these, but identity + uploads stay off until set.
+
+| Var | | Value & where to get it |
+|---|---|---|
+| `SUPABASE_URL` | ✅ | Dashboard → *Project Settings → API → **Project URL*** (`https://<ref>.supabase.co`). |
+| `SUPABASE_ANON_KEY` | ✅ | Dashboard → *Project Settings → API → Project API keys → **anon / public***. |
+| `SUPABASE_SERVICE_ROLE_KEY` | ✅ | Dashboard → *Project Settings → API → Project API keys → **service_role*** (secret — server-only). |
+| `SUPABASE_JWT_SECRET` | ◻️ | Dashboard → *Project Settings → API → JWT Settings → **JWT Secret*** (only if verifying Supabase-issued JWTs). |
+| `DEFAULT_AUTH_PROVIDER` | ◻️ | `supabase` (default). Stamps new projects' identity backend. |
+
+### 2.2 — Data plane B: **Self-host** (`--profile selfhost`)
+
+Runs the same API with local Postgres + MinIO, no Supabase. See [`docs/SELF-HOSTING.md`](SELF-HOSTING.md).
+
+| Var | | Value & where to get it |
+|---|---|---|
+| `POSTGRES_PASSWORD` | ✅ | **You choose.** Then `DATABASE_URL=postgres://postgres:<this>@db:5432/postgres`. |
+| `MINIO_ROOT_USER` | ✅ | **You choose** (e.g. `agora`). Also used as `S3_ACCESS_KEY_ID`. |
+| `MINIO_ROOT_PASSWORD` | ✅ | **You choose.** Also used as `S3_SECRET_ACCESS_KEY`. |
+| `STORAGE_PROVIDER` | ✅ | Set to `s3` (selects MinIO/S3 instead of Supabase Storage). |
+| `S3_ENDPOINT` | ✅ | `http://minio:9000` (internal compose DNS). |
+| `S3_PUBLIC_URL` | ✅ | Browser-reachable base for public objects — the Caddy `/media` mount, e.g. `https://your-host/media`. |
+| `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` | ✅ | = `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD`. |
+| `S3_BUCKET` | ◻️ | `agora` (default; auto-created on first upload). |
+| `DEFAULT_AUTH_PROVIDER` | ✅ | Set to `native` (in-API passwords, no Supabase). |
+
+> Bootstrap the first user on a virgin self-host DB:
+> `docker compose run --rm -it agora node scripts/seeds/seed-native-admin.mjs`.
+
+### 2.3 — Front door (Caddy `proxy`) — comes up with the API
+
+| Var | | Value & where to get it |
+|---|---|---|
+| `SERVER_NAME` | ◻️ | Your **domain** (e.g. `agora.example.com`) → auto-HTTPS via Let's Encrypt (DNS must point here; `:80`+`:443` reachable). · `:80` → **plain HTTP**, no TLS/ACME (behind your own terminator/CDN, or local dev). · *unset* → `localhost` with Caddy's internal CA. |
+| `RATE_LIMIT_TRUSTED_HOPS` | ◻️ | `1` (default) — one hop = the bundled Caddy. Use `2` only if a CDN/LB sits **in front of** Caddy. |
+| `ACME_EMAIL` | ◻️ | Let's Encrypt expiry notices. Certs issue fine without it (also uncomment `email` in the Caddyfile to use). |
+| `CADDYFILE` / `CADDY_CERTS_DIR` | ◻️ | **Onion / static-cert mode only:** `./deploy/proxy/Caddyfile.onion` + a dir holding `site.pem`/`site.key`. See [`deploy/proxy/README.md`](../deploy/proxy/README.md). |
+
+### 2.4 — Add-on: **scorer** (`--profile scorer`) — moderation + social graph
+
+| Var | | Value & where to get it |
+|---|---|---|
+| `MODERATION_SERVICE_SECRET` | ✅ | Shared secret gating `POST /internal/moderation/apply` (scorer → API write-back). `openssl rand -base64 32`; **same value** in API + scorer. |
+| `ANTHROPIC_API_KEY` | ◻️ | Borderline-content adjudication (Claude Haiku). [console.anthropic.com](https://console.anthropic.com) → *API Keys*. Unset → escalation off; borderline items go to the human AI-flag queue. |
+| `NEO4J_AUTH` | ◻️ | `user/password` for the `neo4j` container (social graph). **You choose** (e.g. `neo4j/<strong-pw>`); same string on both the DB and the clients. |
+| `NEO4J_URI` | *(compose-set)* | `bolt://neo4j:7687` injected via `NEO4J_URI_DOCKER`. Only set for an **external** Neo4j. Unset entirely → `/social/*` returns 503, edge writes no-op. |
+| `API_BASE_URL`, `SCORER_*_URL` | *(compose-set)* | `http://agora:4000` etc. — wired by compose. Override only off-compose. |
+| `MODERATION_BLOCK_AUTO_ACTION_THRESHOLD` | ◻️ | Auto-remove cutoff `0..1` (default `0.85`). Per-project overrides live in admin *Settings → Moderator*. |
+
+### 2.5 — Add-on: **secure-chat** (`--profile secure-chat`, also rides `full`)
+
+| Var | | Value & where to get it |
+|---|---|---|
+| `REDIS_URL` | ✅ | **Hard dependency** (fail-closed suspension index). In compose: `redis://redis:6379` (or `redis://<acl-user>:<pw>@redis:6379` with a least-privilege ACL — see [`apps/api/README.md`](../apps/api/README.md)). |
+| `DATABASE_URL` | ✅ | Persists `secure_*` tables. v1 **shares the API's Postgres**; a split box points this at the **remote** DB. The DB must already be migrated. |
+
+### 2.6 — Add-on: **scale** (`--profile scale`) — multi-replica rate limiting
+
+| Var | | Value & where to get it |
+|---|---|---|
+| `REDIS_URL` | ✅ | Shared rate-limit store so the cap holds across **multiple `agora` replicas** (a single replica needs none — it limits in-process). `redis://redis:6379`. |
+| `RATE_LIMIT_MAX` / `RATE_LIMIT_AUTH_MAX` | ◻️ | Requests per window (rate limiting is **off** until `RATE_LIMIT_MAX` is set). `RATE_LIMIT_WINDOW_SECONDS` defaults to `60`. |
+
+### 2.7 — Optional features (any deployment)
+
+| Feature | Var(s) | | Where to get it |
+|---|---|---|---|
+| Semantic search (embeddings) | `VOYAGE_API_KEY` | ◻️ | [dashboard.voyageai.com](https://dashboard.voyageai.com) → *API Keys*. Unset → search falls back to ILIKE. |
+| RAG `/search/ask` | `ANTHROPIC_API_KEY` | ◻️ | [console.anthropic.com](https://console.anthropic.com). |
+| Operators (god-view) | `OPERATOR_EMAILS` / `OPERATOR_USER_IDS` | ◻️ | **You choose** — your admin email(s) / profile UUID(s), comma-separated. Unset → no operators. |
+| Cron jobs | `CRON_SECRET` | ◻️ | Gates `POST /internal/cron/*` (503 until set). `openssl rand -base64 32`. |
+| OAuth callbacks behind a proxy | `PUBLIC_BASE_URL` | ◻️ | Your public origin, e.g. `https://api.example.com` — used to build absolute OAuth callback URLs. |
+| Product analytics | `AGORA_UMAMI_URL` + `AGORA_UMAMI_SERVER_ID` / `AGORA_UMAMI_ADMIN_ID` | ◻️ | Your Umami instance + website UUIDs (Umami → *Settings → Websites*). |
+| Tracing/metrics | `OTEL_*_ENDPOINT` | ◻️ | Your OpenTelemetry collector. `OTEL_SDK_DISABLED=true` (default) keeps it off. |
+
+### 2.8 — Admin SPA (build-time, in `apps/admin/.env` — **not** the root `.env`)
+
+Only `VITE_`-prefixed vars reach the browser; they're baked at build. See
+[`apps/admin/.env.example`](../apps/admin/.env.example).
+
+| Var | | Value |
+|---|---|---|
+| `VITE_API_BASE_URL` | ◻️ | API base. Default `/v7` (same-origin via the Caddy front door). Override only for a cross-origin API. |
+| `VITE_PROJECT_ID` | ◻️ | The project this admin manages. Bake in for single-project deploys; if unset the login form asks. |
+| `VITE_MODERATOR_BASE_URL` | ◻️ | Scorer base. Default `/moderator` (same-origin). |
+| `VITE_SETTINGS_READ_ONLY` | ◻️ | `true` → Settings page view-only (UI guard, not a security boundary). |
+
+---
+
+## 3. Minimal `.env` per recipe
+
+**A. Just the API, Supabase-backed** (`--profile supabase`)
+```ini
+DATABASE_URL=postgresql://postgres.<ref>:<pw>@aws-0-<region>.pooler.supabase.com:6543/postgres
+ACCESS_TOKEN_SECRET=<openssl rand -base64 48>
+SUPABASE_URL=https://<ref>.supabase.co
+SUPABASE_ANON_KEY=<anon key>
+SUPABASE_SERVICE_ROLE_KEY=<service_role key>
+SERVER_NAME=your.domain        # or :80 for plain HTTP
+```
+
+**B. Fully self-contained** (`--profile selfhost`)
+```ini
+POSTGRES_PASSWORD=<choose>
+DATABASE_URL=postgres://postgres:<same pw>@db:5432/postgres
+ACCESS_TOKEN_SECRET=<openssl rand -base64 48>
+STORAGE_PROVIDER=s3
+S3_ENDPOINT=http://minio:9000
+S3_PUBLIC_URL=https://your-host/media
+MINIO_ROOT_USER=agora
+MINIO_ROOT_PASSWORD=<choose>
+S3_ACCESS_KEY_ID=agora
+S3_SECRET_ACCESS_KEY=<same as MINIO_ROOT_PASSWORD>
+DEFAULT_AUTH_PROVIDER=native
+SERVER_NAME=your.domain        # or :80
+```
+
+**C. Everything** (`--profile full --profile <supabase|selfhost>`) — add to A or B:
+```ini
+MODERATION_SERVICE_SECRET=<openssl rand -base64 32>   # scorer write-back
+NEO4J_AUTH=neo4j/<choose>                             # social graph
+ANTHROPIC_API_KEY=<console.anthropic.com>             # Haiku adjudication (optional)
+REDIS_URL=redis://redis:6379                          # secure-chat hard dep
+VOYAGE_API_KEY=<dashboard.voyageai.com>               # semantic search (optional)
+```
