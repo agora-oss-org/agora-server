@@ -302,9 +302,9 @@ default 60) mounted on `/v7/*`; over-limit → `429 { code:"common/rate-limited"
 **Client IP (spoof-resistant).** The key is the real client IP, read **`RATE_LIMIT_TRUSTED_HOPS` hops
 from the right** of `X-Forwarded-For` — i.e. the entries your trusted proxies actually appended, never
 a client-supplied left-most value. Set it to the number of trusted proxies in front of the app: **1**
-for a single nginx/CDN edge (the default, e.g. the admin `nginx.conf.template` with
-`$proxy_add_x_forwarded_for`); **2** behind the bundled Caddy TLS edge (`docker compose --profile edge`)
-— caddy + admin — or any CDN → nginx chain. Falls back to `X-Real-IP` then `"unknown"`.
+for a single edge — the bundled Caddy front door (`docker compose --profile full`) or one CDN/LB; **2**
+when you chain two proxies (e.g. a CDN in front of the Caddy front door). Falls back to `X-Real-IP` then
+`"unknown"`.
 
 **Multi-replica (optional Redis).** The default store is in-process, so behind **N** replicas the
 ceiling is ~N×limit. Set **`REDIS_URL`** to count in a shared store instead, so the cap holds across

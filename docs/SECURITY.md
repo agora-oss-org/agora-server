@@ -46,11 +46,11 @@ written to be the trust boundary (see [Security model](#-security-model)), but i
 transport security, TLS, and network isolation to your infrastructure**. This checklist is the contract.
 
 ### 1. Terminate TLS — never serve the API over plain HTTP
-> **Bundled shortcut:** `docker compose --profile full --profile edge up` starts a **Caddy** front door that does all of
+> **Bundled shortcut:** `docker compose --profile full up` includes a **Caddy** front door that does all of
 > this automatically — **auto-HTTPS** (Let's Encrypt, auto-renewed), `http → https` redirect, HSTS +
-> security headers, WebSocket upgrade, body-size cap, and an authoritative `X-Forwarded-For`. Set
-> `SERVER_NAME` + `RATE_LIMIT_TRUSTED_HOPS=2`. See `deploy/proxy/README.md`. The rest of this checklist is
-> for bringing your own proxy/CDN instead.
+> security headers, WebSocket upgrade, body-size cap, and an authoritative `X-Forwarded-For` — and it also
+> serves the admin SPA + routes every service (one hop). Set `SERVER_NAME` + `RATE_LIMIT_TRUSTED_HOPS=1`.
+> See `deploy/proxy/README.md`. The rest of this checklist is for bringing your own proxy/CDN instead.
 
 Put a reverse proxy (Caddy, nginx, Traefik) or a CDN (Cloudflare) in front and terminate HTTPS there.
 Agora speaks HTTP behind it; the public hop must be HTTPS.
@@ -66,8 +66,9 @@ Agora speaks HTTP behind it; the public hop must be HTTPS.
 Rate limiting derives the client IP from **`X-Forwarded-For`**, read `RATE_LIMIT_TRUSTED_HOPS` hops from
 the **right** (the entries trusted proxies appended), so a client-supplied left-most value can't poison
 it. Your edge must set `X-Forwarded-For` to the real peer and **not trust an inbound one** — the bundled
-Caddy edge does this by default (set `RATE_LIMIT_TRUSTED_HOPS=2` for caddy + admin; `1` when admin is the
-only proxy). Only expose the API through the proxy — never bind it to a public interface directly.
+Caddy front door does this by default (set `RATE_LIMIT_TRUSTED_HOPS=1` — Caddy is the only proxy; use `2`
+if you chain a CDN/LB in front of it). Only expose the API through the proxy — never bind it to a public
+interface directly.
 
 ### 3. Encrypt the database — at rest and in transit
 - **Managed Supabase Postgres** (the default target) is **encrypted at rest** (AES-256) by the platform,
@@ -120,7 +121,7 @@ bound uploads and JSON bodies.
 - The **self-hosted storage backend** (`STORAGE_PROVIDER=s3` → MinIO/S3, `docs/SELF-HOSTING.md`) carries
   the **identical posture**: the api creates the bucket with an anonymous **public-read** policy and the
   same unguessable-UUID keys — same accepted trade-off, same "don't upload secrets" caveat. Serve it
-  through the admin nginx `/media` mount (never expose MinIO `:9000` publicly), and treat the MinIO root
+  through the Caddy front door `/media` mount (never expose MinIO `:9000` publicly), and treat the MinIO root
   credentials + `POSTGRES_PASSWORD` as real secrets (strong values, `.env` out of VCS).
 - Verify Supabase **automated backups** (or your own `pg_dump` schedule) and test a restore.
 

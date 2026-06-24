@@ -255,8 +255,8 @@ plaintext to score.) The v1 schema is a deliberate, easily-revised starting poin
 
 - **`moderation_analyses`** table + the **`ModerationAnalysis`** envelope — unchanged from the moderator.
 - **`/v1/:projectId/moderation/*`** operator endpoints (config/stats/queue/analysis + analyze/resolve/
-  remove) — the `scorer-worker` serves identical shapes; the admin nginx upstream is just repointed
-  (`MODERATOR_UPSTREAM → http://scorer-worker:4001`).
+  remove) — the `scorer-worker` serves identical shapes; the Caddy front door's moderator upstream is just
+  repointed (`MODERATOR_UPSTREAM → http://scorer-worker:4001`).
 - **`POST {API}/internal/moderation/apply`** write-back (`x-moderation-secret`, `moderatedByType=client`)
   — reused verbatim; **no API change needed**.
 - **Operator JWT** (HS256 over `ACCESS_TOKEN_SECRET`, `operator` claim) — verified the same way (PyJWT).

@@ -112,7 +112,7 @@ pnpm --filter @agora/secure-chat db:clean:secure-chat # dry-run wipe of the 7 se
 # or Supabase, already migrated). Set REDIS_URL=redis://redis:6379 in .env first.
 docker compose --profile secure up --build                       # DATABASE_URL -> shared/Supabase Postgres
 docker compose --profile secure --profile selfhost up --build    # + a LOCAL db (minio tags along, unused)
-# Alongside the API (so the admin nginx routes /secure-chat/* + /secure-socket/ to it):
+# Alongside the API (so the Caddy front door routes /secure-chat/* + /secure-socket/ to it):
 docker compose --profile full --profile secure up --build
 ```
 

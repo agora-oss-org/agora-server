@@ -31,7 +31,7 @@ docker compose --profile full --profile selfhost up -d --build
 
 Point the harness at it: `PERF_BASE_URL` at the API, and `.env`'s `DATABASE_URL` at the same local
 Postgres the stack uses. Hitting the API **directly** (`:4000`) measures the API; hitting it through the
-admin nginx measures the proxy too — pick one and keep it constant.
+Caddy front door measures the proxy too — pick one and keep it constant.
 
 > You can also baseline a host-run API (`pnpm build && pnpm start`) against the selfhost DB. **Avoid
 > `pnpm dev`** for baselines — `tsx watch` adds interpreter overhead that pollutes the numbers. And never

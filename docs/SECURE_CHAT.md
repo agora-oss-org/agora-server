@@ -85,7 +85,7 @@ objects, linearizes group state changes, and enforces *authorization* (who may r
 conversation) — but it runs **no MLS cryptography** and depends on **no crypto library**.
 
 The DS is its own process — **`@agora/secure-chat`** (`apps/secure-chat`) — not part of `@agora/api`.
-A reverse proxy (the admin nginx) routes the secure-chat REST prefix and the realtime path to it; the
+A reverse proxy (the Caddy front door) routes the secure-chat REST prefix and the realtime path to it; the
 main API no longer mounts `/secure-chat` or attaches the secure socket. In v1 the two processes share
 one Supabase Postgres (one migrator) and one Redis; the split is what lets v2 move secure-chat onto
 standalone infrastructure (see [§18](#18-v2-deferrals-seams-only)).
@@ -95,7 +95,7 @@ standalone infrastructure (see [§18](#18-v2-deferrals-seams-only)).
         │  encrypt/decrypt, create/commit groups          ▲
         │  (all crypto here)                               │
         ▼                                                  │
-   base64 over HTTPS  ─▶  reverse proxy (admin nginx)                            (engine.io path
+   base64 over HTTPS  ─▶  reverse proxy (Caddy front door)                       (engine.io path
         │  /v7/:projectId/secure-chat/*                    │                      /secure-socket/)
         ▼  routes the secure prefix + /secure-socket/      │
    @agora/secure-chat  (own Hono + own socket.io)  ──▶  (socket.io namespace /secure)

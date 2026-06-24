@@ -106,17 +106,15 @@ defaults work behind the bundled nginx image (and the dev proxy).
 
 ## Docker
 
-The admin ships a multi-stage `Dockerfile` that builds the Vite SPA and serves it from **nginx**,
-reverse-proxying `/v7` + `/socket.io` to the api container and `/moderator` to the moderator
-container (same origin, no CORS).
+The admin SPA has no Docker image of its own — it's built and served by the **Caddy front door**
+(`proxy` service). [`deploy/proxy/Dockerfile`](../../deploy/proxy/Dockerfile) builds this Vite SPA into
+its `dist`, bakes it into a Caddy image, and Caddy serves it same-origin while reverse-proxying `/v7` +
+`/socket.io` to the api, `/moderator` to the scorer-worker, secure-chat + `/media` to their services (no
+CORS, no build-time API URL). See [`deploy/proxy/README.md`](../../deploy/proxy/README.md).
 
 ```bash
 # build context = repo root (depends on the @agora-server/contract workspace package)
-docker build -f apps/admin/Dockerfile -t agora-admin .
-docker run  --rm \
-  -e API_UPSTREAM=http://<api-host>:4000 \
-  -e MODERATOR_UPSTREAM=http://<moderator-host>:4001 \
-  -p 8080:80 agora-admin
+docker build -f deploy/proxy/Dockerfile -t agora-proxy .
 ```
 
 See the [root README](../../README.md#docker) for the full `docker compose` stack.

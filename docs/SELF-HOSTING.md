@@ -28,7 +28,7 @@ Supabase. (Compose services are all profile-gated, so a bare `docker compose up`
    # Storage — local MinIO
    STORAGE_PROVIDER=s3
    S3_ENDPOINT=http://minio:9000
-   S3_PUBLIC_URL=https://your-host/media     # the admin nginx /media mount (below)
+   S3_PUBLIC_URL=https://your-host/media     # the Caddy front door /media mount (below)
    S3_ACCESS_KEY_ID=agora
    S3_SECRET_ACCESS_KEY=<strong-password>
    MINIO_ROOT_USER=agora
@@ -41,8 +41,8 @@ Supabase. (Compose services are all profile-gated, so a bare `docker compose up`
    ACCESS_TOKEN_SECRET=<openssl rand -base64 48>
    ```
 
-2. **Bring the stack up** — `full` (the API stack) + `selfhost` (local db + minio); add
-   `secure`/`edge`/`scale` as needed:
+2. **Bring the stack up** — `full` (the API stack, incl. the Caddy front door) + `selfhost` (local db +
+   minio); add `secure`/`scale` as needed:
 
    ```bash
    docker compose --profile full --profile selfhost up --build
@@ -105,7 +105,7 @@ Supabase. (Compose services are all profile-gated, so a bare `docker compose up`
    first sign-in. Re-run with `--reset` to set a new password if you lock yourself out. (This is the
    native counterpart of `seed-demo-user.mjs`, which is Supabase-only.)
 
-5. **Done.** The admin SPA is on `:8080` (or behind the `edge` Caddy proxy on `:443`). Uploads land in
+5. **Done.** The Caddy front door serves the admin SPA on `:443` (and `:80`). Uploads land in
    MinIO and are served back through `https://your-host/media/<key>`.
 
 ## How each seam works
@@ -119,9 +119,9 @@ first upload — no `mc` bootstrap sidecar. Object keys are unguessable UUID pat
 (`<projectId>/files/<uuid>.<ext>`).
 
 **Public URLs never point at MinIO directly.** The stored URL is built from `S3_PUBLIC_URL`, and the
-admin nginx serves a `/media/` route that rewrites `/media/<key>` → `/<bucket>/<key>` on the internal
-`minio:9000` upstream. So set `S3_PUBLIC_URL=<your public origin>/media`. (Behind the `edge` Caddy
-proxy, that's `https://<SERVER_NAME>/media`.)
+Caddy front door serves a `/media/` route that rewrites `/media/<key>` → `/<bucket>/<key>` on the
+internal `minio:9000` upstream. So set `S3_PUBLIC_URL=<your public origin>/media` — i.e.
+`https://<SERVER_NAME>/media`.
 
 The `files` table is unchanged — it stores the resolved public URL in `original_path`, so switching
 backends doesn't migrate existing rows (already-stored URLs keep resolving against whatever wrote them;
@@ -173,6 +173,6 @@ self-hosted means migrating the data, which is out of scope for the seam:
 The S3 public bucket carries the **same posture as the Supabase public bucket** documented in
 `SECURITY.md`: media is public-read by design, protected by unguessable UUID keys, never by ACLs.
 Don't put private data behind it. MinIO root credentials and `POSTGRES_PASSWORD` are real secrets —
-set strong values and keep `.env` out of version control. Front the stack with the `edge` profile
-(Caddy: auto-HTTPS + HSTS + body cap) in production and firewall the now-internal `:4000`/`:8080`/
+set strong values and keep `.env` out of version control. In production the `full` profile's Caddy front
+door (auto-HTTPS + HSTS + body cap) is the public entrypoint — firewall the now-internal `:4000`/`:4001`/
 `:9000` host ports.

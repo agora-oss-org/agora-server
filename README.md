@@ -337,7 +337,7 @@ The **`secure`** profile is the **standalone [`@agora/secure-chat`](apps/secure-
 the secure-chat process (`:4002`), no API stack. Like `agora`, it doesn't bundle a database: it persists
 the `secure_*` tables to whatever **`DATABASE_URL`** points at, which in v1 is the **shared main Postgres**
 (or Supabase) — already migrated. (Run it alongside the API with `--profile full --profile secure`, where
-the admin nginx routes `/v7/:projectId/secure-chat/*` + the WebSocket `/secure-socket/` to it.)
+the Caddy front door routes `/v7/:projectId/secure-chat/*` + the WebSocket `/secure-socket/` to it.)
 
 ```bash
 docker compose --profile secure up --build                       # DATABASE_URL → shared/Supabase Postgres
@@ -353,18 +353,18 @@ the *same* server image runs against either backend. See [`docs/SELF-HOSTING.md`
 docker compose --profile full --profile selfhost up --build
 ```
 
-For production, an **optional TLS edge proxy** (Caddy) gives the stack a single HTTPS front door with
-**automatic Let's Encrypt certs**, HSTS + security headers, a body-size cap, and an authoritative
-`X-Forwarded-For`. It's the `edge` profile, run alongside `full`:
+The `full` profile includes a **Caddy front door** (`proxy` service) — the single public entrypoint that
+serves the admin SPA and routes every service, with **automatic Let's Encrypt certs**, HSTS + security
+headers, a body-size cap, and an authoritative `X-Forwarded-For`:
 
 ```bash
-# in .env: SERVER_NAME=your.domain  and  RATE_LIMIT_TRUSTED_HOPS=2
-docker compose --profile full --profile edge up --build
+# in .env: SERVER_NAME=your.domain  and  RATE_LIMIT_TRUSTED_HOPS=1
+docker compose --profile full up --build
 ```
 
 For Tor hidden services — or any deploy where Let's Encrypt can't reach you — a second
 [`Caddyfile.onion`](deploy/proxy/Caddyfile.onion) serves a cert you supply at startup instead of
-auto-ACME (selected via the `CADDYFILE` env var, same `edge` profile). See
+auto-ACME (selected via the `CADDYFILE` env var). See
 [`deploy/proxy/README.md`](deploy/proxy/README.md). (Optionally add `--profile scale` for Redis as
 the cross-replica rate-limit store.)
 
