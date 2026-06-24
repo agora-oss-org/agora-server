@@ -2,8 +2,11 @@ node_modules/
 dist/
 *.tsbuildinfo
 .vite/
+# Env files hold real secrets — ignore every variant; the *.example templates are the only ones tracked.
 .env
-.env.local
+.env.*
+!.env.example
+!.env.local.example
 *.log
 .DS_Store
 

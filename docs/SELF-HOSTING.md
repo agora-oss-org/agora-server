@@ -19,7 +19,23 @@ profile-gated, so a bare `docker compose up` starts nothing.)
 
 ## Quick start (whole stack, no Supabase)
 
-1. **Copy the env template** and set the self-hosted block (see `.env.example` → "Self-hosted"):
+1. **Start from the local template.** [`.env.local.example`](../.env.local.example) is a ready-made
+   config for exactly this deploy — `--profile selfhost` (or `--profile full --profile selfhost`) — with
+   every self-hosted var pre-wired (local Postgres, MinIO, native auth, the Caddy front door on plain
+   HTTP) and an `openssl` command beside each secret placeholder. Copy it, fill the `<GENERATE: …>`
+   placeholders, then activate it as `.env` (compose reads `.env` for both `${VAR}` interpolation **and**
+   the services' `env_file`):
+
+   ```bash
+   cp .env.local.example .env.local        # 1. copy the template
+   # 2. fill every <GENERATE: …> placeholder with the openssl command shown beside it, e.g.:
+   #    openssl rand -hex 16     → POSTGRES_PASSWORD / MINIO_ROOT_PASSWORD / NEO4J_AUTH password
+   #    openssl rand -base64 48  → ACCESS_TOKEN_SECRET / CRON_SECRET / MODERATION_SERVICE_SECRET
+   cp .env.local .env                       # 3. make it the active env file
+   ```
+
+   The self-hosted block it sets (what you'd otherwise assemble by hand from `.env.example` →
+   "Self-hosted"):
 
    ```bash
    # DB — local Postgres
@@ -41,6 +57,11 @@ profile-gated, so a bare `docker compose up` starts nothing.)
    # Required regardless of backend
    ACCESS_TOKEN_SECRET=<openssl rand -base64 48>
    ```
+
+   > The template uses `SERVER_NAME=:80` (plain HTTP) and `S3_PUBLIC_URL=http://localhost/media` for a
+   > friction-free local run — `http://localhost` is a browser "secure context", so secure-chat's
+   > WebCrypto still works. For a real host, set `SERVER_NAME=<your.domain>` and
+   > `S3_PUBLIC_URL=https://<your.domain>/media` (auto-HTTPS).
 
 2. **Bring the stack up** — `--profile selfhost` is the API + local db + minio (incl. the Caddy front
    door); add `--profile full` for all optional add-ons, or `--profile scorer`/`--profile secure-chat`/

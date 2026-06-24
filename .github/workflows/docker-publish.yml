@@ -1,9 +1,12 @@
 # Build the Agora images and publish multi-arch (amd64 + arm64) to GHCR + Docker Hub. Fires on a
 # version tag (e.g. `v0.1.1`) or manual dispatch. Public images at:
-#   ghcr.io/jenova-marie/{agora-api,agora-proxy,agora-scorer-worker,agora-scorer-model-server}
+#   ghcr.io/jenova-marie/{agora-api,agora-proxy,agora-secure-chat,agora-cron,agora-scorer-worker,agora-scorer-model-server}
 #   docker.io/agoraserver/{…same…}
+# These are the six images docker-compose.prod.yml pulls — every buildable service in the stack.
 # `agora-proxy` is the Caddy front door (deploy/proxy/Dockerfile) with the admin SPA baked into /srv —
 # it REPLACES the old `agora-admin` image (apps/admin/Dockerfile, removed in the proxy collapse).
+# `agora-cron` is the supercronic scheduler (apps/api/Dockerfile.cron); `agora-secure-chat` is the
+# blind MLS E2E delivery process (apps/secure-chat/Dockerfile).
 # Docker Hub needs DOCKERHUB_USERNAME + DOCKERHUB_TOKEN repo secrets (a Read/Write access token).
 #
 # Multi-arch the FAST way — native runners, NOT QEMU. Each arch builds on its own native runner
@@ -36,6 +39,10 @@ jobs:
             dockerfile: ./apps/api/Dockerfile
           - name: agora-proxy
             dockerfile: ./deploy/proxy/Dockerfile
+          - name: agora-secure-chat
+            dockerfile: ./apps/secure-chat/Dockerfile
+          - name: agora-cron
+            dockerfile: ./apps/api/Dockerfile.cron
           - name: agora-scorer-worker
             dockerfile: ./services/scorer/Dockerfile.worker
           - name: agora-scorer-model-server
@@ -101,7 +108,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        image: [agora-api, agora-proxy, agora-scorer-worker, agora-scorer-model-server]
+        image: [agora-api, agora-proxy, agora-secure-chat, agora-cron, agora-scorer-worker, agora-scorer-model-server]
     steps:
       - name: Download this image's per-arch digests
         uses: actions/download-artifact@v4

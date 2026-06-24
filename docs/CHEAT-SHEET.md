@@ -37,6 +37,21 @@ add **optional services** (Axis 2). A bare `docker compose up` starts nothing.
 | `scale` | add-on | `redis` | a data plane |
 | `full` | add-on shorthand | = `scorer` + `secure-chat` | a data plane |
 
+### Dev build vs. production pull
+
+The commands above use the default [`docker-compose.yml`](../docker-compose.yml), which **builds** the
+images from source. For production, [`docker-compose.prod.yml`](../docker-compose.prod.yml) **pulls** the
+published images instead (`agoraserver/agora-*`) — no repo checkout needed to build, backend ports stay
+internal (only the proxy's `80`/`443` are public), and you can pin a release with `AGORA_TAG`:
+
+```bash
+AGORA_TAG=v0.13.0 docker compose -f docker-compose.prod.yml --profile full --profile supabase up -d
+```
+
+Same profiles, same `.env`. A pull-only host still needs a few mounted files alongside the compose:
+`.env`, `deploy/proxy/Caddyfile` + `deploy/proxy/agora-routes.caddy` (front-door config), and — only with
+`scorer`/`full` — `neo4j/plugins/open-gds-*.jar`. The header of `docker-compose.prod.yml` lists the bundle.
+
 ---
 
 ## 2. Env by configuration

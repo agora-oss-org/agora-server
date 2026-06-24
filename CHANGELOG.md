@@ -8,6 +8,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`.env.local.example` — ready-made local self-host config template.** A committed template wired for
+  `docker compose --profile full --profile selfhost` (local Postgres + MinIO + scorer + neo4j +
+  secure-chat + redis behind the Caddy front door on plain HTTP), with every self-hosted var pre-set and
+  an `openssl` generation command beside each secret placeholder (`rand -hex 16` for passwords that live
+  in URLs / `NEO4J_AUTH`, `rand -base64 48` for token secrets). Copy → fill placeholders → `cp .env.local
+  .env`. Referenced from the `docs/SELF-HOSTING.md` quick start. (`.env.local` stays gitignored.)
+- **`docker-compose.prod.yml` — pull-only production compose.** A second compose file that runs the
+  stack from the published Docker Hub images (`agoraserver/agora-*`) instead of building from source —
+  no repo checkout needed to build, only the compose file + `.env` + the proxy config. Same two-axis
+  profile model as the dev `docker-compose.yml`, plus three production-hardening differences: images
+  are pulled and pinnable via `AGORA_TAG` (defaults to `latest`), backend ports are **not** published
+  to the host (only the proxy's `80`/`443` are public; everything else is reached over the internal
+  network), and the header documents the small deploy bundle a pull-only host still needs (`.env`, the
+  `deploy/proxy/` Caddy config, the `neo4j/plugins/` GDS jar for `scorer`/`full`).
+- **CI: publish `agora-secure-chat` + `agora-cron` images.** The `docker-publish` workflow now builds
+  and publishes all **six** buildable services (was four) — adding the blind MLS E2E delivery process
+  (`apps/secure-chat/Dockerfile`) and the supercronic scheduler (`apps/api/Dockerfile.cron`) as
+  multi-arch images on `ghcr.io/jenova-marie/*` + `docker.io/agoraserver/*`. This is what makes a
+  fully pull-based `--profile full` production deploy possible (`docker-compose.prod.yml` above).
 - **`docs/CHEAT-SHEET.md` — deployment recipes ↔ env vars ↔ where to get the values.** A one-page operator
   reference mapping each compose recipe (the two-axis profile model) to the env it requires, marking
   required vs optional and compose-injected vars, and naming the source for every value (Supabase

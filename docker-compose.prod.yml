@@ -1,0 +1,266 @@
+# Agora — PRODUCTION compose. Pulls the published multi-arch images from Docker Hub
+# (docker.io/agoraserver/agora-*) instead of building from source — NO repo checkout needed to build,
+# only this file + .env + the proxy config (see below). Pin a release with AGORA_TAG (defaults to
+# `latest`): `AGORA_TAG=v0.13.0 docker compose -f docker-compose.prod.yml --profile full --profile supabase up -d`.
+#
+# Same TWO-AXIS profile model as docker-compose.yml — a bare `up` starts NOTHING:
+#   Axis 1 (REQUIRED, pick EXACTLY ONE): --profile supabase | --profile selfhost
+#   Axis 2 (OPTIONAL, compose freely):   --profile scorer | --profile secure-chat | --profile scale | --profile full
+# Typical production deploys (run detached with -d):
+#   docker compose -f docker-compose.prod.yml --profile supabase up -d                 # API only, Supabase-backed
+#   docker compose -f docker-compose.prod.yml --profile full --profile supabase up -d  # everything, Supabase-backed
+#   docker compose -f docker-compose.prod.yml --profile full --profile selfhost up -d  # everything, self-contained
+#   docker compose -f docker-compose.prod.yml run --rm agora node scripts/migrate.mjs  # migrations (selfhost / first deploy)
+#
+# DIFFERS from the dev docker-compose.yml in three production-hardening ways:
+#   1. Images are PULLED (agoraserver/agora-*:${AGORA_TAG:-latest}), never built.
+#   2. Backend ports are NOT published to the host — only the proxy's 80/443 are public. The Caddy front
+#      door reaches agora/scorer/secure-chat/minio over the internal compose network; nothing else needs a
+#      host port. (db/minio/neo4j consoles stay internal too — tunnel in if you need them.)
+#   3. RATE_LIMIT_TRUSTED_HOPS=1 is the correct setting (one proxy hop). Set it in .env.
+#
+# DEPLOY BUNDLE (a pull-only host still needs a few mounted files — copy them next to this compose):
+#   • .env                                  — the single config source (see .env.example / docs/CHEAT-SHEET.md)
+#   • deploy/proxy/Caddyfile                — front-door TLS + routing entrypoint (or Caddyfile.onion)
+#   • deploy/proxy/agora-routes.caddy       — shared routing snippet imported by the Caddyfile
+#   • deploy/proxy/certs/                   — only for the .onion / static-cert variant (site.pem + site.key)
+#   • neo4j/plugins/open-gds-*.jar          — only with --profile scorer/full (DozerDB GDS plugin)
+# For a real domain: set SERVER_NAME=<your.domain> (DNS → this host so ACME can validate on :80). Plain
+# HTTP / behind an external TLS terminator: SERVER_NAME=:80. See docs/SELF-HOSTING.md + docs/CHEAT-SHEET.md.
+services:
+  agora:
+    profiles: ["supabase", "selfhost"]
+    image: agoraserver/agora-api:${AGORA_TAG:-latest}
+    env_file: .env
+    environment:
+      # Address Neo4j by service name on the compose network (.env's NEO4J_URI uses localhost for
+      # host-side dev, which inside a container is the container itself). Override via NEO4J_URI_DOCKER.
+      NEO4J_URI: ${NEO4J_URI_DOCKER:-bolt://neo4j:7687}
+    # No host port — the proxy reaches it internally on :4000. Publish it only for debugging.
+    init: true
+    restart: unless-stopped
+
+  # Shared Redis — the secure-chat suspension index (hard dep, fail-closed) + the optional cross-replica
+  # rate-limit store. Set REDIS_URL=redis://redis:6379 in .env. Internal only; no host port.
+  redis:
+    image: redis:7-alpine
+    profiles: ["secure-chat", "scale", "full"]
+    command: ["redis-server", "--save", "", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    init: true
+    restart: unless-stopped
+
+  # ── self-hosted data plane (no Supabase) ─────────────────────────────────────────────────────────
+  # Postgres for self-hosting (selfhost profile). supabase/postgres bundles pgvector + PostGIS + pgmq +
+  # the auth roles the migrations assume. Apply migrations once after `up`:
+  #   docker compose -f docker-compose.prod.yml run --rm agora node scripts/migrate.mjs
+  db:
+    image: supabase/postgres:15.8.1.060
+    profiles: ["selfhost"]
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-please_change_me}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    init: true
+    restart: unless-stopped
+
+  # MinIO — S3-compatible object storage for self-hosting (STORAGE_PROVIDER=s3). The api creates the
+  # bucket + public-read policy in-code on first upload. Public objects reach browsers through the Caddy
+  # front door's /media route (never :9000 directly), so MinIO stays internal — no host ports in prod.
+  minio:
+    image: minio/minio:latest
+    profiles: ["selfhost"]
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-agora}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-please_change_me}
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    init: true
+    restart: unless-stopped
+
+  # ── @agora/secure-chat (secure-chat / full profile) ──────────────────────────────────────────────
+  # Blind MLS (E2E) Delivery Service — independent process. Shares Postgres (DATABASE_URL) + Redis with
+  # the api; Redis is a HARD dep. The Caddy front door routes /v7/:projectId/secure-chat/* + /secure-socket/
+  # here. Internal only; no host port. (Standalone split box: --profile secure-chat with a REMOTE DATABASE_URL.)
+  secure-chat:
+    image: agoraserver/agora-secure-chat:${AGORA_TAG:-latest}
+    profiles: ["secure-chat", "full"]
+    env_file: .env
+    depends_on:
+      redis:
+        condition: service_healthy
+    init: true
+    restart: unless-stopped
+
+  # ── services/scorer (scorer / full profile) ──────────────────────────────────────────────────────
+  # RoBERTa toxicity classifier (model warm in RAM). cpuset values are HOST-SPECIFIC — adjust to your
+  # core layout. See docs/SCORER-REQUIREMENTS.md.
+  scorer-toxicity:
+    image: agoraserver/agora-scorer-model-server:${AGORA_TAG:-latest}
+    profiles: ["scorer", "full"]
+    env_file: .env
+    environment:
+      SCORER_MODEL: ${SCORER_TOXICITY_MODEL:-s-nlp/roberta_toxicity_classifier}
+      SCORER_MODEL_KIND: toxicity
+      SCORER_PORT: "8001"
+      OMP_NUM_THREADS: "1"
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    cpuset: "0"
+    mem_limit: "1.5g"
+    init: true
+    restart: unless-stopped
+    volumes:
+      - scorer-hf-cache:/home/scorer/.cache/huggingface
+
+  # RoBERTa relationship-quality (sentiment) classifier — same image, different model + core.
+  scorer-relationship:
+    image: agoraserver/agora-scorer-model-server:${AGORA_TAG:-latest}
+    profiles: ["scorer", "full"]
+    env_file: .env
+    environment:
+      SCORER_MODEL: ${SCORER_RELATIONSHIP_MODEL:-cardiffnlp/twitter-roberta-base-sentiment-latest}
+      SCORER_MODEL_KIND: relationship
+      SCORER_PORT: "8002"
+      OMP_NUM_THREADS: "1"
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    cpuset: "1"
+    mem_limit: "1.5g"
+    init: true
+    restart: unless-stopped
+    volumes:
+      - scorer-hf-cache:/home/scorer/.cache/huggingface
+
+  # Orchestrator: pgmq consumer + cascade + write-back + Neo4j + the operator-gated admin API on :4001
+  # (the /moderator upstream). Internal only; the proxy routes /moderator here.
+  scorer-worker:
+    image: agoraserver/agora-scorer-worker:${AGORA_TAG:-latest}
+    profiles: ["scorer", "full"]
+    env_file: .env
+    environment:
+      API_BASE_URL: http://agora:4000
+      SCORER_TOXICITY_URL: http://scorer-toxicity:8001
+      SCORER_RELATIONSHIP_URL: http://scorer-relationship:8002
+      SCORER_ADMIN_PORT: "4001"
+      NEO4J_URI: ${NEO4J_URI_DOCKER:-bolt://neo4j:7687}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    mem_limit: "512m"
+    depends_on:
+      agora:
+        condition: service_started
+      scorer-toxicity:
+        condition: service_started
+      scorer-relationship:
+        condition: service_started
+      neo4j:
+        condition: service_healthy
+    init: true
+    restart: unless-stopped
+
+  # Neo4j / DozerDB — social-graph database. Internal only (no host ports in prod — tunnel in for the
+  # :7474 browser). Needs the OpenGDS jar mounted at /plugins (ship neo4j/plugins/ in the deploy bundle).
+  neo4j:
+    profiles: ["scorer", "full"]
+    image: graphstack/dozerdb:5.26.3.0
+    environment:
+      NEO4J_AUTH: ${NEO4J_AUTH:-neo4j/please_change_me}
+      NEO4J_ACCEPT_LICENSE_AGREEMENT: ${NEO4J_ACCEPT_LICENSE_AGREEMENT:-yes}
+      NEO4J_initial_dbms_default__database: ${NEO4J_initial_dbms_default__database:-neo4j}
+      NEO4J_PLUGINS: '["apoc"]'
+      NEO4J_apoc_export_file_enabled: ${NEO4J_apoc_export_file_enabled:-true}
+      NEO4J_apoc_import_file_enabled: ${NEO4J_apoc_import_file_enabled:-true}
+      NEO4J_dbms_security_procedures_unrestricted: ${NEO4J_dbms_security_procedures_unrestricted:-gds.*,apoc.*}
+      NEO4J_dbms_security_procedures_allowlist: ${NEO4J_dbms_security_procedures_allowlist:-gds.*,apoc.*}
+      NEO4J_server_memory_heap_initial__size: ${NEO4J_server_memory_heap_initial__size:-512m}
+      NEO4J_server_memory_heap_max__size: ${NEO4J_server_memory_heap_max__size:-1024m}
+      NEO4J_server_memory_pagecache_size: ${NEO4J_server_memory_pagecache_size:-256m}
+    volumes:
+      - neo4j-data:/data
+      - ./neo4j/plugins:/plugins
+    healthcheck:
+      test: ["CMD-SHELL", "cypher-shell -u \"$${NEO4J_AUTH%%/*}\" -p \"$${NEO4J_AUTH#*/}\" 'RETURN 1' >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 40s
+    init: true
+    restart: unless-stopped
+
+  # Single public front door (Caddy) — TLS + the admin SPA (baked into the image at /srv) + ALL service
+  # routing. The ONLY service that publishes host ports (80/443). Mount the Caddyfile + routing snippet
+  # (see DEPLOY BUNDLE above) — they are NOT baked, so the ACME ↔ onion swap survives. ONE proxy hop →
+  # set RATE_LIMIT_TRUSTED_HOPS=1 in .env.
+  proxy:
+    profiles: ["supabase", "selfhost"]
+    image: agoraserver/agora-proxy:${AGORA_TAG:-latest}
+    environment:
+      SERVER_NAME: ${SERVER_NAME:-localhost}
+      MAX_BODY_SIZE: ${MAX_BODY_SIZE:-25MB}
+      ACME_EMAIL: ${ACME_EMAIL:-}
+      # Per-service upstreams. Caddy resolves these LAZILY (per-request DNS), so a service that isn't
+      # deployed (secure-chat without its profile, minio without selfhost) simply 502s its routes.
+      API_UPSTREAM: http://agora:4000
+      MODERATOR_UPSTREAM: http://scorer-worker:4001
+      SECURE_CHAT_UPSTREAM: http://secure-chat:4002
+      MINIO_UPSTREAM: http://minio:9000
+      S3_BUCKET: ${S3_BUCKET:-agora}
+    volumes:
+      # Default = automatic ACME. For a .onion / static cert set CADDYFILE=./deploy/proxy/Caddyfile.onion.
+      - ${CADDYFILE:-./deploy/proxy/Caddyfile}:/etc/caddy/Caddyfile:ro
+      # REQUIRED — `import` resolves relative to /etc/caddy; missing it = the front door fails to load.
+      - ./deploy/proxy/agora-routes.caddy:/etc/caddy/agora-routes.caddy:ro
+      # Operator-supplied TLS certs for the onion/static-cert variant (site.pem + site.key). Harmless
+      # empty mount for the default auto-ACME file, which never reads it.
+      - ${CADDY_CERTS_DIR:-./deploy/proxy/certs}:/certs:ro
+      - caddy-data:/data    # persists issued certs + ACME account across restarts (avoids LE rate limits)
+      - caddy-config:/config
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    depends_on:
+      agora:
+        condition: service_started
+        required: false
+      scorer-worker:
+        condition: service_started
+        required: false
+    init: true
+    restart: unless-stopped
+
+  # Scheduler: fires the secret-gated /internal/cron/* endpoints over the internal network on the
+  # schedule baked into the image's crontab. Requires CRON_SECRET in .env (without it the endpoints 503).
+  cron:
+    image: agoraserver/agora-cron:${AGORA_TAG:-latest}
+    profiles: ["supabase", "selfhost"]
+    env_file: .env
+    environment:
+      AGORA_URL: http://agora:4000
+      SECURE_CHAT_URL: ${SECURE_CHAT_URL:-http://secure-chat:4002}
+    depends_on:
+      - agora
+    init: true
+    restart: unless-stopped
+
+volumes:
+  neo4j-data:
+  caddy-data:
+  caddy-config:
+  scorer-hf-cache: # HF model downloads for the two scorer model servers (persist across recreate)
+  db-data:         # self-hosted Postgres data (selfhost profile)
+  minio-data:      # self-hosted object storage (selfhost profile)
