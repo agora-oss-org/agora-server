@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **API load-test harness for performance baselines (`apps/api/perf/`).** A reproducible k6 workload
+  + deterministic fixture seeder for tracking latency/throughput as the API evolves. `pnpm perf:seed`
+  bulk-builds an isolated corpus (its own throwaway `project_id`: profiles + entities + multi-level
+  comment threads) directly in Postgres and mints HS256 tokens; `pnpm perf:baseline` orchestrates
+  seed → k6 → a git-stamped JSON summary under `perf/baselines/`. The scenario models a read-heavy
+  social-feed mix (feed list / single entity / comment list / recursive thread / reaction + comment
+  writes), tags requests per-endpoint, and ships per-endpoint p95 thresholds that double as a CI
+  regression gate. `perf/compare.mjs` diffs two baselines into p95/p99 + throughput deltas. Canonical
+  target is the local self-host docker stack (lowest variance). REST only; realtime deferred. See
+  `apps/api/perf/README.md`. Requires k6 (`brew install k6`); no other new deps.
+
 ### Changed
 - **Compose: every service is now profile-gated; added a `full` profile for the API stack.** A bare
   `docker compose up` no longer starts anything — `agora`, `admin`, the three `scorer-*`, `neo4j`, and

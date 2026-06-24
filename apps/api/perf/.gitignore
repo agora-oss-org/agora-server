@@ -1,0 +1,5 @@
+# Regenerated every seed; carries live access tokens — never commit.
+.fixture.json
+
+# Baselines ARE committed (they're the whole point) — keep them tracked.
+!baselines/
