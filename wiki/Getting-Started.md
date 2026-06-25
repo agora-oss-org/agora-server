@@ -6,8 +6,9 @@ transaction-pooler URL by default).
 ## Prerequisites
 
 - **Node 22+** and **pnpm** (pinned via corepack).
-- A **Postgres** database — a Supabase project (default) or a local Postgres (see [[Deployment]] /
-  self-hosting).
+- A **Postgres** database — a Supabase project (default) or a local Postgres. Note: a local DB must be
+  the **`supabase/postgres`** distribution, not a vanilla Postgres — Agora's migrations need its bundled
+  extensions (pgvector, PostGIS, pgmq, pgcrypto) and the `auth` roles. See [[Deployment]] / self-hosting.
 
 ## Quick start
 

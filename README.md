@@ -261,7 +261,10 @@ Supabase Postgres   schema · triggers · RPC · pgvector · PostGIS · RLS
   (`getAuthProvider()` / `getStorage()`): choose **native** email/password auth
   (`DEFAULT_AUTH_PROVIDER=native`) and an **S3-compatible** object store (`STORAGE_PROVIDER=s3` →
   MinIO/AWS) and the *same* server runs fully self-contained on a local Postgres — no Supabase at all.
-  See [`docs/SELF-HOSTING.md`](docs/SELF-HOSTING.md).
+  ⚠️ "No Supabase" means no Supabase **cloud**: that local Postgres is still the `supabase/postgres`
+  **image** (the migrations hard-depend on its bundled pgvector/PostGIS/pgmq + the `auth` roles — a
+  vanilla Postgres won't migrate), which the `selfhost` profile pins for you. See
+  [`docs/SELF-HOSTING.md`](docs/SELF-HOSTING.md).
 
 See [apps/api/README.md](apps/api/README.md#architecture) for the full backend architecture and
 handler conventions.
@@ -363,7 +366,10 @@ docker compose --profile full --profile supabase up     # everything (incl. secu
 For a **fully self-contained** stack (no Supabase at all) use **`selfhost`** (local Postgres + MinIO).
 Agora swaps Supabase out through its provider seams — **native** email/password auth
 (`DEFAULT_AUTH_PROVIDER=native`) and **S3-compatible** storage (`STORAGE_PROVIDER=s3` → MinIO/AWS) — so
-the *same* server image runs against either backend. See [`docs/SELF-HOSTING.md`](docs/SELF-HOSTING.md):
+the *same* server image runs against either backend. The local `db` is still the `supabase/postgres`
+image, though (not a vanilla Postgres — the migrations need its pgvector/PostGIS/pgmq + `auth` roles);
+"self-contained" means no Supabase **cloud**, not no Supabase Postgres image. See
+[`docs/SELF-HOSTING.md`](docs/SELF-HOSTING.md):
 
 ```bash
 docker compose --profile selfhost up --build            # just the API, self-contained

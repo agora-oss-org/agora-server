@@ -26,7 +26,9 @@ Postgres   schema · triggers · RPC · pgvector · PostGIS · RLS
 - **Multi-tenant by `project_id`** — every table has it; the SDK addresses `/v7/:projectId/...`. A
   single-project deployment just has one `projects` row.
 - **Supabase is the default, not a hard dependency.** Auth and Storage sit behind provider seams, so the
-  same server runs fully self-contained on native auth + S3 storage + local Postgres (see [[Deployment]]).
+  same server runs fully self-contained on native auth + S3 storage + a local Postgres (the
+  `supabase/postgres` distribution — required for the bundled extensions + `auth` roles, not a vanilla
+  Postgres; see [[Deployment]]).
 - **Denormalized counts are trigger-maintained** (reaction/reply/member/thread counts, reputation) —
   never recomputed per request.
 

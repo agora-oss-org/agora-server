@@ -83,7 +83,10 @@ server boots without these, but identity + uploads stay off until set.
 
 ### 2.2 — Data plane B: **Self-host** (`--profile selfhost`)
 
-Runs the same API with local Postgres + MinIO, no Supabase. See [`docs/SELF-HOSTING.md`](SELF-HOSTING.md).
+Runs the same API with local Postgres + MinIO, no Supabase. ⚠️ "Local Postgres" is the
+`supabase/postgres` image (the profile pins `15.8.1.060`), **not** a vanilla Postgres — the migrations
+need its bundled pgvector/PostGIS/pgmq + the `auth` roles. "No Supabase" = no Supabase **cloud**, not no
+Supabase Postgres image. See [`docs/SELF-HOSTING.md`](SELF-HOSTING.md).
 
 | Var | | Value & where to get it |
 |---|---|---|

@@ -12,7 +12,11 @@ model**, so a bare `docker compose up` starts nothing — you compose the deploy
 **Axis 1 — data plane + API (required, pick exactly one):**
 
 - `--profile supabase` — external Supabase Postgres + Storage.
-- `--profile selfhost` — local Postgres + MinIO, fully self-contained.
+- `--profile selfhost` — local Postgres + MinIO, fully self-contained. ⚠️ The "local Postgres" here is
+  the **`supabase/postgres` image** (the Supabase Postgres *distribution*), not a vanilla Postgres —
+  Agora's migrations require its bundled extensions (pgvector, PostGIS, pgmq, pgcrypto) and the
+  `anon`/`authenticated`/`service_role` roles + `auth.uid()`. Self-hosting drops the Supabase **cloud**
+  (hosted DB / Auth / Storage), not the Supabase Postgres *image*.
 
 Either one brings up the API itself: `agora` (`:4000`), the Caddy front-door `proxy`, and `cron`.
 
@@ -47,7 +51,9 @@ validate on `:80`) and `RATE_LIMIT_TRUSTED_HOPS=1`.
 
 The `selfhost` data plane runs the *same* server fully self-contained via provider seams — **native**
 email/password auth (`DEFAULT_AUTH_PROVIDER=native`) + **S3-compatible** storage (`STORAGE_PROVIDER=s3`
-→ MinIO/AWS) + a local Postgres. See
+→ MinIO/AWS) + a local Postgres. "No Supabase" means **no Supabase cloud** — the local DB is still the
+`supabase/postgres` distribution (required for pgvector/PostGIS/pgmq + the `auth` roles; a vanilla
+Postgres won't migrate). See
 [`docs/SELF-HOSTING.md`](https://github.com/agora-oss-org/agora-server/blob/root/docs/SELF-HOSTING.md).
 
 ## Supporting infrastructure

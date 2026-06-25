@@ -4,6 +4,16 @@ Agora ships pointed at Supabase by default, but the same `@agora/api` image runs
 self-contained** — local Postgres + local object storage + in-API password auth — with no Supabase
 account at all. Supabase is one of two interchangeable backends, not a hard dependency.
 
+> ⚠️ **"Local Postgres" means the `supabase/postgres` image — not a vanilla Postgres.** Self-hosting
+> drops the Supabase **cloud** (hosted DB / Auth / Storage); it does **not** drop the Supabase Postgres
+> **distribution**. Agora's migrations hard-depend on what that image bundles — the **pgvector**,
+> **PostGIS**, **pgmq**, and **pgcrypto** extensions plus the `anon`/`authenticated`/`service_role` roles
+> and the `auth` schema / `auth.uid()`. A stock `postgres:15` image is missing all of that and the
+> migrations will fail. The `selfhost` compose profile already pins `supabase/postgres:15.8.1.060` for
+> exactly this reason. You *can* point `DATABASE_URL` at your **own** Postgres if it provides the same
+> extensions + roles — see [Running on your own / non-Supabase Postgres](#running-on-your-own--non-supabase-postgres)
+> for the exact list and a copy-paste bootstrap (and the one gotcha: pgmq on managed providers).
+
 Three things are pluggable, each chosen by config (nothing is replaced — flip a switch):
 
 | Concern  | Supabase (default)                  | Self-hosted                                  | Selected by            |
@@ -131,6 +141,60 @@ profile-gated, so a bare `docker compose up` starts nothing.)
 
 5. **Done.** The Caddy front door serves the admin SPA on `:443` (and `:80`). Uploads land in
    MinIO and are served back through `https://your-host/media/<key>`.
+
+## Running on your own / non-Supabase Postgres
+
+The `selfhost` profile pins `supabase/postgres` so you don't have to think about any of this. But the
+image is only a *convenience bundle* — Agora's migrations depend on a small, well-defined set of pieces,
+so you **can** point `DATABASE_URL` at your own Postgres (a self-built image, Crunchy, Tembo, etc.) if it
+provides them. There are two kinds of requirement.
+
+### 1. Extensions (must be installed at the image / OS level — not addable via SQL)
+
+`CREATE EXTENSION` only works if the compiled extension is already present in the Postgres install, so
+this is a "build/choose your image" step, not something you can run as a migration:
+
+| Extension | Notes |
+|---|---|
+| **pgcrypto** | Ships in standard `postgres-contrib` — the official `postgres` image already has it. |
+| **pgvector** | Add the `postgresql-XX-pgvector` package / build it, or base off `pgvector/pgvector:pgXX`. |
+| **PostGIS** | Add `postgresql-XX-postgis-3`, or base off `postgis/postgis:XX`. |
+| **pgmq** | Tembo's queue extension — install from their apt repo or build it. **This is the usual blocker (see below).** |
+
+### 2. Supabase-isms the migrations *assume but don't create* (pure SQL — a tiny pre-migrate bootstrap)
+
+The `supabase/postgres` init provisions these; on a plain Postgres you create them yourself **once,
+before `scripts/migrate.mjs`**, in the database `DATABASE_URL` targets:
+
+```sql
+-- roles the GRANTs + RLS policies reference (service_role isn't actually used by the migrations)
+create role anon nologin;
+create role authenticated nologin;
+
+-- the auth schema + auth.uid() referenced by the 0017 RLS self-access policies.
+-- A stub is fine: the API connects as the table-owner and BYPASSES RLS (the server is the trust
+-- boundary; RLS is defense-in-depth), so auth.uid() only needs to EXIST for the policies to apply.
+create schema if not exists auth;
+create or replace function auth.uid() returns uuid language sql stable as $$ select null::uuid $$;
+```
+
+That's the whole surface — no `auth.users` table or FK is required (`profiles.auth_user_id` is a plain
+uuid the app links). With `DEFAULT_AUTH_PROVIDER=native`, Supabase Auth/GoTrue isn't used at all.
+
+### The one real gotcha: pgmq on *managed* Postgres
+
+Managed providers (AWS RDS/Aurora, GCP Cloud SQL, Azure Flexible Server) only allow extensions from a
+**vetted allowlist** (`rds.allowed_extensions` / `azure.extensions` / the Cloud SQL list) and give you no
+superuser or filesystem access to add your own. pgvector, PostGIS, and pgcrypto are old and on every
+list; **pgmq is newer, a compiled (untrusted) C extension, and is not on most of them** — so you can't
+install it and the provider hasn't pre-installed it. Because migration `0027` runs `CREATE EXTENSION
+pgmq` **unconditionally** (even if you don't run the scorer), a managed box that bans pgmq will **fail
+migrations outright**. Providers that *do* ship it include Supabase's managed DB and Tembo Cloud; on a VM
+or container you control, just install it.
+
+> **Bottom line:** a self-built / self-managed Postgres image is a perfectly good escape hatch — install
+> the four extensions and run the bootstrap above. A locked-down *managed* Postgres usually is **not**,
+> and pgmq is almost always why.
 
 ## How each seam works
 
