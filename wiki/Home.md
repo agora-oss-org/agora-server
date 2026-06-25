@@ -11,11 +11,6 @@ Replyke's feature set (posts, threaded comments, reactions & feeds, follows & co
 spaces, real-time chat, notifications, moderation & stewardship, semantic search) and run it on
 infrastructure you control, under **AGPL-3.0**.
 
-This wiki is a **navigable handbook**. It summarizes the project and links into the detailed,
-authoritative docs that live in the repository under
-[`docs/`](https://github.com/agora-oss-org/agora-server/tree/root/docs). When a page links a
-`docs/*.md` file, that file is the source of truth — the wiki is the on-ramp.
-
 ---
 
 ## Start here
