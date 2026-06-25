@@ -4,6 +4,8 @@ import { db } from "../db/index.js";
 import { contentEmbeddings } from "../db/schema/index.js";
 import { env } from "./env.js";
 import { logger } from "./logger.js";
+import { allow } from "./embed-throttle.js";
+import { enqueuePending } from "./pending-embeddings.js";
 
 export type SourceType = "entity" | "comment" | "message";
 
@@ -36,6 +38,12 @@ export async function embedText(text: string, inputType: "query" | "document"): 
 /** Embed a piece of content and upsert into content_embeddings. No-op if embeddings are off / text empty. */
 export async function indexContent(projectId: string, sourceType: SourceType, sourceId: string, text: string | null | undefined): Promise<void> {
   if (!embeddingsEnabled() || !text?.trim()) return;
+  // Outbound abuse throttle: if this project's write breaker is tripped, persist a durable flag instead
+  // of calling Voyage. The drain cron replays it once the rate returns to normal.
+  if (!allow("write", projectId)) {
+    await enqueuePending(projectId, sourceType, sourceId, text);
+    return;
+  }
   const embedding = await embedText(text, "document");
   await db.insert(contentEmbeddings)
     .values({ projectId, sourceType, sourceId, embedding })

@@ -151,6 +151,24 @@ export const contentEmbeddings = pgTable("content_embeddings", {
   index("content_embeddings_project_idx").on(t.projectId),
 ]);
 
+// Durable "needs embedding" flag (lib/embed-throttle.ts / lib/pending-embeddings.ts). When the outbound
+// embed throttle trips for a project, write-path embeds that get skipped land here instead of silently
+// dropping, and the drain cron (/internal/cron/drain-embeddings) replays them into content_embeddings
+// once the breaker reopens. PK mirrors content_embeddings' (source_type, source_id) so each item dedups
+// (latest text wins if the row was edited while paused). `text` is the resolved embed input captured at
+// enqueue, deleted on drain. RLS deny-all (shipped in the creating migration — 0017 was one-time).
+export const pendingEmbeddings = pgTable("pending_embeddings", {
+  projectId: uuid("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  sourceType: text("source_type").notNull(), // "entity" | "comment" | "message"
+  sourceId: uuid("source_id").notNull(),
+  text: text("text").notNull(),
+  attempts: integer("attempts").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  primaryKey({ columns: [t.sourceType, t.sourceId] }),
+  index("pending_embeddings_drain_idx").on(t.projectId, t.createdAt),
+]);
+
 // Per-project, per-month request metering for the admin dashboard "App metering" cards. Written by
 // middleware/metrics.ts via an additive upsert (in-memory aggregation flushed periodically), so it
 // stays one row per project per month and concurrent API replicas increment safely.

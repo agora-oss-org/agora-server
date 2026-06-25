@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Outbound embed throttle — abuse protection on Voyage calls (`lib/embed-throttle.ts`).** A per-project,
+  in-process circuit breaker with hysteresis guards every Voyage embedding call so a runaway client/script
+  can't blow through Voyage's limits or our bill. When a project's embed rate (req/sec, averaged over
+  `EMBED_THROTTLE_WINDOW_SECONDS`) crosses `*_SPIKE_RATE` the breaker trips and stops embedding for that
+  project until the rate falls to `*_RESUME_RATE` and stays there for `*_RESUME_MS`. **Write** and
+  **search** are gated independently (`EMBED_THROTTLE_WRITE_*` / `EMBED_THROTTLE_SEARCH_*`). Each stream is
+  **off until its `*_SPIKE_RATE` is set**; `RATE_MAX` (elevated/warn) and `RESUME_RATE` (normal level)
+  default to fractions of `SPIKE_RATE`. Write-path embeds skipped while tripped are persisted to the new
+  **`pending_embeddings`** table (migration `0052`, RLS deny-all) and replayed by
+  **`POST /internal/cron/drain-embeddings`** (`?limit=`, default 100; also `scripts/drain-embeddings.mjs`)
+  at a bounded pace; search-path embeds return **`429 search/throttled`** (no stored artifact to defer).
+  `EMBED_THROTTLE_MAX_PENDING` optionally caps the backlog table. Disabled by default — no behavior change
+  unless configured.
 - **Self-service account deletion — `POST /auth/request-account-deletion` + `/confirm-account-deletion`.**
   The SDK's `useRequestAccountDeletion`/`confirmAccountDeletion` flow: step 1 emails a confirmation code
   (profile-keyed `account_deletion_codes`, so it works for **both** native and Supabase users); step 2

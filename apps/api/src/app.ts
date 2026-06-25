@@ -18,6 +18,7 @@ import { rollupCommunityStats } from "./lib/community-stats.js";
 import { rollupConstellation } from "./lib/social-constellation.js";
 import { rollupAnalytics } from "./lib/social-analytics.js";
 import { applyClientModeration } from "./lib/client-moderation.js";
+import { drainPendingEmbeddings } from "./lib/pending-embeddings.js";
 import { hydrateSuspensionIndex } from "@agora/core/lib/suspensions";
 
 function safeEqual(a: string, b: string): boolean {
@@ -104,6 +105,17 @@ export function createApp() {
     const blocked = cronGuard(c); if (blocked) return blocked;
     const result = await rollupAnalytics();
     logger.info({ result }, "cron: admin analytics materialized");
+    return c.json(result);
+  });
+
+  // Replay pending embeds skipped while the outbound throttle was tripped (lib/pending-embeddings.ts).
+  // Deliberately bounded per run (?limit=, default 100) so the backfill paces Voyage; also runs
+  // standalone via scripts/drain-embeddings.mjs.
+  app.post("/internal/cron/drain-embeddings", async (c) => {
+    const blocked = cronGuard(c); if (blocked) return blocked;
+    const limit = Math.min(1000, Math.max(1, Number(c.req.query("limit")) || 100));
+    const result = await drainPendingEmbeddings(limit);
+    logger.info({ result }, "cron: pending embeddings drained");
     return c.json(result);
   });
 

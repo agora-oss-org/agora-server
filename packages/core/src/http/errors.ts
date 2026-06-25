@@ -24,6 +24,7 @@ export const Errors = {
   conflict: (code: string, msg: string, field?: string) => new ApiError(409, code, msg, field),
   tooLarge: (code: string, msg: string, field?: string) => new ApiError(413, code, msg, field),
   rateLimited: (msg = "Too many requests") => new ApiError(429, "common/rate-limited", msg),
+  tooManyRequests: (code = "common/rate-limited", msg = "Too many requests", field?: string) => new ApiError(429, code, msg, field),
   notImplemented: (code = "common/not-implemented") =>
     new ApiError(501 as ContentfulStatusCode, code, "Endpoint not implemented yet"),
   unavailable: (code = "common/unavailable", msg = "Service unavailable") =>

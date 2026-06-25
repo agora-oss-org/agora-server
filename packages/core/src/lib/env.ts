@@ -106,6 +106,26 @@ const schema = z.object({
   VOYAGE_API_KEY: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
   VOYAGE_MODEL: z.string().default("voyage-3.5"),
   EMBEDDING_DIMENSIONS: z.coerce.number().default(1024),
+  // Outbound abuse throttle on Voyage embedding calls (lib/embed-throttle.ts). A per-project, in-process
+  // circuit breaker with hysteresis: when a project's embed rate (req/sec, averaged over the window)
+  // crosses *_SPIKE_RATE it trips and stops embedding for that project until the rate falls to
+  // *_RESUME_RATE and stays there for *_RESUME_MS. Write-path embeds skipped while tripped are persisted
+  // to pending_embeddings (drained by /internal/cron/drain-embeddings); search-path embeds return 429.
+  // Each stream is OFF until its *_SPIKE_RATE is set (mirrors RATE_LIMIT_MAX). When unset, RATE_MAX (the
+  // elevated/warn line) and RESUME_RATE (the normal level) default to fractions of SPIKE_RATE, so only
+  // SPIKE_RATE is required to enable a stream.
+  EMBED_THROTTLE_WINDOW_SECONDS: z.coerce.number().int().positive().default(10),
+  EMBED_THROTTLE_WRITE_SPIKE_RATE: z.preprocess((v) => (v === "" ? undefined : v), z.coerce.number().positive().optional()),
+  EMBED_THROTTLE_WRITE_RATE_MAX: z.preprocess((v) => (v === "" ? undefined : v), z.coerce.number().positive().optional()),
+  EMBED_THROTTLE_WRITE_RESUME_RATE: z.preprocess((v) => (v === "" ? undefined : v), z.coerce.number().positive().optional()),
+  EMBED_THROTTLE_WRITE_RESUME_MS: z.coerce.number().int().positive().default(30_000),
+  EMBED_THROTTLE_SEARCH_SPIKE_RATE: z.preprocess((v) => (v === "" ? undefined : v), z.coerce.number().positive().optional()),
+  EMBED_THROTTLE_SEARCH_RATE_MAX: z.preprocess((v) => (v === "" ? undefined : v), z.coerce.number().positive().optional()),
+  EMBED_THROTTLE_SEARCH_RESUME_RATE: z.preprocess((v) => (v === "" ? undefined : v), z.coerce.number().positive().optional()),
+  EMBED_THROTTLE_SEARCH_RESUME_MS: z.coerce.number().int().positive().default(30_000),
+  // Safety valve: cap rows held in pending_embeddings (per the throttle). Beyond it, enqueue skips +
+  // warns so a runaway can't blow up that table too. Unset = unbounded (drain cron is the relief).
+  EMBED_THROTTLE_MAX_PENDING: z.preprocess((v) => (v === "" ? undefined : v), z.coerce.number().int().positive().optional()),
   // LLM (Anthropic) — powers /search/ask RAG Q&A. Optional until that endpoint is used.
   ANTHROPIC_API_KEY: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
   ANTHROPIC_MODEL: z.string().default("claude-sonnet-4-6"),

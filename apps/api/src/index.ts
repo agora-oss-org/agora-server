@@ -9,6 +9,7 @@ import { attachRealtime } from "./realtime/socket.js";
 import { logger } from "./lib/logger.js";
 import { startMetricsFlush } from "./lib/metrics.js";
 import { startRateLimitSweep } from "./lib/rate-limit.js";
+import { startEmbedThrottleSweep } from "./lib/embed-throttle.js";
 import { hydrateSuspensionIndex } from "@agora/core/lib/suspensions";
 
 // Last-resort safety net: a stray rejection/throw from a background task (socket handler, fan-out,
@@ -27,6 +28,7 @@ process.on("uncaughtException", (err) => {
 const app = createApp();
 startMetricsFlush(); // periodic flush of request-metering deltas → api_usage
 startRateLimitSweep(); // evict elapsed rate-limit windows so the map stays bounded
+startEmbedThrottleSweep(); // evict idle embed-throttle breakers so the map stays bounded
 // Hydrate the Redis suspension index on boot (no-op without REDIS_URL). Best-effort: a failure is logged
 // but doesn't stop the api — with a configured-but-down Redis, authed reads fail closed until it recovers
 // and the reconcile cron re-hydrates. The shared index is also read by @agora/secure-chat.

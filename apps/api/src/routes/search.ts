@@ -12,6 +12,7 @@ import { logger } from "../lib/logger.js";
 import { entities, comments, chatMessages, spaces, profiles } from "../db/schema/index.js";
 import { shapeEntity, shapeComment, shapeChatMessage, shapeSpace, shapeUser } from "../lib/shape.js";
 import { embedText, embeddingsEnabled, type SourceType } from "../lib/embeddings.js";
+import { allow } from "../lib/embed-throttle.js";
 import { streamText, llmEnabled } from "../lib/llm.js";
 import { trackEvent } from "../lib/umami.js";
 import { isProjectAdmin } from "../lib/project-roles.js";
@@ -61,6 +62,11 @@ async function retrieveContent(
     : null;
   if (requested && requested.length === 0) return [];
 
+  // Outbound abuse throttle: search-query embeds have no stored artifact to defer, so a tripped search
+  // breaker returns 429 (the SDK can back off) rather than silently degrading.
+  if (!allow("search", projectId)) {
+    throw Errors.tooManyRequests("search/throttled", "Semantic search is temporarily throttled — try again shortly");
+  }
   const vec = await embedText(q, "query");
   const lit = `[${vec.join(",")}]`;
   // Drizzle binds JS arrays as a scalar in raw sql, so build an explicit text[] literal (or NULL).

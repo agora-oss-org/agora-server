@@ -158,6 +158,23 @@ VOYAGE_API_KEY=pa-...
 VOYAGE_MODEL=voyage-3.5
 EMBEDDING_DIMENSIONS=1024
 
+# Outbound embed throttle (optional abuse protection; per-project circuit breaker on Voyage calls).
+# A stream is OFF until its *_SPIKE_RATE is set. When unset, RATE_MAX (elevated/warn) and RESUME_RATE
+# (normal level) default to fractions of SPIKE_RATE — only SPIKE_RATE is needed to enable a stream.
+# When a project's rate (req/sec averaged over the window) hits SPIKE_RATE it trips: write-path embeds
+# are persisted to pending_embeddings (drained by POST /internal/cron/drain-embeddings), search-path
+# embeds get 429 search/throttled. It reopens once the rate stays <= RESUME_RATE for RESUME_MS.
+EMBED_THROTTLE_WINDOW_SECONDS=10               # rate-averaging window
+EMBED_THROTTLE_WRITE_SPIKE_RATE=               # req/sec that trips the write breaker (unset = write throttle off)
+EMBED_THROTTLE_WRITE_RATE_MAX=                 # elevated/warn line (default 0.6 × spike)
+EMBED_THROTTLE_WRITE_RESUME_RATE=              # normal level to resume at (default 0.4 × spike)
+EMBED_THROTTLE_WRITE_RESUME_MS=30000           # how long the rate must stay normal before resuming
+EMBED_THROTTLE_SEARCH_SPIKE_RATE=              # req/sec that trips the search breaker (unset = search throttle off)
+EMBED_THROTTLE_SEARCH_RATE_MAX=                # elevated/warn line (default 0.6 × spike)
+EMBED_THROTTLE_SEARCH_RESUME_RATE=             # normal level to resume at (default 0.4 × spike)
+EMBED_THROTTLE_SEARCH_RESUME_MS=30000          # how long the rate must stay normal before resuming
+EMBED_THROTTLE_MAX_PENDING=                    # optional cap on the pending_embeddings backlog (unset = unbounded)
+
 # RAG /search/ask — Anthropic (optional)
 ANTHROPIC_API_KEY=sk-ant-...
 ANTHROPIC_MODEL=claude-haiku-4-5-20251001
