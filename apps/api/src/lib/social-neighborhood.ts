@@ -13,7 +13,7 @@ import type {
 } from "@agora-server/contract";
 import { db } from "../db/index.js";
 import { profiles } from "../db/schema/index.js";
-import { getNeo4j } from "./neo4j.js";
+import { getNeo4j, neo4jDatabase } from "./neo4j.js";
 import { pairBrightness, AGE_CUTOFF_HALF_LIVES, LN2, DAY_MS } from "./social-weather.js";
 
 type HalfLives = Pick<ResolvedSocialConfig, "warmthHalfLifeDays" | "frictionHalfLifeDays">;
@@ -131,7 +131,7 @@ export async function getSocialNeighborhood(
     includeCoParticipates,
     warmthHalfLifeDays: cfg.warmthHalfLifeDays,
     frictionHalfLifeDays: cfg.frictionHalfLifeDays,
-  });
+  }, { database: neo4jDatabase() });
   const rows: NeighborhoodRow[] = (records as Array<{ get: (k: string) => unknown }>).map((r) => ({
     userId: String(r.get("userId")),
     tieKinds: mapTieKinds(r.get("tieKinds")),

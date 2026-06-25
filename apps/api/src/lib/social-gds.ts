@@ -7,6 +7,7 @@
 // caller degrades gracefully — SOCIAL-GRAPH.md §6).
 import type { Driver, Session } from "neo4j-driver";
 import { logger } from "./logger.js";
+import { neo4jDatabase } from "./neo4j.js";
 
 const GDS_NODE_QUERY = "MATCH (u:User) WHERE u.id IN $userIds RETURN id(u) AS id";
 const GDS_REL_QUERY =
@@ -33,7 +34,7 @@ export async function withProjectedGdsGraph<T>(
   userIds: string[],
   fn: (session: Session, graphName: string) => Promise<T>,
 ): Promise<T | null> {
-  const session = driver.session();
+  const session = driver.session({ database: neo4jDatabase() });
   const dropGraph = async () => {
     try {
       await session.run("CALL gds.graph.drop($g, false) YIELD graphName RETURN graphName", { g: graphName });

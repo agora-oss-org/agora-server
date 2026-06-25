@@ -8,7 +8,7 @@
 // deferred (spaceId isn't in the graph yet).
 import type { Driver } from "neo4j-driver";
 import type { ResolvedSocialConfig, SocialWeather, WeatherBand } from "@agora-server/contract";
-import { getNeo4j } from "./neo4j.js";
+import { getNeo4j, neo4jDatabase } from "./neo4j.js";
 
 // Design constants — locked by docs/AGORA-SOCIAL.md §11; deliberately NOT in social_config.
 export const K_W = 10;       // warmth saturation constant
@@ -158,7 +158,7 @@ export async function fetchWarmthPairs(
     ageCutoff,
     warmthHalfLifeDays: cfg.warmthHalfLifeDays,
     frictionHalfLifeDays: cfg.frictionHalfLifeDays,
-  });
+  }, { database: neo4jDatabase() });
   const rows: WarmthPair[] = (records as Array<{ get: (k: string) => unknown }>).map((r) => ({
     actor: String(r.get("actor")),
     recipient: String(r.get("recipient")),

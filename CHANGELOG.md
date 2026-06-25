@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`NEO4J_DATABASE` — configurable DozerDB database for the social graph.** Names the DozerDB
+  database all social-graph traffic targets (DozerDB re-enables Neo4j multi-database on Community);
+  unset → `neo4j` (the server default), so existing deployments are unaffected. The API threads it
+  into every read session/query (`lib/neo4j.ts` `neo4jDatabase()`; weather/neighborhood/GDS); the
+  scorer (sole writer) binds all writes to it (`scorer/neo4j.py` `db_session`) and **auto-creates it
+  on startup** (`CREATE DATABASE … IF NOT EXISTS` against the `system` db, name regex-validated as an
+  injection guard). Compose ties the server's default database to the same var so the named DB
+  restarts online. **api + scorer MUST share the value.**
 - **Outbound embed throttle — abuse protection on Voyage calls (`lib/embed-throttle.ts`).** A per-project,
   in-process circuit breaker with hysteresis guards every Voyage embedding call so a runaway client/script
   can't blow through Voyage's limits or our bill. When a project's embed rate (req/sec, averaged over

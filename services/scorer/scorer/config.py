@@ -81,6 +81,9 @@ class Settings:
     # Neo4j — social-graph write side. NEO4J_AUTH="user/password" (same var Neo4j container uses).
     neo4j_uri: str | None = field(default_factory=lambda: _env_str("NEO4J_URI"))
     neo4j_auth: str | None = field(default_factory=lambda: _env_str("NEO4J_AUTH"))
+    # Which DozerDB database to write to (DozerDB re-enables Neo4j multi-database on Community). Unset
+    # → "neo4j" (server default); created on startup if missing. MUST match the API's NEO4J_DATABASE.
+    neo4j_database: str = field(default_factory=lambda: _env_str("NEO4J_DATABASE") or "neo4j")
 
     # CO_PARTICIPATES — undirected co-commenter edges (docs/SOCIAL-GRAPH.md §7). Neutral: feeds the
     # Neighborhood neighbor-set only, no warmth/friction. Lookback bounds recency; cap bounds fan-out

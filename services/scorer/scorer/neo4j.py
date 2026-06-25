@@ -12,6 +12,7 @@ supporting indexes). ``ensure_constraints`` is called once on worker startup.
 from __future__ import annotations
 
 import asyncio
+import re
 from typing import Any, Optional
 
 from .config import Settings
@@ -22,7 +23,26 @@ logger = get_logger("scorer.neo4j")
 _CONSTRAINT_ATTEMPTS = 15
 _CONSTRAINT_BACKOFF_S = 2.0
 
+# Neo4j/DozerDB database naming rules: 3-63 chars, must START with an ASCII letter, then lowercase
+# alphanumerics / dots / dashes (no underscores). We validate the name before interpolating it into
+# the CREATE DATABASE statement — that DDL takes no bound parameter for the name, so the regex is the
+# injection guard (security-first; the driver's `database=` kwarg below is safe regardless, as it's a
+# protocol field, not string-interpolated Cypher).
+_DB_NAME_RE = re.compile(r"^[a-z][a-z0-9.-]{2,62}$")
+
+
+def valid_db_name(name: str) -> bool:
+    """Whether `name` is a safe DozerDB database name to interpolate into CREATE DATABASE DDL."""
+    return bool(_DB_NAME_RE.match(name))
+
+
 _driver: Optional[Any] = None  # neo4j.AsyncDriver
+
+
+def db_session(driver: Any, settings: Settings) -> Any:
+    """Open a session bound to the configured DozerDB database (default `neo4j`). `database=` is a
+    driver protocol field (not Cypher), so it needs no name validation here."""
+    return driver.session(database=settings.neo4j_database)
 
 
 async def get_driver(settings: Settings) -> Optional[Any]:
@@ -55,12 +75,22 @@ async def ensure_constraints(settings: Settings) -> None:
     until Bolt is up (or give up after ~30s and let the consumer run without the constraints)."""
     if not settings.neo4j_enabled():
         return
+    db = settings.neo4j_database
+    if db != "neo4j" and not valid_db_name(db):
+        log(logger, "error", "invalid NEO4J_DATABASE name; skipping neo4j setup", database=db)
+        return
     driver = await get_driver(settings)
     if driver is None:
         return
     for attempt in range(1, _CONSTRAINT_ATTEMPTS + 1):
         try:
-            async with driver.session() as session:
+            # Create the target DozerDB database if it doesn't exist (DozerDB CREATE DATABASE both
+            # creates and brings it online — no separate "join"). Run against the `system` db. The
+            # default `neo4j` always exists, so skip it. `db` is regex-validated above.
+            if db != "neo4j":
+                async with driver.session(database="system") as system_session:
+                    await system_session.run(f"CREATE DATABASE {db} IF NOT EXISTS")
+            async with db_session(driver, settings) as session:
                 await session.run("create constraint scorer_user_id if not exists for (u:User) require u.id is unique")
                 await session.run("create constraint scorer_content_id if not exists for (c:Content) require c.id is unique")
                 # Read-side support: @agora/api's Weather query filters INTERACTED by projectId

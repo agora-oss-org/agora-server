@@ -13,6 +13,12 @@ export function neo4jEnabled(): boolean {
   return !!env.NEO4J_URI;
 }
 
+/** The DozerDB database name every social-graph session/query targets (default the server's `neo4j`).
+ *  The scorer (sole writer) creates it on startup; the API reads must point at the same database. */
+export function neo4jDatabase(): string {
+  return env.NEO4J_DATABASE ?? "neo4j";
+}
+
 /** Whether an error came from the Neo4j driver (network/auth/query — incl. ServiceUnavailable),
  *  as opposed to a bug in our own code. Routes map driver errors to 503 and rethrow the rest. */
 export function isNeo4jError(err: unknown): boolean {

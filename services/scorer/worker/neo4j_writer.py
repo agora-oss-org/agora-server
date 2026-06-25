@@ -24,7 +24,7 @@ from __future__ import annotations
 
 from scorer.config import Settings
 from scorer.logging import get_logger, log
-from scorer.neo4j import get_driver
+from scorer.neo4j import db_session, get_driver
 
 logger = get_logger("scorer.worker.neo4j_writer")
 
@@ -120,7 +120,7 @@ async def write_relationship_edge(
     if author_id is None:
         log(logger, "debug", "neo4j edge write skipped (no author)", target_id=target_id)
         return
-    async with driver.session() as session:
+    async with db_session(driver, settings) as session:
         await session.run(
             _MERGE,
             # str() the ids — they may arrive as asyncpg pgproto.UUID, which the Neo4j driver can't pack.
@@ -155,7 +155,7 @@ async def write_interaction_edge(
     if str(actor_id) == str(recipient_id):
         log(logger, "debug", "neo4j interaction edge skipped (self-interaction)", source_id=source_id)
         return
-    async with driver.session() as session:
+    async with db_session(driver, settings) as session:
         await session.run(
             _INTERACTED_MERGE,
             actor_id=str(actor_id),
@@ -175,7 +175,7 @@ async def delete_interaction_edge(settings: Settings, *, source_id: str) -> None
     if driver is None:
         log(logger, "debug", "neo4j interaction edge delete skipped (not configured)", source_id=source_id)
         return
-    async with driver.session() as session:
+    async with db_session(driver, settings) as session:
         await session.run(_INTERACTED_DELETE, source_id=str(source_id))
     log(logger, "info", "neo4j interaction edge deleted", source_id=source_id)
 
@@ -186,7 +186,7 @@ async def write_follow_edge(settings: Settings, *, follower_id: str, followed_id
     if driver is None:
         log(logger, "debug", "neo4j follow edge skipped (not configured)")
         return
-    async with driver.session() as session:
+    async with db_session(driver, settings) as session:
         await session.run(_FOLLOW_MERGE, follower_id=str(follower_id), followed_id=str(followed_id))
     log(logger, "info", "neo4j follow edge merged", follower_id=str(follower_id), followed_id=str(followed_id))
 
@@ -197,7 +197,7 @@ async def delete_follow_edge(settings: Settings, *, follower_id: str, followed_i
     if driver is None:
         log(logger, "debug", "neo4j follow edge delete skipped (not configured)")
         return
-    async with driver.session() as session:
+    async with db_session(driver, settings) as session:
         await session.run(_FOLLOW_DELETE, follower_id=str(follower_id), followed_id=str(followed_id))
     log(logger, "info", "neo4j follow edge deleted", follower_id=str(follower_id), followed_id=str(followed_id))
 
@@ -208,7 +208,7 @@ async def write_connection_edge(settings: Settings, *, requester_id: str, addres
     if driver is None:
         log(logger, "debug", "neo4j connection edge skipped (not configured)")
         return
-    async with driver.session() as session:
+    async with db_session(driver, settings) as session:
         await session.run(_CONNECTION_MERGE, requester_id=str(requester_id), addressee_id=str(addressee_id))
     log(logger, "info", "neo4j connection edge merged", requester_id=str(requester_id), addressee_id=str(addressee_id))
 
@@ -219,7 +219,7 @@ async def delete_connection_edge(settings: Settings, *, requester_id: str, addre
     if driver is None:
         log(logger, "debug", "neo4j connection edge delete skipped (not configured)")
         return
-    async with driver.session() as session:
+    async with db_session(driver, settings) as session:
         await session.run(_CONNECTION_DELETE, requester_id=str(requester_id), addressee_id=str(addressee_id))
     log(logger, "info", "neo4j connection edge deleted", requester_id=str(requester_id), addressee_id=str(addressee_id))
 
@@ -247,7 +247,7 @@ async def write_friction_edge(
     if str(actor_id) == str(recipient_id):
         log(logger, "debug", "neo4j friction edge skipped (self-report)", source_id=source_id)
         return
-    async with driver.session() as session:
+    async with db_session(driver, settings) as session:
         await session.run(
             _FRICTION_MERGE,
             actor_id=str(actor_id),
@@ -281,7 +281,7 @@ async def write_co_participates_edge(
         log(logger, "debug", "neo4j co-participates edge skipped (self-pair)", actor_id=actor_id)
         return
     source_a, source_b = canonical_pair(str(actor_id), str(participant_id))
-    async with driver.session() as session:
+    async with db_session(driver, settings) as session:
         await session.run(
             _CO_PARTICIPATES_MERGE,
             source_a=source_a,
