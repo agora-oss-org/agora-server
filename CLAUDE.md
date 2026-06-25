@@ -137,9 +137,11 @@ Python sibling:
 `validation.ts` / `envelope.ts` / `context.ts` re-export the contract symbols so existing call sites
 are unchanged — never redefine a contract type locally (that reintroduces drift).
 
-Root `.env` is the single source (direnv `dotenv`), symlinked from `apps/api/.env -> ../../.env`
-(and `apps/secure-chat/.env -> ../../.env`). `docker-compose.yml` lives at the repo root; each app
-image builds from the repo root context. **Every service is profile-gated, so a bare `docker compose up`
+Each app loads **its own** `.env` from its package dir (`dotenv`); the repo-root `.env.example` is the
+comprehensive reference, with minimal per-app `*.env.example` subsets. (Optionally keep one file by
+symlinking each app's `.env` to a root `.env` — `ln -sf ../../.env apps/api/.env`; a local convenience,
+gitignored, not shipped. See README → "Environment files".) `docker-compose.yml` lives at the repo root
+and reads the root `.env` directly; each app image builds from the repo root context. **Every service is profile-gated, so a bare `docker compose up`
 starts nothing.** The model is **two axes** (additive/OR). **Axis 1 — data plane + API (REQUIRED, pick
 EXACTLY ONE, mutually exclusive):** `--profile supabase` (external Supabase Postgres + Storage) or
 `--profile selfhost` (local `db` + `minio`); either brings up the API itself (`agora` + `proxy` + `cron`).
@@ -158,9 +160,10 @@ entrypoint that serves the admin SPA AND routes every service (auto-HTTPS + HSTS
 authoritative `X-Forwarded-For`; one hop → set `RATE_LIMIT_TRUSTED_HOPS=1`; `SERVER_NAME=:80` for plain
 HTTP behind your own TLS terminator). It rides the data-plane profiles (up whenever the API is) and
 replaces the old admin nginx (now removed). The `selfhost` data plane runs the SAME api fully
-self-contained (no Supabase) — point `DATABASE_URL` at `db`, set `STORAGE_PROVIDER=s3` + the `S3_*` block at
-`minio` (the Caddy front door serves public media at `/media`), and `DEFAULT_AUTH_PROVIDER=native`. See
-`docs/SELF-HOSTING.md`.
+self-contained (no Supabase cloud — the local `db` is still the `supabase/postgres` image, required for
+the migrations' extensions + `auth` roles) — point `DATABASE_URL` at `db`, set `STORAGE_PROVIDER=s3` +
+the `S3_*` block at `minio` (the Caddy front door serves public media at `/media`), and
+`DEFAULT_AUTH_PROVIDER=native`. See `docs/SELF-HOSTING.md`.
 
 **Storage is pluggable** (`lib/storage/` provider seam): `STORAGE_PROVIDER` picks `supabase` (default,
 Supabase Storage) or `s3` (any S3-compatible store — MinIO/AWS). `lib/storage.ts`'s
@@ -249,8 +252,9 @@ url=$(grep '^DATABASE_URL=' .env | cut -d= -f2-); psql "$url" -v ON_ERROR_STOP=1
 > run `pnpm --filter @agora-server/contract build` (or `pnpm -r build`) before typechecking the api from a
 > clean checkout.
 
-**Env:** the root `.env` is the single source (direnv `dotenv`), symlinked from
-`apps/api/.env -> ../../.env` so dotenv resolves from `apps/api/`. `DATABASE_URL` is the Supabase
+**Env:** `@agora/api` loads `apps/api/.env` (`dotenv`, resolved from `apps/api/`) — `cp .env.example .env`
+there. (Optional: symlink it to a root `.env` to share one file across apps — gitignored; see README →
+"Environment files".) `DATABASE_URL` is the Supabase
 **transaction pooler (:6543)** and is the only hard requirement. The rest gate specific features and
 are validated as optional: `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` + `SUPABASE_ANON_KEY`
 (Auth + Storage), `VOYAGE_API_KEY` (semantic search), `RATE_LIMIT_MAX`/`RATE_LIMIT_AUTH_MAX` (edge

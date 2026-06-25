@@ -23,7 +23,7 @@ thing that should differ between two runs is your code. Everything here exists t
 
 ### Canonical target: the local self-host docker stack (lowest variance)
 
-From the repo root, bring up an isolated, self-contained stack (local Postgres + MinIO, no Supabase):
+From the repo root, bring up an isolated, self-contained stack (local Postgres + MinIO, no Supabase cloud):
 
 ```bash
 docker compose --profile selfhost up -d --build

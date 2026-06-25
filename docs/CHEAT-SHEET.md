@@ -58,9 +58,10 @@ lists the bundle.
 
 ## 2. Env by configuration
 
-Set these in the root **`.env`** (single source; symlinked to `apps/api/.env` and shared with
-`services/scorer`). ✅ = required for that configuration · ◻️ = optional. Values that compose **injects
-for you** in the Docker path are marked *(compose-set)* — you don't put them in `.env`.
+Set these in your **`.env`** (for the API, that's `apps/api/.env`; see
+[Environment files](../README.md#environment-files) for the per-app layout and the optional single-file
+setup). ✅ = required for that configuration · ◻️ = optional. Values that compose **injects for you** in
+the Docker path are marked *(compose-set)* — you don't put them in `.env`.
 
 ### 2.0 — Always required (every deployment)
 
@@ -83,10 +84,11 @@ server boots without these, but identity + uploads stay off until set.
 
 ### 2.2 — Data plane B: **Self-host** (`--profile selfhost`)
 
-Runs the same API with local Postgres + MinIO, no Supabase. ⚠️ "Local Postgres" is the
-`supabase/postgres` image (the profile pins `15.8.1.060`), **not** a vanilla Postgres — the migrations
-need its bundled pgvector/PostGIS/pgmq + the `auth` roles. "No Supabase" = no Supabase **cloud**, not no
-Supabase Postgres image. See [`docs/SELF-HOSTING.md`](SELF-HOSTING.md).
+Runs the same API on a local Postgres + MinIO — **no Supabase cloud/account** (no hosted Auth, Storage,
+or DB). The local Postgres is still the **`supabase/postgres`** image, though (the profile pins
+`15.8.1.060`) — **not** a vanilla Postgres, since the migrations need its bundled pgvector/PostGIS/pgmq +
+the `auth` roles. So "self-hosted" drops the Supabase *service*, not the Supabase Postgres
+*distribution*. See [`docs/SELF-HOSTING.md`](SELF-HOSTING.md).
 
 | Var | | Value & where to get it |
 |---|---|---|
@@ -98,7 +100,7 @@ Supabase Postgres image. See [`docs/SELF-HOSTING.md`](SELF-HOSTING.md).
 | `S3_PUBLIC_URL` | ✅ | Browser-reachable base for public objects — the Caddy `/media` mount, e.g. `https://your-host/media`. |
 | `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` | ✅ | = `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD`. |
 | `S3_BUCKET` | ◻️ | `agora` (default; auto-created on first upload). |
-| `DEFAULT_AUTH_PROVIDER` | ✅ | Set to `native` (in-API passwords, no Supabase). |
+| `DEFAULT_AUTH_PROVIDER` | ✅ | Set to `native` (in-API passwords, no Supabase Auth). |
 
 > Bootstrap the first user on a virgin self-host DB:
 > `docker compose run --rm -it agora node scripts/seeds/seed-native-admin.mjs`.

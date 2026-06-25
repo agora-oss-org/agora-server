@@ -31,10 +31,13 @@ cd ../admin && pnpm dev   # http://localhost:5173
 
 ## Environment
 
-The root `.env` is the single source (symlinked into `apps/api/.env`). `DATABASE_URL` is the only hard
-requirement; everything else gates a specific feature and is validated as optional — e.g.
-`SUPABASE_*` (Auth + Storage), `VOYAGE_API_KEY` (semantic search), `NEO4J_URI` (the [[Social Graph]]),
-`OPERATOR_USER_IDS`/`OPERATOR_EMAILS` (the operator allowlist).
+Each app loads its own `.env` from its package directory — for the API, `cp .env.example .env` in
+`apps/api/`. `DATABASE_URL` is the only hard requirement; everything else gates a specific feature and is
+validated as optional — e.g. `SUPABASE_*` (Auth + Storage), `VOYAGE_API_KEY` (semantic search),
+`NEO4J_URI` (the [[Social Graph]]), `OPERATOR_USER_IDS`/`OPERATOR_EMAILS` (the operator allowlist). The
+per-app layout (and an optional single-file setup) is in the repo README's
+[Environment files](https://github.com/agora-oss-org/agora-server/blob/root/README.md#environment-files)
+section.
 
 The deploy-oriented env reference lives in
 [`docs/CHEAT-SHEET.md`](https://github.com/agora-oss-org/agora-server/blob/root/docs/CHEAT-SHEET.md),

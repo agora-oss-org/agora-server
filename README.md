@@ -231,6 +231,33 @@ cd ../admin && pnpm dev   # http://localhost:5173
 Each app's README covers its own configuration, commands, and Docker image. Start with
 **[apps/api](apps/api/README.md)** — it's the backend everything else points at.
 
+## Environment files
+
+Each Node service loads **its own** `.env` (via `dotenv`, from the directory it runs in) — there is no
+shared or auto-loaded root env on a fresh clone, so every app you run needs a `.env` in its package:
+
+| Service | env file | start from |
+|---|---|---|
+| `@agora/api` | `apps/api/.env` | `cp apps/api/.env.example apps/api/.env` |
+| `@agora/admin` (browser `VITE_*`) | `apps/admin/.env` | `cp apps/admin/.env.example apps/admin/.env` |
+| `@agora/secure-chat` | `apps/secure-chat/.env` | fill from the root [`.env.example`](.env.example) (no per-app example) |
+| `services/scorer` (Python) | its own process env | — |
+
+The repo-root [`.env.example`](.env.example) is the **comprehensive reference** (every var across the API
++ scorer); the per-app `*.env.example` files are minimal subsets for running that app alone.
+
+**Optional — one file for everything.** If you'd rather maintain a single env file, fill the root `.env`
+once and symlink each service's file to it:
+
+```bash
+cp .env.example .env
+ln -sf ../../.env apps/api/.env
+ln -sf ../../.env apps/secure-chat/.env
+```
+
+That's a convenience, not a requirement — these symlinks are gitignored and never ship with the repo
+(the Docker path doesn't use them either; compose reads the root `.env` directly).
+
 ## Architecture
 
 ```
@@ -260,10 +287,10 @@ Supabase Postgres   schema · triggers · RPC · pgvector · PostGIS · RLS
 - **Supabase is the default, not a hard dependency.** Auth and Storage sit behind provider seams
   (`getAuthProvider()` / `getStorage()`): choose **native** email/password auth
   (`DEFAULT_AUTH_PROVIDER=native`) and an **S3-compatible** object store (`STORAGE_PROVIDER=s3` →
-  MinIO/AWS) and the *same* server runs fully self-contained on a local Postgres — no Supabase at all.
-  ⚠️ "No Supabase" means no Supabase **cloud**: that local Postgres is still the `supabase/postgres`
-  **image** (the migrations hard-depend on its bundled pgvector/PostGIS/pgmq + the `auth` roles — a
-  vanilla Postgres won't migrate), which the `selfhost` profile pins for you. See
+  MinIO/AWS) and the *same* server runs fully self-contained on a local Postgres — no Supabase
+  **cloud** (no hosted Auth/Storage/DB, no account). ⚠️ That local Postgres is still the
+  `supabase/postgres` **image** (the migrations hard-depend on its bundled pgvector/PostGIS/pgmq + the
+  `auth` roles — a vanilla Postgres won't migrate), which the `selfhost` profile pins for you. See
   [`docs/SELF-HOSTING.md`](docs/SELF-HOSTING.md).
 
 See [apps/api/README.md](apps/api/README.md#architecture) for the full backend architecture and
@@ -363,7 +390,7 @@ docker compose --profile secure-chat up --build         # split box → remote D
 docker compose --profile full --profile supabase up     # everything (incl. secure-chat), Supabase-backed
 ```
 
-For a **fully self-contained** stack (no Supabase at all) use **`selfhost`** (local Postgres + MinIO).
+For a **fully self-contained** stack (no Supabase cloud) use **`selfhost`** (local Postgres + MinIO).
 Agora swaps Supabase out through its provider seams — **native** email/password auth
 (`DEFAULT_AUTH_PROVIDER=native`) and **S3-compatible** storage (`STORAGE_PROVIDER=s3` → MinIO/AWS) — so
 the *same* server image runs against either backend. The local `db` is still the `supabase/postgres`

@@ -61,7 +61,7 @@ profile-gated, so a bare `docker compose up` starts nothing.)
    MINIO_ROOT_USER=agora
    MINIO_ROOT_PASSWORD=<strong-password>     # must equal S3_SECRET_ACCESS_KEY
 
-   # Auth — native (no Supabase). Leave all SUPABASE_* unset.
+   # Auth — native (no Supabase Auth). Leave all SUPABASE_* unset.
    DEFAULT_AUTH_PROVIDER=native
 
    # Required regardless of backend

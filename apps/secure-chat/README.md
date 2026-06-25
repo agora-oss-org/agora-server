@@ -82,7 +82,7 @@ O(1), it goes through a **Redis SET** (`suspended:profiles`) instead of a per-re
 pnpm --filter @agora-server/contract build
 pnpm --filter @agora/core build
 
-# Dev (tsx watch). Needs the env below in the root .env (symlinked to apps/secure-chat/.env):
+# Dev (tsx watch). Needs the env below in apps/secure-chat/.env (this package's dir):
 pnpm --filter @agora/secure-chat dev      # → http://localhost:4002/v7
 #   tip: run `pnpm dev:core` (tsc -w) in another shell if you're editing the kernel.
 

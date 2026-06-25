@@ -108,9 +108,10 @@ pnpm test:integration     # integration tests (needs TEST_DATABASE_URL — a ded
 
 ## Configuration (`.env`)
 
-The repo's root `.env` is the single source (symlinked to `apps/api/.env`). Only `DATABASE_URL` is
-strictly required; the rest gate specific features and are validated as optional (empty strings are
-treated as unset).
+`@agora/api` loads **`apps/api/.env`** (`dotenv`, from this package's dir) — `cp .env.example .env` here
+to start. Only `DATABASE_URL` is strictly required; the rest gate specific features and are validated as
+optional (empty strings are treated as unset). (Want one env file across all the apps? See
+[Environment files](../../README.md#environment-files) in the repo README.)
 
 ```ini
 # Database — Supabase transaction pooler (:6543). The only hard requirement.
