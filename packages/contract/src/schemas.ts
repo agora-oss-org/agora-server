@@ -182,19 +182,57 @@ export const memberRoleSchema = z.object({
   role: z.enum(["admin", "moderator", "member"]),
 });
 
-export const moderationSchema = z.object({
-  status: z.enum(["approved", "removed"]),
-  reason: z.string().max(500).optional(),
-});
+// The SDK (useModerateSpaceEntity/useModerateSpaceComment) sends { action: "approve"|"remove" };
+// the native/admin shape is { status: "approved"|"removed" }. Accept both and normalize to `status`
+// so handlers keep reading body.status unchanged.
+export const moderationSchema = z
+  .object({
+    status: z.enum(["approved", "removed"]).optional(),
+    action: z.enum(["approve", "remove"]).optional(),
+    reason: z.string().max(500).optional(),
+  })
+  .transform((v) => {
+    const status =
+      v.status ?? (v.action === "approve" ? "approved" : v.action === "remove" ? "removed" : undefined);
+    return { status: status as "approved" | "removed", reason: v.reason };
+  })
+  .refine((v) => v.status === "approved" || v.status === "removed", {
+    message: "status is required",
+    path: ["status"],
+  });
 
 // ─── collections ─────────────────────────────────────────────────────────────
-export const createCollectionSchema = z.object({
-  name: z.string().min(1).max(120),
-  parentId: z.string().uuid().optional(),
-});
+// The SDK (useCreateCollectionMutation) sends { collectionName }; native is { name }. Accept both,
+// normalize to `name`.
+export const createCollectionSchema = z
+  .object({
+    name: z.string().min(1).max(120).optional(),
+    collectionName: z.string().min(1).max(120).optional(),
+    parentId: z.string().uuid().optional(),
+  })
+  .transform((v) => ({ name: (v.name ?? v.collectionName) as string, parentId: v.parentId }))
+  .refine((v) => typeof v.name === "string" && v.name.length > 0, {
+    message: "name is required",
+    path: ["name"],
+  });
+
+// SDK (useUpdateCollectionMutation) PATCHes a flat body; currently only `name` is updatable.
+export const updateCollectionSchema = z
+  .object({
+    name: z.string().min(1).max(120).optional(),
+    parentId: z.string().uuid().nullable().optional(),
+  })
+  .refine((v) => v.name !== undefined || v.parentId !== undefined, {
+    message: "No updatable fields provided",
+  });
 
 export const addEntitySchema = z.object({
   entityId: z.string().uuid(),
+});
+
+// SDK (useTable create/update) — a custom-table row body. `data` is a free-form JSON object.
+export const tableRowBodySchema = z.object({
+  data: z.record(z.string(), z.unknown()),
 });
 
 // ─── reports ─────────────────────────────────────────────────────────────────
@@ -232,19 +270,41 @@ export const signOutSchema = z.object({
   refreshToken: z.string().min(1).optional(),
 });
 
-export const changePasswordSchema = z.object({
-  currentPassword: z.string().min(1),
-  newPassword: z.string().min(8).max(128),
-});
+// The SDK (useAuth/changePasswordThunk) sends `password` for the CURRENT password; the native name
+// is `currentPassword`. Accept both, normalize to `currentPassword`.
+export const changePasswordSchema = z
+  .object({
+    currentPassword: z.string().min(1).optional(),
+    password: z.string().min(1).optional(),
+    newPassword: z.string().min(8).max(128),
+  })
+  .transform((v) => ({ currentPassword: (v.currentPassword ?? v.password) as string, newPassword: v.newPassword }))
+  .refine((v) => typeof v.currentPassword === "string" && v.currentPassword.length > 0, {
+    message: "currentPassword is required",
+    path: ["currentPassword"],
+  });
 
 export const emailSchema = z.object({
   email: z.string().email().max(254),
 });
 
-export const verifyEmailSchema = z.object({
-  tokenHash: z.string().min(1),
-  type: z.enum(["signup", "email", "recovery"]).optional(),
+// SDK (confirmAccountDeletionThunk) posts the emailed deletion code.
+export const confirmAccountDeletionSchema = z.object({
+  code: z.string().min(1),
 });
+
+// The SDK (useVerifyEmail) sends { token }; the native name is `tokenHash`. Accept both, normalize.
+export const verifyEmailSchema = z
+  .object({
+    tokenHash: z.string().min(1).optional(),
+    token: z.string().min(1).optional(),
+    type: z.enum(["signup", "email", "recovery"]).optional(),
+  })
+  .transform((v) => ({ tokenHash: (v.tokenHash ?? v.token) as string, type: v.type }))
+  .refine((v) => typeof v.tokenHash === "string" && v.tokenHash.length > 0, {
+    message: "tokenHash is required",
+    path: ["tokenHash"],
+  });
 
 export const resetPasswordSchema = z.object({
   token: z.string().min(1),

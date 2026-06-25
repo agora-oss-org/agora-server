@@ -270,7 +270,8 @@ export const entityRoutes = new Hono<{ Variables: Variables }>()
     logger.info({ projectId: c.var.projectId, entityId: row.id, userId: row.userId }, "entity: deleted");
     return c.json({ success: true });
   })
-  .post("/:id/publish", requireAuth, async (c) => {
+  // SDK (usePublishDraft) calls PATCH; POST kept for any legacy caller.
+  .on(["POST", "PATCH"], "/:id/publish", requireAuth, async (c) => {
     const row = await ownedEntity(c);
     const [updated] = await db.update(entities).set({ isDraft: false }).where(eq(entities.id, row.id)).returning();
     logger.info({ projectId: c.var.projectId, entityId: row.id, userId: row.userId }, "entity: published");
@@ -314,6 +315,28 @@ export const entityRoutes = new Hono<{ Variables: Variables }>()
     return c.json({ recorded: true, readAt: readAt.toISOString() });
   })
   // ── reactions ─────────────────────────────────────────────────────────────
+  // SDK (useFetchEntityReactions) — paginated list of who reacted, gated by entity read access.
+  .get("/:id/reactions", async (c) => {
+    const targetId = c.req.param("id");
+    await assertCanReadEntity(c, targetId); // don't reveal reactors on content you can't read
+    const { page, limit, offset } = readPagination(c);
+    const rt = c.req.query("reactionType");
+    const where = and(
+      eq(reactions.projectId, c.var.projectId),
+      eq(reactions.targetType, "entity"),
+      eq(reactions.targetId, targetId),
+      rt ? eq(reactions.reactionType, rt as any) : undefined,
+    );
+    const [{ n } = { n: 0 }] = await db.select({ n: count() }).from(reactions).where(where);
+    const rows = await db.select().from(reactions).where(where)
+      .orderBy(desc(reactions.createdAt)).limit(limit).offset(offset);
+    const userMap = await loadUsers(c.var.projectId, rows.map((r) => r.userId));
+    const data = rows.map((r) => ({
+      id: r.id, userId: r.userId, reactionType: r.reactionType,
+      createdAt: r.createdAt.toISOString(), user: userMap.get(r.userId) ?? null,
+    }));
+    return c.json(paginate(data, n, page, limit));
+  })
   .post("/:id/reactions", requireAuth, async (c) => {
     await assertCanReadEntity(c, c.req.param("id")); // can't react to content you can't read
     const { reactionType } = parseBody(reactionSchema, await c.req.json().catch(() => ({})), "entities");

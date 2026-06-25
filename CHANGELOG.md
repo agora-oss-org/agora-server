@@ -8,6 +8,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Self-service account deletion — `POST /auth/request-account-deletion` + `/confirm-account-deletion`.**
+  The SDK's `useRequestAccountDeletion`/`confirmAccountDeletion` flow: step 1 emails a confirmation code
+  (profile-keyed `account_deletion_codes`, so it works for **both** native and Supabase users); step 2
+  verifies it and applies the project's **`account_deletion_mode`** (migration `0051`):
+  - **`hard`** (default) — removes the identity (native credential deleted / Supabase
+    `admin.deleteUser`); the **profile row is deleted**, so authored posts/comments survive as authorless
+    (`user_id` set-null — content is community property) and engagement cascades away.
+  - **`soft`** — disables the identity (native `disabled_at` / Supabase `admin.deleteUser(id, true)`); the
+    **profile is retained but deactivated** (`is_active=false`).
+  - **`ban`** — reversible disable (native `disabled_at` / Supabase `admin.updateUserById` long
+    `ban_duration`); profile retained + deactivated.
+
+  All modes revoke every session, and a disabled native credential can never sign in
+  (`verifyCredentials` rejects `disabled_at`). The `auth/deletion-unsupported` throw is gone — Supabase
+  is fully supported via the service-role admin API. (Migration `0049`'s `auth_email_tokens` `delete`
+  kind is now unused, superseded by the profile-keyed code store.)
+- **`/db` custom tables — full CRUD (`useTable`/`tablesApi`).** A generic per-project JSONB row store at
+  `/db/:tableName` (+ `/:rowId`, `/:rowId/restore`): list with the 10 filter operators
+  (`eq/ne/gt/gte/lt/lte/in/contains/like/isNull`) + `sortBy`/`sortDir` + `includeDeleted`, create, update,
+  soft-delete (`?force=true` to hard-delete), and restore. New `table_rows` table (migration `0050`, with
+  RLS deny-all). **Access model: per-row ownership** — a caller sees/edits only rows they created; project
+  admins/operators bypass. Filter column names + values are bound as SQL parameters (never interpolated);
+  numeric comparisons are regex-guarded so `::numeric` can't error on a text column. The whole feature was
+  unimplemented server-side (every SDK call 404'd).
+- **SDK contract conformance — `GET /entities/:id/reactions` + `GET /comments/:id/reactions`.** Paginated
+  "who reacted" lists (`{ id, userId, reactionType, createdAt, user }` + standard envelope), gated by the
+  same read access as the target content. The SDK (`useFetchEntityReactions`/`useFetchCommentReactions`)
+  called these but the server only had POST/DELETE — every call 404'd.
+- **SDK contract conformance — `GET /spaces/mutual/:userId`.** Spaces in which both the caller and
+  `:userId` are active members (`useFetchMutualSpaces`); the endpoint did not exist (fell through to
+  `/:id` → 404).
+- **SDK contract conformance — `GET /users/:userId/connections`.** A specific user's established
+  connections (`useFetchConnectionsByUserId`), mirroring `GET /connections` but scoped to `:userId`; the
+  plural-list route was missing.
+- **SDK contract conformance — `PATCH` + `DELETE /collections/:id`.** Rename/reparent
+  (`useUpdateCollectionMutation`) and delete (`useDeleteCollectionMutation`) a collection; neither route
+  existed (rename/delete 404'd). Delete relies on FK cascade for sub-collections + `collection_entities`.
+- **SDK-driven conformance tests** (`test/integration/sdk-conformance.test.ts` +
+  `src/lib/contract-schemas.test.ts`). The SDK is now the executable spec: tests assert the server accepts
+  exactly what each hook sends and returns what it reads, so contract drift fails CI instead of slipping
+  past the demo's happy paths.
+- **`docs/REDIS.md` — the Redis reference.** A concise operator doc for Agora's two Redis consumers: the
+  fail-closed **suspension index** (O(1) disabled-account enforcement; how it hydrates/reconciles and why
+  secure-chat treats Redis as a hard dependency) and the cross-replica **rate-limit store**, plus
+  least-privilege ACL recipes (per-service + combined) and the eviction-policy caveat (don't let
+  `allkeys-lru` evict the no-TTL suspension SET). Linked from `apps/api/README.md`.
 - **`.env.local.example` — ready-made local self-host config template.** A committed template wired for
   `docker compose --profile full --profile selfhost` (local Postgres + MinIO + scorer + neo4j +
   secure-chat + redis behind the Caddy front door on plain HTTP), with every self-hosted var pre-set and
@@ -96,6 +142,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   longer used.
 
 ### Fixed
+- **SDK contract — request field names the server rejected with a 400.** `moderationSchema`,
+  `changePasswordSchema`, `verifyEmailSchema`, and `createCollectionSchema` now accept the field names the
+  sublay-fork SDK actually sends and normalize them to the existing handler shape: space moderation
+  `{ action: "approve"|"remove" }` → `{ status: "approved"|"removed" }`, change-password `password` →
+  `currentPassword`, verify-email `token` → `tokenHash`, create-collection `collectionName` → `name`. The
+  native field names still work. (`parseBody` widened to accept `.transform()` schemas.)
+- **SDK contract — HTTP method mismatches that 404'd.** `PATCH /entities/:id/publish` (`usePublishDraft`)
+  and `PATCH /app-notifications/mark-all-as-read` (`useMarkAllNotificationsAsReadMutation`) are now
+  accepted (both alongside the prior `POST`); mark-all-as-read returns `{ success, markedAsRead }`.
+- **`@aws-sdk/client-s3` was declared but uninstalled**, breaking every integration test (eager import in
+  the storage provider seam). Reinstalled via the lockfile.
 - **`scorer-worker` (and the API's `/social/*`) couldn't reach Neo4j under Docker** — `.env`'s
   `NEO4J_URI=bolt://localhost:7687` is correct for host-side dev but inside a container `localhost`
   is the container itself, so the scorer logged `failed to ensure neo4j constraints (gave up)`

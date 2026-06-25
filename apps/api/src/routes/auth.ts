@@ -13,6 +13,7 @@ import { db } from "../db/index.js";
 import { profiles, userSuspensions, projects } from "../db/schema/index.js";
 import { getAuthProvider } from "../lib/auth/index.js";
 import { mintSession, rotateRefreshToken, revokeRefreshToken, revokeAllForProfile } from "../lib/tokens.js";
+import { requestAccountDeletion, verifyAccountDeletionCode, resolveDeletionMode } from "../lib/account-deletion.js";
 import { isOperator } from "../lib/operators.js";
 import { getProjectRoles } from "../lib/project-roles.js";
 import { shapeAuthUser } from "../lib/shape.js";
@@ -22,6 +23,7 @@ import { trackEvent } from "../lib/umami.js";
 import {
   parseBody, signUpSchema, signInSchema, refreshSchema, signOutSchema,
   changePasswordSchema, emailSchema, verifyEmailSchema, resetPasswordSchema, externalUserSchema,
+  confirmAccountDeletionSchema,
 } from "../lib/validation.js";
 
 type ProfileRow = typeof profiles.$inferSelect;
@@ -191,6 +193,42 @@ export const authRoutes = new Hono<{ Variables: Variables }>()
     const body = parseBody(emailSchema, await c.req.json().catch(() => ({})), "auth");
     const provider = await getAuthProvider(c.var.projectId);
     await provider.resendConfirmation(c.var.projectId, body.email);
+    return c.json({ success: true });
+  })
+  // Self-service account deletion (SDK useRequestAccountDeletion / confirmAccountDeletion). Step 1
+  // emails a confirmation code (profile-keyed → works for native AND Supabase users); step 2 verifies
+  // it and applies the project's deletion mode (hard | soft | ban). On HARD, the profile is removed and
+  // authored content survives as authorless (set-null) — community property, not erased with the author.
+  // On SOFT/BAN the profile is retained but deactivated and the auth identity is disabled.
+  .post("/request-account-deletion", requireAuth, async (c) => {
+    const projectId = c.var.projectId;
+    const [profile] = await db.select().from(profiles)
+      .where(and(eq(profiles.projectId, projectId), eq(profiles.id, c.var.auth!.userId))).limit(1);
+    if (!profile?.email) throw Errors.badRequest("auth/no-email", "No email on file for this account");
+    await requestAccountDeletion(projectId, profile.id, profile.email);
+    logger.info({ projectId, userId: profile.id }, "auth: account-deletion requested");
+    return c.json({ success: true });
+  })
+  .post("/confirm-account-deletion", requireAuth, async (c) => {
+    const projectId = c.var.projectId;
+    const body = parseBody(confirmAccountDeletionSchema, await c.req.json().catch(() => ({})), "auth");
+    const [profile] = await db.select().from(profiles)
+      .where(and(eq(profiles.projectId, projectId), eq(profiles.id, c.var.auth!.userId))).limit(1);
+    if (!profile) throw Errors.unauthorized("auth/no-profile", "Authenticated user has no profile");
+    await verifyAccountDeletionCode(projectId, profile.id, body.code);
+    const [proj] = await db.select({ mode: projects.accountDeletionMode }).from(projects).where(eq(projects.id, projectId)).limit(1);
+    const mode = resolveDeletionMode(proj?.mode);
+    const provider = await getAuthProvider(projectId);
+    if (profile.authUserId) await provider.deleteUser(profile.authUserId, mode);
+    await revokeAllForProfile(profile.id); // kill sessions in every mode
+    if (mode === "hard") {
+      // FK onDelete on profiles.id: content (entities/comments) → set null (authorless, preserved);
+      // engagement (reactions/follows/connections/memberships) → cascade.
+      await db.delete(profiles).where(and(eq(profiles.projectId, projectId), eq(profiles.id, profile.id)));
+    } else {
+      await db.update(profiles).set({ isActive: false }).where(and(eq(profiles.projectId, projectId), eq(profiles.id, profile.id)));
+    }
+    logger.info({ projectId, userId: profile.id, mode }, "auth: account deleted");
     return c.json({ success: true });
   })
   .post("/verify-external-user", async (c) => {

@@ -154,6 +154,29 @@ export const spaceRoutes = new Hono<{ Variables: Variables }>()
     }));
     return c.json(paginate(data, n, page, limit));
   })
+  // SDK (useFetchMutualSpaces) — spaces in which BOTH the caller and :userId are active members.
+  // Declared above /:id so the static `mutual` segment wins.
+  .get("/mutual/:userId", requireAuth, async (c) => {
+    const { page, limit, offset } = readPagination(c);
+    const meId = c.var.auth!.userId;
+    const otherId = c.req.param("userId");
+    const activeFor = (uid: string) =>
+      db.select({ sid: spaceMembers.spaceId }).from(spaceMembers).where(and(
+        eq(spaceMembers.projectId, c.var.projectId),
+        eq(spaceMembers.userId, uid),
+        eq(spaceMembers.status, "active"),
+      ));
+    const where = and(
+      eq(spaces.projectId, c.var.projectId),
+      isNull(spaces.deletedAt),
+      inArray(spaces.id, activeFor(meId)),
+      inArray(spaces.id, activeFor(otherId)),
+    );
+    const [{ n } = { n: 0 }] = await db.select({ n: count() }).from(spaces).where(where);
+    const rows = await db.select().from(spaces).where(where)
+      .orderBy(desc(spaces.createdAt)).limit(limit).offset(offset);
+    return c.json(paginate(rows.map((r) => shapeSpace(r)), n, page, limit));
+  })
   .get("/:id", async (c) => {
     const space = await getSpace(c);
     const uid = c.var.auth?.userId;

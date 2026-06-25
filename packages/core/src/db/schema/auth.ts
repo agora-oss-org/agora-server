@@ -30,10 +30,26 @@ export const authCredentials = pgTable("auth_credentials", {
   email: text("email").notNull(),
   passwordHash: text("password_hash").notNull(),
   emailConfirmedAt: timestamp("email_confirmed_at", { withTimezone: true }),
+  // Soft-delete / ban marker: a disabled credential can never sign in (verifyCredentials rejects it).
+  disabledAt: timestamp("disabled_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (t) => [
   unique("auth_credentials_project_email").on(t.projectId, t.email),
+]);
+
+// account_deletion_codes — self-service deletion confirmation codes, PROFILE-keyed so the flow is
+// auth-provider-agnostic (Supabase users have no auth_credentials row). Single-use, expiring, hashed.
+export const accountDeletionCodes = pgTable("account_deletion_codes", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  projectId: uuid("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  profileId: uuid("profile_id").notNull().references(() => profiles.id, { onDelete: "cascade" }),
+  codeHash: text("code_hash").notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  consumedAt: timestamp("consumed_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  index("account_deletion_codes_profile_idx").on(t.profileId),
 ]);
 
 // auth_email_tokens — short-lived hashed tokens for email confirmation + password reset.

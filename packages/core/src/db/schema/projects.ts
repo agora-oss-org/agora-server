@@ -38,6 +38,9 @@ export const projects = pgTable("projects", {
   // Identity backend for this project. "supabase" delegates to Supabase Auth (default, existing behaviour);
   // "native" uses Agora's own credential store (auth_credentials + auth_email_tokens).
   authProvider: authProvider("auth_provider").notNull().default("supabase"),
+  // How a confirmed self-service account deletion is applied: hard (remove identity, keep authored
+  // content authorless) | soft (disable the auth user, keep the profile) | ban (reversible disable).
+  accountDeletionMode: text("account_deletion_mode").notNull().default("hard"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });

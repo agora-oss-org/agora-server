@@ -31,6 +31,21 @@ export const collectionEntities = pgTable("collection_entities", {
   primaryKey({ columns: [t.collectionId, t.entityId] }),
 ]);
 
+// Generic per-project custom-table rows (the SDK's `/db/:tableName` surface). Schemaless `data`
+// jsonb; `user_id` is the per-row owner (set-null on profile delete). `deleted_at` = soft-delete.
+export const tableRows = pgTable("table_rows", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  projectId: uuid("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  tableName: text("table_name").notNull(),
+  userId: uuid("user_id").references(() => profiles.id, { onDelete: "set null" }),
+  data: jsonb("data").notNull().default(sql`'{}'::jsonb`),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
+}, (t) => [
+  index("table_rows_lookup_idx").on(t.projectId, t.tableName, t.userId),
+]);
+
 export const files = pgTable("files", {
   id: uuid("id").primaryKey().defaultRandom(),
   projectId: uuid("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),

@@ -1,7 +1,7 @@
 import { getSupabase, getSupabaseAnon } from "../supabase.js";
 import { logger } from "../logger.js";
 import { Errors } from "../../http/errors.js";
-import type { AuthProvider, SignUpResult } from "./provider.js";
+import type { AuthProvider, SignUpResult, AccountDeletionMode } from "./provider.js";
 
 export class SupabaseAuthProvider implements AuthProvider {
   async signUp(_projectId: string, email: string, password: string): Promise<SignUpResult> {
@@ -43,5 +43,16 @@ export class SupabaseAuthProvider implements AuthProvider {
     await getSupabaseAnon().auth.resend({ type: "signup", email }).catch((err) => {
       logger.debug({ err }, "resend confirmation failed (best-effort)");
     });
+  }
+
+  // Apply deletion to the GoTrue user via the service-role admin API. hard = remove the user;
+  // soft = GoTrue soft-delete (retained, can't sign in); ban = long ban_duration (reversible).
+  async deleteUser(authUserId: string, mode: AccountDeletionMode): Promise<void> {
+    const admin = getSupabase().auth.admin;
+    const { error } =
+      mode === "hard" ? await admin.deleteUser(authUserId)
+      : mode === "soft" ? await admin.deleteUser(authUserId, true)
+      : await admin.updateUserById(authUserId, { ban_duration: "876600h" }); // ~100 years
+    if (error) throw Errors.badRequest("auth/deletion-failed", error.message);
   }
 }

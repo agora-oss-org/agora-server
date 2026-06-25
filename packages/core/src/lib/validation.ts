@@ -6,8 +6,10 @@ import { Errors } from "../http/errors.js";
 
 export * from "@agora-server/contract";
 
-/** Validate a parsed JSON body; throw Errors.badRequest with the offending field. */
-export function parseBody<T>(schema: z.ZodType<T>, raw: unknown, feature: string): T {
+/** Validate a parsed JSON body; throw Errors.badRequest with the offending field.
+ *  Schema Input is widened to `any` so `.transform()` schemas (field aliases / value remaps) are
+ *  accepted — we return the transformed Output. `raw` is already `unknown`, so this is sound. */
+export function parseBody<Output>(schema: z.ZodType<Output, z.ZodTypeDef, any>, raw: unknown, feature: string): Output {
   const result = schema.safeParse(raw);
   if (!result.success) {
     const issue = result.error.issues[0];

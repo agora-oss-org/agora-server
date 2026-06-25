@@ -8,7 +8,7 @@ import { Errors } from "../../http/errors.js";
 import { hashPassword, verifyPassword } from "./password.js";
 import { generateEmailToken, hashEmailToken } from "./email-token.js";
 import { confirmLink, resetLink, type EmailSender } from "./email/sender.js";
-import type { AuthProvider, SignUpResult } from "./provider.js";
+import type { AuthProvider, SignUpResult, AccountDeletionMode } from "./provider.js";
 
 const CONFIRM_TTL_MS = 24 * 60 * 60 * 1000; // 24h
 const RESET_TTL_MS = 60 * 60 * 1000;        // 1h
@@ -40,7 +40,7 @@ export class NativeAuthProvider implements AuthProvider {
     const email = normalizeEmail(emailRaw);
     const [cred] = await db.select().from(authCredentials)
       .where(and(eq(authCredentials.projectId, projectId), eq(authCredentials.email, email))).limit(1);
-    if (!cred || !cred.emailConfirmedAt) return null; // unknown or unconfirmed
+    if (!cred || !cred.emailConfirmedAt || cred.disabledAt) return null; // unknown / unconfirmed / disabled
     return (await verifyPassword(cred.passwordHash, password)) ? { authUserId: cred.id } : null;
   }
 
@@ -87,6 +87,16 @@ export class NativeAuthProvider implements AuthProvider {
       .where(and(eq(authCredentials.projectId, projectId), eq(authCredentials.email, email))).limit(1);
     if (!cred || cred.emailConfirmedAt) return; // nothing to do / already confirmed — silent
     await this.sendConfirm(projectId, cred.id, email);
+  }
+
+  async deleteUser(authUserId: string, mode: AccountDeletionMode): Promise<void> {
+    if (mode === "hard") {
+      await db.delete(authCredentials).where(eq(authCredentials.id, authUserId)); // tokens cascade away
+      return;
+    }
+    // soft / ban — disable the credential so it can never sign in (verifyCredentials rejects disabled).
+    await db.update(authCredentials).set({ disabledAt: new Date(), updatedAt: new Date() })
+      .where(eq(authCredentials.id, authUserId));
   }
 
   private async sendConfirm(projectId: string, credentialId: string, email: string): Promise<void> {

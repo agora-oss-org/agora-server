@@ -103,6 +103,23 @@ export const connectionRoutes = new Hono<{ Variables: Variables }>()
     const self = await me(c);
     return c.json({ count: await connectedCount(self.projectId, uuidParam(c, "userId")) });
   })
+  // SDK (useFetchConnectionsByUserId) — a specific user's established connections (project derived
+  // from the caller's profile). Mirrors GET /connections but scoped to :userId, not the caller.
+  .get("/users/:userId/connections", requireAuth, async (c) => {
+    const self = await me(c);
+    const targetId = uuidParam(c, "userId");
+    const { page, limit, offset } = readPagination(c);
+    const where = and(eq(connections.projectId, self.projectId), eq(connections.status, "connected"),
+      or(eq(connections.requesterId, targetId), eq(connections.addresseeId, targetId)));
+    const [{ n } = { n: 0 }] = await db.select({ n: count() }).from(connections).where(where);
+    const rows = await db.select().from(connections).where(where).orderBy(desc(connections.respondedAt)).limit(limit).offset(offset);
+    const data = await Promise.all(rows.map(async (r) => {
+      const otherId = r.requesterId === targetId ? r.addresseeId : r.requesterId;
+      const [other] = await db.select().from(profiles).where(eq(profiles.id, otherId)).limit(1);
+      return { id: r.id, connectedUser: other ? shapeUser(other) : null, connectedAt: iso(r.respondedAt) };
+    }));
+    return c.json(paginate(data, n, page, limit));
+  })
   // ── established + counts for the current user ───────────────────────────────
   .get("/connections", requireAuth, async (c) => {
     const self = await me(c);

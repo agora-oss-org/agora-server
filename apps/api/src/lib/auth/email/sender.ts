@@ -7,6 +7,8 @@ import { logger } from "../../logger.js";
 export interface EmailSender {
   sendConfirmation(to: string, link: string): Promise<void>;
   sendPasswordReset(to: string, link: string): Promise<void>;
+  /** A short-lived code the user re-enters to confirm self-service account deletion. */
+  sendAccountDeletionCode(to: string, code: string): Promise<void>;
 }
 
 export class ConsoleEmailSender implements EmailSender {
@@ -17,6 +19,10 @@ export class ConsoleEmailSender implements EmailSender {
   async sendPasswordReset(to: string, link: string): Promise<void> {
     logger.debug({ to, link }, "auth-email: password-reset link");
     logger.info("auth-email: password-reset email dispatched");
+  }
+  async sendAccountDeletionCode(to: string, code: string): Promise<void> {
+    logger.debug({ to, code }, "auth-email: account-deletion code");
+    logger.info("auth-email: account-deletion email dispatched");
   }
 }
 

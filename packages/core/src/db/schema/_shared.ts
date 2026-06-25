@@ -45,7 +45,8 @@ export const secureHandshakeKind = pgEnum("secure_handshake_kind", ["welcome", "
 // "native" = Agora's own credential store (auth_credentials + auth_email_tokens).
 export const authProvider = pgEnum("auth_provider", ["supabase", "native"]);
 // authEmailTokenKind: purpose of a short-lived token stored in auth_email_tokens.
-export const authEmailTokenKind = pgEnum("auth_email_token_kind", ["confirm", "reset"]);
+// "delete" = a self-service account-deletion confirmation code.
+export const authEmailTokenKind = pgEnum("auth_email_token_kind", ["confirm", "reset", "delete"]);
 // projectRole: per-project trust tier (owner|admin|steward), DB-backed grant in project_roles.
 export const projectRole = pgEnum("project_role", ["owner", "admin", "steward"]);
 

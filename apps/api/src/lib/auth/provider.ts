@@ -6,6 +6,12 @@ export type SignUpResult =
   | { status: "confirmed"; authUserId: string }
   | { status: "confirmation_required" };
 
+// How a confirmed account deletion is applied to the auth identity:
+//   hard — remove the auth user entirely
+//   soft — mark it deleted (retained, but can never sign in)
+//   ban  — disable it (can't sign in; reversible)
+export type AccountDeletionMode = "hard" | "soft" | "ban";
+
 export interface AuthProvider {
   /** Create an account. Returns confirmed (mint a session now) or confirmation_required (email sent). */
   signUp(projectId: string, email: string, password: string): Promise<SignUpResult>;
@@ -21,4 +27,8 @@ export interface AuthProvider {
   confirmEmail(projectId: string, token: string, type?: string): Promise<{ authUserId: string }>;
   /** Re-send a confirmation email. Best-effort, never throws, never reveals existence/state. */
   resendConfirmation(projectId: string, email: string): Promise<void>;
+  /** Apply account deletion to the auth identity per `mode` (hard remove / soft delete / ban).
+   *  The confirmation code is verified by the caller (provider-agnostic), and the profile is handled
+   *  by the route — this only touches the provider's own identity store. */
+  deleteUser(authUserId: string, mode: AccountDeletionMode): Promise<void>;
 }

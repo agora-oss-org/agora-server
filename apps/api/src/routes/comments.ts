@@ -214,6 +214,28 @@ export const commentRoutes = new Hono<{ Variables: Variables }>()
     logger.info({ projectId: c.var.projectId, commentId: row.id, userId: row.userId }, "comment: deleted");
     return c.json({ success: true });
   })
+  // SDK (useFetchCommentReactions) — paginated list of who reacted, gated by comment read access.
+  .get("/:id/reactions", async (c) => {
+    const targetId = c.req.param("id");
+    await assertCanReadComment(c, targetId);
+    const { page, limit, offset } = readPagination(c);
+    const rt = c.req.query("reactionType");
+    const where = and(
+      eq(reactions.projectId, c.var.projectId),
+      eq(reactions.targetType, "comment"),
+      eq(reactions.targetId, targetId),
+      rt ? eq(reactions.reactionType, rt as any) : undefined,
+    );
+    const [{ n } = { n: 0 }] = await db.select({ n: count() }).from(reactions).where(where);
+    const rows = await db.select().from(reactions).where(where)
+      .orderBy(desc(reactions.createdAt)).limit(limit).offset(offset);
+    const userMap = await loadUsers(c.var.projectId, rows.map((r) => r.userId));
+    const data = rows.map((r) => ({
+      id: r.id, userId: r.userId, reactionType: r.reactionType,
+      createdAt: r.createdAt.toISOString(), user: userMap.get(r.userId) ?? null,
+    }));
+    return c.json(paginate(data, n, page, limit));
+  })
   .post("/:id/reactions", requireAuth, async (c) => {
     await assertCanReadComment(c, c.req.param("id")); // can't react to content you can't read
     const { reactionType } = parseBody(reactionSchema, await c.req.json().catch(() => ({})), "comments");

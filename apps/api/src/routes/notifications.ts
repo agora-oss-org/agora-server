@@ -25,13 +25,14 @@ export const notificationRoutes = new Hono<{ Variables: Variables }>()
     ));
     return c.json({ count: r?.n ?? 0 });
   })
-  .post("/mark-all-as-read", requireAuth, async (c) => {
-    await db.update(appNotifications).set({ isRead: true }).where(and(
+  // SDK (useMarkAllNotificationsAsReadMutation) calls PATCH; POST kept for any legacy caller.
+  .on(["POST", "PATCH"], "/mark-all-as-read", requireAuth, async (c) => {
+    const rows = await db.update(appNotifications).set({ isRead: true }).where(and(
       eq(appNotifications.projectId, c.var.projectId),
       eq(appNotifications.userId, c.var.auth!.userId),
       eq(appNotifications.isRead, false)
-    ));
-    return c.json({ success: true });
+    )).returning({ id: appNotifications.id });
+    return c.json({ success: true, markedAsRead: rows.length });
   })
   .patch("/:id/mark-as-read", requireAuth, async (c) => {
     const [row] = await db.update(appNotifications).set({ isRead: true }).where(and(

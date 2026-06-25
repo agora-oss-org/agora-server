@@ -87,6 +87,8 @@ Status codes: `400 / 401 / 403 / 404 / 409 / 429 / 500`.
 | POST | `/auth/reset-password` (body `{ token, newPassword }`; completes a reset — required by the native auth provider) | 🔶 |
 | POST | `/auth/verify-email` | ✅ |
 | POST | `/auth/send-verification-email` | ✅ |
+| POST | `/auth/request-account-deletion` (auth; emails a profile-keyed deletion code — native + Supabase) | ✅ |
+| POST | `/auth/confirm-account-deletion` (auth; body `{ code }`; applies `projects.account_deletion_mode` ∈ hard/soft/ban — hard deletes the profile + identity and keeps content authorless, soft/ban deactivate + disable) | ✅ |
 | POST | `/auth/verify-external-user` (body `{ userJwt }`; legacy `{ token }` also accepted) | ✅ |
 
 ### oauth
@@ -126,9 +128,9 @@ signs an RS256 JWT (issuer=projectId, aud="replyke.com", sub=userData.id, claim 
 | GET | `/entities/by-foreign-id` | ✅ |
 | GET | `/entities/by-short-id` | ✅ |
 | GET | `/entities/drafts` | ✅ |
-| POST | `/entities/:id/publish` | ✅ |
+| POST/PATCH | `/entities/:id/publish` (SDK `usePublishDraft` uses PATCH) | ✅ |
 | GET | `/entities/is-entity-saved` | ✅ |
-| POST/DELETE | `/entities/:id/reactions` | ✅ |
+| GET/POST/DELETE | `/entities/:id/reactions` (GET = paginated reactor list, `useFetchEntityReactions`) | ✅ |
 | POST | `/entities/:id/read` (record a member read for receipt tracking; gate: auth → space read access → `space.readReceiptsEnabled + cfg.readReceiptsAllowed`; idempotent upsert; → `{ recorded: true, readAt }`) | ✅ |
 
 ### comments
@@ -141,7 +143,7 @@ signs an RS256 JWT (issuer=projectId, aud="replyke.com", sub=userData.id, claim 
 | PATCH | `/comments/:id` | ✅ |
 | DELETE | `/comments/:id` | ✅ |
 | GET | `/comments/by-foreign-id` (→ `{ comment }`) | ✅ |
-| POST/DELETE | `/comments/:id/reactions` | ✅ |
+| GET/POST/DELETE | `/comments/:id/reactions` (GET = paginated reactor list, `useFetchCommentReactions`) | ✅ |
 
 ### users
 | Method | Path | Status |
@@ -240,9 +242,20 @@ signs an RS256 JWT (issuer=projectId, aud="replyke.com", sub=userData.id, claim 
 |---|---|---|
 | GET | `/collections/root` | ✅ |
 | GET | `/collections/:id` | ✅ |
+| PATCH | `/collections/:id` (rename/reparent; `useUpdateCollectionMutation`) | ✅ |
+| DELETE | `/collections/:id` (delete; sub-collections + entities cascade; `useDeleteCollectionMutation`) | ✅ |
 | GET/POST | `/collections/:id/sub-collections` | ✅ |
 | GET/POST | `/collections/:id/entities` | ✅ |
 | DELETE | `/collections/:id/entities/:id` | ✅ |
+
+### db (custom tables)
+| Method | Path | Status |
+|---|---|---|
+| GET | `/db/:tableName` (list; `page/limit/sortBy/sortDir/filters/includeDeleted`; per-row ownership; `useFetchTableRowsQuery`) | ✅ |
+| POST | `/db/:tableName` (create row `{ data }` → `{ row }`) | ✅ |
+| PATCH | `/db/:tableName/:rowId` (replace `data` → `{ row }`) | ✅ |
+| DELETE | `/db/:tableName/:rowId` (soft-delete; `?force=true` hard-deletes → `{ deleted, soft }`) | ✅ |
+| POST | `/db/:tableName/:rowId/restore` (→ `{ row }`) | ✅ |
 
 ### app-notifications
 | Method | Path | Status |
@@ -250,7 +263,7 @@ signs an RS256 JWT (issuer=projectId, aud="replyke.com", sub=userData.id, claim 
 | GET | `/app-notifications` | ✅ |
 | GET | `/app-notifications/count` | ✅ |
 | PATCH | `/app-notifications/:id/mark-as-read` | ✅ |
-| POST | `/app-notifications/mark-all-as-read` | ✅ |
+| POST/PATCH | `/app-notifications/mark-all-as-read` (SDK uses PATCH → `{ success, markedAsRead }`) | ✅ |
 
 ### reports
 | Method | Path | Status |
