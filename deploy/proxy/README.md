@@ -112,6 +112,27 @@ HiddenServicePort 443 <caddy-host>:443
   upstream DNS per request, so a missing service never crashes the front door.
 - **Content-Security-Policy:** a strict CSP is SPA-specific — a commented starting point is in the
   `header { … }` block of [`agora-routes.caddy`](./agora-routes.caddy); tune it to your build and uncomment.
+- **Custom routing / extra site blocks:** the routing + headers live in the
+  [`agora-routes.caddy`](./agora-routes.caddy) snippet (the `(agora-site)` body imported by the main site
+  block); *extra site blocks* — e.g. a second subdomain reverse-proxying another service — go in the
+  **Caddyfile** itself (a new top-level `your.domain { … }` block), since the snippet only defines a body
+  imported *inside* a site block. Both files are baked into the image at `/etc/caddy`, and a bind mount to
+  the same path **wins over the baked copy**, so you override without rebuilding:
+  - **Dev (`docker-compose.yml`):** both are already bind-mounted — just edit the repo copies and
+    `docker compose restart proxy` to reload. (Swap the whole Caddyfile via the `CADDYFILE` env.)
+  - **Prod (`docker-compose.prod.yml`):** the mounts are dropped (runs on baked config), so add the
+    volume line(s) you need to the `proxy` service — mount your snippet over the baked one, and/or your
+    Caddyfile if you added site blocks. Mount **both** if your custom Caddyfile still `import`s the
+    snippet *and* you changed the snippet:
+    ```yaml
+    volumes:
+      - ./deploy/proxy/Caddyfile:/etc/caddy/Caddyfile:ro          # extra site blocks / global tweaks
+      - ./deploy/proxy/agora-routes.caddy:/etc/caddy/agora-routes.caddy:ro   # routing/header changes
+      - caddy-data:/data
+      - caddy-config:/config
+    ```
+    A new public subdomain also needs its **DNS pointed at this host** so Caddy can auto-issue its cert
+    (same ACME requirements as `SERVER_NAME` above).
 
 ## Why Caddy (not nginx)
 
