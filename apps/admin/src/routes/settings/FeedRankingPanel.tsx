@@ -12,7 +12,6 @@ import { LoadingPanel } from "../../components/ui/Spinner";
 import { useToast } from "../../components/ui/Toast";
 import { SETTINGS_READ_ONLY } from "../../config";
 import { ApiError } from "../../lib/api";
-import { track } from "../../lib/analytics";
 import {
   getFeedConfig, updateFeedConfig, FEED_ALGORITHMS, REACTION_TYPES,
   type FeedConfigView, type FeedConfigPatch,
@@ -95,7 +94,6 @@ function FeedForm({ initial }: { initial: FeedConfigView }) {
   const mutation = useMutation({
     mutationFn: (patch: FeedConfigPatch) => updateFeedConfig(patch),
     onSuccess: (view) => {
-      track("admin-settings-save", { panel: "feed-ranking" });
       setS(toState(view)); // re-sync (clears the secret field, reflects server's resolved values)
       qc.setQueryData(["settings", "feed"], view);
       toast({ title: "Feed settings saved", variant: "success" });

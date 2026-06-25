@@ -1,5 +1,5 @@
 // Integration: the operator-gated /admin surface — dashboard metrics (role-scoped), the
-// running-config view (secrets must NEVER leak), and the umami/community read-backs (operator gate +
+// running-config view (secrets must NEVER leak), and the community read-back (operator gate +
 // graceful "not configured" behavior). Authz here guards the whole admin app, so both the allow and
 // the deny paths are asserted.
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
@@ -79,22 +79,6 @@ describe("admin / operator surface (integration)", () => {
       expect(res.body.scope).toBe("moderator");
       expect(res.body.supabaseMetrics.databaseSizeBytes).toBeNull();
       expect(res.body.serverMetrics).toBeNull();
-    });
-  });
-
-  describe("GET /admin/umami/overview — operator-only, degrades when unconfigured", () => {
-    it("rejects a non-operator with 403", async () => {
-      const res = await api("GET", `${B}/admin/umami/overview`, { token: plain.token });
-      expect(res.status).toBe(403);
-      expect(res.body.code).toBe("admin/operator-required");
-    });
-
-    it("lets an operator through the gate (200 if Umami is wired, else 400 admin/umami-disabled)", async () => {
-      // Outcome depends on whether AGORA_UMAMI_* is configured in the env; the env-independent
-      // invariant is that the operator is NOT blocked by the gate.
-      const res = await api("GET", `${B}/admin/umami/overview`, { token: operator.token });
-      expect(res.status).not.toBe(403);
-      if (res.status === 400) expect(res.body.code).toBe("admin/umami-disabled");
     });
   });
 

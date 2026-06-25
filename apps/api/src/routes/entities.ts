@@ -10,7 +10,6 @@ import { db } from "../db/index.js";
 import { logger } from "../lib/logger.js";
 import { indexEntityAsync } from "../lib/embeddings.js";
 import * as webhooks from "../lib/webhooks.js";
-import { trackEvent } from "../lib/umami.js";
 import { notifyOnEntityMentions, notifyOnReaction } from "../lib/notifications.js";
 import { parseBracketQuery, buildFeedConditions, buildFeedOrder } from "../lib/entity-filters.js";
 import { entities, reactions, collections, collectionEntities, spaces, readReceipts } from "../db/schema/index.js";
@@ -186,7 +185,6 @@ export const entityRoutes = new Hono<{ Variables: Variables }>()
     const shaped = shapeEntity(row, fileRows.length ? { files: fileRows.map(shapeFile) } : {});
     logger.info({ projectId, entityId: row.id, userId, spaceId: row.spaceId ?? null, isDraft: row.isDraft, files: fileRows.length }, "entity: created");
     webhooks.broadcast(projectId, "entity.created.complete", shaped);
-    trackEvent("entity-created", { projectId, ...(row.spaceId ? { spaceId: row.spaceId } : {}) });
     return c.json(shaped, 201);
   })
   .get("/drafts", requireAuth, async (c) => {
@@ -350,8 +348,6 @@ export const entityRoutes = new Hono<{ Variables: Variables }>()
       isActive: result.userReaction === reactionType,
       reactionCounts: result.reactionCounts,
     });
-    if (result.userReaction === reactionType) // fire only when the reaction was added (not toggled off)
-      trackEvent("reaction-added", { projectId: c.var.projectId, targetType: "entity", reactionType });
     return c.json(result);
   })
   .delete("/:id/reactions", requireAuth, async (c) => {

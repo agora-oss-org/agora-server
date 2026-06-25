@@ -19,7 +19,6 @@ import { getProjectRoles } from "../lib/project-roles.js";
 import { shapeAuthUser } from "../lib/shape.js";
 import { logger } from "../lib/logger.js";
 import * as webhooks from "../lib/webhooks.js";
-import { trackEvent } from "../lib/umami.js";
 import {
   parseBody, signUpSchema, signInSchema, refreshSchema, signOutSchema,
   changePasswordSchema, emailSchema, verifyEmailSchema, resetPasswordSchema, externalUserSchema,
@@ -101,7 +100,6 @@ export const authRoutes = new Hono<{ Variables: Variables }>()
     const session = await sessionResponse(projectId, profile);
     logger.info({ projectId, userId: profile.id, autoConfirmed: true }, "auth: signed up");
     webhooks.broadcast(projectId, "user.created.complete", session.user);
-    trackEvent("user-signup", { projectId });
     return c.json(session, 201);
   })
   .post("/sign-in", async (c) => {

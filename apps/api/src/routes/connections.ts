@@ -12,7 +12,6 @@ import { connections, profiles, appNotifications } from "../db/schema/index.js";
 import { readPagination, paginate } from "../http/envelope.js";
 import { shapeUser } from "../lib/shape.js";
 import { parseBody, connectionRequestSchema } from "../lib/validation.js";
-import { trackEvent } from "../lib/umami.js";
 
 type ConnRow = typeof connections.$inferSelect;
 type ProfileRow = typeof profiles.$inferSelect;
@@ -70,14 +69,12 @@ export const connectionRoutes = new Hono<{ Variables: Variables }>()
         .set({ requesterId: self.id, addresseeId: target, status: "pending", message, respondedAt: null, createdAt: new Date() })
         .where(eq(connections.id, existing.id)).returning();
       await notify(self.projectId, target, "connection-request", self, row!.id);
-      trackEvent("connection-requested", { projectId: self.projectId });
       return c.json({ id: row!.id, status: row!.status, createdAt: iso(row!.createdAt) });
     }
     const [row] = await db.insert(connections)
       .values({ projectId: self.projectId, requesterId: self.id, addresseeId: target, status: "pending", message })
       .returning();
     await notify(self.projectId, target, "connection-request", self, row!.id);
-    trackEvent("connection-requested", { projectId: self.projectId });
     return c.json({ id: row!.id, status: row!.status, createdAt: iso(row!.createdAt) }, 201);
   })
   .get("/users/:userId/connection", requireAuth, async (c) => {
@@ -155,7 +152,6 @@ export const connectionRoutes = new Hono<{ Variables: Variables }>()
     if (!row) throw Errors.notFound("connections/not-pending", "No pending request to accept");
     const [updated] = await db.update(connections).set({ status: "connected", respondedAt: new Date() }).where(eq(connections.id, row.id)).returning();
     await notify(self.projectId, row.requesterId, "connection-accepted", self, row.id);
-    trackEvent("connection-accepted", { projectId: self.projectId });
     return c.json({ id: updated!.id, status: "connected", respondedAt: iso(updated!.respondedAt) });
   })
   .patch("/connections/:id/decline", requireAuth, async (c) => {

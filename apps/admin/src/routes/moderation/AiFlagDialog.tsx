@@ -9,7 +9,6 @@ import type { Comment, Entity, ModerationAnalysis, ModerationVerdict } from "@ag
 import { contentDeepLink, getTargetContent } from "../../lib/moderation";
 import { analyzeTarget, dismissAnalysis, removeFlagged, targetText } from "../../lib/moderation-ai";
 import { ApiError } from "../../lib/api";
-import { track } from "../../lib/analytics";
 import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogDescription } from "../../components/ui/Dialog";
 import { Button } from "../../components/ui/Button";
 import { Badge } from "../../components/ui/Badge";
@@ -59,19 +58,19 @@ export function AiFlagDialog({ analysis, onClose }: { analysis: ModerationAnalys
 
   const remove = useMutation({
     mutationFn: () => removeFlagged(analysis!.id, reason.trim() || undefined),
-    onSuccess: () => { track("admin-moderation-action", { surface: "ai-flag", action: "removed", targetType: analysis!.targetType }); toast({ title: "Content removed", variant: "danger" }); invalidateQueue(); onClose(); },
+    onSuccess: () => { toast({ title: "Content removed", variant: "danger" }); invalidateQueue(); onClose(); },
     onError: (e) => toast({ title: "Couldn't remove", description: e instanceof ApiError || e instanceof Error ? e.message : undefined, variant: "danger" }),
   });
   const dismiss = useMutation({
     mutationFn: () => dismissAnalysis(analysis!.id),
-    onSuccess: () => { track("admin-moderation-action", { surface: "ai-flag", action: "dismiss", targetType: analysis!.targetType }); toast({ title: "Flag dismissed", variant: "success" }); invalidateQueue(); onClose(); },
+    onSuccess: () => { toast({ title: "Flag dismissed", variant: "success" }); invalidateQueue(); onClose(); },
     onError: (e) => toast({ title: "Couldn't dismiss", description: e instanceof ApiError || e instanceof Error ? e.message : undefined, variant: "danger" }),
   });
 
   const text = analysis ? targetText(analysis.targetType, target) : "";
   const reanalyze = useMutation({
     mutationFn: () => analyzeTarget({ targetType: analysis!.targetType, targetId: analysis!.targetId, spaceId: analysis!.spaceId, text }),
-    onSuccess: (a) => { track("admin-reanalyze", { surface: "ai-flag", targetType: analysis!.targetType }); setCurrent(a); },
+    onSuccess: (a) => { setCurrent(a); },
     onError: (e) => toast({ title: "Analysis failed", description: e instanceof Error ? e.message : undefined, variant: "danger" }),
   });
 

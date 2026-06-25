@@ -134,28 +134,6 @@ const schema = z.object({
   ANTHROPIC_API_KEY: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
   ANTHROPIC_MODEL: z.string().default("claude-sonnet-4-6"),
   ANTHROPIC_MAX_TOKENS: z.coerce.number().default(1024),
-  // Umami analytics — report discrete usage events (signups/posts/comments/…). Optional; no-op when unset.
-  // SERVER_ID = the product-events website; ADMIN_ID = the admin app's website (reporting proxy reads
-  // both back via the API_KEY for the operator Analytics page). SERVER_HOSTNAME tags server-side sends;
-  // ADMIN_HOSTNAME is informational only — the browser tracker auto-reports window.location.hostname.
-  AGORA_UMAMI_URL: z.preprocess((v) => (v === "" ? undefined : v), z.string().url().optional()),
-  AGORA_UMAMI_SERVER_ID: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
-  AGORA_UMAMI_ADMIN_ID: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
-  AGORA_UMAMI_SERVER_HOSTNAME: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
-  AGORA_UMAMI_ADMIN_HOSTNAME: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
-  AGORA_UMAMI_API_KEY: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
-  // Reporting-API auth. `x-umami-api-key` (above) works on Umami **Cloud** only; **self-hosted**
-  // (cloudMode:false) authenticates via POST /api/auth/login → Bearer token, so set these instead.
-  // When both are present they take precedence over the API key.
-  AGORA_UMAMI_USERNAME: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
-  AGORA_UMAMI_PASSWORD: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
-  // Collect endpoint for server-side sends, relative to AGORA_UMAMI_URL. Default is stock Umami's
-  // `/api/send`; a deployment can remap it (e.g. `/v7/send` to dodge ad-blockers) and set this to match.
-  AGORA_UMAMI_SEND_PATH: z.preprocess((v) => (v === "" ? undefined : v), z.string().default("/api/send")),
-  // Base for the Umami *reporting* API (`/api/websites/...`) when it isn't reachable on AGORA_UMAMI_URL
-  // (e.g. the public host only exposes the tracker + collect routes; the dashboard API is its own host).
-  // Falls back to AGORA_UMAMI_URL when unset.
-  AGORA_UMAMI_API_URL: z.preprocess((v) => (v === "" ? undefined : v), z.string().url().optional()),
 });
 
 export const env = schema.parse(process.env);

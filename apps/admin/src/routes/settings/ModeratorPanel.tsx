@@ -22,7 +22,6 @@ import { LoadingPanel } from "../../components/ui/Spinner";
 import { useToast } from "../../components/ui/Toast";
 import { SETTINGS_READ_ONLY } from "../../config";
 import { ApiError } from "../../lib/api";
-import { track } from "../../lib/analytics";
 import {
   getModeratorConfig, updateModeratorConfig,
   type ModeratorConfigView, type ModeratorConfigPatch, type LlmProvider,
@@ -92,7 +91,6 @@ function ModeratorForm({
   const save = useMutation({
     mutationFn: (patch: ModeratorConfigPatch) => updateModeratorConfig(patch),
     onSuccess: (view) => {
-      track("admin-settings-save", { panel: "moderator" });
       setHasLlmApiKey(view.hasLlmApiKey);
       setApiKey("");
       qc.setQueryData(["settings", "moderator"], view);

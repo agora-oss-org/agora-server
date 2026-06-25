@@ -17,7 +17,6 @@ import {
 } from "../lib/validation.js";
 import { notifyOnSpaceApproved } from "../lib/notifications.js";
 import * as webhooks from "../lib/webhooks.js";
-import { trackEvent } from "../lib/umami.js";
 import { isProjectAdmin } from "../lib/project-roles.js";
 
 type SpaceRow = typeof spaces.$inferSelect;
@@ -112,7 +111,6 @@ export const spaceRoutes = new Hono<{ Variables: Variables }>()
     const shaped = shapeSpace(row!);
     logger.info({ projectId: c.var.projectId, spaceId: row!.id, userId: c.var.auth!.userId, parentSpaceId: row!.parentSpaceId ?? null }, "space: created");
     webhooks.broadcast(c.var.projectId, "space.created.complete", shaped);
-    trackEvent("space-created", { projectId: c.var.projectId });
     return c.json(shaped, 201);
   })
   .get("/by-short-id", async (c) => {
@@ -268,7 +266,6 @@ export const spaceRoutes = new Hono<{ Variables: Variables }>()
       .values({ projectId: c.var.projectId, spaceId: space.id, userId: uid, role: "member", status })
       .onConflictDoNothing().returning();
     const m = row ?? (await membershipOf(c.var.projectId, space.id, uid))!;
-    if (row) trackEvent("space-joined", { projectId: c.var.projectId, status }); // genuine new membership only
     return c.json({ message: "ok", membership: { id: m.id, spaceId: space.id, userId: uid, role: m.role, status: m.status, joinedAt: m.joinedAt } });
   })
   .delete("/:id/leave", requireAuth, async (c) => {

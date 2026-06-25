@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+- **Umami analytics — removed entirely.** The server no longer sends product-usage events to an
+  external analytics service. Deleted the API send/reporting (`lib/umami.ts`, `lib/umami-reporting.ts`)
+  and all `trackEvent` call sites, the operator-only `GET /admin/umami/overview` endpoint, the admin
+  **Analytics** page + nav entry + browser tracking (`lib/analytics.ts`, the `vite.config` script
+  injection, all `track()` calls), and every `AGORA_UMAMI_*` env var. Product metering (`api_usage`)
+  and ops telemetry (OTel) are unaffected.
+
 ### Added
 - **`NEO4J_DATABASE` — configurable DozerDB database for the social graph.** Names the DozerDB
   database all social-graph traffic targets (DozerDB re-enables Neo4j multi-database on Community);

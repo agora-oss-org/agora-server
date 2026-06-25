@@ -281,7 +281,7 @@ throwing `requireProjectAdmin(c)`/`requireProjectOwner(c)`. **Every within-proje
 read raw `isOperator` now uses these** (space access, moderation visibility, search, report scope +
 `/reports/:id/resolve`, suspensions, project/feed/webhook/social config, dashboard scope +
 `/admin/community/overview`, steward case access). **Deployment** powers stay raw `isOperator`
-(`/admin/config`, `/admin/umami/overview`, the Supabase DB-size + server-resource cards). Grant
+(`/admin/config`, the Supabase DB-size + server-resource cards). Grant
 management is **`GET/POST/DELETE /v7/:projectId/roles`** (`routes/roles.ts`): viewing is
 project-admin-gated, mutating is project-owner-gated; the last `owner` can't be revoked
 (`roles/last-owner`). **Never write a within-project gate that checks `isProjectAdmin` but excludes
@@ -439,14 +439,7 @@ and `CHANGELOG.md` for what each migration did. Only the non-obvious conventions
   http/db load) starts traces + metrics from `wonder-logger.yaml`. Two metrics worlds, kept separate:
   `lib/metrics.ts`/`api_usage` is per-project **product** metering (admin dashboard); OTel is the
   **ops** layer (service-level RED, Prometheus `:9464` + OTLP, no `project_id` label). `OTEL_*_ENDPOINT`
-  point at a collector; `OTEL_SDK_DISABLED=true` disables it. A **third** sink, `lib/umami.ts`
-  (`trackEvent`), pushes discrete **product-usage events** (signups/posts/comments/reactions/…) to an
-  external Umami instance — fire-and-forget, no-op unless `AGORA_UMAMI_*` is set; events only, never
-  per-request metering (that's `api_usage`). The **admin app** is instrumented too (its own Umami
-  website via `AGORA_UMAMI_ADMIN_ID`, script injected at build by `apps/admin/vite.config`; custom
-  events via `lib/analytics.ts`), and reads stats back through the operator-only proxy
-  `GET /admin/umami/overview` (`lib/umami-reporting.ts`, holds the secret `AGORA_UMAMI_API_KEY`
-  server-side) rendered on the admin **Analytics** page.
+  point at a collector; `OTEL_SDK_DISABLED=true` disables it.
 
 ## Status
 

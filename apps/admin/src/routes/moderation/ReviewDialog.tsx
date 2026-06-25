@@ -7,7 +7,6 @@ import { actOnReport, displayName, getReportTarget, reportDeepLink, type Moderat
 import { openCase } from "../../lib/steward";
 import { aiAnalysisKey, analyzeTarget, getAnalysis, targetText } from "../../lib/moderation-ai";
 import { ApiError } from "../../lib/api";
-import { track } from "../../lib/analytics";
 import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogDescription } from "../../components/ui/Dialog";
 import { Button } from "../../components/ui/Button";
 import { Badge } from "../../components/ui/Badge";
@@ -47,7 +46,6 @@ export function ReviewDialog({ report, onClose }: { report: Report | null; onClo
   const mutation = useMutation({
     mutationFn: (action: Action) => actOnReport(report!, action, reason.trim() || undefined),
     onSuccess: (_d, action) => {
-      track("admin-moderation-action", { surface: "report", action, targetType: report!.targetType });
       toast({
         title: action === "removed" ? "Content removed" : action === "approved" ? "Content kept" : "Report dismissed",
         variant: action === "removed" ? "danger" : "success",
@@ -194,7 +192,6 @@ function AiAssessment({ report, target }: { report: Report; target: Entity | Com
     mutationFn: () =>
       analyzeTarget({ targetType: report.targetType, targetId: report.targetId, spaceId: report.spaceId, text }),
     onSuccess: (a) => {
-      track("admin-reanalyze", { surface: "report", targetType: report.targetType });
       qc.setQueryData(aiAnalysisKey(report.targetType, report.targetId), a);
     },
     onError: (e) =>

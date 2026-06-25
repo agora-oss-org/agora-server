@@ -159,7 +159,7 @@ How Agora is *designed* to be secure — useful context for both operators and r
   (`project_roles`) are stamped into the JWT (`operator`/`powner`/`padmin`/`steward` claims) and read back
   per request — no extra DB hit. Within-project powers (moderation, reports, suspensions, project config,
   private-space access) accept owner/admin; **deployment** powers (running config, DB size, server
-  resources, the shared Umami key) stay operator-only. Role grants take effect on the user's next token
+  resources) stay operator-only. Role grants take effect on the user's next token
   refresh (see the revocation-latency limitation below).
 - **Internal endpoints & webhooks** (cron, moderation apply, webhook signatures) are gated by secrets
   compared in **constant time** (`crypto.timingSafeEqual`); webhooks are **HMAC-SHA256 signed** with a

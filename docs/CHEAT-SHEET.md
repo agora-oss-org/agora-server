@@ -143,7 +143,6 @@ Runs the same API with local Postgres + MinIO, no Supabase. See [`docs/SELF-HOST
 | Operators (god-view) | `OPERATOR_EMAILS` / `OPERATOR_USER_IDS` | ◻️ | **You choose** — your admin email(s) / profile UUID(s), comma-separated. Unset → no operators. |
 | Cron jobs | `CRON_SECRET` | ◻️ | Gates `POST /internal/cron/*` (503 until set). `openssl rand -base64 32`. |
 | OAuth callbacks behind a proxy | `PUBLIC_BASE_URL` | ◻️ | Your public origin, e.g. `https://api.example.com` — used to build absolute OAuth callback URLs. |
-| Product analytics | `AGORA_UMAMI_URL` + `AGORA_UMAMI_SERVER_ID` / `AGORA_UMAMI_ADMIN_ID` | ◻️ | Your Umami instance + website UUIDs (Umami → *Settings → Websites*). |
 | Tracing/metrics | `OTEL_*_ENDPOINT` | ◻️ | Your OpenTelemetry collector. `OTEL_SDK_DISABLED=true` (default) keeps it off. |
 
 ### 2.8 — Admin SPA (build-time, in `apps/admin/.env` — **not** the root `.env`)

@@ -5,7 +5,7 @@
 // those bytes. All crypto is client-side (see @agora-sdk/secure-chat-crypto). Binary crosses the wire as
 // base64 and is stored as bytea; MLS epochs are decimal strings on the wire / bigint in the DB.
 //
-// NOTE: deliberately no umami/embedding/moderation calls here — secure chat is private by design.
+// NOTE: deliberately no analytics/embedding/moderation calls here — secure chat is private by design.
 import { Hono } from "hono";
 import { and, eq, desc, asc, count, gt, lt, or, inArray, isNull, sql } from "drizzle-orm";
 import type { Variables } from "@agora/core/http/context";
