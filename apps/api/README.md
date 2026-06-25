@@ -314,8 +314,11 @@ in-memory (it never 500s a request). In Docker, `docker compose --profile supaba
 
 ### Redis ACL
 
-The limiter is the *only* thing that touches Redis, and it uses a tiny, fixed command set on keys
-under the **`rl:`** prefix. Lock the connecting user down with a least-privilege [ACL]:
+> The full Redis story — both consumers (this limiter **and** the disabled-account/suspension index),
+> how secure-chat depends on it, and the combined ACL — is in [`docs/REDIS.md`](../../docs/REDIS.md).
+
+The limiter is the *only* thing that touches Redis **on a single-replica deploy**, and it uses a tiny,
+fixed command set on keys under the **`rl:`** prefix. Lock the connecting user down with a least-privilege [ACL]:
 
 - **Keys:** `rl:*` only.
 - **Commands:** `EVAL` (one atomic fixed-window Lua script) which calls **`INCR`**, **`PEXPIRE`**,
