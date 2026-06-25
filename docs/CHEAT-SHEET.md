@@ -79,7 +79,6 @@ server boots without these, but identity + uploads stay off until set.
 | `SUPABASE_URL` | ✅ | Dashboard → *Project Settings → API → **Project URL*** (`https://<ref>.supabase.co`). |
 | `SUPABASE_ANON_KEY` | ✅ | Dashboard → *Project Settings → API → Project API keys → **anon / public***. |
 | `SUPABASE_SERVICE_ROLE_KEY` | ✅ | Dashboard → *Project Settings → API → Project API keys → **service_role*** (secret — server-only). |
-| `SUPABASE_JWT_SECRET` | ◻️ | Dashboard → *Project Settings → API → JWT Settings → **JWT Secret*** (only if verifying Supabase-issued JWTs). |
 | `DEFAULT_AUTH_PROVIDER` | ◻️ | `supabase` (default). Stamps new projects' identity backend. |
 
 ### 2.2 — Data plane B: **Self-host** (`--profile selfhost`)

@@ -34,7 +34,6 @@ export function buildRunningConfig(e: Env) {
         url: e.SUPABASE_URL ?? null, // the public project URL (not a secret)
         serviceRoleKeySet: isSet(e.SUPABASE_SERVICE_ROLE_KEY),
         anonKeySet: isSet(e.SUPABASE_ANON_KEY),
-        jwtSecretSet: isSet(e.SUPABASE_JWT_SECRET),
         // Supabase Auth + Storage need a URL + service-role key to be usable.
         configured: isSet(e.SUPABASE_URL) && isSet(e.SUPABASE_SERVICE_ROLE_KEY),
       },

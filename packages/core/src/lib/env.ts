@@ -13,7 +13,6 @@ const schema = z.object({
   SUPABASE_URL: z.preprocess((v) => (v === "" ? undefined : v), z.string().url().optional()),
   SUPABASE_SERVICE_ROLE_KEY: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
   SUPABASE_ANON_KEY: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
-  SUPABASE_JWT_SECRET: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
   // Default identity backend stamped onto a NEW project at genesis (scripts/genesis.mjs). There is no
   // project-creation route, so this is how a Supabase-less deployment makes its first project use the
   // native (in-API password) auth backend instead of Supabase. Existing projects switch via admin
