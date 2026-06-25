@@ -14,7 +14,8 @@ keep feedback about the work, not the person.
 - **Bug fixes** — especially SDK-contract mismatches (see [The contract is the constraint](#the-contract-is-the-constraint)).
 - **Features** — admin-app slices, new endpoints that fill a Replyke gap, ops tooling.
 - **Tests** — unit and integration coverage are always welcome.
-- **Docs** — README, `docs/MANIFEST.md`, `docs/MODELS.md`, code comments, this file.
+- **Docs** — README, `docs/MANIFEST.md`, `docs/MODELS.md`, code comments, this file, and the
+  [wiki](https://github.com/agora-oss-org/agora-server/wiki) (authored in `wiki/` — see below).
 - **Triage** — reproducing issues, narrowing repros, confirming fixes.
 
 Not sure where to start? Check the [open issues](https://github.com/jenova-marie/agora-server/issues)
@@ -162,6 +163,21 @@ New behavior should come with tests where practical. Bug fixes should add a regr
 affects behavior, the API contract, the schema/migrations, deployment, or tooling gets an entry
 under `## [Unreleased]`** in the right section (`Added` / `Changed` / `Fixed` / `Removed`). Pure
 internal refactors with no observable effect don't need one.
+
+---
+
+## Editing the wiki
+
+The [GitHub wiki](https://github.com/agora-oss-org/agora-server/wiki) is a curated handbook that
+summarizes the project and links into the deep `docs/*.md` files. Its **source lives in this repo under
+`wiki/`** — edit those markdown pages via a normal PR. On merge to `root`, the `wiki-sync` workflow
+(`.github/workflows/wiki-sync.yml`) publishes them to the wiki repo automatically.
+
+**Don't edit the published wiki directly** — the next sync overwrites anything changed there. New pages
+go in `wiki/` as `Page-Name.md` (the filename is the page title; `_Sidebar.md`/`_Footer.md` are the nav
+chrome). Because the wiki is a separate repo, links into source must be absolute GitHub URLs
+(`https://github.com/agora-oss-org/agora-server/blob/root/docs/…`); link between wiki pages with
+`[[Page Name]]`.
 
 ---
 

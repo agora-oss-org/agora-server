@@ -16,6 +16,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and ops telemetry (OTel) are unaffected.
 
 ### Added
+- **GitHub wiki — a curated handbook authored in-repo.** A new `wiki/` directory holds the wiki source
+  (Home + `_Sidebar`/`_Footer` + section pages: Getting Started, Deployment, Architecture, API &
+  Contract, Security, Governance, Secure Chat, Social Graph, Ecosystem, Contributing) that summarizes
+  the project and links into the deep `docs/*.md`. A dependency-free `wiki-sync` workflow
+  (`.github/workflows/wiki-sync.yml`) publishes `wiki/` to the repo wiki on every push to `root`
+  (first run bootstraps the empty wiki). Edit pages via PR in `wiki/`, never in the published wiki.
 - **`NEO4J_DATABASE` — configurable DozerDB database for the social graph.** Names the DozerDB
   database all social-graph traffic targets (DozerDB re-enables Neo4j multi-database on Community);
   unset → `neo4j` (the server default), so existing deployments are unaffected. The API threads it

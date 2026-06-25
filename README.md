@@ -9,6 +9,7 @@
 <p align="center">
   <a href="https://github.com/jenova-marie/agora-server/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/jenova-marie/agora-server/ci.yml?label=ci&logo=github&logoColor=white" alt="CI Status" /></a>
   <a href="https://demo.agora-oss.org"><img src="https://img.shields.io/badge/▶_live_demo-demo.agora--oss.org-7C3AED.svg" alt="Live demo" /></a>
+  <a href="https://github.com/agora-oss-org/agora-server/wiki"><img src="https://img.shields.io/badge/📖_docs-wiki-7C3AED.svg" alt="Wiki" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-AGPL_v3-7C3AED.svg" alt="License: AGPL-3.0-only" /></a>
   <a href="https://supabase.com"><img src="https://img.shields.io/badge/built%20on-Supabase-3ECF8E.svg" alt="Built on Supabase" /></a>
   <a href="#status"><img src="https://img.shields.io/badge/backend-feature--complete-success.svg" alt="Status: feature-complete" /></a>
@@ -442,6 +443,9 @@ against Replyke — there's room to jump in, whatever your level.
   the deployment guide.
 - 📋 **Before you start,** read **[CONTRIBUTING.md](CONTRIBUTING.md)** — dev setup, the contract
   rules, coding conventions, the migration workflow, and how to open a PR.
+- 📖 **New here?** The **[wiki](https://github.com/agora-oss-org/agora-server/wiki)** is a curated
+  handbook (getting started, deployment, architecture, the subsystems) that links into the deep `docs/`.
+  Its source lives in `wiki/` and is auto-published — edit it via PR, see [CONTRIBUTING.md](CONTRIBUTING.md#editing-the-wiki).
 
 The one hard rule: **the contract is the constraint.** Any change to request/response shapes, REST
 paths, or socket.io events must keep [`agora-sdk`](https://github.com/jenova-marie/agora-sdk) working

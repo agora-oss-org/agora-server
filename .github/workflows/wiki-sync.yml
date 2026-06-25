@@ -1,0 +1,74 @@
+# Publish the in-repo wiki source (`wiki/`) to the GitHub wiki repo (agora-server.wiki.git).
+#
+# The wiki is a SEPARATE git repo from this one and is not covered by PRs/CI on its own. We keep the
+# wiki SOURCE of truth here under `wiki/` (so it's version-controlled + PR-reviewed) and this workflow
+# mirrors it onto the wiki repo on every change to the default branch. Edit pages in `wiki/`, never in
+# the published wiki directly — the next sync overwrites anything edited there.
+#
+# Auth: the built-in GITHUB_TOKEN (with `contents: write`) can push to the SAME repo's wiki. The wiki
+# repo doesn't exist until its first page is created — the first run here bootstraps it. If GitHub's
+# first-push bootstrap is ever rejected, create the Home page once via the web UI (Wiki tab → Create
+# the first page → Save), then re-run this workflow (workflow_dispatch).
+name: wiki-sync
+
+on:
+  push:
+    branches: [root]
+    paths:
+      - "wiki/**"
+      - ".github/workflows/wiki-sync.yml"
+  workflow_dispatch:
+
+# Never let two syncs race the wiki repo.
+concurrency:
+  group: wiki-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # push to this repo's wiki with the built-in GITHUB_TOKEN
+    steps:
+      - name: Checkout (source)
+        uses: actions/checkout@v5
+
+      - name: Publish wiki/ to the wiki repo
+        env:
+          WIKI_URL: https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.wiki.git
+        run: |
+          set -euo pipefail
+
+          if [ ! -d wiki ] || [ -z "$(ls -A wiki 2>/dev/null)" ]; then
+            echo "::error::wiki/ is missing or empty — nothing to publish."
+            exit 1
+          fi
+
+          git config --global user.name  "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Clone the existing wiki, or bootstrap a fresh repo if it doesn't exist yet.
+          if git clone --depth 1 "$WIKI_URL" wiki-repo 2>/dev/null; then
+            echo "Cloned existing wiki repo."
+          else
+            echo "Wiki repo not found — bootstrapping a fresh one."
+            mkdir wiki-repo
+            git -C wiki-repo init -q
+            git -C wiki-repo checkout -q -b master   # GitHub wikis live on `master`
+            git -C wiki-repo remote add origin "$WIKI_URL"
+          fi
+
+          # Mirror wiki/ into the clone: delete extraneous pages (so removals propagate) but never
+          # touch the clone's own .git directory.
+          rsync -a --delete --exclude='.git/' wiki/ wiki-repo/
+
+          cd wiki-repo
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No wiki changes to publish."
+            exit 0
+          fi
+          git commit -q -m "Sync wiki from ${{ github.sha }}"
+          # Push to whichever branch HEAD is on (existing clones: usually `master`).
+          git push origin "HEAD:$(git rev-parse --abbrev-ref HEAD)"
+          echo "Wiki published."
