@@ -2,10 +2,11 @@
 
 > *Own your community.*
 
-**Agora is an open-source, self-hosted, 1:1-compatible replacement for the closed-source Replyke
-backend.** It reimplements that backend so the [`agora-sdk`](https://github.com/jenova-marie/agora-sdk)
-(a repointed fork of the Replyke SDK) talks to **your** server instead of `api.replyke.com` —
-byte-for-byte the same REST paths, response shapes, auth semantics, and socket.io events. You keep
+**Agora is an open-source, self-hosted community & social backend that's 1:1-compatible with the
+Replyke SDK.** It implements the same API the SDK speaks, so the
+[`agora-sdk`](https://github.com/jenova-marie/agora-sdk) (a repointed fork of the Replyke SDK) talks
+to **your** server instead of `api.replyke.com` — byte-for-byte the same REST paths, response shapes,
+auth semantics, and socket.io events. You keep
 Replyke's feature set (posts, threaded comments, reactions & feeds, follows & connections, nested
 spaces, real-time chat, notifications, moderation & stewardship, semantic search) and run it on
 infrastructure you control, under **AGPL-3.0**.

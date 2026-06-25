@@ -23,11 +23,12 @@ A working social app — sign in, browse the feed, comment, react, semantic-sear
 realtime — all driven by the [`agora-sdk`](https://github.com/jenova-marie/agora-sdk) against a live
 Agora backend.
 
-**Agora is an open-source, self-hosted, 1:1-compatible replacement for the closed source Replyke backend, built on Supabase.**
+**Agora is an open-source, self-hosted community & social backend that's 1:1-compatible with the Replyke SDK, built on Supabase.**
 
-Replyke is a hosted backend for community & social features. Agora reimplements that backend so the
-[`agora-sdk`](https://github.com/jenova-marie/agora-sdk) (a repointed fork of the Replyke SDK) talks
-to **your** server instead of `api.replyke.com` — byte-for-byte the same REST paths, response shapes,
+Replyke is a hosted backend for community & social features. Agora is an independent, open-source
+backend that speaks the same API, so the [`agora-sdk`](https://github.com/jenova-marie/agora-sdk)
+(a repointed fork of the Replyke SDK) talks to **your** server instead of `api.replyke.com` —
+byte-for-byte the same REST paths, response shapes,
 auth semantics, and socket.io events. You keep Replyke's opinionated feature set (posts, threaded
 comments, reactions & feeds, follows & connections, nested spaces, real-time chat, notifications,
 moderation & stewardship, semantic search) and run it all on infrastructure you control, under a
