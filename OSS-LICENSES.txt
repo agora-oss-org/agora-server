@@ -1,0 +1,185 @@
+================================================================================
+Open Source License Inventory
+================================================================================
+
+Project: Agora Server (Replyke-compatible open-source community backend)
+Repository: https://github.com/jenova-marie/agora-server
+
+Generated: 2026-06-26
+Last Updated: 2026-06-26
+
+================================================================================
+LICENSING MODEL
+================================================================================
+
+AGPL-3.0-only (main packages):
+  - @agora/api — Backend REST API
+  - @agora/admin — Admin frontend
+  - @agora/secure-chat — E2E-encrypted chat service
+  - services/scorer — Content moderation & social graph
+
+Apache-2.0 (wire-contract layer):
+  - @agora-server/contract — Shared API contract, types, and zod schemas
+
+================================================================================
+WHAT THIS FILE IS FOR
+================================================================================
+
+This inventory lists all DIRECT DEPENDENCIES (packages explicitly listed in
+package.json across all workspaces). It does NOT include transitive
+dependencies (sub-dependencies of sub-dependencies).
+
+Use this file for:
+  - License compliance audits
+  - Automated license scanning tools
+  - Legal reviews
+  - Regulatory requirements
+
+For human-readable descriptions and acknowledgments, see: CREDITS.md
+For complete license texts, see individual project repositories.
+
+================================================================================
+HOW TO UPDATE THIS FILE
+================================================================================
+
+When dependencies change:
+  1. Run `pnpm install` to update all workspaces
+  2. Update this file with new versions and license types
+  3. Commit both pnpm-lock.yaml and OSS-LICENSES.txt
+
+To regenerate automatically (future):
+  Run: node scripts/generate-oss-licenses.mjs
+  (Script sketched but not yet implemented)
+
+Workspaces included in this audit:
+  - apps/api/package.json
+  - apps/admin/package.json
+  - apps/secure-chat/package.json
+  - packages/core/package.json
+  - packages/contract/package.json
+
+================================================================================
+INVENTORY
+================================================================================
+
+Format: PackageName | Version | License | URL | Category
+
+--- RUNTIME & FRAMEWORK ---
+
+Hono | 4.12.23 | MIT | https://hono.dev | Framework
+Node.js | >=20 | MIT | https://nodejs.org | Runtime
+@hono/node-server | 1.19.14 | MIT | https://github.com/honojs/node-server | Framework
+
+--- DATABASE & ORM ---
+
+Drizzle ORM | 0.45.2 | Apache-2.0 | https://orm.drizzle.team | ORM
+postgres.js | 3.4.9 | MIT | https://github.com/porsager/postgres | Database
+drizzle-kit | 0.31.10 | Apache-2.0 | https://orm.drizzle.team | Build Tool
+
+--- AUTHENTICATION, CRYPTOGRAPHY & IDENTITY ---
+
+Supabase JS Client | 2.107.0 | Apache-2.0 | https://supabase.com | Auth
+jose | 5.10.0 | MIT | https://github.com/panva/jose | Cryptography
+@node-rs/argon2 | 2.0.2 | MIT, Apache-2.0 | https://github.com/napi-rs/node-rs | Cryptography
+
+--- SEARCH & EMBEDDINGS ---
+
+Voyage AI | (external API) | Proprietary | https://www.voyageai.com | Search
+
+--- REAL-TIME COMMUNICATION & CHAT ---
+
+Socket.io | 4.8.3 | MIT | https://socket.io | Real-time
+ioredis | 5.11.1 | MIT | https://github.com/luin/ioredis | Cache/Pub-Sub
+
+--- END-TO-END ENCRYPTION & SOCIAL GRAPH ---
+
+neo4j-driver | 6.1.0 | Apache-2.0 | https://neo4j.com | Graph Database
+
+--- VALIDATION & SERIALIZATION ---
+
+Zod | 3.25.76 | MIT | https://zod.dev | Validation
+
+--- FILE STORAGE & IMAGE PROCESSING ---
+
+@aws-sdk/client-s3 | 3.901.0 | Apache-2.0 | https://aws.amazon.com/sdk-for-javascript | Storage
+sharp | 0.34.5 | Apache-2.0 | https://sharp.pixelplumbing.com | Image Processing
+
+--- INFRASTRUCTURE & DEVOPS ---
+
+Docker | Latest | Apache-2.0 | https://www.docker.com | Container Runtime
+Supabase | Latest | Apache-2.0 | https://supabase.com | Backend Platform
+
+--- FRONTEND UI & STYLING ---
+
+React | 18.3.1 | MIT | https://react.dev | Frontend Framework
+React DOM | 18.3.1 | MIT | https://react.dev | Frontend Framework
+React Router DOM | 7.17.0 | MIT | https://reactrouter.com | Routing
+@radix-ui/react-avatar | 1.1.12 | MIT | https://radix-ui.com | UI Components
+@radix-ui/react-dialog | 1.1.16 | MIT | https://radix-ui.com | UI Components
+@radix-ui/react-dropdown-menu | 2.1.17 | MIT | https://radix-ui.com | UI Components
+@radix-ui/react-separator | 1.1.9 | MIT | https://radix-ui.com | UI Components
+@radix-ui/react-slot | 1.2.5 | MIT | https://radix-ui.com | UI Components
+@radix-ui/react-tabs | 1.1.14 | MIT | https://radix-ui.com | UI Components
+@radix-ui/react-toast | 1.2.16 | MIT | https://radix-ui.com | UI Components
+@radix-ui/react-tooltip | 1.2.9 | MIT | https://radix-ui.com | UI Components
+TailwindCSS (via tailwind-merge) | 3.6.0 | MIT | https://tailwindcss.com | Styling
+Lucide React | 1.17.0 | ISC | https://lucide.dev | Icons
+@tanstack/react-query | 5.101.0 | MIT | https://tanstack.com/query | Data Sync
+clsx | 2.1.1 | MIT | https://github.com/lukeed/clsx | Utilities
+class-variance-authority | 0.7.1 | Apache-2.0 | https://cva.style | Component Variants
+
+--- TESTING ---
+
+Vitest | 4.1.8 | MIT | https://vitest.dev | Test Runner
+Socket.io Client | 4.8.3 | MIT | https://socket.io | Testing
+
+--- BUILD, DEVELOPMENT & LANGUAGE ---
+
+TypeScript | 5.9.3 | Apache-2.0 | https://www.typescriptlang.org | Language
+tsx | 4.22.4 | MIT | https://github.com/esbuild-kit/tsx | Runtime
+dotenv | 17.4.2 | BSD-2-Clause | https://github.com/motdotla/dotenv | Config
+
+--- LOGGING & OBSERVABILITY ---
+
+@jenova-marie/wonder-logger | 2.0.18 | MIT | https://github.com/jenova-marie/wonder-logger | Logging
+
+--- PACKAGE MANAGEMENT ---
+
+pnpm | 10.14.0 | MIT | https://pnpm.io | Package Manager
+
+--- INTERNAL / WORKSPACE DEPENDENCIES ---
+
+@agora-server/contract | workspace:* | Apache-2.0 | ./packages/contract | Contract
+@agora/core | workspace:* | AGPL-3.0-only | ./packages/core | Kernel
+@agora/api | workspace:* | AGPL-3.0-only | ./apps/api | API
+@agora/admin | workspace:* | AGPL-3.0-only | ./apps/admin | Admin
+@agora/secure-chat | workspace:* | AGPL-3.0-only | ./apps/secure-chat | Secure Chat
+
+================================================================================
+LICENSE SUMMARY
+================================================================================
+
+MIT licenses:                 27 packages
+Apache-2.0 licenses:          12 packages
+BSD-2-Clause licenses:         1 package
+ISC licenses:                  1 package
+Mixed (MIT + Apache-2.0):      1 package
+Proprietary:                   1 package (Voyage AI - optional)
+
+Total direct dependencies:    ~43 packages
+
+================================================================================
+IMPORTANT NOTES
+================================================================================
+
+- Voyage AI is an EXTERNAL SERVICE (optional, gated by VOYAGE_API_KEY)
+- Neo4j is OPTIONAL (gated by NEO4J_URI)
+- Supabase Auth/Storage are OPTIONAL (pluggable via seams)
+- Docker and Supabase are INFRASTRUCTURE dependencies (not npm packages)
+- React and Radix UI are FRONTEND-ONLY (admin app only, not in API/secure-chat)
+- This inventory does NOT include devDependencies (testing frameworks,
+  type definitions, build tools used only during development)
+
+For more details, see CONTRIBUTING.md and CLAUDE.md
+
+================================================================================
