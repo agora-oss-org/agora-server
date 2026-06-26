@@ -351,23 +351,33 @@ Full detail (including the OAuth callback setup) lives in
 
 ## Observability
 
-**Full telemetry is built in.** Agora ships all three OpenTelemetry signals — **traces, metrics, and
-logs** — wired up out of the box on **[`@jenova-marie/wonder-logger`](https://www.npmjs.com/package/@jenova-marie/wonder-logger)**,
-the framework Agora uses for both structured logging and OpenTelemetry. Nothing to install and no
-instrumentation to write: the API starts an OTel SDK on boot, **auto-instruments HTTP + the database**,
-exposes a Prometheus scrape endpoint, and pushes OTLP to whatever collector you point it at.
+**Full telemetry is built in — across every service.** Agora ships all three OpenTelemetry signals —
+**traces, metrics, and logs** — wired up out of the box on
+**[`@jenova-marie/wonder-logger`](https://www.npmjs.com/package/@jenova-marie/wonder-logger)** (the Node
+services) and the OpenTelemetry Python SDK (the scorer). Nothing to install and no instrumentation to
+write: each service starts an OTel SDK on boot, **auto-instruments HTTP + the database**, exposes
+metrics, and pushes OTLP to a collector. The API (`agora-api`), the secure-chat delivery service
+(`agora-secure-chat`), and the scorer (`agora-scorer-*`) each show up as their own service in Grafana.
 
-- **Traces** — auto-instrumented HTTP/DB spans (plus manual `withSpan()`), OTLP → Tempo.
-- **Metrics** — service-level RED + runtime, on a **Prometheus endpoint (`:9464/metrics`)** *and* OTLP
-  push → Mimir/Prometheus. (Distinct from the per-project `api_usage` **product** metering behind the
-  admin dashboard — that's a separate system.)
-- **Logs** — structured Pino logs (console + OTLP → Loki), **secrets redacted at the boundary**, with
-  **automatic trace ↔ log correlation** (`trace_id`/`span_id` on every line).
+- **Traces** — auto-instrumented HTTP/DB spans, plus manual `withSpan()` for the realtime (socket.io)
+  path that HTTP instrumentation never sees. OTLP → Tempo.
+- **Metrics** — service-level RED + runtime **plus custom instruments** (embedding latency, moderation
+  decisions, feed-algorithm mix, live socket connections), on a **Prometheus endpoint (`:9464`)** *and*
+  OTLP push → Mimir. (Distinct from the per-project `api_usage` **product** metering — a separate system.)
+- **Logs** — structured logs (console + OTLP → Loki), **secrets redacted at the boundary**, with
+  **automatic trace ↔ log correlation** (`trace_id`/`span_id` on every line, in every service).
 
-It's **off by default** (`OTEL_SDK_DISABLED=true`) and configured from
-[`wonder-logger.yaml`](apps/api/wonder-logger.yaml) + a handful of `OTEL_*` env vars. Point those at a
-**[Grafana Alloy](https://grafana.com/docs/alloy/latest/)** collector and the three signals fan out to
-Tempo / Mimir / Loki for Grafana. Full setup — the Alloy config, the env vars, and verification — is in
+It's **off by default** (bare deploys stay dark) and ships with a **one-command Grafana stack** — Alloy
++ Tempo/Mimir/Loki/Grafana behind the `observability` compose profile:
+
+```bash
+docker compose --profile selfhost --profile observability up --build   # bring up the stack
+echo 'OTEL_SDK_DISABLED=false' >> .env                                 # the single toggle, then restart
+```
+
+The OTLP endpoints are pre-wired to the bundled **[Grafana Alloy](https://grafana.com/docs/alloy/latest/)**
+collector, so that one flag lights up Grafana at `:3000` — or point the `OTEL_*` env at your own
+collector instead. Full setup, the per-service signal table, and verification:
 **[`docs/TELEMETRY.md`](docs/TELEMETRY.md)**.
 
 ## Docker
