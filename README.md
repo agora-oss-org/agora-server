@@ -25,31 +25,29 @@ Agora backend.
 
 **Agora is an open-source, self-hosted community & social backend that's 1:1-compatible with the Replyke SDK, built on Supabase.**
 
-Replyke is a hosted backend for community & social features. Agora is an independent, open-source
-backend that speaks the same API, so the [`agora-sdk`](https://github.com/jenova-marie/agora-sdk)
+The **Replyke SDK** is excellent — thoughtful, typed, and battle-tested. Agora is an independent,
+open-source backend that speaks the same API, so the [`agora-sdk`](https://github.com/jenova-marie/agora-sdk)
 (a repointed fork of the Replyke SDK) talks to **your** server instead of `api.replyke.com` —
-byte-for-byte the same REST paths, response shapes,
-auth semantics, and socket.io events. You keep Replyke's opinionated feature set (posts, threaded
-comments, reactions & feeds, follows & connections, nested spaces, real-time chat, notifications,
-moderation & stewardship, semantic search) and run it all on infrastructure you control, under a
-genuinely open license.
+byte-for-byte the same REST paths, response shapes, auth semantics, and socket.io events. You get
+the Replyke SDK's opinionated feature set (posts, threaded comments, reactions & feeds, follows &
+connections, nested spaces, real-time chat, notifications, moderation & stewardship, semantic search)
+and run it all on infrastructure you control, under a genuinely open license.
 
-**AGPL-3.0 — and that's the whole point.** Replyke open-sources its *SDK* (Apache-2.0) but keeps the
-backend you'd actually depend on closed and hosted. Agora is the entire backend, in the open, under a
-license with teeth: self-host it freely, forever — but anyone who runs a modified Agora as a service
-has to share their changes back. No vendor lock-in, no per-seat pricing, no data leaving your project,
-and no "open-source" asterisk. **The community edition is AGPL-3.0 and always will be.**
+**AGPL-3.0 — and that's the whole point.** You own the backend, the data, and the code. No vendor
+lock-in, no per-seat pricing, no data leaving your project, and no "open-source" asterisk. **The
+community edition is AGPL-3.0 and always will be.**
 
 ## Why
 
 Supabase hands you ~40% of a social backend for free: Postgres, Auth (GoTrue), Storage, Realtime
 infrastructure, and pgvector. The other ~60% — the social schema, the denormalized counts, the
 permission model, and the opinionated endpoints that sit in front of all of it — is what makes
-Replyke worth using. **That 60% is what Agora builds**, and it's the part you'd otherwise rent.
+real communities work. **That 60% is what Agora builds**, and you own it: open source you control, 
+privacy and security by default, data stays yours, and zero vendor lock-in.
 
 ## Governance is first-class, not a bolt-on
 
-Most community backends — Replyke included — ship content and social primitives and leave *governance*
+Most community backends ship content and social primitives and leave *governance*
 to you: you build the reporting flow, the moderation dashboard, and any conflict-resolution process
 yourself, against whatever the hosted API exposes. A real community can't run without these, so Agora
 makes them **core surface area** — endpoints, schema, and admin UI in the box, enforced at the server
@@ -193,6 +191,7 @@ agora/
 │   ├── SCORER.md            # the Python moderation + social-graph subsystem (services/scorer)
 │   ├── SOCIAL-GRAPH.md      # the optional Neo4j social-graph layer ("the Garden")
 │   ├── SELF-HOSTING.md      # run fully self-contained (native auth · S3/MinIO · local Postgres)
+│   ├── TELEMETRY.md         # built-in OpenTelemetry (traces/metrics/logs) → Grafana + Alloy
 │   └── DOZERDB.md           # DozerDB + OpenGDS setup (plugins, memory tuning, TLS)
 ├── packages/
 │   ├── contract/            # @agora-server/contract — shared API types + zod schemas
@@ -350,6 +349,27 @@ every read/write rule in the handlers, with RLS underneath as a verified backsto
 Full detail (including the OAuth callback setup) lives in
 [apps/api/README.md](apps/api/README.md#configuration-env).
 
+## Observability
+
+**Full telemetry is built in.** Agora ships all three OpenTelemetry signals — **traces, metrics, and
+logs** — wired up out of the box on **[`@jenova-marie/wonder-logger`](https://www.npmjs.com/package/@jenova-marie/wonder-logger)**,
+the framework Agora uses for both structured logging and OpenTelemetry. Nothing to install and no
+instrumentation to write: the API starts an OTel SDK on boot, **auto-instruments HTTP + the database**,
+exposes a Prometheus scrape endpoint, and pushes OTLP to whatever collector you point it at.
+
+- **Traces** — auto-instrumented HTTP/DB spans (plus manual `withSpan()`), OTLP → Tempo.
+- **Metrics** — service-level RED + runtime, on a **Prometheus endpoint (`:9464/metrics`)** *and* OTLP
+  push → Mimir/Prometheus. (Distinct from the per-project `api_usage` **product** metering behind the
+  admin dashboard — that's a separate system.)
+- **Logs** — structured Pino logs (console + OTLP → Loki), **secrets redacted at the boundary**, with
+  **automatic trace ↔ log correlation** (`trace_id`/`span_id` on every line).
+
+It's **off by default** (`OTEL_SDK_DISABLED=true`) and configured from
+[`wonder-logger.yaml`](apps/api/wonder-logger.yaml) + a handful of `OTEL_*` env vars. Point those at a
+**[Grafana Alloy](https://grafana.com/docs/alloy/latest/)** collector and the three signals fan out to
+Tempo / Mimir / Loki for Grafana. Full setup — the Alloy config, the env vars, and verification — is in
+**[`docs/TELEMETRY.md`](docs/TELEMETRY.md)**.
+
 ## Docker
 
 > 📋 **[`docs/CHEAT-SHEET.md`](docs/CHEAT-SHEET.md)** maps every deployment recipe to the env vars it needs and
@@ -502,3 +522,10 @@ licensed AGPL-3.0, and they can't be relicensed out from under you. See
 > **AGPL §13 note for operators:** because users interact with Agora over a network, your deployment
 > must offer them its corresponding source. Agora surfaces a source link by default — keep it pointing
 > at your fork.
+
+## Open Source Acknowledgments
+
+Agora Server is built on excellent open-source software. See:
+
+- **[CREDITS.md](CREDITS.md)** — Human-friendly acknowledgments of all direct dependencies and the teams behind them, including a shout-out to Claude Code
+- **[OSS-LICENSES.txt](OSS-LICENSES.txt)** — Machine-readable license inventory for compliance and automated license scanning
