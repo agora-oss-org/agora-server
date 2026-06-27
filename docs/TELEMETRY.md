@@ -3,9 +3,9 @@
 Agora ships **full, production-grade telemetry built in** — all three OpenTelemetry signals
 (**traces**, **metrics**, **logs**), wired up out of the box across **every** service, plus a
 **one-command Grafana stack** to collect them. There's no plugin to install and no instrumentation to
-write: each service starts an OpenTelemetry SDK on boot, auto-instruments HTTP + the database, exposes
-metrics, and pushes OTLP to a collector — **or stays completely dark** (off by default) until you turn
-it on.
+write: each service starts an OpenTelemetry SDK on boot, auto-instruments HTTP (and, in the scorer, its
+database driver), exposes a metrics endpoint, and pushes OTLP to a collector — **or stays completely
+dark** (off by default) until you turn it on.
 
 The whole layer is built on **[`@jenova-marie/wonder-logger`](https://www.npmjs.com/package/@jenova-marie/wonder-logger)**
 (the Node services) and the **OpenTelemetry Python SDK** (the scorer). A single
@@ -21,13 +21,14 @@ collects it**.
 
 | Signal | Source | Exporters | Backend |
 |---|---|---|---|
-| **Traces** | OTel SDK + auto-instrumentation (HTTP, DB) + manual `withSpan()` (socket.io) | OTLP/HTTP | Tempo |
-| **Metrics** | OTel SDK (process/runtime RED) + **custom instruments** (below) | **Prometheus `:9464`** (Node) + **OTLP push** | Mimir |
+| **Traces** | auto-instrumentation (HTTP in/out; the scorer also auto-instruments its `asyncpg` DB driver) + manual `withSpan()` (socket.io) | OTLP/HTTP | Tempo |
+| **Metrics** | **custom instruments** (below) — the SDK emits no runtime/HTTP metrics by default | **Prometheus `:9464`** (Node) + **OTLP push** | Mimir |
 | **Logs** | `wonder-logger` Pino (Node) / structured JSON (Python), console + OTLP | console + OTLP | Loki |
 
-- **Trace ↔ log correlation is automatic.** Every log line carries `trace_id` / `span_id` — the Node
-  logger's `traceContext` plugin and the scorer's JSON formatter both inject it — so a log in Loki links
-  straight to its trace in Tempo (and back).
+- **Trace ↔ log correlation is automatic.** Every log line emitted **inside a request/span** carries
+  `trace_id` / `span_id` — the Node logger's `traceContext` plugin and the scorer's JSON formatter both
+  inject it — so a log in Loki links straight to its trace in Tempo (and back). (Lines logged outside any
+  span — e.g. at boot — simply have no trace id.)
 - **Secrets are redacted at the boundary.** `password`, `token`, `authorization`, `cookie`,
   `refreshToken`, `accessToken`, `secret`, `webhookSecret` are stripped from every Node log record
   (per the project's *Log with intent* posture; raw error objects only ever ride a `debug` line).
@@ -36,16 +37,24 @@ collects it**.
 
 | Service | Traces | Metrics | Logs | Prometheus `:9464` | Service name |
 |---|---|---|---|---|---|
-| **`@agora/api`** | ✅ | ✅ (+ custom) | ✅ | ✅ | `agora-api` |
-| **`@agora/secure-chat`** | ✅ | ✅ | ✅ | ✅ | `agora-secure-chat` |
-| **`services/scorer`** (worker + 2 model servers) | ✅ | ✅ | ✅ (trace-correlated) | — (OTLP push) | `agora-scorer-*` |
+| **`@agora/api`** | ✅ | ✅ custom | ✅ | ✅ | `agora-api` |
+| **`@agora/secure-chat`** | ✅ | ◐ endpoint only | ✅ | ✅ | `agora-secure-chat` |
+| **`services/scorer`** (worker + 2 model servers) | ✅ | — | ✅ (trace-correlated) | — | `agora-scorer-*` |
 | **`@agora/admin`** (browser SPA) | — | — | — | — | — (no RUM by design) |
 
+> **Metrics today are the API's custom instruments.** They're registered only in `@agora/api`
+> ([next section](#custom-metrics-the-api)). `@agora/secure-chat` exposes a `:9464` endpoint but registers
+> no app-level series yet, and the scorer's OTLP metrics are dropped at the collector (see
+> [Collection](#collection-the-bundled-grafana-stack)) — so the series that actually reach Mimir are the
+> API's. Traces + logs flow from all three.
+
 The Node SDK is bootstrapped in each app's `src/instrument.ts`, imported **first** in `index.ts` (right
-after `dotenv`) so auto-instrumentation patches `http`/`postgres`/`socket.io` before they load. Both
-Node apps share one [`wonder-logger.yaml`](../packages/core/wonder-logger.yaml) via `@agora/core`; only
-the `SERVICE_NAME` differs. The scorer bootstraps in `scorer/telemetry.py` (auto-instruments
-FastAPI + asyncpg + httpx).
+after `dotenv`) so the HTTP auto-instrumentation patches `http` (incoming + outbound `fetch`) before it
+loads. Note: Drizzle's `postgres.js` driver has **no** OTel auto-instrumentation (the Node bundle targets
+`pg`), so DB calls aren't auto-traced; the socket.io realtime path is traced **manually** via `withSpan`.
+Both Node apps share one [`wonder-logger.yaml`](../packages/core/wonder-logger.yaml) via `@agora/core`;
+only the `SERVICE_NAME` differs. The scorer bootstraps in `scorer/telemetry.py` (auto-instruments
+FastAPI + asyncpg + httpx — so its DB *is* traced).
 
 ### Custom metrics (the API)
 
@@ -162,8 +171,11 @@ docker compose exec secure-chat curl -s localhost:9464/metrics | head
 
 ### Bare deploys stay dark
 
-Without `--profile observability` and with the default `OTEL_SDK_DISABLED=true`, no SDK starts, nothing
-is exported, `:9464` doesn't bind, and there are no OTLP-export warnings. Telemetry is strictly opt-in.
+Without `--profile observability` and with the default `OTEL_SDK_DISABLED=true`, the SDK **collects and
+exports nothing** — no traces, no metric data, no OTLP pushes, no export warnings. (The Node Prometheus
+server still binds `:9464` and serves a near-empty response — that's the exporter's own startup, not the
+SDK — but compose never publishes `:9464` to the host, so nothing is reachable from outside the network.)
+Telemetry is strictly opt-in.
 
 ---
 
@@ -176,7 +188,7 @@ The Node telemetry is declared in YAML, not code — both apps load
 ```yaml
 service:
   name: ${SERVICE_NAME:-agora-api}        # secure-chat overrides this to agora-secure-chat
-  version: ${SERVICE_VERSION:-0.3.0}
+  version: ${SERVICE_VERSION:-0.14.0}
   environment: ${NODE_ENV:-development}
 
 logger:
@@ -216,8 +228,10 @@ otel:
 > `enabled: true`, `port: 9464`, `sampleRate: 1.0`. Writing `enabled: ${OTEL_ENABLED:-true}` makes the
 > Zod schema reject the string `"true"`.
 
-The `OTEL_SDK_DISABLED` env var (honored by the OTel SDK natively, Node **and** Python) is the master
-off switch — it short-circuits the whole SDK regardless of `otel.enabled` in the YAML.
+The `OTEL_SDK_DISABLED` env var is the master off switch (Node **and** Python) — it stops the SDK from
+collecting or exporting anything, regardless of `otel.enabled` in the YAML. (One caveat on Node: the
+Prometheus exporter binds `:9464` in its constructor, so the endpoint still *responds* when disabled — it
+just serves no app series. It's internal-only in compose.)
 
 ---
 
@@ -230,7 +244,7 @@ local collector at `localhost:4318`.
 |---|---|---|
 | `OTEL_SDK_DISABLED` | `true` (compose) | The master switch. `false` turns telemetry on. Logging is unaffected. |
 | `SERVICE_NAME` | `agora-api` | `service.name` (Node). secure-chat overrides via `SECURE_CHAT_SERVICE_NAME`. |
-| `SERVICE_VERSION` | `0.3.0` | `service.version`. |
+| `SERVICE_VERSION` | `0.14.0` | `service.version`. |
 | `NODE_ENV` | `development` | `deployment.environment`. |
 | `LOG_LEVEL` | `debug` | `trace`\|`debug`\|`info`\|`warn`\|`error`\|`fatal`\|`silent`. Use `info` in prod. |
 | `LOG_CONSOLE` | `aligned` | `aligned` (dev) or `json` (prod). |
@@ -286,7 +300,7 @@ tests), so call sites are guard-free. Scorer-side, use `opentelemetry.trace.get_
 |---|---|
 | Periodic `OTLP export failed` warnings | SDK is on but no collector at the endpoint. Bring up `--profile observability`, fix `OTEL_*_ENDPOINT`, or set `OTEL_SDK_DISABLED=true`. |
 | `Invalid input: expected boolean, received string` on boot | A `${VAR}` used for a boolean/number in `wonder-logger.yaml`. Booleans/numbers **must be literals**. |
-| `:9464/metrics` refused | SDK disabled (`OTEL_SDK_DISABLED=true`). The endpoint only binds when the OTel SDK starts. |
+| `:9464/metrics` responds but has no `agora_*` series | `OTEL_SDK_DISABLED=true` — the Prometheus server binds, but the SDK records nothing until enabled (set `false` + restart). |
 | Logs in Loki have empty `trace_id` | Line logged outside an active span (e.g. at boot), or `traceContext`/scorer injection unavailable. |
 | secure-chat shows up as `agora-api` | `SECURE_CHAT_SERVICE_NAME` / `SERVICE_NAME` not reaching the container — check the compose `environment` block. |
 | scorer emits no traces | Python OTel deps not installed in the image, or `OTEL_SDK_DISABLED=true`. `setup_telemetry` logs a skip line. |
