@@ -5,13 +5,10 @@
 // ⚠️ Pino arg order is DATA-OBJECT-FIRST: logger.info({ userId }, "msg"). Passing the message first
 //    silently drops the structured data — always `logger.error({ err }, "...")`.
 import { createLoggerFromConfig } from "@jenova-marie/wonder-logger";
-import { fileURLToPath } from "node:url";
-import { dirname, resolve } from "node:path";
+import { wonderLoggerConfigPath as configPath } from "./wonder-logger-config.js";
 
-// Resolve the config relative to THIS module (src/lib → ../../ = the @agora/core package root, where
-// wonder-logger.yaml is copied), so it loads identically under tsx (src/) and compiled tsc (dist/)
-// regardless of process cwd (dev, prod, tests).
-const configPath = resolve(dirname(fileURLToPath(import.meta.url)), "../../wonder-logger.yaml");
+// The config path is shared with each app's OTel bootstrap (src/instrument.ts) via wonder-logger-config.ts
+// — one wonder-logger.yaml drives logs, traces, and metrics alike.
 
 // Annotate via ReturnType<…> rather than letting tsc infer `pino.Logger`: core emits declarations, and
 // the inferred type would force the .d.ts to name pino's internal (transitive) path (TS2742). Referring
