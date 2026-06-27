@@ -142,6 +142,41 @@ profile-gated, so a bare `docker compose up` starts nothing.)
 5. **Done.** The Caddy front door serves the admin SPA on `:443` (and `:80`). Uploads land in
    MinIO and are served back through `https://your-host/media/<key>`.
 
+## Try the demo app (the `demo` profile)
+
+Want to *see* the forked Replyke SDK exercising your server? Add `--profile demo` and the prebuilt
+[agora-demo](../../agora-demo) compatibility harness comes up behind the same Caddy front door at
+**`/demo/`** — same-origin with the API at `/v7`, so there's no CORS and chat sockets just work:
+
+```bash
+docker compose --profile selfhost --profile demo up    # API + demo at http://localhost/demo/
+```
+
+It's a **pulled, prebuilt image** (`docker.io/agoraserver/agora-demo:latest`) — never built from source
+here; the demo is an arms-length consumer of the *published* SDK on purpose. The published bundle bakes
+its URLs at build time, so the image is retargeted at container start: its nginx entrypoint writes
+`/config.js` from `AGORA_DEMO_API_BASE_URL` (default `http://localhost/v7`) and the app reads it before
+the bundle loads. For a real domain, set `AGORA_DEMO_API_BASE_URL=https://<your-host>/v7` in `.env`
+(it must be absolute — the SDK derives the socket.io origin from it). Pin a version with
+`AGORA_DEMO_IMAGE` instead of `latest`.
+
+**Seed the demo login first.** The demo signs in as `agora-admin@gmail.com` / `DemoPass123!` against
+project `11111111-1111-1111-1111-111111111111`, so that credential must exist — run the native seed
+*after* step 3's genesis (the project must already exist):
+
+```bash
+  ADMIN_EMAIL=agora-admin@gmail.com ADMIN_PASSWORD='DemoPass123!' \
+    docker compose run --rm agora node scripts/seeds/seed-native-admin.mjs   # native (selfhost)
+```
+
+On a Supabase-backed deploy use `seed-demo-user.mjs` instead (it creates a confirmed Supabase auth
+user). The full demo experience (secure chat tab) also needs `--profile secure-chat`; semantic search
+needs `VOYAGE_API_KEY` — without them those tabs simply degrade.
+
+> **Note (compose hot-edit on macOS).** Editing `deploy/proxy/agora-routes.caddy` while the proxy is
+> running may not take effect: Docker Desktop's bind mount can serve the container a stale view. Force a
+> fresh read with `docker compose up -d --force-recreate --no-deps proxy`.
+
 ## Running on your own / non-Supabase Postgres
 
 The `selfhost` profile pins `supabase/postgres` so you don't have to think about any of this. But the

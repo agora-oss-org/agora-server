@@ -70,14 +70,22 @@
 		reverse_proxy {$API_UPSTREAM:http://agora:4000}
 	}
 
-	# 7. Immutable hashed Vite assets — cache hard.
+	# 7. agora-demo SPA (the `demo` profile) → demo container. handle_path strips /demo so the demo's
+	#    own nginx sees /, /assets/*, /config.js (the bundle is built with Vite base=/demo/, so its asset
+	#    refs already carry the prefix). Same origin as /v7 above → no CORS; chat rides #2/#3. Lazily
+	#    resolved, so /demo/* just 502s until `--profile demo` is up.
+	handle_path /demo/* {
+		reverse_proxy {$DEMO_UPSTREAM:http://demo:80}
+	}
+
+	# 8. Immutable hashed Vite assets — cache hard.
 	handle /assets/* {
 		header Cache-Control "public, immutable, max-age=31536000"
 		root * /srv
 		file_server
 	}
 
-	# 8. Catch-all: SPA static + client-side-routing fallback. Bare `handle` = lowest precedence.
+	# 9. Catch-all: SPA static + client-side-routing fallback. Bare `handle` = lowest precedence.
 	handle {
 		root * /srv
 		try_files {path} /index.html

@@ -149,7 +149,10 @@ So the normal "just the API" deploy is `docker compose --profile supabase up` (o
 self-contained). **Axis 2 — optional add-ons (compose freely on top of a data plane):** `--profile scorer`
 (scorer ×3 + `neo4j`), `--profile secure-chat` (**Redis + `secure-chat`**), `--profile scale` (Redis as the
 cross-replica rate-limit store), and `--profile full` = **all** optional add-ons (= scorer + secure-chat).
-"Everything" is `--profile full --profile <supabase|selfhost>`.
+"Everything" is `--profile full --profile <supabase|selfhost>`. A separate `--profile demo` pulls the
+prebuilt `../agora-demo` SDK-compatibility harness and serves it behind the Caddy front door at `/demo/`
+(same-origin with `/v7`); it's a PULLED image (never built here, arms-length) retargeted at container
+start via a runtime `/config.js` + relative Vite base. See `docs/SELF-HOSTING.md`.
 `secure-chat` is its own E2E delivery process — like `agora` it does NOT bundle a DB; it persists
 `secure_*` to whatever `DATABASE_URL` points at (v1 **shares the main Postgres** / Supabase, already
 migrated). Because it **rides `full`**, a full deploy routes `/v7/:projectId/secure-chat/*` +

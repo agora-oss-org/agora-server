@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`--profile demo` — one-command demo app for self-host evaluators.** A new optional compose profile
+  pulls the prebuilt SDK-compatibility harness (`../agora-demo`) and serves it behind the Caddy front
+  door at **`/demo/`**, same-origin with the API at `/v7` (no CORS; chat sockets reuse the existing
+  routing). `docker compose --profile selfhost --profile demo up` → the demo at `http://localhost/demo/`,
+  auto-wired to the local API. New Caddy route (`handle_path /demo/*` in `deploy/proxy/agora-routes.caddy`),
+  `DEMO_UPSTREAM` on the proxy, and `AGORA_DEMO_API_BASE_URL` / `AGORA_DEMO_PROJECT_ID` / `AGORA_DEMO_IMAGE`
+  env (documented in `.env.example` + `docs/SELF-HOSTING.md`). The image is **pulled, never built here**
+  (the demo stays an arms-length consumer of the published SDK). Companion changes in the `agora-demo`
+  repo make one published image retargetable at any API at container start (runtime `/config.js` +
+  relative Vite base), so the same artifact serves the public demo and a local self-host.
+
 ## [0.14.0] - 2026-06-27
 
 ### Removed
