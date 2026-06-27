@@ -41,6 +41,11 @@ reachable without ever revealing an IP. "Total privacy" in the network/custodian
   *content* even from the operator. Full-dark and MLS stack: **dark hardens the network/custodian
   layer; MLS hardens the content layer.** Neither substitutes for the other. The strongest posture is
   *both* — a hidden service whose private conversations are also E2E-encrypted.
+- **And the content layer need not stop at chat.** Secure chat encrypts *DMs/group chat*; the **public
+  feed** (`entities` + comments) is still plaintext in Postgres even under full-dark. **§8 — operator-blind
+  encrypted spaces** — extends the *same* MLS-ratchet primitive to *public posts*, so an opt-in space's
+  feed is operator-blind at rest too. It is the content-layer complement for the feed, and it stacks with
+  full-dark exactly as secure chat does (see the matrix in §8.9).
 - **Tor is not magic.** It does not defeat a **global passive adversary** capable of traffic-shape
   correlation across the whole network, and **availability is not a cryptographic guarantee** — a
   hidden service can still be DoS'd or simply go offline. Client-side ciphertext **size-bucket
@@ -290,3 +295,266 @@ chat with no working encryption buys little."
 - No change to the secure-chat MLS design — full-dark is the network/custodian layer beneath it.
 - No new always-on trusted component that can read content (the secure-chat "no management bot" rule
   generalizes: nothing added here gains content access the cloud deploy didn't already have).
+
+---
+
+## 8. Complementary program: operator-blind **encrypted spaces** (content-layer E2E for *entities*)
+
+> **Status: vision / program design (exploratory).** A *sibling* program to full-dark, not part of it.
+> Full-dark (§1–§7) hardens the **network/custodian** layer; this hardens the **content** layer for the
+> public feed. They are orthogonal and stack (§8.9). Like full-dark, this is decomposed into independently
+> specifiable sub-projects (§8.10); nothing here is committed to a release. Captured here because it is the
+> natural answer to the gap §1 names: *secure chat hides chat content from the operator, but the feed is
+> still plaintext.*
+
+### 8.1 Purpose & the gap it fills
+
+Full-dark moves Postgres into the operator's box but **does not hide post content from the operator** —
+posts, comments, and plaintext chat sit readable in Postgres (§1, "read this twice"). Secure chat closes
+that gap *for chat*. This program closes it *for the public feed*: make a community's **public posts
+(`entities`) and comments unreadable by the operator at rest**, by repurposing the **MLS group ratchet**
+secure chat already uses — applied to the feed instead of to DMs.
+
+**The concrete threat model is cold database seizure** — a Postgres dump handed over for investigation, a
+stolen backup, a seized disk — *decrypts to nothing readable*. This is explicitly **not** a defense against
+a tampered *live* server (see the web-delivery caveat, §8.8). It is the at-rest / storage-confidentiality
+posture, and it composes with full-dark, which removes the cloud custodian holding that storage in the first
+place.
+
+**The semantic the design targets** (operator's own words): *new members can't see past posts, but see all
+new posts immediately; the brief "empty space" for a new joiner is acceptable and short-lived in a healthy
+community.* As §8.3 shows, **this semantic falls out of MLS forward secrecy for free** — it is not a feature
+we bolt on, it is what the ratchet already does.
+
+### 8.2 The locked design decisions
+
+Each was a deliberate fork, chosen knowingly:
+
+| Axis | Decision | Consequence |
+|---|---|---|
+| **Threat model** | Cold DB seizure / at-rest confidentiality | A seized DB is opaque; a *tampered live server* is explicitly **out of scope** |
+| **Key custody** | True E2E — keys on member **devices**; server is a blind delivery service holding **zero** group secrets | Operator cannot read either; MLS is the right (and necessary) tool |
+| **Scope** | **Opt-in** per space/community (a flag at creation); everything else stays cleartext | Bounded blast radius; Agora keeps its current self — two confidentiality tiers on one platform |
+| **Metadata** | Author + timing + reply-structure + reaction counts stay **cleartext**; only **bodies** (and embedded media) are ciphertext | Ownership/edit/delete/rate-limit/threading/notification-routing all keep working; the *participation graph* is exposed on seizure (accepted) |
+| **Recovery** | **Passphrase-wrapped** key backup; server holds only an Argon2id-locked opaque blob | Device loss ≠ data loss; forgotten passphrase = lost access; a seized DB still can't open the blob |
+| **Safety** | **Reporting only, no AI** in E2E spaces; report performs *selective disclosure* to a steward | No proactive scanning (impossible — server can't read bodies); steward caseload survives via surgical per-post disclosure |
+
+### 8.3 The cryptographic core — repurposing the MLS ratchet for a *re-readable feed*
+
+**One MLS group per E2E space.** Space members = group members; each member **device = a leaf** in the
+ratchet tree. The server is the **Delivery Service (DS)**: it stores and *orders* the ciphertext handshake
+stream (KeyPackages, Welcomes, Commits) and the encrypted posts, but holds no group secrets — the identical
+"blind DS" posture as secure chat, just a different payload. **The server never links an MLS library.**
+
+**The key move — decouple group key-agreement from content encryption.** Raw MLS *application messages* are
+forward-secret *per message*: the secret-tree ratchet erases keys as it advances, so you cannot re-read.
+That is correct for a chat transcript and **exactly wrong for a feed**, which needs random-access re-reads of
+history. So posts are **not** sent as MLS application messages. Instead:
+
+1. **Per-epoch content key.** Each MLS **epoch** yields a content key via MLS's standard exporter interface:
+   `K_epoch = MLS-Exporter("agora/espace-content", epoch_id)`. Every member *of that epoch* can derive it
+   deterministically; the server and non-members cannot.
+2. **Per-post DEK, wrapped to the epoch.** Each post gets a fresh random **DEK** (XChaCha20-Poly1305). The
+   body is encrypted under the DEK; the DEK is wrapped under `K_epoch`. The stored envelope is:
+
+   ```
+   espace_post envelope (body field):
+     { v, epoch_id, wrapped_dek, nonce, ciphertext, author_sig }
+                │        │           │      │           └─ author signs {plaintext, post_id, epoch_id}
+                │        │           │      └─ AEAD nonce for the body
+                │        │           └─ AEAD(K_epoch, DEK)         ← only an epoch member can unwrap
+                │        └─ which epoch's key wraps the DEK        ← tells a reader which K_epoch to derive
+                └─ envelope/format version (crypto agility)
+   ```
+
+   *(Why a per-post DEK rather than encrypting the body directly under `K_epoch`? Nonce hygiene across many
+   posts under one epoch key, and it lets the DEK be **re-wrapped** to a different recipient — e.g. a steward
+   on report, §8.7 — without re-encrypting the body.)*
+3. **Reading** a post = derive `K_epoch` for `epoch_id` → unwrap DEK → decrypt body → verify `author_sig`.
+
+**The history semantic the operator wanted — for free:**
+
+- A **new member** joins via the MLS **Welcome**, which hands them the **current** epoch secret *only*. They
+  can derive `K_epoch` for the current and future epochs, and are **cryptographically unable** to derive any
+  *past* epoch exporter (MLS forward secrecy). → They read everything from their join epoch forward, and
+  **nothing** before it. The brief "empty space" **is** the epoch boundary at their join. This is precisely
+  the requested behavior, achieved by the primitive, not by an access-control rule we have to trust the
+  server to enforce.
+- Members **persist the epoch exporters they have lived through** in their encrypted local store, so they can
+  re-read *any* post made since they joined — random access, not destroy-on-read. **This is the one
+  deliberate softening of the ratchet:** MLS would let a device forget; we retain exporters for the member's
+  *membership window* so the feed stays re-readable.
+
+**Membership changes drive epochs — and that *is* the access control:**
+
+| Event | MLS mechanism | Effect on keys | Result |
+|---|---|---|---|
+| **Join** | Committer adds the leaf + sends Welcome | New epoch; joiner gets current `K_epoch` forward | Reads from join-epoch onward; can't derive earlier epochs |
+| **Leave / ban** | Committer removes the leaf (Commit) | New epoch `K_epoch'` the removed leaf can't derive | Cut off from **all future** posts (keeps epochs its device already held — inherent, §8.8) |
+| **Key rotation / heal** | Member sends an Update/Commit | New epoch, fresh tree secrets | Post-compromise security: a leaked device's future reads are healed after rotation |
+
+- **Who may commit** maps onto Agora's **existing space roles**: space **owners/admins** are the committers
+  (their clients perform adds/removes), mirroring `requireSpaceRole` (owner ⇒ admin). Member-initiated joins
+  for open spaces resolve through an admin's client — *or*, to avoid joins blocking on an admin being online,
+  via MLS **external commits / published `GroupInfo`** (a joiner self-admits against the public group state
+  the DS stores). The external-join path is strongly preferred for availability.
+
+### 8.4 What the server stores — all opaque or public
+
+New `espace_*` tables, mirroring the `secure_*` convention (and, like `secure_*`, defined in
+`packages/core`'s schema and served by a blind DS — co-locating with `apps/secure-chat` is the natural home,
+since it is already the blind-DS process):
+
+| Table | Holds | Readable by operator? |
+|---|---|---|
+| `espace_groups` | Per-space group state: `group_id`, `current_epoch_id`, public `GroupInfo`/ratchet-tree ciphertext for external joins | Public handshake data only |
+| `espace_key_packages` | Members' published **KeyPackages** (public keys; consumed on join) | Public keys only |
+| `espace_commits` | The **ordered Commit transcript** — the DS's ordering of these *is* the epoch sequence | MLS handshake ciphertext |
+| `espace_welcomes` | Welcome messages addressed to specific joining devices | Encrypted to the joiner |
+| `espace_key_backups` | Passphrase-wrapped recovery blobs (Argon2id + AEAD) | **Opaque** — passphrase not in DB |
+| **encrypted posts** | Stored as **`entities`/`comments` rows** (§8.5) with the §8.3 envelope in the body field, `encrypted=true`, plus `epoch_id`/`wrapped_dek` sidecar | **Bodies opaque**; author/time/thread cleartext |
+
+**What a full seizure of all of the above yields:** the membership roster per space, who-posted-when, the
+reply graph, reaction tallies, a pile of MLS handshake ciphertext, and Argon2-locked backup blobs — **and no
+post bodies.** That is exactly the §8.2 threat-model line, and **no more** (the metadata exposure is the
+accepted §8.2 cost).
+
+### 8.5 SDK / contract impact
+
+Encrypted posts remain ordinary **`entities` / `comments` rows** so the forked SDK's feed, pagination,
+reactions, and threading hooks work **1:1** — the contract (`@agora-server/contract`) is preserved. The only
+delta:
+
+- The row's `body`/`title`/`content` carry the **ciphertext envelope** instead of plaintext, with
+  `encrypted = true` and the `epoch_id` / `wrapped_dek` sidecar.
+- The forked SDK gains an **encrypted-space code path**: in an `encrypted` space the feed hook runs a
+  **decrypt pass** (derive `K_epoch` → unwrap → decrypt → verify signature) before render, and the composer
+  runs an **encrypt pass** (fresh DEK → wrap to current `K_epoch` → sign) before upload. This is the
+  "encrypted space code path" flagged when scope was chosen — it lives in the **SDK repos**, not this server
+  repo.
+- This is the same shape as secure chat's `SecureChatCrypto` seam: an **`EncryptedSpaceCrypto`** client
+  interface over an MLS implementation (OpenMLS-wasm / `mls-rs` / whatever secure chat already links).
+
+### 8.6 Server-side feature degradation (the accepted cost)
+
+For `encrypted = true` rows, every server-side body reader becomes a **no-op, not a failure** — the server
+simply can't read the body, so it skips. Metadata-only features keep working:
+
+| Feature | On a cleartext space | On an E2E space |
+|---|---|---|
+| Semantic search / Voyage embeddings | ✅ indexes body | ⛔ skipped — no body to embed (in-space client-side search only) |
+| Scorer AI moderation (RoBERTa + Haiku) | ✅ scans body | ⛔ skipped — reporting-only (§8.7) |
+| OG / link-preview (`/utils/get-metadata`) | ✅ | ⛔ skipped for encrypted bodies |
+| Content-based feed ranking | ✅ | ⚠️ recency/metadata ranking only |
+| Notifications **with body preview** | ✅ | ⚠️ metadata-only ("new post in X") |
+| Reactions, counts, threading, ownership, rate-limit | ✅ | ✅ (metadata is cleartext) |
+| Realtime fan-out (`emitToConversation`-style) | ✅ | ✅ payload body is ciphertext; client decrypts on receipt |
+
+### 8.7 Safety, recovery, realtime
+
+- **Report → selective disclosure (preserves the steward caseload).** E2E spaces have **no automated
+  moderation** — the server can't read bodies. When a member reports a post, their client **re-wraps that one
+  post's DEK to the steward's public key** and attaches it to the report. The steward can decrypt **exactly
+  the reported item** — nothing else — adjudicate, and remove it through Agora's normal moderation path
+  (`moderationStatus='removed'`, the ciphertext additionally tombstoned). The operator **never** obtains the
+  space's `K_epoch`; disclosure is surgical and member-initiated. Block/leave behave normally. The space's
+  "no proactive moderation" posture is surfaced to the **owner at creation** and to **members on join** (it
+  has real ToS/compliance weight — §8.8).
+- **Recovery (passphrase-wrapped).** On first E2E join, the member sets a recovery passphrase; the client
+  **Argon2id**-derives a wrap key and encrypts `{ MLS signature/identity key + the set of epoch exporters the
+  member currently holds }` into an opaque blob stored in `espace_key_backups`. A new device: passphrase →
+  unwrap → restore identity → **re-join at the current epoch**, and restore the persisted exporters so
+  history-since-original-join is readable again. A seized DB holds the blob but cannot open it (the passphrase
+  is never in the DB).
+- **Realtime.** New posts fan out over the existing socket.io path (the "see all new posts immediately"
+  experience) with the body as ciphertext; clients decrypt on receipt. Reaction/presence events are unchanged
+  cleartext metadata.
+
+### 8.8 Honest costs & caveats — **read this twice** (mirrors §1's discipline)
+
+- **Web-delivery trust — the load-bearing caveat.** True E2E *in a browser* still trusts the operator to
+  serve **honest client JavaScript**; a compelled or malicious **live** operator could ship backdoored JS
+  that exfiltrates keys from members' browsers. **This program's threat model (cold DB seizure) is fully
+  covered; a tampered live server is NOT.** Native SDK targets (React-Native / Expo) harden this materially
+  (signed app binaries, no per-load code delivery); the web admin/SPA path is best-effort. This must be
+  stated plainly in the README, the admin, and the space's join notice. *It is the content-layer analogue of
+  full-dark's own repeated "dark ≠ E2E" honesty.*
+- **Metadata is exposed on seizure (accepted, §8.2).** Roster, who-posted-when, reply graph, and reaction
+  tallies remain cleartext. For some investigations the participation graph is as revealing as content. A
+  stronger "author hidden from server (anonymous credential)" variant was considered and **deliberately not
+  chosen** — it would force edit/delete/ownership/abuse to be redesigned around crypto rather than
+  `author_id`. Revisit only if the social graph itself becomes part of the threat model.
+- **Removed-member residual.** A removed/banned member is cut off from all *future* posts (new epoch), but
+  **keeps whatever epoch exporters their device already held** — they can still re-read history up to their
+  removal. You cannot claw back keys a device already saw. Inherent to the model.
+- **Scale & churn.** MLS is `O(log n)` per change (TreeKEM), fine for a sensitive community; a very large,
+  high-churn E2E space means frequent Commits/epochs and heavier KeyPackage management. The **opt-in scope**
+  (§8.2) keeps this bounded — this is for *a* sensitive community, not the 100k-member firehose.
+- **Committer availability.** Joins/removes require a committer; lean on **external commits** (§8.3) so joins
+  don't block on an admin being online.
+- **Key loss is real.** Forgotten passphrase **and** all devices lost = access gone; the operator cannot
+  recover it (that's the whole point). The passphrase backup is the humane default, not a safety net the
+  server can override.
+- **Legal / ToS.** Operator-blind + no AI moderation has genuine compliance implications (illegal-content
+  liability, jurisdiction-specific takedown duties). The space **owner acknowledges** this at creation. This
+  is the same posture debate as Signal/Matrix E2E, scoped to opt-in spaces.
+- **No discovery / SEO inside E2E spaces** (accepted) — there is nothing public to crawl; new visitors see
+  the space's content only after joining, forward from their join epoch.
+
+### 8.9 How it stacks with full-dark (the two-axis matrix)
+
+Encrypted spaces and full-dark are **orthogonal** and compose — the same way secure chat composes with
+full-dark. The two axes answer two different adversaries:
+
+```
+                          │  Encrypted spaces OFF          │  Encrypted spaces ON (this program)
+──────────────────────────┼────────────────────────────────┼────────────────────────────────────────
+  Full-dark OFF (cloud)    │  cloud custodian holds          │  cloud custodian holds CIPHERTEXT
+                          │  plaintext; operator reads      │  bodies; neither cloud nor operator
+                          │  (today's default)              │  reads bodies; seized cloud DB opaque
+──────────────────────────┼────────────────────────────────┼────────────────────────────────────────
+  Full-dark ON (.onion)    │  no cloud, no network observer; │  STRONGEST: location hidden, no clearnet
+                          │  but operator/box still reads   │  egress, AND post bodies operator-blind
+                          │  plaintext on the box           │  at rest — network + content both hardened
+```
+
+- **Full-dark** defeats the **network/custodian** adversary (where is the server, who holds the data, who
+  sees the traffic).
+- **Encrypted spaces** defeat the **at-rest content** adversary (a seized/subpoenaed/stolen database).
+- **Neither subsumes the other**, and **both** is the maximal posture: a hidden service whose sensitive
+  communities are also operator-blind at rest. This mirrors §1's "the strongest posture is *both*" exactly,
+  now extended from chat to the feed.
+
+### 8.10 Decomposition, build order & open questions
+
+Like full-dark, this is a multi-part program; each part gets its own spec → plan → implementation cycle.
+
+| # | Sub-project | Lives in | Difficulty |
+|---|---|---|---|
+| **E1** | **`espace_*` blind-DS endpoints** — KeyPackage publish, Welcome/Commit ordering, encrypted-post store/fetch | `apps/secure-chat` (already the blind-DS process) + `packages/core` schema | Medium — mirrors secure-chat DS |
+| **E2** | **`EncryptedSpaceCrypto` client seam + SDK encrypted-space path** — encrypt/decrypt feed passes over an MLS impl | **SDK repos** (`agora-sdk`), not this repo | Hard — the crypto heart |
+| **E3** | **Space flag + entity envelope plumbing** — `encrypted` space flag, envelope sidecar columns, body-reader no-op guards | `apps/api` + `packages/core` | Medium — must wire every body-reader to skip |
+| **E4** | **Passphrase recovery** — Argon2id wrap, `espace_key_backups`, new-device restore | SDK + `espace_*` DS | Medium |
+| **E5** | **Report → steward selective disclosure** — client re-wrap to steward key, steward decrypt-one path | SDK + `apps/api` steward routes | Medium |
+
+**Build order:** E3 (the flag + no-op guards make the surface *safe to exist* — a body-reader that doesn't
+skip an encrypted row is a leak) → E1 (the DS) → E2 (the client crypto, the hard part) → E4/E5 (recovery and
+safety, before any real community uses it). **Rule, mirroring §5:** don't expose an E2E space to members
+before E5 — a space members can't safely report in is a safety hole, exactly as "Tor around a chat with no
+working encryption buys little."
+
+**Open questions to resolve in the per-sub-project specs:**
+
+- **MLS library choice & crypto-agility** — reuse exactly what secure chat links (OpenMLS-wasm / `mls-rs`);
+  pin ciphersuite; the envelope `v` field is the agility seam.
+- **Epoch-exporter persistence budget** — how many epochs a long-lived member's device must retain; bound it
+  (e.g. snapshot-and-compact) so the local store doesn't grow unbounded in a high-churn space.
+- **Open-join vs. admin-approved** for E2E spaces, and whether external-commit self-admit is allowed without
+  an admin in the loop (availability vs. control).
+- **Edit/delete semantics** under encryption — edits re-encrypt under the *current* epoch (so a since-joined
+  member sees edits even of pre-join posts? or edits stay in the original epoch?); deletes tombstone the
+  ciphertext.
+- **Whether the whole-project (not just per-space) "encrypted community" toggle** is worth supporting, or
+  per-space is sufficient (start per-space; YAGNI on whole-project).
+- **Combining with full-dark backups** (§6) — `espace_key_backups` blobs and the operator's `pg_dump` story
+  must account for these opaque blobs (they're safe to back up; they're useless without member passphrases).
