@@ -9,7 +9,7 @@
 #    see periodic export warnings — point OTEL_*_ENDPOINT at your collector, or set OTEL_SDK_DISABLED=true.
 service:
   name: ${SERVICE_NAME:-agora-api}
-  version: ${SERVICE_VERSION:-0.3.0}
+  version: ${SERVICE_VERSION:-0.14.0}
   environment: ${NODE_ENV:-development}
 
 logger:

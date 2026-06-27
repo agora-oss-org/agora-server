@@ -1,6 +1,6 @@
 [project]
 name = "agora-scorer"
-version = "0.0.1"
+version = "0.14.0"
 description = "Agora content scoring/moderation subsystem — dual RoBERTa + Claude Haiku cascade over pgmq (replaces @agora/moderator)"
 requires-python = ">=3.11"
 license = { text = "Apache-2.0" }
