@@ -26,6 +26,7 @@ import {
 } from "../lib/shape.js";
 import { storeImageFromUpload } from "../lib/images.js";
 import { parseRankParams } from "../lib/ranking.js";
+import { feedRequestsTotal } from "../lib/telemetry.js";
 import { getFeedConfig } from "../lib/feed-config.js";
 import { assertCanReadSpace, assertCanReadEntity, assertCanPostInSpace, readableEntitiesFilter } from "../lib/space-access.js";
 import { removedPolicy, excludeRemovedSql, shouldHide } from "../lib/moderation-visibility.js";
@@ -84,6 +85,7 @@ export const entityRoutes = new Hono<{ Variables: Variables }>()
       ? new Date(rankAnchorRaw).toISOString() : new Date().toISOString();
     const rankParams = parseRankParams(clean(c.req.query("rankParams")) ?? null, feedCfg.params);
     const orderBy = buildFeedOrder(parsed, { params: rankParams, weights: feedCfg.weights, anchor: sql`${rankAnchor}::timestamptz` });
+    feedRequestsTotal.add(1, { algorithm: parsed.sortBy }); // ops metric: feed-algorithm mix (no-op when telemetry off)
 
     // Re-rank webhook (opt-in via ?rerank=true when one is configured): over-fetch a candidate pool,
     // let the host app reorder it, then slice the requested page. Fails open to the algorithm order.

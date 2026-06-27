@@ -11,6 +11,7 @@ import { jwtVerify } from "jose";
 import { env } from "../lib/env.js";
 import { hasActiveSuspension } from "../lib/suspensions.js";
 import { logger } from "../lib/logger.js";
+import { socketActiveConnections, socketEventsTotal, withSpan } from "../lib/telemetry.js";
 
 // ── Event payload contracts (mirror @replyke/core/src/types/socket.ts) ──────────
 export interface ServerToClientEvents {
@@ -59,12 +60,12 @@ function safeOn<E extends keyof ClientToServerEvents>(
 ) {
   const on = socket.on.bind(socket) as (e: E, l: (...a: Parameters<ClientToServerEvents[E]>) => void) => void;
   on(event, (...args) => {
-    try {
-      const r = handler(...args);
-      if (r instanceof Promise) r.catch((err) => logHandlerFailure(event, err));
-    } catch (err) {
-      logHandlerFailure(event, err);
-    }
+    // Ops: count every inbound event by name, and trace the handler (the realtime path is invisible to
+    // HTTP auto-instrumentation). withSpan auto-records exceptions/status; the .catch contains failures
+    // exactly as before (socket.io would otherwise crash on an unhandled async rejection). No-op when
+    // telemetry is disabled.
+    socketEventsTotal.add(1, { event: String(event) });
+    withSpan(`socket ${String(event)}`, async () => handler(...args)).catch((err) => logHandlerFailure(event, err));
   });
 }
 
@@ -118,6 +119,9 @@ export function attachRealtime(httpServer: HttpServer) {
   });
 
   io.on("connection", (socket: Socket<ClientToServerEvents, ServerToClientEvents, Record<string, never>, SocketData>) => {
+    // Ops gauge: live connection count (the realtime path HTTP metrics never see). No-op when off.
+    socketActiveConnections.add(1);
+    socket.on("disconnect", () => socketActiveConnections.add(-1));
     safeOn(socket, "join:conversation", async ({ conversationId }) => {
       if (!isId(conversationId)) return;
       // Only members may subscribe to a conversation's room.

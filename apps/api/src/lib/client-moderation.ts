@@ -8,6 +8,7 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { entities, comments } from "../db/schema/index.js";
+import { moderationDecisionsTotal } from "./telemetry.js";
 
 export type ClientModerationTarget = "entity" | "comment";
 export type ModerationStatusValue = "removed" | "approved";
@@ -27,12 +28,18 @@ export async function applyClientModeration(args: {
     moderatedById: null,
     moderatedByType: "client" as const,
   };
+  // Ops metric: automated moderation outcomes by target type, action, and whether a row matched.
+  // No-op when telemetry is disabled.
+  let matched: boolean;
   if (args.targetType === "entity") {
     const [row] = await db.update(entities).set(set)
       .where(and(eq(entities.projectId, args.projectId), eq(entities.id, args.targetId))).returning({ id: entities.id });
-    return !!row;
+    matched = !!row;
+  } else {
+    const [row] = await db.update(comments).set(set)
+      .where(and(eq(comments.projectId, args.projectId), eq(comments.id, args.targetId))).returning({ id: comments.id });
+    matched = !!row;
   }
-  const [row] = await db.update(comments).set(set)
-    .where(and(eq(comments.projectId, args.projectId), eq(comments.id, args.targetId))).returning({ id: comments.id });
-  return !!row;
+  moderationDecisionsTotal.add(1, { target: args.targetType, action: args.status, matched: String(matched) });
+  return matched;
 }
