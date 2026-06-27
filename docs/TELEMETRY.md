@@ -87,18 +87,34 @@ Alloy is the collector; it fans the three signals out to Tempo / Mimir / Loki, a
 three:
 
 ```
-@agora/api ────────┐
-@agora/secure-chat ─┤ OTLP :4318 ─▶ Alloy ─┬─ traces ─▶ Tempo  ┐
-services/scorer ────┘                      ├─ metrics ─▶ Mimir  ├─▶ Grafana :3000
-        (+ every container's stdout) ──────┴─ logs ───▶ Loki   ┘
+@agora/api ────────┐                         ┌─ traces  (OTLP) ─▶ Tempo  ┐
+@agora/secure-chat ─┤ OTLP :4318 ─▶ Alloy ────┼─ logs    (OTLP) ─▶ Loki   ├─▶ Grafana :3000
+services/scorer ────┘   scrape :9464 ─────────┴─ metrics (scrape→remote-write) ─▶ Mimir ┘
 ```
 
-Metrics use **one path on purpose**: OTLP push (the apps already export OTLP metrics). The Node
-`:9464/metrics` endpoints stay exposed for ad-hoc `curl`/scrape but aren't *also* scraped by the
-collector, so series are never double-counted.
+**Traces and logs** are pushed via OTLP. **Metrics** are *scraped* from the Node apps' Prometheus
+endpoints (`:9464`) and remote-written to Mimir — deliberately, because the scraped names are
+**deterministic** (exactly the instrument names: `agora_embeddings_total`,
+`agora_embedding_duration_ms_bucket`, `agora_socket_active_connections`, …), which is what the bundled
+dashboards query. The apps still emit OTLP metrics too, but Alloy drops those (its OTLP `metrics` output
+is empty) so series are never double-counted. The scorer has no custom metrics yet, so it contributes
+traces + logs only.
 
 > **Internal by design.** The `:9464` endpoints and the LGTM backends are reachable only on the compose
 > network, **never** through the public Caddy front door (a Prometheus endpoint must not be public).
+
+### Bundled dashboards
+
+Two dashboards auto-load into Grafana's **Agora** folder
+([`deploy/observability/grafana/dashboards/`](../deploy/observability/grafana/dashboards/)):
+
+- **Agora — Overview** — active realtime connections, socket events/sec, embedding throughput + latency
+  (p50/p95/p99), automated-moderation decisions, feed-algorithm mix, and a recent-logs panel.
+- **Agora — Logs** — per-service log volume + a live, filterable log stream (service + free-text vars).
+
+They're editable in the UI (changes aren't written back to the JSON). Metric panels use the verified
+instrument names; log panels key on the `service_name` label Alloy derives from each OTLP log's
+`service.name`.
 
 ---
 
@@ -128,12 +144,13 @@ the scorer.
 
 ### 3. Verify in Grafana
 
-Open **http://localhost:3000** (anonymous admin, local convenience):
+Open **http://localhost:3000** (anonymous admin, local convenience). The **Agora** dashboard folder is
+pre-loaded — open **Agora — Overview** and **Agora — Logs** for the curated views. To poke around raw:
 
 - **Explore → Tempo** — search by service; you should see `agora-api`, `agora-secure-chat`, and the
   `agora-scorer-*` trio. A socket `join` and a Voyage embed produce spans.
-- **Explore → Mimir** — `agora_embeddings_total`, `agora_socket_active_connections`, `http_server_*`,
-  `process_*` …
+- **Explore → Mimir** — `agora_embeddings_total`, `agora_socket_active_connections`,
+  `agora_feed_requests_total` … (the custom instruments; scraped from `:9464`).
 - **Explore → Loki** — `{service_name="agora-api"}`; each line carries `trace_id` → click **View trace**
   to jump to Tempo. Scorer log lines carry `trace_id` too.
 

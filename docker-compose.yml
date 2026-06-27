@@ -406,7 +406,6 @@ services:
       - --server.http.listen-addr=0.0.0.0:12345
     volumes:
       - ./deploy/observability/config.alloy:/etc/alloy/config.alloy:ro
-      - /var/run/docker.sock:/var/run/docker.sock:ro   # container-log discovery (read-only)
       - alloy-data:/var/lib/alloy/data
     ports:
       - "${ALLOY_PORT:-12345}:12345"   # Alloy UI (optional, localhost)
@@ -458,6 +457,7 @@ services:
       GF_FEATURE_TOGGLES_ENABLE: traceqlEditor
     volumes:
       - ./deploy/observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/observability/grafana/dashboards:/var/lib/grafana/dashboards:ro   # auto-loaded dashboards
       - grafana-data:/var/lib/grafana
     ports:
       - "${GRAFANA_PORT:-3000}:3000"

@@ -1,7 +1,7 @@
 # Grafana Mimir — monolithic, local-filesystem metrics store for the Agora observability profile.
-# Alloy pushes metrics via native OTLP (mimir:9009/otlp/v1/metrics); Grafana queries the
-# Prometheus-compatible API at mimir:9009/prometheus. Single-tenant, local disk — fine for a single
-# host / demo; point the storage blocks at object storage to scale out.
+# Alloy scrapes the apps' Prometheus endpoints (:9464) and remote-writes here (mimir:9009/api/v1/push);
+# Grafana queries the Prometheus-compatible API at mimir:9009/prometheus. Single-tenant, local disk —
+# fine for a single host / demo; point the storage blocks at object storage to scale out.
 multitenancy_enabled: false
 
 server:

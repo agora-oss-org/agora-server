@@ -31,9 +31,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **`observability` compose profile** — a one-command **Grafana Alloy → Tempo/Mimir/Loki/Grafana**
     stack (`deploy/observability/`), with the apps' OTLP endpoints pre-wired to Alloy. Telemetry stays
     **off by default** (bare deploys are dark, no export warnings); `OTEL_SDK_DISABLED=false` is the
-    single on-switch. `docs/TELEMETRY.md` documents the whole layer (per-service signal table, the
-    `wonder-logger.yaml` shape, every env var, the bundled stack + external-collector paths,
-    custom-metric helpers, troubleshooting); README + `.env.example` updated to match.
+    single on-switch. Traces + logs flow via OTLP; **metrics are scraped** from the Node `:9464`
+    endpoints and remote-written to Mimir (deterministic instrument names, no double-count).
+  - **Pre-loaded Grafana dashboards** — an **Agora — Overview** (realtime connections, socket events,
+    embedding throughput + latency percentiles, moderation decisions, feed-algorithm mix, recent logs)
+    and an **Agora — Logs** (per-service volume + a live filterable stream) auto-provision into an
+    *Agora* folder on boot, wired to the bundled datasources with trace↔log correlation.
+  - The observability env vars (`OTEL_*`, `SERVICE_NAME`/`SERVICE_VERSION`, `SECURE_CHAT_SERVICE_NAME`,
+    `GRAFANA_PORT`/`ALLOY_PORT`) are documented with defaults in `.env.example`. `docs/TELEMETRY.md`
+    documents the whole layer (per-service signal table, the bundled dashboards, the
+    `wonder-logger.yaml` shape, every env var, bundled + external-collector paths, troubleshooting);
+    README updated to match.
 - **GitHub wiki — a curated handbook authored in-repo.** A new `wiki/` directory holds the wiki source
   (Home + `_Sidebar`/`_Footer` + section pages: Getting Started, Deployment, Architecture, API &
   Contract, Security, Governance, Secure Chat, Social Graph, Ecosystem, Contributing) that summarizes

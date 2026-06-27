@@ -1,0 +1,54 @@
+{
+  "uid": "agora-logs",
+  "title": "Agora — Logs",
+  "tags": ["agora", "logs"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-1h", "to": "now" },
+  "annotations": { "list": [] },
+  "templating": {
+    "list": [
+      {
+        "name": "service",
+        "label": "Service",
+        "type": "query",
+        "datasource": { "type": "loki", "uid": "loki" },
+        "query": "label_values(service_name)",
+        "refresh": 2,
+        "includeAll": true,
+        "allValue": "agora.*",
+        "multi": true,
+        "current": { "text": "All", "value": "$__all" }
+      },
+      {
+        "name": "search",
+        "label": "Line contains",
+        "type": "textbox",
+        "current": { "text": "", "value": "" }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Log volume by service (lines/interval)",
+      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 0 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "drawStyle": "bars", "fillOpacity": 70, "stacking": { "mode": "normal" } } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [{ "refId": "A", "datasource": { "type": "loki", "uid": "loki" }, "expr": "sum by (service_name) (count_over_time({service_name=~\"$service\"} |~ \"$search\" [$__interval]))", "legendFormat": "{{service_name}}" }]
+    },
+    {
+      "id": 2,
+      "type": "logs",
+      "title": "Live logs",
+      "gridPos": { "h": 18, "w": 24, "x": 0, "y": 7 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "options": { "showTime": true, "wrapLogMessage": true, "prettifyLogMessage": true, "sortOrder": "Descending", "enableLogDetails": true, "dedupStrategy": "none" },
+      "targets": [{ "refId": "A", "datasource": { "type": "loki", "uid": "loki" }, "expr": "{service_name=~\"$service\"} |~ \"$search\"" }]
+    }
+  ]
+}
