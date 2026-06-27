@@ -13,6 +13,14 @@ import os
 import sys
 import time
 
+# Trace↔log correlation: when OTel is active, stamp each line with the current trace/span id so logs in
+# Loki link to their trace in Tempo (matching the Node apps' wonder-logger traceContext plugin). Lazy +
+# optional — if opentelemetry isn't installed, logging works unchanged with no trace fields.
+try:
+    from opentelemetry import trace as _otel_trace
+except ImportError:  # pragma: no cover - exercised only in deps-missing environments
+    _otel_trace = None
+
 
 class _JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
@@ -21,6 +29,12 @@ class _JsonFormatter(logging.Formatter):
             "time": int(time.time() * 1000),
             "msg": record.getMessage(),
         }
+        if _otel_trace is not None:
+            ctx = _otel_trace.get_current_span().get_span_context()
+            if ctx.is_valid:
+                # 32-/16-hex lowercase, identical to wonder-logger's output (one Loki regex matches both).
+                payload["trace_id"] = format(ctx.trace_id, "032x")
+                payload["span_id"] = format(ctx.span_id, "016x")
         data = getattr(record, "data", None)
         if isinstance(data, dict):
             payload.update(data)

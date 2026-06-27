@@ -11,6 +11,8 @@ from typing import AsyncIterator, Optional
 
 from fastapi import FastAPI, HTTPException
 
+from scorer.telemetry import setup_telemetry
+
 from .classifier import Classifier
 from .config import ModelServerConfig, get_config
 from .schemas import HealthResponse, ScoreRequest, ScoreResponse
@@ -28,6 +30,9 @@ def create_app(config: Optional[ModelServerConfig] = None, classifier: Optional[
         state["clf"] = None
 
     app = FastAPI(title=f"agora-scorer-model ({cfg.kind})", lifespan=lifespan)
+    # OpenTelemetry — off unless OTEL_SDK_DISABLED is falsy. Traces /score requests. OTEL_SERVICE_NAME
+    # (set per container in compose) distinguishes the toxicity vs relationship model server.
+    setup_telemetry(app, service_name=f"agora-scorer-model-{cfg.kind}")
 
     def _clf() -> Classifier:
         clf = state["clf"]

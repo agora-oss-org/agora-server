@@ -19,6 +19,7 @@ from scorer import db, neo4j
 from scorer.config import get_settings
 from scorer.logging import get_logger, log
 from scorer.notify import NotifyListener
+from scorer.telemetry import setup_telemetry
 
 from .admin_api import router as admin_router
 from .consumer import run_consumer
@@ -52,6 +53,9 @@ def create_app() -> FastAPI:
             await neo4j.close_driver()
 
     app = FastAPI(title="agora-scorer-worker", lifespan=lifespan)
+    # OpenTelemetry — off unless OTEL_SDK_DISABLED is falsy. Traces the admin API + the consumer's
+    # asyncpg/httpx calls, and correlates with the JSON logs (scorer/logging.py injects trace_id).
+    setup_telemetry(app, service_name="agora-scorer-worker")
     app.include_router(admin_router)
 
     @app.get("/health")

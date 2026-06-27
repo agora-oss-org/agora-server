@@ -37,6 +37,10 @@ WORKDIR /app
 ENV PATH="/opt/venv/bin:$PATH" PYTHONUNBUFFERED=1
 COPY --from=builder /opt/venv /opt/venv
 COPY services/scorer/model_server ./model_server
+# The shared, dependency-light telemetry + JSON-logging bootstrap lives in the `scorer` package
+# (scorer/telemetry.py + scorer/logging.py). model_server imports it so all scorer services emit the
+# same OTel signals; nothing else in the package is imported at runtime.
+COPY services/scorer/scorer ./scorer
 # Non-root.
 RUN useradd --create-home --uid 10001 scorer && chown -R scorer /app
 # HF model cache — pre-create it owned by `scorer` so a fresh named volume mounted here (see
