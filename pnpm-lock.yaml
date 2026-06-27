@@ -113,6 +113,9 @@ importers:
       '@node-rs/argon2':
         specifier: ^2.0.2
         version: 2.0.2
+      '@opentelemetry/api':
+        specifier: ^1.9.0
+        version: 1.9.1
       '@supabase/supabase-js':
         specifier: ^2.107.0
         version: 2.107.0
@@ -180,6 +183,9 @@ importers:
       '@hono/node-server':
         specifier: ^1.19.14
         version: 1.19.14(hono@4.12.23)
+      '@jenova-marie/wonder-logger':
+        specifier: ^2.0.18
+        version: 2.0.18(@opentelemetry/core@2.7.1(@opentelemetry/api@1.9.1))
       dotenv:
         specifier: ^17.4.2
         version: 17.4.2
