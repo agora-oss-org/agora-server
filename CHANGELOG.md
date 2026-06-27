@@ -16,6 +16,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and ops telemetry (OTel) are unaffected.
 
 ### Added
+- **Full OpenTelemetry across every service + a bundled Grafana collection stack.** Telemetry is now
+  built into all of Agora, not just the API:
+  - **`@agora/secure-chat`** gets its own OTel SDK (`src/instrument.ts`, first import in `index.ts`) so
+    it emits traces + metrics + a Prometheus `:9464`, labelled distinctly as `agora-secure-chat`. Both
+    Node apps now share one telemetry config via the new `@agora/core/lib/wonder-logger-config` export.
+  - **`@agora/api`** gains custom ops instruments (`lib/telemetry.ts`): embedding latency/outcome,
+    automated-moderation decisions, feed-algorithm mix, and live socket.io connections/events — plus
+    spans around the realtime path (previously invisible to HTTP auto-instrumentation). No-op-safe when
+    telemetry is off.
+  - **`services/scorer`** (Python) gets an OTel bootstrap (`scorer/telemetry.py`) auto-instrumenting
+    FastAPI + asyncpg + httpx, and `trace_id`/`span_id` injected into its JSON logs for trace↔log
+    correlation, matching the Node side.
+  - **`observability` compose profile** — a one-command **Grafana Alloy → Tempo/Mimir/Loki/Grafana**
+    stack (`deploy/observability/`), with the apps' OTLP endpoints pre-wired to Alloy. Telemetry stays
+    **off by default** (bare deploys are dark, no export warnings); `OTEL_SDK_DISABLED=false` is the
+    single on-switch. `docs/TELEMETRY.md` documents the whole layer (per-service signal table, the
+    `wonder-logger.yaml` shape, every env var, the bundled stack + external-collector paths,
+    custom-metric helpers, troubleshooting); README + `.env.example` updated to match.
 - **GitHub wiki — a curated handbook authored in-repo.** A new `wiki/` directory holds the wiki source
   (Home + `_Sidebar`/`_Footer` + section pages: Getting Started, Deployment, Architecture, API &
   Contract, Security, Governance, Secure Chat, Social Graph, Ecosystem, Contributing) that summarizes

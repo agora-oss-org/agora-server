@@ -439,11 +439,16 @@ and `CHANGELOG.md` for what each migration did. Only the non-obvious conventions
   message-only; raw errors/exceptions/context go on `debug`. **Pino arg order is data-object-FIRST:**
   `logger.debug({ err }, "msg")` — a message-first call silently drops the data. Request logging is the
   `requestLog` middleware. Config is `wonder-logger.yaml`; `LOG_LEVEL`/`LOG_CONSOLE` (`aligned`|`json`) tune it.
-- **Observability (OTel):** `src/instrument.ts` (the **first** import in `index.ts`, before
-  http/db load) starts traces + metrics from `wonder-logger.yaml`. Two metrics worlds, kept separate:
-  `lib/metrics.ts`/`api_usage` is per-project **product** metering (admin dashboard); OTel is the
-  **ops** layer (service-level RED, Prometheus `:9464` + OTLP, no `project_id` label). `OTEL_*_ENDPOINT`
-  point at a collector; `OTEL_SDK_DISABLED=true` disables it.
+- **Observability (OTel):** every service is instrumented — `src/instrument.ts` (the **first** import in
+  `index.ts`, before http/db load) starts traces + metrics from `wonder-logger.yaml` in BOTH `@agora/api`
+  and `@agora/secure-chat` (the latter loads the shared core YAML via `@agora/core/lib/wonder-logger-config`
+  and sets `SERVICE_NAME=agora-secure-chat`); the Python scorer bootstraps in `scorer/telemetry.py`. Custom
+  ops instruments live in `apps/api/src/lib/telemetry.ts` (embeddings/moderation/feed/socket.io —
+  no-op-safe, never guard them). Two metrics worlds, kept separate: `lib/metrics.ts`/`api_usage` is
+  per-project **product** metering (admin dashboard); OTel is the **ops** layer (service-level RED + the
+  custom instruments, Prometheus `:9464` + OTLP, no `project_id` label). Collection is the bundled
+  `--profile observability` stack (Alloy → Tempo/Mimir/Loki/Grafana, `deploy/observability/`); endpoints
+  default to `alloy`, `OTEL_SDK_DISABLED=false` is the single on-switch. `docs/TELEMETRY.md` is the guide.
 
 ## Status
 
