@@ -33,13 +33,15 @@ WORKDIR /app
 
 # /out carries package.json, dist/, node_modules/ (incl. @agora-server/contract + @agora/core) + scripts/.
 COPY --from=builder /out ./
-# The logger lives in @agora/core and resolves wonder-logger.yaml module-relative to the core package
-# root. pnpm deploy includes it via core's "files", but COPY it explicitly as a guarantee
-# (createLoggerFromConfig is required:true → crash if the config is missing).
+# The logger AND the OTel bootstrap (src/instrument.ts) both load wonder-logger.yaml from the @agora/core
+# package root (resolved via @agora/core/lib/wonder-logger-config). pnpm deploy includes it via core's
+# "files", but COPY it explicitly as a guarantee (both factories are required:true → crash if missing).
 COPY --from=builder /repo/packages/core/wonder-logger.yaml ./node_modules/@agora/core/wonder-logger.yaml
 
 USER node
 EXPOSE 4002
+# Prometheus metrics endpoint (OTel SDK), mirrors @agora/api. Scraped internally by the collector.
+EXPOSE 9464
 
 # Liveness probe against /health — which returns 503 until the Redis suspension index has hydrated, so
 # the orchestrator won't route traffic to a not-yet-ready (fail-open-risk) instance.

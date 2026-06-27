@@ -3,6 +3,7 @@
 // "/secure-socket/" (see realtime/secure-socket.ts for why the path is distinct). Shares the @agora/core
 // kernel (db, env, logger, auth) + the same Postgres + Redis as @agora/api.
 import "dotenv/config"; // load .env before env.ts validates process.env
+import "./instrument.js"; // start OpenTelemetry BEFORE http/db/socket.io imports below (auto-instrumentation)
 import { serve } from "@hono/node-server";
 import { env } from "@agora/core/lib/env";
 import { logger } from "@agora/core/lib/logger";
