@@ -1,0 +1,39 @@
+# Grafana Mimir — monolithic, local-filesystem metrics store for the Agora observability profile.
+# Alloy pushes metrics via native OTLP (mimir:9009/otlp/v1/metrics); Grafana queries the
+# Prometheus-compatible API at mimir:9009/prometheus. Single-tenant, local disk — fine for a single
+# host / demo; point the storage blocks at object storage to scale out.
+multitenancy_enabled: false
+
+server:
+  http_listen_port: 9009
+  log_level: warn
+
+common:
+  storage:
+    backend: filesystem
+    filesystem:
+      dir: /data/storage
+
+blocks_storage:
+  backend: filesystem
+  filesystem:
+    dir: /data/blocks
+  bucket_store:
+    sync_dir: /data/tsdb-sync
+  tsdb:
+    dir: /data/tsdb
+
+compactor:
+  data_dir: /data/compactor
+
+ruler_storage:
+  backend: filesystem
+  filesystem:
+    dir: /data/ruler
+
+# Generous single-node limits + a usable OTLP-derived retention window for a demo/single-host deploy.
+limits:
+  ingestion_rate: 100000
+  ingestion_burst_size: 200000
+  out_of_order_time_window: 10m
+  compactor_blocks_retention_period: 168h

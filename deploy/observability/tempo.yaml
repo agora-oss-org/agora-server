@@ -1,0 +1,29 @@
+# Grafana Tempo — single-binary, local-filesystem trace store for the Agora observability profile.
+# Alloy pushes traces here over OTLP/gRPC (tempo:4317). Grafana queries on :3200. Not for large-scale
+# production as-is (local disk, no retention tier) — swap the storage block for object storage to scale.
+stream_over_http_enabled: true
+
+server:
+  http_listen_port: 3200
+
+distributor:
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: "0.0.0.0:4317"
+
+ingester:
+  max_block_duration: 5m
+
+compactor:
+  compaction:
+    block_retention: 48h
+
+storage:
+  trace:
+    backend: local
+    wal:
+      path: /var/tempo/wal
+    local:
+      path: /var/tempo/blocks

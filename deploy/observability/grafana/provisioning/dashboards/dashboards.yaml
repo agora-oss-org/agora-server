@@ -1,0 +1,16 @@
+# Auto-load the bundled Agora dashboards from disk on boot, into a "Agora" folder. Editable in the UI
+# (changes are not written back to these files). JSON lives in deploy/observability/grafana/dashboards/,
+# mounted at /var/lib/grafana/dashboards by docker-compose.
+apiVersion: 1
+
+providers:
+  - name: agora
+    orgId: 1
+    folder: Agora
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false

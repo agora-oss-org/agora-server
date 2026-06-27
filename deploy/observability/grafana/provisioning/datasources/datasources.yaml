@@ -1,0 +1,43 @@
+# Grafana datasource provisioning for the Agora observability profile. Wires the three LGTM backends
+# with trace↔log correlation: a Loki log line's trace_id links to its Tempo trace, and a Tempo span
+# links back to its Loki logs. Anonymous admin is enabled in compose for a friction-free local stack.
+apiVersion: 1
+
+datasources:
+  - name: Mimir
+    type: prometheus
+    uid: mimir
+    access: proxy
+    url: http://mimir:9009/prometheus
+    isDefault: true
+    jsonData:
+      httpMethod: POST
+
+  - name: Loki
+    type: loki
+    uid: loki
+    access: proxy
+    url: http://loki:3100
+    jsonData:
+      # Lift the trace_id wonder-logger injects into each JSON log line into a clickable Tempo link.
+      derivedFields:
+        - name: TraceID
+          matcherRegex: '"trace_id":"(\w+)"'
+          url: '${__value.raw}'
+          datasourceUid: tempo
+
+  - name: Tempo
+    type: tempo
+    uid: tempo
+    access: proxy
+    url: http://tempo:3200
+    jsonData:
+      tracesToLogsV2:
+        datasourceUid: loki
+        spanStartTimeShift: '-1h'
+        spanEndTimeShift: '1h'
+        filterByTraceID: true
+      serviceMap:
+        datasourceUid: mimir
+      nodeGraph:
+        enabled: true

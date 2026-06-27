@@ -1,0 +1,54 @@
+// Agora observability collector (Grafana Alloy). Routes the three OTel signals to the LGTM backends.
+//
+// Apps push OTLP here for TRACES + LOGS (OTEL_*_ENDPOINT / OTEL_EXPORTER_OTLP_ENDPOINT → http://alloy:4318):
+//   @agora/api · @agora/secure-chat · services/scorer.
+// METRICS are collected by SCRAPING the Node apps' Prometheus endpoints (:9464) instead of OTLP — the
+// scraped names are deterministic (exactly the instrument names: agora_embeddings_total,
+// agora_embedding_duration_ms_bucket, agora_socket_active_connections, …), which is what the bundled
+// Grafana dashboards query. The apps still emit OTLP metrics too, but Alloy drops them here (the OTLP
+// `metrics` output is empty) so series are never double-counted. See docs/TELEMETRY.md.
+
+// ── OTLP ingress (traces + logs) ───────────────────────────────────────────────────────────────────
+otelcol.receiver.otlp "in" {
+  grpc { endpoint = "0.0.0.0:4317" }
+  http { endpoint = "0.0.0.0:4318" }
+
+  output {
+    traces  = [otelcol.exporter.otlp.tempo.input]
+    metrics = []   // metrics come from the Prometheus scrape below — OTLP metrics intentionally dropped
+    logs    = [otelcol.exporter.loki.to_loki.input]
+  }
+}
+
+// ── Traces → Tempo (OTLP/gRPC) ─────────────────────────────────────────────────────────────────────
+otelcol.exporter.otlp "tempo" {
+  client {
+    endpoint = "tempo:4317"
+    tls { insecure = true }
+  }
+}
+
+// ── Logs → Loki (OTLP logs converted to the Loki push API; service.name → the service_name label) ──
+otelcol.exporter.loki "to_loki" {
+  forward_to = [loki.write.default.receiver]
+}
+
+loki.write "default" {
+  endpoint { url = "http://loki:3100/loki/api/v1/push" }
+}
+
+// ── Metrics: scrape the Node apps' Prometheus endpoints → Mimir ─────────────────────────────────────
+// A `service` label distinguishes the two Node apps. Targets that are down (telemetry off, or the app
+// not in this deploy's profile) are simply marked down — harmless.
+prometheus.scrape "agora_nodes" {
+  targets = [
+    { "__address__" = "agora:9464",       "service" = "agora-api" },
+    { "__address__" = "secure-chat:9464", "service" = "agora-secure-chat" },
+  ]
+  scrape_interval = "15s"
+  forward_to      = [prometheus.remote_write.mimir.receiver]
+}
+
+prometheus.remote_write "mimir" {
+  endpoint { url = "http://mimir:9009/api/v1/push" }
+}
