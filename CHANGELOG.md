@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-06-28
+
 ### Added
 - **Realtime app-notifications over socket.io.** A new server→client `notification:created` event
   (payload = the full shaped notification row) fans out to a per-user room
@@ -1567,7 +1569,8 @@ cloud Supabase — no stubbed endpoints remain.
   (`@agora/*`), a repointed fork of `@replyke/core`.
 - Backlog: rate limiting, refresh-token cleanup sweep, RLS write policies, turnkey deploy guide.
 
-[Unreleased]: https://github.com/jenova-marie/agora/compare/v0.14.0...HEAD
+[Unreleased]: https://github.com/jenova-marie/agora/compare/v0.15.0...HEAD
+[0.15.0]: https://github.com/jenova-marie/agora/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/jenova-marie/agora/compare/v0.12.0...v0.14.0
 [0.12.0]: https://github.com/jenova-marie/agora/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/jenova-marie/agora/compare/v0.10.0...v0.11.0
