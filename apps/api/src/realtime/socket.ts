@@ -12,6 +12,9 @@ import { env } from "../lib/env.js";
 import { hasActiveSuspension } from "../lib/suspensions.js";
 import { logger } from "../lib/logger.js";
 import { socketActiveConnections, socketEventsTotal, withSpan } from "../lib/telemetry.js";
+import { createAdapter } from "@socket.io/redis-adapter";
+import { getRedis } from "../lib/redis.js";
+import type { shapeNotification } from "../lib/shape.js";
 
 // ── Event payload contracts (mirror @replyke/core/src/types/socket.ts) ──────────
 export interface ServerToClientEvents {
@@ -27,6 +30,8 @@ export interface ServerToClientEvents {
   "member:left": (p: { conversationId: string; userId: string }) => void;
   "conversation:updated": (patch: { id: string } & Record<string, unknown>) => void;
   "conversation:deleted": (p: { conversationId: string }) => void;
+  // App-notification fan-out to a user-scoped room (not chat). Payload = the full shaped row.
+  "notification:created": (n: ReturnType<typeof shapeNotification>) => void;
 }
 
 export interface ClientToServerEvents {
@@ -43,6 +48,8 @@ interface SocketData {
 
 const accessSecret = new TextEncoder().encode(env.ACCESS_TOKEN_SECRET);
 const room = (conversationId: string) => `conversation:${conversationId}`;
+// Per-user app-notification room — project-namespaced so a notification never crosses tenants.
+const userRoom = (projectId: string, userId: string) => `user:${projectId}:${userId}`;
 
 type AgoraIO = Server<ClientToServerEvents, ServerToClientEvents, Record<string, never>, SocketData>;
 type AgoraSocket = Socket<ClientToServerEvents, ServerToClientEvents, Record<string, never>, SocketData>;
@@ -95,6 +102,21 @@ export function attachRealtime(httpServer: HttpServer) {
   );
   ioRef = io;
 
+  // Cross-replica fan-out: when REDIS_URL is set, route socket.io rooms through Redis so an emit on
+  // one replica reaches sockets connected to another (notifications AND chat). Fail-soft — unset or
+  // a construction error leaves the default in-memory adapter (single-process, current behavior).
+  try {
+    const pub = getRedis();
+    if (pub) {
+      const sub = pub.duplicate(); // the adapter needs a dedicated subscriber connection
+      io.adapter(createAdapter(pub, sub));
+      logger.info("socket: redis adapter enabled (cross-replica fan-out)");
+    }
+  } catch (err) {
+    logger.error("socket: redis adapter setup failed; using in-memory adapter");
+    logger.debug({ err }, "socket: redis adapter setup failed");
+  }
+
   // Authenticate from handshake auth.token + scope by query.projectId.
   io.use(async (socket, next) => {
     try {
@@ -122,6 +144,9 @@ export function attachRealtime(httpServer: HttpServer) {
     // Ops gauge: live connection count (the realtime path HTTP metrics never see). No-op when off.
     socketActiveConnections.add(1);
     socket.on("disconnect", () => socketActiveConnections.add(-1));
+    // Per-user room for app-notification fan-out (auth middleware has set socket.data). Project-scoped
+    // so a notification never crosses tenants. All of a user's tabs/devices share this room.
+    socket.join(userRoom(socket.data.projectId, socket.data.userId));
     safeOn(socket, "join:conversation", async ({ conversationId }) => {
       if (!isId(conversationId)) return;
       // Only members may subscribe to a conversation's room.
@@ -155,4 +180,17 @@ export function emitToConversation<E extends keyof ServerToClientEvents>(
   ...args: Parameters<ServerToClientEvents[E]>
 ) {
   ioRef?.to(room(conversationId)).emit(event, ...args);
+}
+
+// REST/business code calls this to push a notification to all of a user's connected sockets.
+// No-op if the socket server isn't attached (e.g. unit tests). With the Redis adapter attached,
+// this crosses replicas. e.g.:
+//   emitToUser(projectId, recipientId, "notification:created", shapedNotification)
+export function emitToUser<E extends keyof ServerToClientEvents>(
+  projectId: string,
+  userId: string,
+  event: E,
+  ...args: Parameters<ServerToClientEvents[E]>
+) {
+  ioRef?.to(userRoom(projectId, userId)).emit(event, ...args);
 }
