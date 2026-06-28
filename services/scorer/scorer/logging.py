@@ -12,10 +12,13 @@ import logging
 import os
 import sys
 import time
+from types import ModuleType
 
 # Trace↔log correlation: when OTel is active, stamp each line with the current trace/span id so logs in
 # Loki link to their trace in Tempo (matching the Node apps' wonder-logger traceContext plugin). Lazy +
 # optional — if opentelemetry isn't installed, logging works unchanged with no trace fields.
+# Declared optional so mypy accepts the None fallback (the import binds a module; the except rebinds None).
+_otel_trace: ModuleType | None
 try:
     from opentelemetry import trace as _otel_trace
 except ImportError:  # pragma: no cover - exercised only in deps-missing environments
