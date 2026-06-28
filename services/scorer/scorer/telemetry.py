@@ -37,10 +37,13 @@ def setup_telemetry(app: "Optional[FastAPI]" = None, *, service_name: Optional[s
     Returns True if telemetry was configured, False if it was skipped (disabled or deps missing).
     """
     global _configured
-    if _configured:
-        return True
+    # Disabled wins over the idempotency short-circuit: a disabled call must always report False,
+    # even if a prior (enabled) call in the same process already configured telemetry. (Otherwise a
+    # cross-test _configured=True from an app-startup test makes a later disabled call return True.)
     if not telemetry_enabled():
         return False
+    if _configured:
+        return True
 
     try:
         from opentelemetry import metrics, trace
