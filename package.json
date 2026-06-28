@@ -29,7 +29,8 @@
     "genesis": "pnpm --filter @agora/api genesis",
     "genesis:test": "pnpm --filter @agora/api genesis:test",
     "seed": "pnpm --filter @agora/api seed",
-    "seed:graph": "pnpm --filter @agora/api seed:graph"
+    "seed:graph": "pnpm --filter @agora/api seed:graph",
+    "release": "bash scripts/release.sh"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

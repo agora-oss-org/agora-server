@@ -4,9 +4,10 @@
 #
 # This script:
 # 1. Validates the version format (semantic versioning)
-# 2. Bumps version in: root, packages/contract, apps/api, apps/admin
-# 3. Reminds you to update CHANGELOG.md manually (it won't auto-update)
-# 4. Stages the version bumps
+# 2. Bumps version in: root, packages/contract, packages/core, apps/api, apps/admin, apps/secure-chat
+# 3. Auto-updates CHANGELOG.md: moves [Unreleased] → [<VERSION>] - <today> and fixes the compare
+#    links (aborts if [Unreleased] is empty — won't cut an empty release)
+# 4. Stages the version bumps + CHANGELOG
 # 5. Commits with message "chore(release): v<VERSION>"
 # 6. Creates a git tag "v<VERSION>"
 #
@@ -23,6 +24,7 @@ if [ $# -ne 1 ]; then
 fi
 
 VERSION="$1"
+RELEASE_DATE="$(date +%F)"  # today's date, YYYY-MM-DD, for the CHANGELOG heading
 
 # Validate semantic versioning (X.Y.Z)
 if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
@@ -37,11 +39,55 @@ if git rev-parse "v$VERSION" >/dev/null 2>&1; then
   exit 1
 fi
 
-# Check for uncommitted changes (except CHANGELOG which the user will update)
-if ! git diff --quiet -- . ':!CHANGELOG.md'; then
-  echo "❌ You have uncommitted changes (excluding CHANGELOG.md). Please commit or stash them first."
+# Require a clean tree — the script now owns every file it touches (version bumps + CHANGELOG),
+# so the release commit is exactly those changes and nothing accidentally swept in.
+if ! git diff --quiet -- . || ! git diff --cached --quiet -- .; then
+  echo "❌ You have uncommitted changes. Please commit or stash them first."
   exit 1
 fi
+
+# ── Update CHANGELOG.md FIRST: move [Unreleased] → [VERSION] - DATE + fix the compare links. ─────────
+# Done before the version bumps so the most likely abort (an empty [Unreleased]) leaves the tree
+# untouched. The repo URL + previous version are derived from the existing [Unreleased] compare link,
+# so nothing is hardcoded. Refuses to cut a release whose [Unreleased] has no entries.
+echo "📝 Updating CHANGELOG.md ($VERSION, $RELEASE_DATE)..."
+VERSION="$VERSION" RELEASE_DATE="$RELEASE_DATE" node -e '
+  const fs = require("fs");
+  const file = "CHANGELOG.md";
+  const VERSION = process.env.VERSION, DATE = process.env.RELEASE_DATE;
+  const lines = fs.readFileSync(file, "utf8").split("\n");
+
+  const unrIdx = lines.findIndex((l) => /^## \[Unreleased\]/.test(l));
+  if (unrIdx === -1) { console.error("❌ CHANGELOG.md: no \"## [Unreleased]\" heading"); process.exit(1); }
+  let nextIdx = lines.findIndex((l, i) => i > unrIdx && /^## \[/.test(l));
+  if (nextIdx === -1) nextIdx = lines.length;
+
+  // Body under [Unreleased], trimmed of surrounding blank lines. Must contain at least one bullet.
+  let body = lines.slice(unrIdx + 1, nextIdx);
+  while (body.length && body[0].trim() === "") body.shift();
+  while (body.length && body[body.length - 1].trim() === "") body.pop();
+  if (!body.some((l) => /^\s*-\s+\S/.test(l))) {
+    console.error("❌ CHANGELOG.md: [Unreleased] has no entries — refusing to cut an empty release.");
+    process.exit(1);
+  }
+
+  // Reassemble: keep an empty [Unreleased], insert the new version section with the captured body.
+  const head = lines.slice(0, unrIdx);
+  const tail = lines.slice(nextIdx);
+  const moved = ["## [Unreleased]", "", `## [${VERSION}] - ${DATE}`, "", ...body, ""];
+  let out = [...head, ...moved, ...tail].join("\n");
+
+  // Footer compare links: repoint [Unreleased] to the new tag and add the [VERSION] line beneath it.
+  const re = /^\[Unreleased\]:\s*(.*)\/compare\/v(\d+\.\d+\.\d+)\.\.\.HEAD\s*$/m;
+  const m = out.match(re);
+  if (!m) { console.error("❌ CHANGELOG.md: could not parse the [Unreleased] compare link in the footer"); process.exit(1); }
+  const base = m[1], prev = m[2];
+  if (prev === VERSION) { console.error(`❌ CHANGELOG.md: previous version in footer is already ${VERSION}`); process.exit(1); }
+  out = out.replace(re, `[Unreleased]: ${base}/compare/v${VERSION}...HEAD\n[${VERSION}]: ${base}/compare/v${prev}...v${VERSION}`);
+
+  fs.writeFileSync(file, out);
+  console.error(`  ✓ CHANGELOG.md: [Unreleased] → [${VERSION}] - ${DATE} (previous ${prev})`);
+'
 
 echo "📦 Bumping version to $VERSION..."
 
@@ -63,28 +109,14 @@ bump_version() {
 
 bump_version "package.json"
 bump_version "packages/contract/package.json"
+bump_version "packages/core/package.json"
 bump_version "apps/api/package.json"
 bump_version "apps/admin/package.json"
-
-echo ""
-echo "📝 Next step: Update CHANGELOG.md"
-echo "   1. Move the [Unreleased] section to [v$VERSION] with today's date"
-echo "   2. Update the compare links at the bottom"
-echo "   3. Save the file"
-echo ""
-echo "   ⏸️  Pausing — press Enter once you've updated CHANGELOG.md"
-read -p ""
-
-# Check if CHANGELOG was updated
-if ! git diff --quiet CHANGELOG.md; then
-  echo "✓ CHANGELOG.md detected"
-else
-  echo "⚠️  CHANGELOG.md was not modified (is that intentional?)"
-fi
+bump_version "apps/secure-chat/package.json"
 
 echo ""
 echo "🔗 Staging version bumps + CHANGELOG..."
-git add package.json packages/contract/package.json apps/api/package.json apps/admin/package.json CHANGELOG.md
+git add package.json packages/contract/package.json packages/core/package.json apps/api/package.json apps/admin/package.json apps/secure-chat/package.json CHANGELOG.md
 
 echo "💾 Creating release commit..."
 git commit -m "chore(release): v$VERSION"
