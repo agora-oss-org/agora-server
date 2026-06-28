@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **CI: automatic GitHub Releases from CHANGELOG.md.** A new `release.yml` workflow fires on the same
+  `v*` version tag as `docker-publish` / `npm-publish` and creates (or, on a re-pushed tag, updates) a
+  GitHub Release whose notes are the CHANGELOG section for that exact version — the body between
+  `## [x.y.z] - DATE` and the next `## [` heading, extracted with `awk` and published via the `gh` CLI
+  (built-in `GITHUB_TOKEN`, `contents: write`). SemVer prereleases (a `-` suffix, e.g. `v0.16.0-rc.1`)
+  are flagged as prereleases; a tag with no CHANGELOG section still releases with a fallback pointer.
+
 ## [0.15.2] - 2026-06-28
 
 ### Changed

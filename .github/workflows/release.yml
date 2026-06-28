@@ -1,0 +1,83 @@
+# Create a GitHub Release from a version tag, with release notes lifted straight out of CHANGELOG.md.
+# Fires on a version tag (e.g. `v0.15.2`) — the SAME trigger as docker-publish / npm-publish, so one
+# `git push --tags` cuts the images, the npm package, AND the release together.
+#
+# Release notes are the CHANGELOG section for this exact version: the body between `## [x.y.z] - DATE`
+# and the next `## [` heading (the heading line itself is dropped — the release title carries it).
+# Keep CHANGELOG.md current (see CLAUDE.md → Changelog) and the notes write themselves. A tag whose
+# version has no CHANGELOG section still releases, with a fallback pointer to the changelog.
+#
+# Idempotent: a re-pushed tag updates the existing release in place rather than failing.
+# A SemVer prerelease (a tag with a `-` suffix, e.g. `v0.16.0-rc.1`) is marked as a prerelease.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to (re)build the release for, e.g. v0.15.2"
+        required: true
+
+permissions:
+  contents: write # create / edit GitHub releases
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Resolve tag + version
+        id: ver
+        run: |
+          tag="${{ github.event.inputs.tag || github.ref_name }}"
+          version="${tag#v}"
+          echo "tag=$tag"         >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          # SemVer prerelease iff the version core has a `-` suffix (rc/beta/alpha/…).
+          if [[ "$version" == *-* ]]; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Extract CHANGELOG section
+        id: notes
+        run: |
+          version="${{ steps.ver.outputs.version }}"
+          notes_file="$(mktemp)"
+          awk -v ver="$version" '
+            $0 ~ ("^## \\[" ver "\\]") { cap=1; next }   # found our heading — start capturing the body
+            cap && /^## \[/            { exit }          # next version heading — stop
+            cap                        { print }
+          ' CHANGELOG.md > "$notes_file"
+          # Trim leading/trailing blank lines; fall back if the section was empty or missing.
+          sed -i -e '/./,$!d' "$notes_file"                    # strip leading blanks
+          if [ ! -s "$notes_file" ]; then
+            echo "::warning::No CHANGELOG.md section for $version — using a fallback note"
+            printf 'See [CHANGELOG.md](https://github.com/%s/blob/%s/CHANGELOG.md) for details.\n' \
+              "$GITHUB_REPOSITORY" "${{ steps.ver.outputs.tag }}" > "$notes_file"
+          fi
+          echo "file=$notes_file" >> "$GITHUB_OUTPUT"
+
+      - name: Create or update the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.ver.outputs.tag }}
+          PRERELEASE: ${{ steps.ver.outputs.prerelease }}
+          NOTES_FILE: ${{ steps.notes.outputs.file }}
+        run: |
+          pre=()
+          [ "$PRERELEASE" = "true" ] && pre=(--prerelease)
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG exists — updating notes."
+            gh release edit "$TAG" --title "$TAG" --notes-file "$NOTES_FILE" "${pre[@]}"
+          else
+            echo "Creating release $TAG."
+            gh release create "$TAG" --title "$TAG" --notes-file "$NOTES_FILE" "${pre[@]}"
+          fi
