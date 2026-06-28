@@ -397,6 +397,7 @@ io(socketUrl, { auth: { token: accessToken }, query: { projectId }, autoConnect:
 | `member:left` | `{ conversationId, userId }` |
 | `conversation:updated` | `Partial<Conversation> & { id }` |
 | `conversation:deleted` | `{ conversationId }` |
+| `notification:created` | `UnifiedAppNotification` (full shaped row; room `user:<projectId>:<userId>`, auto-joined on connect) |
 | `connect` / `disconnect` | (built-in) |
 
 **Client → Server events** (`ClientToServerEvents`):
@@ -409,7 +410,11 @@ io(socketUrl, { auth: { token: accessToken }, query: { projectId }, autoConnect:
 
 **Room semantics:** client emits `join:conversation` to subscribe; server fans out
 message/typing/member events to that conversation room. Read state via REST
-`POST /chat/conversations/:id/read`.
+`POST /chat/conversations/:id/read`. Separately, every authenticated socket is **auto-joined**
+server-side to its own `user:<projectId>:<userId>` room (no client emit) — the server fans out
+`notification:created` there so the bell/badge updates live for every notification type. Across
+multiple API replicas this fan-out crosses processes when `REDIS_URL` is set (socket.io Redis
+adapter); otherwise it stays single-process.
 
 > **Secure chat (Agora extension — not an SDK contract surface).** The end-to-end-encrypted secure-chat
 > surface lives outside this manifest; its full REST + realtime contract is in

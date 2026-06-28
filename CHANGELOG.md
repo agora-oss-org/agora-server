@@ -7,7 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Realtime app-notifications over socket.io.** A new server→client `notification:created` event
+  (payload = the full shaped notification row) fans out to a per-user room
+  `user:<projectId>:<userId>` that every authenticated socket **auto-joins** on connect, so the
+  bell/badge updates live for **every** notification type (comment/reply/mention, follows,
+  reactions, steward, …) — not just on the next REST poll. Emitted from the shared notification
+  `insert()` choke point. Optional **cross-replica fan-out** via `@socket.io/redis-adapter`, enabled
+  when `REDIS_URL` is set (also makes existing chat fan-out cross-replica); fail-soft to
+  single-process when unset.
+
 ### Changed
+- **A comment reply now also notifies the entity owner.** A reply generates an `entity-comment` to
+  the entity owner **in addition to** the `comment-reply` to the parent comment's author, deduped
+  when they are the same user (one row, the `comment-reply`) and skipping self-notification.
 - **Seed scripts restructured into a one-prompt admin master + a demo-data gate.** The two
   backend-specific admin seeders (`seed-demo-user.mjs` / `seed-native-admin.mjs`) are replaced by a
   single entry point, **`scripts/seeds/00-seed-auth-admin.mjs`**, which prompts once for an admin
