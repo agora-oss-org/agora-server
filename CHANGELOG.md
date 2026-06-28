@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Seed scripts restructured into a one-prompt admin master + a demo-data gate.** The two
+  backend-specific admin seeders (`seed-demo-user.mjs` / `seed-native-admin.mjs`) are replaced by a
+  single entry point, **`scripts/seeds/00-seed-auth-admin.mjs`**, which prompts once for an admin
+  email + password and drives both backends in `scripts/seeds/helpers/` (`seed-native-auth-admin.mjs`
+  → in-API argon2 `auth_credentials`; `seed-supabase-auth-admin.mjs` → confirmed Supabase user). Each
+  helper **self-gates on `projects.auth_provider`** — the active backend is seeded, the other prints a
+  one-line skip — so a run no longer hangs on a prompt for, or writes dead data into, the inactive
+  backend. A new gate, **`01-confirm-demo-data.mjs`**, asks whether to seed the demo CONTENT and, on
+  "no", exits with a sentinel code (78) that the `seed.mjs` orchestrator recognizes as a **clean stop**
+  (remaining content seeders skipped, not failed); `SEED_DEMO_DATA=1|0` overrides for CI. The
+  orchestrator's fatal-abort match now covers the renamed admin seeder, and the (now non-excluded)
+  `03-seed-engine.mjs` runs as part of `pnpm seed` (gated by the opt-in) — it remains **not
+  idempotent** (re-running duplicates its graph world). Docs (`SELF-HOSTING`, `CHEAT-SHEET`, `SCORER`,
+  `CLAUDE.md`, admin `config.ts`) and every post-seeder's bootstrap pointer updated to the new names.
+
 ### Added
 - **`createIfNotFound` on `GET /entities/by-foreign-id`.** The SDK's `EntityProvider` /
   `CommentSection` pass `createIfNotFound=true` to lazily materialize the social-layer anchor for

@@ -109,7 +109,7 @@ profile-gated, so a bare `docker compose up` starts nothing.)
 
    ```bash
    # the credential is confirmed in-DB (no email round-trip); -it gives the prompt a TTY
-   docker compose run --rm -it agora node scripts/seeds/seed-native-admin.mjs
+   docker compose run --rm -it agora node scripts/seeds/helpers/seed-native-auth-admin.mjs
    #   Admin email: you@example.com
    #   Admin password (hidden): ********   (not echoed, asked twice)
    ```
@@ -137,7 +137,8 @@ profile-gated, so a bare `docker compose up` starts nothing.)
    Then add that email to **`OPERATOR_EMAILS`** in `.env` (god-view is the env allowlist, not a DB row —
    see "Auth" below) and restart `agora`. Sign in at the admin SPA; the `profiles` row auto-creates on
    first sign-in. Re-run with `--reset` to set a new password if you lock yourself out. (This is the
-   native counterpart of `seed-demo-user.mjs`, which is Supabase-only.)
+   native half of the admin seed; `helpers/seed-supabase-auth-admin.mjs` is the Supabase counterpart,
+   and the `00-seed-auth-admin.mjs` master drives whichever backend is active from one prompt.)
 
 5. **Done.** The Caddy front door serves the admin SPA on `:443` (and `:80`). Uploads land in
    MinIO and are served back through `https://your-host/media/<key>`.
@@ -166,11 +167,11 @@ project `11111111-1111-1111-1111-111111111111`, so that credential must exist �
 
 ```bash
   ADMIN_EMAIL=agora-admin@gmail.com ADMIN_PASSWORD='DemoPass123!' \
-    docker compose run --rm agora node scripts/seeds/seed-native-admin.mjs   # native (selfhost)
+    docker compose run --rm agora node scripts/seeds/helpers/seed-native-auth-admin.mjs   # native (selfhost)
 ```
 
-On a Supabase-backed deploy use `seed-demo-user.mjs` instead (it creates a confirmed Supabase auth
-user). The full demo experience (secure chat tab) also needs `--profile secure-chat`; semantic search
+On a Supabase-backed deploy use `helpers/seed-supabase-auth-admin.mjs` instead (it creates a confirmed
+Supabase auth user). Either way, `00-seed-auth-admin.mjs` is the one-prompt master that runs the right one. The full demo experience (secure chat tab) also needs `--profile secure-chat`; semantic search
 needs `VOYAGE_API_KEY` — without them those tabs simply degrade.
 
 > **Note (compose hot-edit on macOS).** Editing `deploy/proxy/agora-routes.caddy` while the proxy is
@@ -272,8 +273,8 @@ project-wide admin with no DB grant. So "the admin" is simply a user whose email
 that's why bootstrapping is *create a native user* (step 4) *+ add its email to the allowlist*, not a
 migration. (Within-project owner/admin/steward grants are separate DB roles in `project_roles` — see
 `CLAUDE.md`.) There is no native-mode confirmation email transport by default: the `ConsoleEmailSender`
-logs confirm/reset links at `debug`, so either run `seed-native-admin.mjs` (pre-confirmed) or read the
-link out of the server log.
+logs confirm/reset links at `debug`, so either run `helpers/seed-native-auth-admin.mjs` (pre-confirmed) or
+read the link out of the server log.
 
 ### Database (`DATABASE_URL`)
 

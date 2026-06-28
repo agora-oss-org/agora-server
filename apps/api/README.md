@@ -88,9 +88,14 @@ cp .env.example .env      # fill in DATABASE_URL (required) — see Configuratio
 pnpm db:migrate           # apply migrations to your Supabase DB (idempotent; safe to re-run)
 pnpm dev                  # http://localhost:4000/v7   (GET /health to verify)
 
-# optional: seed dev data + validate triggers/RPC (asserts loudly on failure)
+# 1. tenant/project rows + trigger/RPC validation (asserts loudly on failure)
 url=$(grep '^DATABASE_URL=' .env | cut -d= -f2-); psql "$url" -v ON_ERROR_STOP=1 -f scripts/seeds/seed.sql
+
+# 2. the admin login + demo content (needs the server running + the project row above)
+pnpm seed                 # prompts: admin email/password, then "seed demo content? [Y/n]"
 ```
+
+See [Seeding](#seeding) below for the full flow (admin account, demo-data opt-out, env-driven CI).
 
 ## Commands
 
@@ -104,6 +109,53 @@ pnpm db:generate          # after editing src/db/schema/*.ts -> a new migration 
 pnpm db:migrate           # apply migrations (idempotent: journal skips applied; safe to re-run)
 pnpm test                 # unit tests (no DB)
 pnpm test:integration     # integration tests (needs TEST_DATABASE_URL — a dedicated cloud DB)
+pnpm seed                 # create the admin login + (optionally) seed demo content — see Seeding
+pnpm seed:graph           # standalone: seed the manifest graph world (seed.json) — not idempotent
+```
+
+## Seeding
+
+Two layers, run in order. The first is pure SQL against the DB; the second drives the **running API**
+over HTTP as the seeded admin.
+
+**1. Database fixtures (`seed.sql`).** Creates the tenant/`projects` row everything else needs and
+asserts the triggers/RPC are wired. Run it once against a migrated DB (or use `pnpm genesis`, which
+drops → migrates → seeds this for you):
+
+```bash
+url=$(grep '^DATABASE_URL=' .env | cut -d= -f2-); psql "$url" -v ON_ERROR_STOP=1 -f scripts/seeds/seed.sql
+```
+
+**2. Admin login + demo content (`pnpm seed`).** With the server running, `pnpm seed` runs the
+seeders in `scripts/seeds/` in order:
+
+```
+00-seed-auth-admin.mjs     ← creates the admin login (prompts ONCE for email + password)
+01-confirm-demo-data.mjs   ← "Seed demo content now? [Y/n]"  — "no" stops here, cleanly
+02 … 04 + seed-*-post.mjs   ← the demo content (sample posts, comments, images)
+```
+
+- **The admin account.** `00-seed-auth-admin.mjs` asks for an email + password **once**, then seeds the
+  backend the project is configured for (`projects.auth_provider`): a native `auth_credentials` row
+  (in-API argon2) or a confirmed Supabase user. The other backend is skipped automatically. Press
+  **Enter** at the password prompt to accept the demo default (`agora-admin@gmail.com` /
+  `DemoPass123!`) — what the demo app and the post-seeders sign in as; a password you **type** is hidden.
+  Re-running is safe: it reports "already exists" and changes nothing (pass `--reset` to set a new
+  native password). It needs privileged credentials — `DATABASE_URL` (native) and/or
+  `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` (Supabase) — so it's an out-of-band operator action.
+- **The demo-data gate.** `01-confirm-demo-data.mjs` asks whether to seed the demo CONTENT. Answer
+  **no** and the run stops there (admin already created) — the remaining content seeders are skipped
+  cleanly, not failed.
+- **Demo content** (`02`–`04` + `seed-*-post.mjs`) is each idempotent (skips if its row exists), so the
+  content layer is safe to re-run. **Exception:** the graph world (`03-seed-engine.mjs`, also runnable
+  standalone via `pnpm seed:graph`) is **not** idempotent — re-running duplicates it; wipe first.
+
+**Non-interactive / CI.** Every prompt has an env override, so `pnpm seed` runs unattended:
+
+```bash
+ADMIN_EMAIL=you@example.com ADMIN_PASSWORD='…' \  # skip the admin prompt (DEMO_EMAIL/DEMO_PASSWORD also accepted)
+SEED_DEMO_DATA=1 \                                 # 1/yes = seed content, 0/no = admin only (skip the gate prompt)
+pnpm seed
 ```
 
 ## Configuration (`.env`)

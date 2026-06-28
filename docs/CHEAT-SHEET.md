@@ -103,7 +103,7 @@ the `auth` roles. So "self-hosted" drops the Supabase *service*, not the Supabas
 | `DEFAULT_AUTH_PROVIDER` | ✅ | Set to `native` (in-API passwords, no Supabase Auth). |
 
 > Bootstrap the first user on a virgin self-host DB:
-> `docker compose run --rm -it agora node scripts/seeds/seed-native-admin.mjs`.
+> `docker compose run --rm -it agora node scripts/seeds/helpers/seed-native-auth-admin.mjs`.
 
 ### 2.3 — Front door (Caddy `proxy`) — comes up with the API
 

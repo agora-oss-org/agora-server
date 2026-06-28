@@ -344,7 +344,7 @@ psql "$DATABASE_URL" -c "insert into entities (id, project_id, user_id, title, c
   values (gen_random_uuid(), '11111111-1111-1111-1111-111111111111', '<user-uuid>',
           'smoke', 'you are an idiot and everyone hates you') returning id;"
 ```
-…or via the API (`node apps/api/scripts/seeds/seed-demo-user.mjs` → sign in → `POST /v7/<projectId>/entities`).
+…or via the API (`node apps/api/scripts/seeds/00-seed-auth-admin.mjs` → sign in → `POST /v7/<projectId>/entities`).
 
 **4. Observe** (should land within ~1s, or instantly with the NOTIFY listener):
 ```bash
