@@ -26,7 +26,10 @@ noticing.
   (The connections module uses a different pagination shape — see MANIFEST.)
 - **Auth:** anonymous reads, authenticated writes. Agora mints short-lived access tokens + rotating
   refresh tokens (see [[Security]]).
-- **Realtime is socket.io** — event names stay byte-identical to the SDK's socket types.
+- **Realtime is socket.io** — event names stay byte-identical to the SDK's socket types. Beyond chat
+  fan-out, every authenticated socket auto-joins a per-user room and receives a `notification:created`
+  event, so the bell/badge updates live for every notification type. Optional cross-replica fan-out via
+  Redis when `REDIS_URL` is set.
 
 ## Why a fork?
 

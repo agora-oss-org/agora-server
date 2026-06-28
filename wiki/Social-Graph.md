@@ -24,9 +24,10 @@ one non-negotiable:
 - **One public signal: warmth.** Loneliness and conflict both render as *dim* — indistinguishable on
   purpose, because both mean "bring care here." There is no per-person "bad actor" score, in any view.
 - **A zoom ladder that is a privacy ladder.** ☀️ **Community Weather** (one project-wide warmth scalar
-  with band + trend) → 🏡 **Neighborhood** (your *own* ties only, each rendered by its **dyadic**
-  brightness — never the friend's global score, which closes the friction side-channel). *(✨
-  Constellation — anonymous cluster blobs — is designed and next.)*
+  with band + trend) → ✨ **Constellation** (anonymous cluster blobs — a *bucketed* size and warmth band
+  with no ids/names/member-lists, GDS Louvain clustering, k-anonymity-suppressed below a floor, refreshed
+  seasonally) → 🏡 **Neighborhood** (your *own* ties only, each rendered by its **dyadic** brightness —
+  never the friend's global score, which closes the friction side-channel). All three ship today.
 - **Friction is quarantined and decays.** A user report projects a directed `FRICTION` edge that can
   only *dim* an existing tie and fades at a ~14-day half-life; it never creates a tie, and never becomes
   a per-person verdict.
@@ -47,6 +48,15 @@ The graph runs on **DozerDB** (a patched Neo4j Community build that re-enables m
 OpenGDS. Setup — plugins, memory tuning, TLS, and the `NEO4J_DATABASE` selector — is in
 [`docs/DOZERDB.md`](https://github.com/agora-oss-org/agora-server/blob/root/docs/DOZERDB.md). Enable the
 subsystem with `--profile scorer` (see [[Deployment]]).
+
+## Operator analytics (corporate tier)
+
+The community-facing Garden has a **named, operator-only** counterpart for corporate deployments — three
+reports off one GDS projection: **Influence** (informal leaders via PageRank + bridge people via
+betweenness), **Silos** (named Louvain clusters mapped to their dominant spaces — no k-anon, because the
+operator is the accountable employer), and **Engagement** (per-person warmth-received plus a churn-risk
+band). Each is corporate-tier-gated (community tier forces the flags off) and surfaced in the admin
+**Social** page.
 
 ## Corporate profile
 

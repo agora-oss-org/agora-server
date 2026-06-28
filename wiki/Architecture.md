@@ -31,6 +31,11 @@ Postgres   schema · triggers · RPC · pgvector · PostGIS · RLS
   Postgres; see [[Deployment]]).
 - **Denormalized counts are trigger-maintained** (reaction/reply/member/thread counts, reputation) —
   never recomputed per request.
+- **Observability is built in, off by default.** Every service (API, secure-chat, Python scorer) is
+  OpenTelemetry-instrumented — traces, metrics, and logs with trace↔log correlation — dark until
+  `OTEL_SDK_DISABLED=false`. Ship them to the bundled Grafana stack or your own collector. See
+  [[Deployment]] and
+  [`docs/TELEMETRY.md`](https://github.com/agora-oss-org/agora-server/blob/root/docs/TELEMETRY.md).
 
 ## The monorepo
 

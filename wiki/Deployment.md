@@ -25,13 +25,17 @@ Either one brings up the API itself: `agora` (`:4000`), the Caddy front-door `pr
 - `--profile scorer` — moderation + social-graph subsystem (scorer ×3 + Neo4j).
 - `--profile secure-chat` — the E2E delivery process + Redis.
 - `--profile scale` — Redis as the cross-replica rate-limit store.
-- `--profile full` — every optional add-on at once.
+- `--profile full` — every functional add-on at once (scorer + secure-chat).
+- `--profile observability` — the bundled Grafana Alloy → Tempo/Mimir/Loki/Grafana stack (see below).
+- `--profile demo` — pulls the [`agora-demo`](https://github.com/jenova-marie/agora-demo) SDK harness and
+  serves it behind the front door at `/demo/`, auto-wired to the local API (a one-command evaluator).
 
 ```bash
 docker compose --profile supabase up --build         # just the API, Supabase-backed
 docker compose --profile selfhost up --build         # just the API, self-contained
 docker compose --profile full --profile supabase up  # everything, Supabase-backed
 docker compose --profile secure-chat up --build      # standalone secure-chat (remote DATABASE_URL, no API)
+docker compose --profile selfhost --profile demo up  # API + the SDK demo harness at /demo/
 ```
 
 ## The front door (Caddy)
@@ -62,6 +66,16 @@ Postgres won't migrate). See
   [`docs/REDIS.md`](https://github.com/agora-oss-org/agora-server/blob/root/docs/REDIS.md).
 - **Neo4j / DozerDB** (optional) — backs the [[Social Graph]]; setup, plugins, memory tuning, TLS:
   [`docs/DOZERDB.md`](https://github.com/agora-oss-org/agora-server/blob/root/docs/DOZERDB.md).
+
+## Observability (optional)
+
+Every service (the API, secure-chat, and the Python scorer) is OpenTelemetry-instrumented — traces,
+metrics, and logs with trace↔log correlation. Telemetry is **off by default** (bare deploys stay dark);
+`OTEL_SDK_DISABLED=false` is the single on-switch. `--profile observability` brings up a bundled,
+self-contained **Grafana Alloy → Tempo / Mimir / Loki / Grafana** stack with the apps' exporters
+pre-wired and two Agora dashboards (Overview + Logs) auto-provisioned, or you can point the OTLP/scrape
+endpoints at your own collector. Full guide:
+[`docs/TELEMETRY.md`](https://github.com/agora-oss-org/agora-server/blob/root/docs/TELEMETRY.md).
 
 ## Production images
 
