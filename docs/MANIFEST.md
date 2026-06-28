@@ -125,7 +125,7 @@ signs an RS256 JWT (issuer=projectId, aud="replyke.com", sub=userData.id, claim 
 | GET | `/entities/:id` | ✅ |
 | PATCH | `/entities/:id` | ✅ |
 | DELETE | `/entities/:id` | ✅ |
-| GET | `/entities/by-foreign-id` | ✅ |
+| GET | `/entities/by-foreign-id` (optional `createIfNotFound=true` lazily materializes an **authorless** anchor for external content on first view — SDK `EntityProvider`/`CommentSection`) | ✅ |
 | GET | `/entities/by-short-id` | ✅ |
 | GET | `/entities/drafts` | ✅ |
 | POST/PATCH | `/entities/:id/publish` (SDK `usePublishDraft` uses PATCH) | ✅ |

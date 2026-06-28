@@ -171,6 +171,17 @@ export function parseInclude(c: Context): Set<string> {
   return new Set(raw.split(",").map((s) => s.trim()).filter(Boolean));
 }
 
+/**
+ * Coerce a query-string flag (e.g. `?createIfNotFound=true`) to a boolean. Query params arrive as
+ * strings, so accept the truthy spellings the SDK/axios serialize (`true`/`1`, case-insensitive);
+ * everything else (absent, `false`, `0`, garbage) is false. Fails closed — only explicit truth opts in.
+ */
+export function parseBoolFlag(raw: string | undefined): boolean {
+  if (!raw) return false;
+  const v = raw.trim().toLowerCase();
+  return v === "true" || v === "1";
+}
+
 /** URL-safe ~10-char short id for share links (entities.short_id). */
 export function generateShortId(): string {
   return randomBytes(8).toString("base64url").slice(0, 10);

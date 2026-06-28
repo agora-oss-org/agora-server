@@ -130,4 +130,52 @@ describe("entities + comments + reactions (integration)", () => {
     expect(res.status).toBe(404);
     expect(res.body.code).toBe("project/not-found");
   });
+
+  // by-foreign-id + createIfNotFound (SDK EntityProvider / CommentSection lazy-anchor path).
+  describe("by-foreign-id createIfNotFound", () => {
+    it("404s for a missing foreignId without the flag", async () => {
+      const res = await api("GET", `${base(projectId)}/entities/by-foreign-id?foreignId=missing-no-flag`);
+      expect(res.status).toBe(404);
+      expect(res.body.code).toBe("entities/not-found");
+    });
+
+    it("lazily creates an AUTHORLESS anchor on first view, even unauthenticated", async () => {
+      const res = await api("GET", `${base(projectId)}/entities/by-foreign-id?foreignId=homepage&createIfNotFound=true`);
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ foreignId: "homepage", projectId, userId: null });
+      expect(res.body.shortId).toMatch(/^[A-Za-z0-9_-]{10}$/);
+      expect(res.body.id).toBeTruthy();
+    });
+
+    it("is idempotent — a second create-on-read returns the SAME entity", async () => {
+      const first = await api("GET", `${base(projectId)}/entities/by-foreign-id?foreignId=idem&createIfNotFound=true`);
+      const second = await api("GET", `${base(projectId)}/entities/by-foreign-id?foreignId=idem&createIfNotFound=true`);
+      expect(first.status).toBe(200);
+      expect(second.status).toBe(200);
+      expect(second.body.id).toBe(first.body.id); // no duplicate row — unique (project_id, foreign_id)
+    });
+
+    it("is race-safe under concurrent first-views (one row wins, all callers agree)", async () => {
+      const hits = await Promise.all(
+        Array.from({ length: 6 }, () =>
+          api("GET", `${base(projectId)}/entities/by-foreign-id?foreignId=race&createIfNotFound=true`)
+        )
+      );
+      expect(hits.every((h) => h.status === 200)).toBe(true);
+      const ids = new Set(hits.map((h) => h.body.id));
+      expect(ids.size).toBe(1); // exactly one entity materialized despite the stampede
+    });
+
+    it("does not leak createIfNotFound across projects (scoped by project_id)", async () => {
+      await api("GET", `${base(projectId)}/entities/by-foreign-id?foreignId=scoped&createIfNotFound=true`);
+      const otherProject = await createProject();
+      try {
+        // Same foreignId, different project → still 404 without the flag (no cross-tenant bleed).
+        const res = await api("GET", `${base(otherProject)}/entities/by-foreign-id?foreignId=scoped`);
+        expect(res.status).toBe(404);
+      } finally {
+        await deleteProject(otherProject);
+      }
+    });
+  });
 });

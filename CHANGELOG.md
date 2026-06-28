@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`createIfNotFound` on `GET /entities/by-foreign-id`.** The SDK's `EntityProvider` /
+  `CommentSection` pass `createIfNotFound=true` to lazily materialize the social-layer anchor for
+  external content (a blog post/product whose canonical record lives in the host app's own DB) the
+  first time it's viewed — previously the server only ever 404'd, so comment/reaction widgets mounted
+  on a never-seen `foreignId` stayed broken. The created entity is **authorless** (`userId` null): it
+  proxies host-app content, so the first viewer must not become its owner. Creation is race-safe under
+  concurrent first-views via the `(project_id, foreign_id)` unique constraint (the insert loser
+  re-selects the winner's row), idempotent, and project-scoped. Public path (no auth required, matching
+  the anonymous-widget contract); edge rate limiting bounds abuse. New pure helper `parseBoolFlag`
+  (`lib/shape.ts`, unit-tested) + integration coverage in `test/integration/entities.test.ts`.
 - **`--profile demo` — one-command demo app for self-host evaluators.** A new optional compose profile
   pulls the prebuilt SDK-compatibility harness (`../agora-demo`) and serves it behind the Caddy front
   door at **`/demo/`**, same-origin with the API at `/v7` (no CORS; chat sockets reuse the existing

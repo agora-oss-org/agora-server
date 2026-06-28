@@ -5,6 +5,7 @@ import {
   shapeComment,
   generateShortId,
   parseInclude,
+  parseBoolFlag,
   REACTION_TYPES,
 } from "./shape.js";
 
@@ -187,6 +188,20 @@ describe("parseInclude", () => {
   it("splits, trims, and drops empties", () => {
     const set = parseInclude(ctx("user, space ,,topComment"));
     expect([...set].sort()).toEqual(["space", "topComment", "user"]);
+  });
+});
+
+describe("parseBoolFlag", () => {
+  it("is true only for the truthy spellings 'true'/'1' (case-insensitive)", () => {
+    for (const v of ["true", "TRUE", "True", "1", " true ", "  1"]) {
+      expect(parseBoolFlag(v)).toBe(true);
+    }
+  });
+
+  it("fails closed for absent/false/garbage values", () => {
+    for (const v of [undefined, "", "false", "FALSE", "0", "yes", "on", "null", "undefined", "2"]) {
+      expect(parseBoolFlag(v as string | undefined)).toBe(false);
+    }
   });
 });
 

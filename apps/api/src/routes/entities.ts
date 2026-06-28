@@ -19,6 +19,7 @@ import {
   shapeEntity,
   shapeFile,
   parseInclude,
+  parseBoolFlag,
   generateShortId,
   attachUserReactions,
   loadUsers,
@@ -212,7 +213,10 @@ export const entityRoutes = new Hono<{ Variables: Variables }>()
   .get("/by-foreign-id", async (c) => {
     const foreignId = c.req.query("foreignId");
     if (!foreignId) throw Errors.badRequest("entities/missing-foreign-id", "foreignId is required", "foreignId");
-    return c.json(await lookupEntity(c, eq(entities.foreignId, foreignId)));
+    const createIfMissing = parseBoolFlag(c.req.query("createIfNotFound"))
+      ? () => createForeignEntity(c, foreignId)
+      : undefined;
+    return c.json(await lookupEntity(c, eq(entities.foreignId, foreignId), createIfMissing));
   })
   .get("/by-short-id", async (c) => {
     const shortId = c.req.query("shortId");
@@ -392,14 +396,23 @@ async function countWhere(where: SQL | undefined): Promise<number> {
   return rows[0]?.total ?? 0;
 }
 
-async function lookupEntity(c: any, predicate: SQL) {
+type EntityRow = typeof entities.$inferSelect;
+
+async function lookupEntity(c: any, predicate: SQL, createIfMissing?: () => Promise<EntityRow | null>) {
   const projectId = c.var.projectId;
   const include = parseInclude(c);
-  const [row] = await db
+  let [row] = await db
     .select()
     .from(entities)
     .where(and(eq(entities.projectId, projectId), predicate, isNull(entities.deletedAt)))
     .limit(1);
+  // createIfNotFound (SDK EntityProvider / CommentSection): lazily materialize the social-layer
+  // anchor for external content the first time it's viewed. The created entity is AUTHORLESS — it
+  // proxies host-app content (a blog post/product), so the first viewer must NOT become its owner.
+  if (!row && createIfMissing) {
+    const created = await createIfMissing();
+    if (created) row = created;
+  }
   if (!row) throw Errors.notFound("entities/not-found", "Entity not found");
   // Private-space leak guard: a single entity in a members-only space is owner/member-only.
   await assertCanReadSpace(c, row.spaceId);
@@ -416,6 +429,33 @@ async function lookupEntity(c: any, predicate: SQL) {
   const fileMap = await loadEntityFiles(projectId, [row.id]);
   if (fileMap.has(row.id)) opts.files = fileMap.get(row.id);
   return shapeEntity(row, opts);
+}
+
+/**
+ * Lazily create the authorless social-layer anchor for an external `foreignId` (the SDK's
+ * createIfNotFound). Race-safe under concurrent first-views via the (project_id, foreign_id) unique
+ * constraint: the loser of the insert race re-selects the row the winner created. Returns null when
+ * a soft-deleted row already holds the foreignId (the unique slot is taken but no live row exists) —
+ * the caller then 404s rather than resurrecting deleted content.
+ */
+async function createForeignEntity(c: any, foreignId: string): Promise<EntityRow | null> {
+  const projectId = c.var.projectId;
+  const [created] = await db
+    .insert(entities)
+    .values({ projectId, foreignId, shortId: generateShortId() }) // userId intentionally null: authorless anchor
+    .onConflictDoNothing({ target: [entities.projectId, entities.foreignId] })
+    .returning();
+  if (created) {
+    logger.info({ projectId, entityId: created.id, foreignId }, "entity: lazily created via createIfNotFound");
+    webhooks.broadcast(projectId, "entity.created.complete", shapeEntity(created));
+    return created;
+  }
+  const [existing] = await db
+    .select()
+    .from(entities)
+    .where(and(eq(entities.projectId, projectId), eq(entities.foreignId, foreignId), isNull(entities.deletedAt)))
+    .limit(1);
+  return existing ?? null;
 }
 
 /** Fetch an entity and assert the auth user owns it; throws 404/403 otherwise. */
