@@ -6,7 +6,7 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/jenova-marie/agora-server.git",
+    "url": "git+https://github.com/agora-oss-org/agora-server.git",
     "directory": "packages/contract"
   },
   "homepage": "https://github.com/jenova-marie/agora-server/tree/main/packages/contract",
