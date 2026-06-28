@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.2] - 2026-06-28
+
 ### Changed
 - **CI: image build cache moved from the GitHub Actions cache backend to a GHCR registry cache.**
   `docker-publish.yml`'s per-arch `build` job now uses `cache-to`/`cache-from`
@@ -1577,7 +1579,8 @@ cloud Supabase — no stubbed endpoints remain.
   (`@agora/*`), a repointed fork of `@replyke/core`.
 - Backlog: rate limiting, refresh-token cleanup sweep, RLS write policies, turnkey deploy guide.
 
-[Unreleased]: https://github.com/jenova-marie/agora/compare/v0.15.0...HEAD
+[Unreleased]: https://github.com/jenova-marie/agora/compare/v0.15.2...HEAD
+[0.15.2]: https://github.com/jenova-marie/agora/compare/v0.15.0...v0.15.2
 [0.15.0]: https://github.com/jenova-marie/agora/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/jenova-marie/agora/compare/v0.12.0...v0.14.0
 [0.12.0]: https://github.com/jenova-marie/agora/compare/v0.11.0...v0.12.0
