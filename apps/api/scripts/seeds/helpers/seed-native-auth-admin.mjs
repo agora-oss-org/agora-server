@@ -1,16 +1,35 @@
-// Seed a pre-confirmed NATIVE (Agora-owned) admin credential — the no-Supabase counterpart of
-// seed-demo-user.mjs. For a fully self-hosted deploy (projects.auth_provider='native'), a virgin DB has
-// no users; this inserts a confirmed auth_credentials row so email/password sign-in works immediately,
-// skipping the email-confirmation round-trip (the default ConsoleEmailSender only logs the link). The
-// matching `profiles` row auto-creates + links on first sign-in (ensureProfile in routes/auth.ts).
+// Seed a pre-confirmed NATIVE (Agora-owned) admin credential — for the SELF-HOSTED, no-Supabase
+// auth backend ONLY. The Supabase counterpart is the sibling `seed-supabase-auth-admin.mjs`.
+//
+// This lives in helpers/ so the `seed.mjs` orchestrator (which scans only the top-level seeds dir)
+// doesn't pick it up directly — it's driven by the `../00-seed-auth-admin.mjs` master, which prompts
+// once and runs both backends. It also runs standalone (creds via env or its own prompt).
+//
+// ┌─ WHICH ADMIN IS THIS? ───────────────────────────────────────────────────────────────────────┐
+// │ Agora picks an auth backend PER PROJECT (projects.auth_provider, resolved by lib/auth's        │
+// │ getAuthProvider). The two admin seeders are NOT interchangeable — one per backend:             │
+// │   • NATIVE  (auth_provider='native')   → THIS script. Writes an `auth_credentials` row; sign-in │
+// │       is the in-API argon2 backend. Used by a fully self-hosted deploy (no Supabase).           │
+// │   • SUPABASE (auth_provider='supabase') → `seed-supabase-auth-admin.mjs`. Writes a Supabase     │
+// │       auth user; sign-in routes to Supabase. This is the DEFAULT backend.                       │
+// │ On a SUPABASE project the local auth subsystem never runs, so a native `auth_credentials` row   │
+// │ is DEAD DATA sign-in never reads. This script therefore SKIPS itself (exit 0) when the project's │
+// │ auth_provider != 'native' — pass --force only if you're about to switch the project to native.  │
+// └────────────────────────────────────────────────────────────────────────────────────────────────┘
+//
+// For a native deploy a virgin DB has no users; this inserts a confirmed auth_credentials row so
+// email/password sign-in works immediately, skipping the email-confirmation round-trip (the default
+// ConsoleEmailSender only logs the link). The matching `profiles` row auto-creates + links on first
+// sign-in (ensureProfile in routes/auth.ts).
 //
 // God-view ("operator") is the OPERATOR_EMAILS / OPERATOR_USER_IDS env allowlist (lib/operators.ts),
 // NOT a DB row — so add this email to OPERATOR_EMAILS in .env to make it an admin. See docs/SELF-HOSTING.md.
 //
-//   node scripts/seeds/seed-native-admin.mjs           # prompts for email + password (no echo)
-//   ADMIN_EMAIL=… ADMIN_PASSWORD=… node …              # non-interactive (CI); env wins over the prompt
+//   node scripts/seeds/helpers/seed-native-auth-admin.mjs   # prompts for email + password (no echo)
+//   ADMIN_EMAIL=… ADMIN_PASSWORD=… node …                   # non-interactive (CI / master); env wins
 //   ... --test     # target TEST_DATABASE_URL instead of DATABASE_URL
 //   ... --reset    # the (project,email) already exists → set a new password + (re)confirm it
+//   ... --force    # seed even when auth_provider != 'native' (you're about to switch to native)
 //
 // Credentials come from ADMIN_EMAIL / ADMIN_PASSWORD when set, else an interactive prompt — the password
 // is read with echo OFF and confirmed twice, so it never lands in argv, `ps`, or shell history.
@@ -23,6 +42,7 @@ import readline from "node:readline";
 const args = new Set(process.argv.slice(2));
 const isTest = args.has("--test");
 const reset = args.has("--reset");
+const force = args.has("--force");
 
 // Prompt on the TTY. With { hidden: true } the typed characters are not echoed (password entry). Returns
 // the trimmed line. Throws if there's no interactive terminal (caller falls back to an env-or-error path).
@@ -62,6 +82,34 @@ function fail(msg) {
   process.exit(1);
 }
 
+const sql = postgres(url, { max: 1, prepare: false, onnotice() {} });
+
+// ── Provider gate (BEFORE we prompt for anything) ───────────────────────────────────────────────
+// The project must exist, and a native credential is only honored when auth_provider='native'. On a
+// Supabase project the local auth subsystem never runs (sign-in routes to Supabase), so this row would
+// be dead data — skip cleanly so the master/orchestrator isn't blocked on a useless password prompt.
+// `--force` overrides (you're about to flip the project to native). We check this FIRST so a Supabase
+// run never even asks for an email.
+const [project] = await sql`select auth_provider from projects where id = ${projectId}`;
+if (!project) {
+  console.error(`✗ project ${projectId} not found — run \`node scripts/genesis.mjs\` first (or set ADMIN_PROJECT_ID).`);
+  await sql.end();
+  process.exit(1);
+}
+if (project.auth_provider !== "native" && !force) {
+  console.log(`↷ skipping native-admin seed — project ${projectId} uses auth_provider='${project.auth_provider}'.`);
+  console.log(`  This script is for the SELF-HOSTED native backend only; a '${project.auth_provider}' project's`);
+  console.log(`  admin is seeded by seed-supabase-auth-admin.mjs and sign-in never reads auth_credentials.`);
+  console.log(`  Pass --force to seed anyway (e.g. you're about to switch this project to native).`);
+  await sql.end();
+  process.exit(0);
+}
+if (project.auth_provider !== "native") {
+  console.warn(`⚠ --force: project ${projectId} has auth_provider='${project.auth_provider}', not 'native' — this`);
+  console.warn(`  credential won't be used for sign-in until you switch it:`);
+  console.warn(`    update projects set auth_provider='native' where id='${projectId}';`);
+}
+
 // Email: env wins; else prompt. Light validation — non-empty + contains "@".
 let email = process.env.ADMIN_EMAIL?.trim().toLowerCase();
 if (!email) {
@@ -81,21 +129,7 @@ if (!password) {
 }
 if (!password || password.length < 8) fail("Password must be at least 8 characters.");
 
-const sql = postgres(url, { max: 1, prepare: false, onnotice() {} });
 try {
-  // FK + provider sanity: the project must exist, and a native credential is only honored when the
-  // project's auth_provider is 'native' (otherwise sign-in routes to Supabase). Warn, don't block.
-  const [project] = await sql`select auth_provider from projects where id = ${projectId}`;
-  if (!project) {
-    console.error(`✗ project ${projectId} not found — run \`node scripts/genesis.mjs\` first (or set ADMIN_PROJECT_ID).`);
-    process.exit(1);
-  }
-  if (project.auth_provider !== "native") {
-    console.warn(`⚠ project ${projectId} has auth_provider='${project.auth_provider}', not 'native' — this`);
-    console.warn(`  credential won't be used for sign-in until you switch it:`);
-    console.warn(`    update projects set auth_provider='native' where id='${projectId}';`);
-  }
-
   const [existing] = await sql`
     select id, email_confirmed_at from auth_credentials
     where project_id = ${projectId} and email = ${email} limit 1`;
@@ -123,7 +157,7 @@ try {
 
   console.log(`  → next: add ${email} to OPERATOR_EMAILS in .env for god-view, then sign in (the profile auto-creates).`);
 } catch (err) {
-  console.error("\n✗ seed-native-admin failed:", err.message);
+  console.error("\n✗ seed-native-auth-admin failed:", err.message);
   process.exitCode = 1;
 } finally {
   await sql.end();

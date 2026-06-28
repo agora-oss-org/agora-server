@@ -2,17 +2,18 @@
 // normal entity pipeline (multipart → sharp variants → Storage → files row). Complements the miso
 // soup post (scripts/seeds/seed-miso-post.mjs). Idempotent: skips if the post already exists. Run from
 // agora/server:  node scripts/seeds/seed-lasagna-post.mjs
-// Requires the demo auth user (node scripts/seeds/seed-demo-user.mjs) and a reachable Agora server.
+// Requires the demo auth user (node scripts/seeds/00-seed-auth-admin.mjs) and a reachable Agora server.
 // Env (all optional): API_BASE_URL (default http://localhost:4000), PROJECT_ID (default 11111111-…),
 // DEMO_EMAIL / DEMO_PASSWORD, LASAGNA_IMAGE_URL.
 import "dotenv/config";
+import fs from "fs";
+import path from "path";
 
 const BASE = (process.env.API_BASE_URL || "http://localhost:4000").replace(/\/$/, "").replace(/\/v7$/, "");
 const PROJECT_ID = process.env.PROJECT_ID || "11111111-1111-1111-1111-111111111111";
 const EMAIL = process.env.DEMO_EMAIL || "agora-admin@gmail.com";
 const PASSWORD = process.env.DEMO_PASSWORD || "DemoPass123!";
-const IMAGE_URL = process.env.LASAGNA_IMAGE_URL ||
-  "https://cdn.apartmenttherapy.info/image/upload/f_auto,q_auto:eco,c_fill,g_auto,w_1500,ar_3:2/k%2FDesign%2F2024%2F12-2024%2Frecipe-showdown-lasagna%2Fk-lasagna-recipe-showdown-lead";
+const IMAGE_PATH = process.env.LASAGNA_IMAGE_PATH || path.join(import.meta.dirname, "images", "lasagna.jpg");
 
 // Original copy (not reproduced from any source) — a friendly demo post that pairs with the miso soup.
 const TITLE = "Sunday-best lasagna 🍝";
@@ -32,7 +33,7 @@ const signIn = await fetch(api("/auth/sign-in"), {
 });
 if (!signIn.ok) {
   const msg = await signIn.text().catch(() => "");
-  die(`sign-in failed (${signIn.status}). Does the demo user exist? Run: node scripts/seeds/seed-demo-user.mjs\n${msg}`);
+  die(`sign-in failed (${signIn.status}). Does the demo user exist? Run: node scripts/seeds/00-seed-auth-admin.mjs\n${msg}`);
 }
 const { accessToken } = await signIn.json();
 if (!accessToken) die("sign-in returned no accessToken");
@@ -47,13 +48,12 @@ if (existing) {
   process.exit(0);
 }
 
-// 3. Fetch the image bytes.
-console.log(`Fetching image: ${IMAGE_URL}`);
-const imgRes = await fetch(IMAGE_URL, { headers: { "User-Agent": "AgoraSeed/1.0" } });
-if (!imgRes.ok) die(`image fetch failed (${imgRes.status})`);
-const contentType = imgRes.headers.get("content-type") || "image/jpeg";
-const bytes = new Uint8Array(await imgRes.arrayBuffer());
-const filename = (IMAGE_URL.split("/").pop() || "lasagna.jpg").split("?")[0] + (/\.\w+$/.test(IMAGE_URL) ? "" : ".jpg");
+// 3. Load the local image bytes.
+console.log(`Loading image: ${IMAGE_PATH}`);
+if (!fs.existsSync(IMAGE_PATH)) die(`image file not found: ${IMAGE_PATH}`);
+const bytes = new Uint8Array(fs.readFileSync(IMAGE_PATH));
+const contentType = "image/jpeg";
+const filename = "lasagna.jpg";
 
 // 4. Create the entity as multipart (title + content + images.files) — the server runs the image
 //    through sharp → Storage → a files row linked to the new entity (same path the SDK uses).

@@ -2,16 +2,18 @@
 // normal entity pipeline (multipart → sharp variants → Storage → files row). Idempotent-ish: it
 // skips creation if the demo user already has a post with the same title. Run from agora/server:
 //   node scripts/seeds/seed-miso-post.mjs
-// Requires the demo auth user to exist first (node scripts/seeds/seed-demo-user.mjs) and a reachable
+// Requires the demo auth user to exist first (node scripts/seeds/00-seed-auth-admin.mjs) and a reachable
 // Agora server. Env (all optional): API_BASE_URL (default http://localhost:4000),
 // PROJECT_ID (default 11111111-…), DEMO_EMAIL / DEMO_PASSWORD, MISO_IMAGE_URL.
 import "dotenv/config";
+import fs from "fs";
+import path from "path";
 
 const BASE = (process.env.API_BASE_URL || "http://localhost:4000").replace(/\/$/, "").replace(/\/v7$/, "");
 const PROJECT_ID = process.env.PROJECT_ID || "11111111-1111-1111-1111-111111111111";
 const EMAIL = process.env.DEMO_EMAIL || "agora-admin@gmail.com";
 const PASSWORD = process.env.DEMO_PASSWORD || "DemoPass123!";
-const IMAGE_URL = process.env.MISO_IMAGE_URL || "https://www.yummytummyaarthi.com/wp-content/uploads/2021/03/miso-soup-1.jpg";
+const IMAGE_PATH = process.env.MISO_IMAGE_PATH || path.join(import.meta.dirname, "images", "miso.jpg");
 
 // Original copy (not reproduced from any source) — a friendly demo post.
 const TITLE = "Weeknight miso soup 🍲";
@@ -30,7 +32,7 @@ const signIn = await fetch(api("/auth/sign-in"), {
 });
 if (!signIn.ok) {
   const msg = await signIn.text().catch(() => "");
-  die(`sign-in failed (${signIn.status}). Does the demo user exist? Run: node scripts/seeds/seed-demo-user.mjs\n${msg}`);
+  die(`sign-in failed (${signIn.status}). Does the demo user exist? Run: node scripts/seeds/00-seed-auth-admin.mjs\n${msg}`);
 }
 const { accessToken } = await signIn.json();
 if (!accessToken) die("sign-in returned no accessToken");
@@ -45,13 +47,12 @@ if (existing) {
   process.exit(0);
 }
 
-// 3. Fetch the image bytes.
-console.log(`Fetching image: ${IMAGE_URL}`);
-const imgRes = await fetch(IMAGE_URL, { headers: { "User-Agent": "AgoraSeed/1.0" } });
-if (!imgRes.ok) die(`image fetch failed (${imgRes.status})`);
-const contentType = imgRes.headers.get("content-type") || "image/jpeg";
-const bytes = new Uint8Array(await imgRes.arrayBuffer());
-const filename = (IMAGE_URL.split("/").pop() || "miso-soup.jpg").split("?")[0];
+// 3. Load the local image bytes.
+console.log(`Loading image: ${IMAGE_PATH}`);
+if (!fs.existsSync(IMAGE_PATH)) die(`image file not found: ${IMAGE_PATH}`);
+const bytes = new Uint8Array(fs.readFileSync(IMAGE_PATH));
+const contentType = "image/jpeg";
+const filename = "miso-soup.jpg";
 
 // 4. Create the entity as multipart (title + content + images.files) — the server runs the image
 //    through sharp → Storage → a files row linked to the new entity (same path the SDK uses).

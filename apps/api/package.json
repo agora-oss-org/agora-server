@@ -23,7 +23,7 @@
     "genesis": "node scripts/genesis.mjs",
     "genesis:test": "node scripts/genesis.mjs --test",
     "seed": "node scripts/seeds/seed.mjs",
-    "seed:graph": "node scripts/seeds/seed-engine.mjs",
+    "seed:graph": "node scripts/seeds/03-seed-engine.mjs",
     "perf:seed": "node perf/seed-perf-data.mjs",
     "perf:baseline": "node perf/run.mjs"
   },

@@ -3,7 +3,7 @@
 // a warm welcome inviting visitors to join the conversation. Idempotent: re-running skips it if the
 // entity already exists. Run from agora/server:
 //   node scripts/seeds/seed-homepage-comments.mjs
-// Requires the seed auth user (node scripts/seeds/seed-demo-user.mjs) and a reachable Agora server. Env
+// Requires the seed auth user (node scripts/seeds/00-seed-auth-admin.mjs) and a reachable Agora server. Env
 // (all optional): API_BASE_URL (default http://localhost:4000), PROJECT_ID (default 11111111-…),
 // DEMO_EMAIL / DEMO_PASSWORD.
 import "dotenv/config";
@@ -32,7 +32,7 @@ const signIn = await fetch(api("/auth/sign-in"), {
 });
 if (!signIn.ok) {
   const msg = await signIn.text().catch(() => "");
-  die(`sign-in failed (${signIn.status}). Does the seed user exist? Run: node scripts/seeds/seed-demo-user.mjs\n${msg}`);
+  die(`sign-in failed (${signIn.status}). Does the seed user exist? Run: node scripts/seeds/00-seed-auth-admin.mjs\n${msg}`);
 }
 const { accessToken } = await signIn.json();
 if (!accessToken) die("sign-in returned no accessToken");
