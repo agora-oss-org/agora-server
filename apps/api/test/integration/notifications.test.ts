@@ -54,7 +54,8 @@ describe("notification fan-out (integration)", () => {
     expect(notes).toHaveLength(0);
   });
 
-  it("comment-reply notifies the parent comment's author (not the entity author)", async () => {
+  it("a reply notifies the parent author (comment-reply) AND the entity owner (entity-comment)", async () => {
+    // alice owns the entity; bob writes the parent; carol replies → carol notifies BOTH bob and alice
     const e = await newEntity(alice);
     const parent = await api("POST", `${B}/comments`, { token: bob.token, body: { entityId: e.id, content: "parent" } });
     const reply = await api("POST", `${B}/comments`, {
@@ -74,6 +75,37 @@ describe("notification fan-out (integration)", () => {
       replyContent: "reply!",
       initiatorId: carol.id,
     });
+
+    const ownerNotes = (await ofType(alice, "entity-comment")).filter((n) => n.metadata.commentId === reply.body.id);
+    expect(ownerNotes).toHaveLength(1);
+    expect(ownerNotes[0].metadata).toMatchObject({ entityId: e.id, commentId: reply.body.id, initiatorId: carol.id });
+  });
+
+  it("reply where the entity owner IS the parent author yields ONE row (comment-reply, not entity-comment)", async () => {
+    // alice owns the entity AND wrote the parent; bob replies → bob notifies alice exactly once, as comment-reply
+    const e = await newEntity(alice);
+    const parent = await api("POST", `${B}/comments`, { token: alice.token, body: { entityId: e.id, content: "my own parent" } });
+    const reply = await api("POST", `${B}/comments`, {
+      token: bob.token,
+      body: { entityId: e.id, parentId: parent.body.id, content: "reply to alice" },
+    });
+    expect(reply.status).toBe(201);
+
+    expect((await ofType(alice, "comment-reply")).filter((n) => n.metadata.replyId === reply.body.id)).toHaveLength(1);
+    expect((await ofType(alice, "entity-comment")).filter((n) => n.metadata.commentId === reply.body.id)).toHaveLength(0);
+  });
+
+  it("a self-reply on your own entity notifies no one", async () => {
+    // alice owns the entity, wrote the parent, and replies to herself → zero rows
+    const e = await newEntity(alice);
+    const parent = await api("POST", `${B}/comments`, { token: alice.token, body: { entityId: e.id, content: "p" } });
+    const reply = await api("POST", `${B}/comments`, {
+      token: alice.token,
+      body: { entityId: e.id, parentId: parent.body.id, content: "self reply" },
+    });
+    expect(reply.status).toBe(201);
+    expect((await ofType(alice, "comment-reply")).filter((n) => n.metadata.replyId === reply.body.id)).toHaveLength(0);
+    expect((await ofType(alice, "entity-comment")).filter((n) => n.metadata.commentId === reply.body.id)).toHaveLength(0);
   });
 
   it("comment-mention notifies mentioned users", async () => {

@@ -11,8 +11,8 @@
 // - Every public helper is awaited but self-contained: it catches its own errors so a failed
 //   notification can never break the underlying write. Routes await them so tests see rows.
 //
-// Realtime: NOT delivered over socket.io — the SDK's socket contract (realtime/socket.ts
-// ServerToClientEvents) has only chat events, matching Replyke. Clients poll the inbox.
+// Realtime: delivered over socket.io via emitToUser() in insert() — the recipient's open sockets get a
+// `notification:created` event with the shaped row. Falls back to inbox polling when no socket is open.
 import { and, desc, eq } from "drizzle-orm";
 import type { StewardNotifyPolicy } from "@agora-server/contract";
 import { db } from "../db/index.js";
@@ -20,6 +20,7 @@ import { appNotifications, profiles, entities, comments, reactions } from "../db
 import { shapeNotification } from "./shape.js";
 import { getStewardConfig } from "./steward-config.js";
 import * as webhooks from "./webhooks.js";
+import { emitToUser } from "../realtime/socket.js";
 import { logger } from "./logger.js";
 
 // Reaction-count thresholds that trigger a milestone notification. Tune to taste.
@@ -56,8 +57,13 @@ async function insert(
 ): Promise<void> {
   if (!recipientId || recipientId === actorId) return;
   const [row] = await db.insert(appNotifications).values({ projectId, userId: recipientId, type, action, metadata }).returning();
-  // Push-notification bridge: fire-and-forget broadcast webhook (no-op unless subscribed).
-  if (row) webhooks.broadcast(projectId, "notification.created", shapeNotification(row));
+  if (row) {
+    const shaped = shapeNotification(row);
+    // Push-notification bridge: fire-and-forget broadcast webhook (no-op unless subscribed).
+    webhooks.broadcast(projectId, "notification.created", shaped);
+    // Realtime: live-deliver to the recipient's open sockets (no-op until the socket server is attached).
+    emitToUser(projectId, recipientId, "notification:created", shaped);
+  }
 }
 
 /** Pull candidate user ids out of the untyped `mentions` jsonb (array of {id} | string). */
@@ -103,8 +109,8 @@ const sum = (counts: Record<string, number> | null | undefined) =>
 // ─── public fan-out helpers ─────────────────────────────────────────────────
 
 /**
- * On comment creation: notify the entity author (top-level) or parent-comment author (reply),
- * plus any mentioned users. Pass the freshly-inserted comment row.
+ * On comment creation: notify the entity author and (for a reply) the parent-comment author,
+ * deduped, plus any mentioned users. Pass the freshly-inserted comment row.
  */
 export async function notifyOnComment(
   projectId: string,
@@ -132,7 +138,7 @@ export async function notifyOnComment(
     const notified = new Set<string>([actorId]);
 
     if (comment.parentId) {
-      // Reply → notify the parent comment's author.
+      // Reply → notify the parent comment's author …
       const [parent] = await db
         .select({ userId: comments.userId, content: comments.content })
         .from(comments)
@@ -148,6 +154,16 @@ export async function notifyOnComment(
           ...actor,
         });
         notified.add(parent.userId);
+      }
+      // … AND the entity author (deduped — skipped if they're the actor or already notified above).
+      if (entity.userId && !notified.has(entity.userId)) {
+        await insert(projectId, entity.userId, actorId, "entity-comment", "open-comment", {
+          ...entityMeta,
+          commentId: comment.id,
+          commentContent: comment.content,
+          ...actor,
+        });
+        notified.add(entity.userId);
       }
     } else {
       // Top-level comment → notify the entity author.
