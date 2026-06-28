@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **CI: image build cache moved from the GitHub Actions cache backend to a GHCR registry cache.**
+  `docker-publish.yml`'s per-arch `build` job now uses `cache-to`/`cache-from`
+  `type=registry` (a `:buildcache-<arch>` tag per image) instead of `type=gha`. The Actions cache
+  backend throttled and evicted (10 GB cap) the large `torch`/`transformers` layers in
+  `agora-scorer-model-server`, so `mode=max` cache export dominated build wall-clock (~13 min).
+  Registry cache has far higher throughput and no eviction churn, cutting warm-cache build time.
+
 ## [0.15.0] - 2026-06-28
 
 ### Added
