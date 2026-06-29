@@ -30,8 +30,13 @@ way to get the claim wrong:
   blind *delivery service* is shipped (v0.9.0); the **client-side MLS crypto is a Phase 2/3 deferral**
   (current tests use a mock cipher that is explicitly *not* secure). So the operator-blind *architecture*
   is real now, and the full Signal-grade E2E guarantee **completes when the client crypto lands** — that
-  is the bar we're building to and the server already can't read content. See
-  [`SECURE_CHAT.md`](./SECURE_CHAT.md) + [`../CHAT_TODO.md`](../CHAT_TODO.md).
+  is the bar we're building to and the server already can't read content.
+  
+  **On self-hosted Agora (especially with Tor), the privacy posture actually *exceeds* Signal's** — not
+  only is content encrypted, but *metadata* (who talks to whom, when, connection patterns) stays on
+  your infrastructure, never touching a third party. Signal is "content-blind to the operator + metadata-
+  visible to Signal Foundation"; self-hosted Agora is "both hidden from everyone but the community."
+  See [`SECURE_CHAT.md`](./SECURE_CHAT.md) + [`../CHAT_TODO.md`](../CHAT_TODO.md).
 - **Square (feeds, Spaces, follows, reactions, social graph, plaintext chat):** something Signal
   **does not attempt**. It requires a server that can read content to rank, moderate, search, and
   graph. So we do **not** carry Signal's E2E philosophy here — we carry a *different*, weaker-but-still-
@@ -69,8 +74,8 @@ The honest picture is a **gradient**, coherent at every tier. Read it as "who ca
 
 | Observer | Square (feeds / Spaces / plaintext chat / social graph) | Secure-chat (MLS) |
 |---|---|---|
-| **Outside world** (with self-host + Tor) | **Nothing** — can't even find the door | **Nothing** |
-| **The host / operator** | *Can* read it — it's their box, and the features require it | **Blind — relays opaque ciphertext** (no plaintext columns; full E2E completes w/ Phase 2/3 client crypto) |
+| **Outside world** (with self-host + Tor) | **Nothing** — can't even find the door | **Nothing** — metadata + content both hidden |
+| **The host / operator** | *Can* read it — it's their box, and the features require it | **Blind — relays opaque ciphertext** (no plaintext columns; full E2E completes w/ Phase 2/3 client crypto); on self-host, metadata stays with you (exceeds Signal) |
 | **Other members** | Per Space read-permissions ([`lib/space-access.ts`](../apps/api/src/lib/space-access.ts)); social-graph surfaces are k-anonymized / dyadic ([`SOCIAL-GRAPH.md`](./SOCIAL-GRAPH.md)) | Only their own MLS group |
 
 The two key reads:
@@ -166,6 +171,8 @@ square can be" goes from aspiration to defensible fact.
 > **Chat is operator-blind by construction (MLS / RFC 9420) — the server stores and relays only
 > opaque ciphertext, with no plaintext columns. The blind delivery service ships today; the full
 > Signal-grade end-to-end guarantee completes as the client-side MLS crypto lands (Phase 2/3).**
+> On self-hosted Agora (especially with Tor), the privacy posture *exceeds* Signal's: not only is
+> content encrypted, but metadata stays with you, completely invisible to the outside world.
 >
 > **The square is maximally private within its function:** invisible to the outside world
 > (self-host + Tor), readable only by the community that runs the box — and we minimize everything
