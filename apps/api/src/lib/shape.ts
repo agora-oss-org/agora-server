@@ -10,6 +10,7 @@ import {
   reactions, profiles, spaces, spaceRules, collections, appNotifications, reports,
   conversations, conversationMembers, chatMessages, files, entities, comments,
   stewardCases, stewardCaseEvents, userSuspensions,
+  events, eventRsvps, eventInvites,
 } from "../db/schema/index.js";
 import { REACTION_TYPES } from "@agora-server/contract";
 import type { ReactionType, ReactionCounts, User, Entity, Comment, AuthUser, Report } from "@agora-server/contract";
@@ -592,4 +593,75 @@ export async function loadMessageFiles(
     map.set(r.chatMessageId, arr);
   }
   return map;
+}
+
+// ─── event shapers ───────────────────────────────────────────────────────────
+type EventRow = typeof events.$inferSelect;
+type EventRsvpRow = typeof eventRsvps.$inferSelect;
+type EventInviteRow = typeof eventInvites.$inferSelect;
+
+export function shapeEvent(
+  row: EventRow,
+  opts: {
+    location?: { lat: number; lng: number } | null;
+    hostIds: string[];
+    rsvpCounts: { going: number; maybe: number; not_going: number };
+    userRsvp?: string | null;
+    user?: unknown;
+    space?: unknown;
+    files?: unknown[];
+  },
+) {
+  const ev: Record<string, unknown> = {
+    id: row.id,
+    shortId: row.shortId,
+    projectId: row.projectId,
+    userId: row.userId ?? null,
+    title: row.title,
+    description: row.description ?? null,
+    startTime: iso(row.startTime)!,
+    endTime: iso(row.endTime),
+    timezone: row.timezone ?? null,
+    type: row.type,
+    url: row.url ?? null,
+    venueName: row.venueName ?? null,
+    address: row.address ?? null,
+    location: opts.location ? { type: "Point", coordinates: [opts.location.lng, opts.location.lat] } : null,
+    spaceId: row.spaceId ?? null,
+    visibility: row.visibility,
+    status: row.status,
+    allowMaybe: row.allowMaybe,
+    guestListVisible: row.guestListVisible,
+    capacity: row.capacity ?? null,
+    hostIds: opts.hostIds,
+    coverImageId: row.coverImageId ?? null,
+    rsvpCounts: opts.rsvpCounts,
+    metadata: (row.metadata as Record<string, unknown>) ?? {},
+    createdAt: iso(row.createdAt)!,
+    updatedAt: iso(row.updatedAt)!,
+    deletedAt: iso(row.deletedAt),
+  };
+  if (opts.userRsvp !== undefined) ev.userRsvp = opts.userRsvp;
+  if (opts.user !== undefined) ev.user = opts.user;
+  if (opts.space !== undefined) ev.space = opts.space;
+  if (opts.files !== undefined) ev.files = opts.files;
+  return ev;
+}
+
+export function shapeEventRsvp(row: EventRsvpRow, user?: User | null) {
+  const r: Record<string, unknown> = {
+    id: row.id, eventId: row.eventId, userId: row.userId, status: row.status,
+    createdAt: iso(row.createdAt)!, updatedAt: iso(row.updatedAt)!,
+  };
+  if (user !== undefined) r.user = user;
+  return r;
+}
+
+export function shapeEventInvite(row: EventInviteRow, user?: User | null) {
+  const r: Record<string, unknown> = {
+    id: row.id, eventId: row.eventId, userId: row.userId,
+    invitedAt: iso(row.invitedAt)!, createdAt: iso(row.createdAt)!, updatedAt: iso(row.updatedAt)!,
+  };
+  if (user !== undefined) r.user = user;
+  return r;
 }
