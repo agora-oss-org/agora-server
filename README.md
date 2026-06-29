@@ -545,6 +545,22 @@ licensed AGPL-3.0, and they can't be relicensed out from under you. See
 > must offer them its corresponding source. Agora surfaces a source link by default — keep it pointing
 > at your fork.
 
+## A note from the author
+
+Agora started as a solo project for my own needs — I'm also building a
+[recovery app](https://github.com/recoverysky-org/recoverysky-app), and it needs a private community to
+call home. But I want to be clear about one thing: **I did not build this system alone. The
+[Claudes](https://claude.com/claude-code) helped me.**
+
+Building software with agents is not an easy task. It takes the skills, knowledge, and experience to be
+done right. I am proud to work alongside [The Claudes](https://claude.com/claude-code), and I believe
+the quality of this repo will speak for itself.
+
+Thank you, [Anthropic](https://www.anthropic.com), for making my dreams come true — and for making
+Agora possible. 💜
+
+— Jenova
+
 ## Open Source Acknowledgments
 
 Agora Server is built on excellent open-source software. See:
