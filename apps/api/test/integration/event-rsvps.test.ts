@@ -45,3 +45,51 @@ describe("event RSVPs (integration)", () => {
     expect(Array.isArray(res.body.data)).toBe(true);
   });
 });
+
+describe("event RSVP/guest-list visibility gate (integration)", () => {
+  let projectId: string; let B: string;
+  let host: { id: string; token: string };
+  let invitee: { id: string; token: string };
+  let stranger: { id: string; token: string };
+  let eventId: string;
+
+  beforeAll(async () => {
+    projectId = await createProject();
+    B = base(projectId);
+    [host, invitee, stranger] = await Promise.all([createUser(projectId), createUser(projectId), createUser(projectId)]);
+    eventId = (await api("POST", `${B}/events`, { token: host.token, body: { title: "Invite-gated", startTime: "2026-07-01T18:00:00Z", type: "online", visibility: "invite" } })).body.id;
+    await api("POST", `${B}/events/${eventId}/invites`, { token: host.token, body: { userId: invitee.id } });
+  });
+  afterAll(async () => { if (projectId) await deleteProject(projectId); });
+
+  it("anonymous cannot list RSVPs of an invite-only event (403 not-visible)", async () => {
+    const res = await api("GET", `${B}/events/${eventId}/rsvps`);
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe("events/not-visible");
+  });
+
+  it("a stranger cannot list RSVPs of an invite-only event (403 not-visible)", async () => {
+    const res = await api("GET", `${B}/events/${eventId}/rsvps`, { token: stranger.token });
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe("events/not-visible");
+  });
+
+  it("a non-invitee cannot RSVP to an invite-only event (403 not-visible)", async () => {
+    const res = await api("POST", `${B}/events/${eventId}/rsvp`, { token: stranger.token, body: { status: "going" } });
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe("events/not-visible");
+  });
+
+  it("a non-invitee cannot DELETE-RSVP an invite-only event (403 not-visible)", async () => {
+    const res = await api("DELETE", `${B}/events/${eventId}/rsvp`, { token: stranger.token });
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe("events/not-visible");
+  });
+
+  it("a genuine invitee can RSVP and the host can list RSVPs including them", async () => {
+    expect((await api("POST", `${B}/events/${eventId}/rsvp`, { token: invitee.token, body: { status: "going" } })).status).toBe(200);
+    const list = await api("GET", `${B}/events/${eventId}/rsvps`, { token: host.token });
+    expect(list.status).toBe(200);
+    expect(list.body.data.some((r: any) => r.userId === invitee.id)).toBe(true);
+  });
+});

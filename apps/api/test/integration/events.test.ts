@@ -76,4 +76,24 @@ describe("events — CRUD + authorization (integration)", () => {
     const after = await api("GET", `${B}/events/${created.body.id}`, { token: host.token });
     expect(after.body.spaceId ?? null).toBeNull();
   });
+
+  it("hides a public event living in a members-reading space from non-members; shows it to the space owner/host", async () => {
+    // `host` owns a members-reading (private) space, and creates a *public*-visibility event in it.
+    // GET /:eventId already 403s a non-member via assertCanReadSpace; the list must match (fail closed).
+    const [space] = await db.insert(spaces).values({
+      projectId, shortId: randomUUID().slice(0, 8), name: "Members-read", userId: host.id,
+      readingPermission: "members", postingPermission: "anyone",
+    }).returning();
+    const created = await api("POST", `${B}/events`, { token: host.token, body: { title: "Hidden public", startTime: "2026-09-01T18:00:00Z", type: "online", spaceId: space!.id } });
+    expect(created.status).toBe(201);
+    const evId = created.body.id;
+    // Non-member (authed `other`): event must NOT appear in the list.
+    const strangerList = await api("GET", `${B}/events`, { token: other.token });
+    expect(strangerList.body.data.some((e: any) => e.id === evId)).toBe(false);
+    // And the single-GET already 403s the non-member — list/single stay consistent.
+    expect((await api("GET", `${B}/events/${evId}`, { token: other.token })).status).toBe(403);
+    // Space owner/host: event still appears.
+    const ownerList = await api("GET", `${B}/events`, { token: host.token });
+    expect(ownerList.body.data.some((e: any) => e.id === evId)).toBe(true);
+  });
 });

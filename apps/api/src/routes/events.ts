@@ -68,6 +68,23 @@ export async function isInvited(eventId: string, userId: string | undefined): Pr
   return !!r;
 }
 
+// Throws if the caller may not VIEW this event — the shared visibility gate used by GET /:eventId
+// AND every per-event read/write that returns event data (RSVP set/withdraw, guest-list read). Mirrors
+// GET /:eventId exactly: removed → 404, space-read gate, then the per-row visibility predicate.
+export async function assertCanViewEvent(c: any, row: EventRow): Promise<void> {
+  const removed = await removedPolicy(c);
+  if (shouldHide(removed, row.moderationStatus)) throw Errors.notFound("events/not-found", "Event not found");
+  if (row.spaceId) await assertCanReadSpace(c, row.spaceId); // space read gate first
+  const hostIds = await loadHostIds(row.id);
+  const isHostOrAdmin = !!(c.var.auth && (isProjectAdmin(c.var.auth) || isEventHost(hostIds, c.var.auth.userId)));
+  const visible = canViewEvent(row, {
+    isAuthed: !!c.var.auth, isHostOrAdmin,
+    isMember: await isMemberForEvent(c, row),
+    isInvited: await isInvited(row.id, c.var.auth?.userId),
+  });
+  if (!visible) throw Errors.forbidden("events/not-visible", "You don't have access to this event");
+}
+
 // Throws 403 unless the caller is a host or a project-admin.
 export function requireEventManage(c: any, hostIds: string[]): void {
   const auth = c.var.auth;
@@ -195,12 +212,18 @@ export const eventRoutes = new Hono<{ Variables: Variables }>()
     // refinement is enforced on single GET; the list shows public + the caller's own visible set.)
     if (!(c.var.auth && isProjectAdmin(c.var.auth))) {
       const uid = c.var.auth?.userId ?? null;
+      // A public event in a reading-restricted space must NOT leak in the list to a non-reader
+      // (mirrors assertCanReadSpace / readableEntitiesFilter): space null, OR readingPermission='anyone',
+      // OR the caller owns / actively belongs to the space. Fail closed for anonymous.
+      const spaceReadable = uid
+        ? sql`(${events.spaceId} is null or exists (select 1 from spaces s where s.id = ${events.spaceId} and s.deleted_at is null and (s.reading_permission = 'anyone' or s.user_id = ${uid}::uuid or exists (select 1 from space_members m where m.space_id = s.id and m.user_id = ${uid}::uuid and m.status = 'active'))))`
+        : sql`(${events.spaceId} is null or exists (select 1 from spaces s where s.id = ${events.spaceId} and s.deleted_at is null and s.reading_permission = 'anyone'))`;
       conds.push(uid
-        ? sql`(${events.visibility} = 'public'
+        ? sql`((${events.visibility} = 'public' and ${spaceReadable})
             or (${events.visibility} = 'members' and (${events.spaceId} is null or exists (select 1 from space_members m where m.space_id = ${events.spaceId} and m.user_id = ${uid}::uuid and m.status = 'active') or exists (select 1 from spaces s where s.id = ${events.spaceId} and s.user_id = ${uid}::uuid)))
             or (${events.visibility} = 'invite' and exists (select 1 from event_invites i where i.event_id = ${events.id} and i.user_id = ${uid}::uuid))
             or exists (select 1 from event_hosts h where h.event_id = ${events.id} and h.user_id = ${uid}::uuid))`
-        : sql`${events.visibility} = 'public'`);
+        : sql`(${events.visibility} = 'public' and ${spaceReadable})`);
     }
     const where = and(...conds);
     const sortBy = q("sortBy");
@@ -215,17 +238,7 @@ export const eventRoutes = new Hono<{ Variables: Variables }>()
   })
   .get("/:eventId", async (c) => {
     const row = await getEventOr404(c, c.req.param("eventId"));
-    const removed = await removedPolicy(c);
-    if (shouldHide(removed, row.moderationStatus)) throw Errors.notFound("events/not-found", "Event not found");
-    if (row.spaceId) await assertCanReadSpace(c, row.spaceId); // space read gate first
-    const hostIds = await loadHostIds(row.id);
-    const isHostOrAdmin = !!(c.var.auth && (isProjectAdmin(c.var.auth) || isEventHost(hostIds, c.var.auth.userId)));
-    const visible = canViewEvent(row, {
-      isAuthed: !!c.var.auth, isHostOrAdmin,
-      isMember: await isMemberForEvent(c, row),
-      isInvited: await isInvited(row.id, c.var.auth?.userId),
-    });
-    if (!visible) throw Errors.forbidden("events/not-visible", "You don't have access to this event");
+    await assertCanViewEvent(c, row);
     return c.json(await buildEventResponse(c, row, { include: parseInclude(c) }));
   })
   .patch("/:eventId", requireAuth, async (c) => {
@@ -271,6 +284,7 @@ export const eventRoutes = new Hono<{ Variables: Variables }>()
   })
   .post("/:eventId/rsvp", requireAuth, async (c) => {
     const row = await getEventOr404(c, c.req.param("eventId"));
+    await assertCanViewEvent(c, row); // can't RSVP to an event you can't see
     const { status } = parseBody(rsvpSchema, await c.req.json().catch(() => ({})), "events");
     if (row.status === "cancelled" || row.startTime.getTime() < Date.now()) {
       throw Errors.badRequest("events/rsvp-closed", "RSVPs are closed for this event");
@@ -290,13 +304,16 @@ export const eventRoutes = new Hono<{ Variables: Variables }>()
   })
   .delete("/:eventId/rsvp", requireAuth, async (c) => {
     const row = await getEventOr404(c, c.req.param("eventId"));
+    await assertCanViewEvent(c, row); // can't touch RSVP state on an event you can't see
     await db.delete(eventRsvps).where(and(eq(eventRsvps.eventId, row.id), eq(eventRsvps.userId, c.var.auth!.userId)));
     return c.json(await buildEventResponse(c, row));
   })
   .get("/:eventId/rsvps", async (c) => {
     const row = await getEventOr404(c, c.req.param("eventId"));
+    await assertCanViewEvent(c, row); // visibility gate first — anonymous/stranger can't enumerate the guest list
     const hostIds = await loadHostIds(row.id);
     const isHostOrAdmin = !!(c.var.auth && (isProjectAdmin(c.var.auth) || isEventHost(hostIds, c.var.auth.userId)));
+    // Additional non-host gate: a viewer of an event with guestListVisible=false still can't see the roster.
     if (!isHostOrAdmin && !row.guestListVisible) throw Errors.forbidden("events/guest-list-hidden", "The guest list is private");
     const { page, limit, offset } = readPagination(c);
     const status = c.req.query("status");
