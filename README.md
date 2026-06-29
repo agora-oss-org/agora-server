@@ -13,11 +13,17 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-AGPL_v3-7C3AED.svg" alt="License: AGPL-3.0-only" /></a>
   <a href="https://supabase.com"><img src="https://img.shields.io/badge/built%20on-Supabase-3ECF8E.svg" alt="Built on Supabase" /></a>
   <a href="#status"><img src="https://img.shields.io/badge/backend-feature--complete-success.svg" alt="Status: feature-complete" /></a>
+  <a href="#status"><img src="https://img.shields.io/badge/status-beta-orange.svg" alt="Status: beta" /></a>
 </p>
 
 <p align="center">
   ▶️ <strong>Try it live: <a href="https://demo.agora-oss.org">demo.agora-oss.org</a></strong>
 </p>
+
+> [!WARNING]
+> **Agora is in beta.** The backend is feature-complete and validated, but APIs, schema, and
+> deployment details may still change ahead of a `1.0` release. Pin a version, expect occasional
+> breaking changes, and please [report anything you hit](https://github.com/jenova-marie/agora-server/issues).
 
 A working social app — sign in, browse the feed, comment, react, semantic-search, and chat in
 realtime — all driven by the [`agora-sdk`](https://github.com/jenova-marie/agora-sdk) against a live
