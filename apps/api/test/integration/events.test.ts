@@ -1,4 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { randomUUID } from "node:crypto";
+import { db } from "../../src/db/index.js";
+import { spaces } from "../../src/db/schema/index.js";
 import { api, createProject, createUser, deleteProject, base } from "./helpers.js";
 
 describe("events — CRUD + authorization (integration)", () => {
@@ -55,5 +58,22 @@ describe("events — CRUD + authorization (integration)", () => {
   it("soft-deletes (204) and then 404s on fetch", async () => {
     expect((await api("DELETE", `${B}/events/${eventId}`, { token: host.token })).status).toBe(204);
     expect((await api("GET", `${B}/events/${eventId}`, { token: host.token })).status).toBe(404);
+  });
+
+  it("rejects PATCH that moves an event into a members-only space the host can't post in (403)", async () => {
+    // `other` owns a members-only space; `host` is not a member, so cannot post there.
+    const [space] = await db.insert(spaces).values({
+      projectId, shortId: randomUUID().slice(0, 8), name: "Closed", userId: other.id,
+      postingPermission: "members",
+    }).returning();
+    // `host` creates a space-less event they manage…
+    const created = await api("POST", `${B}/events`, { token: host.token, body: { title: "Movable", startTime: "2026-08-01T18:00:00Z", type: "online" } });
+    expect(created.status).toBe(201);
+    // …then tries to reassign it into the restricted space → blocked before any mutation.
+    const res = await api("PATCH", `${B}/events/${created.body.id}`, { token: host.token, body: { spaceId: space!.id } });
+    expect(res.status).toBe(403);
+    // Confirm the spaceId did NOT change despite the rejected PATCH.
+    const after = await api("GET", `${B}/events/${created.body.id}`, { token: host.token });
+    expect(after.body.spaceId ?? null).toBeNull();
   });
 });

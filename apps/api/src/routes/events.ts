@@ -197,7 +197,7 @@ export const eventRoutes = new Hono<{ Variables: Variables }>()
       const uid = c.var.auth?.userId ?? null;
       conds.push(uid
         ? sql`(${events.visibility} = 'public'
-            or (${events.visibility} = 'members' and (${events.spaceId} is null or exists (select 1 from space_members m where m.space_id = ${events.spaceId} and m.user_id = ${uid}::uuid and m.status = 'active')))
+            or (${events.visibility} = 'members' and (${events.spaceId} is null or exists (select 1 from space_members m where m.space_id = ${events.spaceId} and m.user_id = ${uid}::uuid and m.status = 'active') or exists (select 1 from spaces s where s.id = ${events.spaceId} and s.user_id = ${uid}::uuid)))
             or (${events.visibility} = 'invite' and exists (select 1 from event_invites i where i.event_id = ${events.id} and i.user_id = ${uid}::uuid))
             or exists (select 1 from event_hosts h where h.event_id = ${events.id} and h.user_id = ${uid}::uuid))`
         : sql`${events.visibility} = 'public'`);
@@ -232,6 +232,11 @@ export const eventRoutes = new Hono<{ Variables: Variables }>()
     const row = await getEventOr404(c, c.req.param("eventId"));
     requireEventManage(c, await loadHostIds(row.id));
     const body = parseBody(updateEventSchema, await c.req.json().catch(() => ({})), "events");
+    // Re-gate space reassignment: moving an event into a space requires posting permission there
+    // (mirrors create-time `assertCanPostInSpace`; no-ops for spaceId → null). Throw BEFORE any write.
+    if (body.spaceId !== undefined && body.spaceId !== row.spaceId) {
+      await assertCanPostInSpace(c, body.spaceId);
+    }
     const patch: Record<string, unknown> = {};
     const set = (k: keyof typeof body, col: string, transform?: (v: any) => unknown) => {
       if (body[k] !== undefined) patch[col] = transform ? transform(body[k]) : body[k];
