@@ -24,6 +24,12 @@ export const conversationType = pgEnum("conversation_type", ["direct", "group", 
 export const convMemberRole = pgEnum("conv_member_role", ["admin", "member"]);
 export const connectionStatus = pgEnum("connection_status", ["pending", "connected", "declined"]);
 
+// ─── Events ──────────────────────────────────────────────────────────────────
+export const eventType = pgEnum("event_type", ["online", "physical", "hybrid"]);
+export const eventVisibility = pgEnum("event_visibility", ["public", "members", "invite"]);
+export const eventStatus = pgEnum("event_status", ["active", "cancelled"]);
+export const rsvpStatus = pgEnum("rsvp_status", ["going", "maybe", "not_going"]);
+
 // ─── Steward (conflict resolution) ───────────────────────────────────────────
 // Case lifecycle: open → in_mediation → closed. "Open caseload" = state <> 'closed'.
 export const stewardCaseState = pgEnum("steward_case_state", ["open", "in_mediation", "closed"]);

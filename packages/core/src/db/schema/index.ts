@@ -5,6 +5,7 @@ export * from "./content.js";
 export * from "./spaces.js";
 export * from "./chat.js";
 export * from "./misc.js";
+export * from "./events.js";
 export * from "./auth.js";
 export * from "./steward.js";
 export * from "./secure-chat.js";

@@ -9,6 +9,7 @@ import { projects, profiles } from "./projects.js";
 import { entities, comments } from "./content.js";
 import { spaces } from "./spaces.js";
 import { chatMessages } from "./chat.js";
+import { events } from "./events.js";
 
 export const collections = pgTable("collections", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -54,6 +55,7 @@ export const files = pgTable("files", {
   commentId: uuid("comment_id").references(() => comments.id, { onDelete: "cascade" }),
   chatMessageId: uuid("chat_message_id").references(() => chatMessages.id, { onDelete: "cascade" }),
   spaceId: uuid("space_id").references(() => spaces.id, { onDelete: "cascade" }),
+  eventId: uuid("event_id").references(() => events.id, { onDelete: "cascade" }),
   type: text("type").notNull(),
   originalPath: text("original_path").notNull(),
   originalSize: bigint("original_size", { mode: "number" }).notNull().default(0),
@@ -67,6 +69,7 @@ export const files = pgTable("files", {
   index("files_entity_idx").on(t.entityId),
   index("files_comment_idx").on(t.commentId),
   index("files_chat_idx").on(t.chatMessageId),
+  index("files_event_idx").on(t.eventId),
 ]);
 
 export const appNotifications = pgTable("app_notifications", {
