@@ -17,6 +17,7 @@ export interface ImageAssoc {
   commentId?: string | null;
   chatMessageId?: string | null;
   spaceId?: string | null;
+  eventId?: string | null;
 }
 
 /**
@@ -89,6 +90,7 @@ export async function storeImageFromUpload(args: {
     image,
     entityId: assoc.entityId ?? null, commentId: assoc.commentId ?? null,
     chatMessageId: assoc.chatMessageId ?? null, spaceId: assoc.spaceId ?? null,
+    eventId: assoc.eventId ?? null,
   }).returning();
 
   // Image response shape (MODELS.md): fileId + original + variants + metadata.

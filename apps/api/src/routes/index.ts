@@ -13,6 +13,7 @@ import { userRoutes } from "./users.js";
 import { followRoutes } from "./follows.js";
 import { connectionRoutes } from "./connections.js";
 import { spaceRoutes } from "./spaces.js";
+import { eventRoutes } from "./events.js";
 import { chatRoutes } from "./chat.js";
 import { collectionRoutes } from "./collections.js";
 import { dbRoutes } from "./db.js";
@@ -38,6 +39,7 @@ export function mountRoutes() {
   project.route("/users", userRoutes);
   project.route("/follows", followRoutes);
   project.route("/spaces", spaceRoutes);
+  project.route("/events", eventRoutes);
   project.route("/chat", chatRoutes);
   // E2E (MLS) secure chat is now its OWN deployable service (@agora/secure-chat), reached at the same
   // /v7/:projectId/secure-chat/* path via the reverse proxy — NOT mounted here. See apps/secure-chat.

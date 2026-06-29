@@ -1,0 +1,266 @@
+// /v7/:projectId/events/* — events, RSVPs, invites, hosts (SDK v7.6.2). Pure REST (no sockets).
+import { Hono } from "hono";
+import { and, eq, isNull, sql, count, asc, type SQL } from "drizzle-orm";
+import type { Variables } from "../http/context.js";
+import { Errors } from "../http/errors.js";
+import { requireAuth } from "../middleware/auth.js";
+import { db } from "../db/index.js";
+import { events, eventHosts, eventRsvps, eventInvites, spaceMembers, spaces } from "../db/schema/index.js";
+import { readPagination, paginate } from "../http/envelope.js";
+import { parseBody } from "../lib/validation.js";
+import { createEventSchema, updateEventSchema } from "@agora-server/contract";
+import { shapeEvent, generateShortId, loadUsers, parseInclude } from "../lib/shape.js";
+import { isProjectAdmin } from "../lib/project-roles.js";
+import { removedPolicy, shouldHide } from "../lib/moderation-visibility.js";
+import { assertCanPostInSpace, assertCanReadSpace } from "../lib/space-access.js";
+import { isEventHost, canViewEvent } from "../lib/events-policy.js";
+import { storeImageFromUpload } from "../lib/images.js";
+import { logger } from "../lib/logger.js";
+
+type EventRow = typeof events.$inferSelect;
+
+// ── shared helpers ───────────────────────────────────────────────────────────
+export async function getEventOr404(c: any, id: string): Promise<EventRow> {
+  const [row] = await db.select().from(events)
+    .where(and(eq(events.projectId, c.var.projectId), eq(events.id, id), isNull(events.deletedAt))).limit(1);
+  if (!row) throw Errors.notFound("events/not-found", "Event not found");
+  return row;
+}
+
+export async function loadHostIds(eventId: string): Promise<string[]> {
+  const rows = await db.select({ userId: eventHosts.userId }).from(eventHosts)
+    .where(eq(eventHosts.eventId, eventId)).orderBy(asc(eventHosts.createdAt));
+  return rows.map((r) => r.userId);
+}
+
+export async function loadRsvpCounts(eventId: string): Promise<{ going: number; maybe: number; not_going: number }> {
+  const rows = await db.select({ status: eventRsvps.status, n: count() }).from(eventRsvps)
+    .where(eq(eventRsvps.eventId, eventId)).groupBy(eventRsvps.status);
+  const out = { going: 0, maybe: 0, not_going: 0 };
+  for (const r of rows) (out as any)[r.status] = r.n;
+  return out;
+}
+
+export async function loadLocation(eventId: string): Promise<{ lat: number; lng: number } | null> {
+  const res = (await db.execute(sql`
+    select ST_Y(location::geometry) as lat, ST_X(location::geometry) as lng
+    from events where id = ${eventId}::uuid and location is not null
+  `)) as unknown as { lat: number; lng: number }[];
+  return res[0] ? { lat: Number(res[0].lat), lng: Number(res[0].lng) } : null;
+}
+
+// Is the caller a member for `visibility:"members"`? space members if spaceId set, else any authed user.
+export async function isMemberForEvent(c: any, row: EventRow): Promise<boolean> {
+  const uid = c.var.auth?.userId;
+  if (!uid) return false;
+  if (!row.spaceId) return true; // project member = any authenticated user
+  const [m] = await db.select({ id: spaceMembers.id }).from(spaceMembers)
+    .where(and(eq(spaceMembers.spaceId, row.spaceId), eq(spaceMembers.userId, uid), eq(spaceMembers.status, "active"))).limit(1);
+  if (m) return true;
+  const [s] = await db.select({ userId: spaces.userId }).from(spaces).where(eq(spaces.id, row.spaceId)).limit(1);
+  return !!s && s.userId === uid;
+}
+
+export async function isInvited(eventId: string, userId: string | undefined): Promise<boolean> {
+  if (!userId) return false;
+  const [r] = await db.select({ id: eventInvites.id }).from(eventInvites)
+    .where(and(eq(eventInvites.eventId, eventId), eq(eventInvites.userId, userId))).limit(1);
+  return !!r;
+}
+
+// Throws 403 unless the caller is a host or a project-admin.
+export function requireEventManage(c: any, hostIds: string[]): void {
+  const auth = c.var.auth;
+  if (auth && (isProjectAdmin(auth) || isEventHost(hostIds, auth.userId))) return;
+  throw Errors.forbidden("events/not-host", "Only a host or admin can manage this event");
+}
+
+// Assemble the full Event response (hostIds, rsvpCounts, location, optional includes).
+export async function buildEventResponse(c: any, row: EventRow, opts: { include?: Set<string> } = {}) {
+  const [hostIds, rsvpCounts, location] = await Promise.all([loadHostIds(row.id), loadRsvpCounts(row.id), loadLocation(row.id)]);
+  const include = opts.include ?? new Set<string>();
+  let userRsvp: string | null | undefined;
+  if (include.has("userRsvp") && c.var.auth?.userId) {
+    const [r] = await db.select({ status: eventRsvps.status }).from(eventRsvps)
+      .where(and(eq(eventRsvps.eventId, row.id), eq(eventRsvps.userId, c.var.auth.userId))).limit(1);
+    userRsvp = r?.status ?? null;
+  }
+  let user: unknown;
+  if (include.has("user") && row.userId) {
+    const um = await loadUsers(c.var.projectId, [row.userId]);
+    user = um.get(row.userId) ?? null;
+  }
+  return shapeEvent(row, { hostIds, rsvpCounts, location, ...(userRsvp !== undefined ? { userRsvp } : {}), ...(user !== undefined ? { user } : {}) });
+}
+
+// Set the PostGIS location from a {latitude, longitude} input (or clear it when null).
+export async function writeLocation(eventId: string, loc: { latitude: number; longitude: number } | null | undefined) {
+  if (loc === undefined) return;
+  if (loc === null) { await db.execute(sql`update events set location = null where id = ${eventId}::uuid`); return; }
+  await db.execute(sql`update events set location = ST_SetSRID(ST_MakePoint(${loc.longitude}, ${loc.latitude}), 4326)::geography where id = ${eventId}::uuid`);
+}
+
+// Pull scalar event fields out of a multipart form (cover/gallery handled separately).
+function parseMultipartEventFields(form: Record<string, unknown>): Record<string, unknown> {
+  const str = (k: string) => { const v = form[k]; return typeof v === "string" ? v : Array.isArray(v) && typeof v[0] === "string" ? v[0] : undefined; };
+  const json = (k: string) => { const s = str(k); if (s === undefined) return undefined; try { return JSON.parse(s); } catch { return undefined; } };
+  return {
+    title: str("title"), startTime: str("startTime"), type: str("type"), description: str("description"),
+    endTime: str("endTime"), timezone: str("timezone"), url: str("url"), venueName: str("venueName"),
+    address: str("address"), location: json("location"), spaceId: str("spaceId"), visibility: str("visibility"),
+    capacity: json("capacity"), allowMaybe: json("allowMaybe"), guestListVisible: json("guestListVisible"),
+    hostIds: json("hostIds"), metadata: json("metadata"),
+  };
+}
+
+export const eventRoutes = new Hono<{ Variables: Variables }>()
+  .post("/", requireAuth, async (c) => {
+    const projectId = c.var.projectId;
+    const userId = c.var.auth!.userId;
+    const contentType = c.req.header("content-type") ?? "";
+    const isMultipart = contentType.includes("multipart/form-data");
+    let coverFiles: File[] = [], galleryFiles: File[] = [];
+    let coverOpts: Record<string, unknown> = {}, galleryOpts: Record<string, unknown> = {};
+    let rawBody: Record<string, unknown>;
+    if (isMultipart) {
+      const form = await c.req.parseBody({ all: true });
+      rawBody = parseMultipartEventFields(form);
+      const cv = form["cover"]; coverFiles = (Array.isArray(cv) ? cv : cv ? [cv] : []).filter((f): f is File => typeof f !== "string");
+      const gl = form["gallery"]; galleryFiles = (Array.isArray(gl) ? gl : gl ? [gl] : []).filter((f): f is File => typeof f !== "string");
+      if (typeof form["cover.options"] === "string") { try { coverOpts = JSON.parse(form["cover.options"] as string); } catch { /* ignore */ } }
+      if (typeof form["gallery.options"] === "string") { try { galleryOpts = JSON.parse(form["gallery.options"] as string); } catch { /* ignore */ } }
+    } else {
+      rawBody = await c.req.json().catch(() => ({}));
+    }
+    const body = parseBody(createEventSchema, rawBody, "events");
+    await assertCanPostInSpace(c, body.spaceId ?? null); // enforce space posting permission if attached
+
+    const [row] = await db.insert(events).values({
+      projectId, userId, shortId: generateShortId(),
+      title: body.title, description: body.description ?? null,
+      startTime: new Date(body.startTime), endTime: body.endTime ? new Date(body.endTime) : null,
+      timezone: body.timezone ?? null, type: body.type, url: body.url ?? null,
+      venueName: body.venueName ?? null, address: body.address ?? null, spaceId: body.spaceId ?? null,
+      visibility: body.visibility ?? "public", capacity: body.capacity ?? null,
+      allowMaybe: body.allowMaybe ?? true, guestListVisible: body.guestListVisible ?? true,
+      metadata: body.metadata ?? undefined,
+    }).returning();
+    if (!row) throw Errors.badRequest("events/create-failed", "Insert returned no row");
+    await writeLocation(row.id, body.location);
+
+    // Hosts: creator + any supplied hostIds (deduped). Creator is always a host.
+    const hostIds = [...new Set([userId, ...(body.hostIds ?? [])])];
+    await db.insert(eventHosts).values(hostIds.map((uid) => ({ projectId, eventId: row.id, userId: uid }))).onConflictDoNothing();
+
+    // Cover (first) + gallery images → files rows linked by event_id; cover_image_id points to the cover file.
+    let coverImageId: string | null = null;
+    for (const file of coverFiles) {
+      const { fileRow } = await storeImageFromUpload({ projectId, userId, file, optionsBody: coverOpts, assoc: { eventId: row.id } });
+      coverImageId = fileRow.id; break; // one cover
+    }
+    for (const file of galleryFiles) {
+      await storeImageFromUpload({ projectId, userId, file, optionsBody: galleryOpts, assoc: { eventId: row.id } });
+    }
+    if (coverImageId) await db.update(events).set({ coverImageId }).where(eq(events.id, row.id));
+
+    const [fresh] = await db.select().from(events).where(eq(events.id, row.id)).limit(1);
+    logger.info({ projectId, eventId: row.id, userId, spaceId: row.spaceId ?? null, hosts: hostIds.length }, "event: created");
+    return c.json(await buildEventResponse(c, fresh!), 201);
+  })
+  .get("/", async (c) => {
+    // List with filters: page/limit, sortBy (startTime|going), sortDir, timeWindow, spaceId, hostId,
+    // type, status, startsAfter/Before, locationFilters[latitude|longitude|radius] (km).
+    const projectId = c.var.projectId;
+    const { page, limit, offset } = readPagination(c);
+    const q = (k: string) => { const v = c.req.query(k); return v && v !== "null" && v !== "undefined" ? v : undefined; };
+    const conds: SQL[] = [eq(events.projectId, projectId), isNull(events.deletedAt)];
+    if (q("spaceId")) conds.push(eq(events.spaceId, q("spaceId")!));
+    if (q("type")) conds.push(sql`${events.type} = ${q("type")}::event_type`);
+    if (q("status")) conds.push(sql`${events.status} = ${q("status")}::event_status`);
+    if (q("startsAfter")) conds.push(sql`${events.startTime} >= ${q("startsAfter")}::timestamptz`);
+    if (q("startsBefore")) conds.push(sql`${events.startTime} <= ${q("startsBefore")}::timestamptz`);
+    const tw = q("timeWindow");
+    if (tw === "upcoming") conds.push(sql`${events.startTime} > now()`);
+    else if (tw === "past") conds.push(sql`coalesce(${events.endTime}, ${events.startTime}) < now()`);
+    else if (tw === "ongoing") conds.push(sql`${events.startTime} <= now() and coalesce(${events.endTime}, ${events.startTime}) >= now()`);
+    if (q("hostId")) conds.push(sql`exists (select 1 from event_hosts h where h.event_id = ${events.id} and h.user_id = ${q("hostId")}::uuid)`);
+    const lat = q("locationFilters[latitude]"), lng = q("locationFilters[longitude]"), radiusKm = q("locationFilters[radius]");
+    if (lat && lng && radiusKm) {
+      conds.push(sql`location is not null and ST_DWithin(location, ST_SetSRID(ST_MakePoint(${Number(lng)}, ${Number(lat)}), 4326)::geography, ${Number(radiusKm) * 1000})`);
+    }
+    // Hide removed events from non-admins.
+    const removed = await removedPolicy(c);
+    if (!removed.privileged) conds.push(sql`(${events.moderationStatus} is null or ${events.moderationStatus} <> 'removed')`);
+    // Visibility: anonymous/non-members only see public events; admins see all. (Per-row invite/members
+    // refinement is enforced on single GET; the list shows public + the caller's own visible set.)
+    if (!(c.var.auth && isProjectAdmin(c.var.auth))) {
+      const uid = c.var.auth?.userId ?? null;
+      conds.push(uid
+        ? sql`(${events.visibility} = 'public'
+            or (${events.visibility} = 'members' and (${events.spaceId} is null or exists (select 1 from space_members m where m.space_id = ${events.spaceId} and m.user_id = ${uid}::uuid and m.status = 'active')))
+            or (${events.visibility} = 'invite' and exists (select 1 from event_invites i where i.event_id = ${events.id} and i.user_id = ${uid}::uuid))
+            or exists (select 1 from event_hosts h where h.event_id = ${events.id} and h.user_id = ${uid}::uuid))`
+        : sql`${events.visibility} = 'public'`);
+    }
+    const where = and(...conds);
+    const sortBy = q("sortBy");
+    const dir = q("sortDir") === "asc" ? sql`asc` : sql`desc`;
+    const orderBy = sortBy === "going"
+      ? sql`(select count(*) from event_rsvps r where r.event_id = ${events.id} and r.status = 'going') ${dir}, ${events.startTime} asc`
+      : sql`${events.startTime} ${dir}`;
+    const rows = await db.select().from(events).where(where).orderBy(orderBy).limit(limit).offset(offset);
+    const [{ total } = { total: 0 }] = await db.select({ total: count() }).from(events).where(where);
+    const data = await Promise.all(rows.map((r) => buildEventResponse(c, r)));
+    return c.json(paginate(data, total, page, limit));
+  })
+  .get("/:eventId", async (c) => {
+    const row = await getEventOr404(c, c.req.param("eventId"));
+    const removed = await removedPolicy(c);
+    if (shouldHide(removed, row.moderationStatus)) throw Errors.notFound("events/not-found", "Event not found");
+    if (row.spaceId) await assertCanReadSpace(c, row.spaceId); // space read gate first
+    const hostIds = await loadHostIds(row.id);
+    const isHostOrAdmin = !!(c.var.auth && (isProjectAdmin(c.var.auth) || isEventHost(hostIds, c.var.auth.userId)));
+    const visible = canViewEvent(row, {
+      isAuthed: !!c.var.auth, isHostOrAdmin,
+      isMember: await isMemberForEvent(c, row),
+      isInvited: await isInvited(row.id, c.var.auth?.userId),
+    });
+    if (!visible) throw Errors.forbidden("events/not-visible", "You don't have access to this event");
+    return c.json(await buildEventResponse(c, row, { include: parseInclude(c) }));
+  })
+  .patch("/:eventId", requireAuth, async (c) => {
+    const row = await getEventOr404(c, c.req.param("eventId"));
+    requireEventManage(c, await loadHostIds(row.id));
+    const body = parseBody(updateEventSchema, await c.req.json().catch(() => ({})), "events");
+    const patch: Record<string, unknown> = {};
+    const set = (k: keyof typeof body, col: string, transform?: (v: any) => unknown) => {
+      if (body[k] !== undefined) patch[col] = transform ? transform(body[k]) : body[k];
+    };
+    set("title", "title"); set("description", "description"); set("type", "type"); set("url", "url");
+    set("venueName", "venueName"); set("address", "address"); set("timezone", "timezone");
+    set("visibility", "visibility"); set("status", "status"); set("capacity", "capacity");
+    set("allowMaybe", "allowMaybe"); set("guestListVisible", "guestListVisible"); set("spaceId", "spaceId");
+    set("metadata", "metadata"); set("startTime", "startTime", (v) => new Date(v));
+    set("endTime", "endTime", (v) => (v ? new Date(v) : null));
+    if (Object.keys(patch).length) await db.update(events).set(patch).where(eq(events.id, row.id));
+    if (body.location !== undefined) await writeLocation(row.id, body.location);
+    if (body.removeImageIds?.length) {
+      await db.execute(sql`delete from files where event_id = ${row.id}::uuid and id = any(${sql`array[${sql.join(body.removeImageIds.map((id) => sql`${id}::uuid`), sql`, `)}]`})`);
+    }
+    const [fresh] = await db.select().from(events).where(eq(events.id, row.id)).limit(1);
+    return c.json(await buildEventResponse(c, fresh!));
+  })
+  .delete("/:eventId", requireAuth, async (c) => {
+    const row = await getEventOr404(c, c.req.param("eventId"));
+    requireEventManage(c, await loadHostIds(row.id));
+    await db.update(events).set({ deletedAt: new Date() }).where(eq(events.id, row.id));
+    logger.info({ projectId: c.var.projectId, eventId: row.id, userId: c.var.auth!.userId }, "event: deleted");
+    return c.body(null, 204);
+  })
+  .post("/:eventId/cancel", requireAuth, async (c) => {
+    const row = await getEventOr404(c, c.req.param("eventId"));
+    requireEventManage(c, await loadHostIds(row.id));
+    await db.update(events).set({ status: "cancelled" }).where(eq(events.id, row.id));
+    const [fresh] = await db.select().from(events).where(eq(events.id, row.id)).limit(1);
+    return c.json(await buildEventResponse(c, fresh!));
+  });
