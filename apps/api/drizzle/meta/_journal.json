@@ -372,6 +372,13 @@
 			"when": 1781934611650,
 			"tag": "0052_pending_embeddings",
 			"breakpoints": true
+		},
+		{
+			"idx": 53,
+			"version": "7",
+			"when": 1781934611651,
+			"tag": "0053_events",
+			"breakpoints": true
 		}
 	]
 }
