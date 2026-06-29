@@ -1,0 +1,69 @@
+# DEV variant of agora-routes.caddy — used ONLY by docker-compose.dev.yml, which mounts it OVER the
+# baked /etc/caddy/agora-routes.caddy that the Caddyfile imports. IDENTICAL to the production snippet
+# except the last two handles (the SPA): instead of serving the baked static admin build from /srv, it
+# reverse-proxies the admin ROOT to the host's running vite dev server (ADMIN_UPSTREAM, default
+# host.docker.internal:5173) so you get live HMR through the same front door. The vite HMR websocket
+# rides the proxied catch-all (Caddy auto-upgrades). Keep this in sync with agora-routes.caddy when the
+# service routes (handles #1–#7) change.
+
+(agora-site) {
+	encode gzip
+
+	request_body {
+		max_size {$MAX_BODY_SIZE:25MB}
+	}
+
+	header {
+		Strict-Transport-Security "max-age=63072000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		X-Frame-Options "SAMEORIGIN"
+		-Server
+	}
+
+	@securechat path_regexp ^/v7/[^/]+/secure-chat/
+
+	# 1. secure-chat REST → host secure-chat dev process.
+	handle @securechat {
+		reverse_proxy {$SECURE_CHAT_UPSTREAM:http://host.docker.internal:4002}
+	}
+
+	# 2. secure-chat realtime (its own engine.io path).
+	handle /secure-socket/* {
+		reverse_proxy {$SECURE_CHAT_UPSTREAM:http://host.docker.internal:4002}
+	}
+
+	# 3. socket.io realtime → host API.
+	handle /socket.io/* {
+		reverse_proxy {$API_UPSTREAM:http://host.docker.internal:4000}
+	}
+
+	# 4. moderator → scorer-worker container (re-prepend /v1).
+	handle_path /moderator/* {
+		rewrite * /v1{uri}
+		reverse_proxy {$MODERATOR_UPSTREAM:http://scorer-worker:4001}
+	}
+
+	# 5. media → MinIO container (re-prepend the bucket). Only used when STORAGE_PROVIDER=s3.
+	handle_path /media/* {
+		rewrite * /{$S3_BUCKET:agora}{uri}
+		reverse_proxy {$MINIO_UPSTREAM:http://minio:9000}
+	}
+
+	# 6. the rest of the API surface → host API.
+	handle /v7/* {
+		reverse_proxy {$API_UPSTREAM:http://host.docker.internal:4000}
+	}
+
+	# 7. agora-demo SPA (the `demo` profile) → demo container.
+	handle_path /demo/* {
+		reverse_proxy {$DEMO_UPSTREAM:http://demo:80}
+	}
+
+	# 8 + 9. DEV: the admin SPA (root + vite asset/HMR paths) → the host vite dev server. No immutable
+	# cache header here (dev assets are not content-hashed). The websocket HMR connection rides this
+	# same reverse_proxy (auto-upgraded). Bare `handle` = lowest precedence (catch-all).
+	handle {
+		reverse_proxy {$ADMIN_UPSTREAM:http://host.docker.internal:5173}
+	}
+}

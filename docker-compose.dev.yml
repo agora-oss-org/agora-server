@@ -1,0 +1,392 @@
+# Agora — LOCAL DEV compose. Brings up the backing services + the supporting containers
+# (proxy · cron · scorer) and points every one of them BACK at your host-run dev code:
+#
+#     agora (API) ............ pnpm --filter @agora/api dev          → host :4000
+#     secure-chat ............ pnpm --filter @agora/secure-chat dev  → host :4002
+#     admin (SPA) ............ pnpm --filter @agora/admin dev (vite) → host :5173
+#
+# i.e. the inverse of docker-compose.yml: the THREE app surfaces YOU edit run natively (instant tsx /
+# vite HMR, breakpoints, no rebuild), and the containers (Caddy front door, cron scheduler, the Python
+# scorer + its model servers, Postgres/MinIO/Redis/Neo4j) talk to them over `host.docker.internal`.
+# The proxy is a real front door: hit http://localhost/ and you get the live admin, /v7 → host API,
+# /v7/.../secure-chat + /secure-socket/ → host secure-chat, /moderator → scorer, /media → MinIO, all
+# same-origin. Run it with the dedicated `-f`:
+#
+#     docker compose -f docker-compose.dev.yml --profile selfhost --profile full up --build
+#
+# ── SAME TWO-AXIS PROFILE MODEL as docker-compose.yml (a bare `up` starts NOTHING) ────────────────
+#   Axis 1 — DATA PLANE (pick ONE):
+#     --profile supabase   external Supabase Postgres + Storage (no db/minio container)
+#     --profile selfhost   local Postgres (db) + MinIO — fully offline dev
+#   Axis 2 — OPTIONAL ADD-ONS (compose freely):
+#     --profile scorer       the Python moderation + social-graph stack: scorer (×3) + neo4j
+#     --profile secure-chat  Redis (the secure-chat suspension index — a HARD dep of the host secure-chat)
+#     --profile scale        Redis as the cross-replica rate-limit store
+#     --profile full         shorthand for ALL add-ons (= scorer + secure-chat)
+#     --profile demo         the 1:1 SDK compatibility harness behind the front door at /demo/
+#     --profile observability Grafana Alloy + LGTM (flip OTEL_SDK_DISABLED=false in .env to export)
+#
+# ── WHAT'S DIFFERENT vs docker-compose.yml (besides dropping the agora / secure-chat containers) ───
+#   • Every container that calls the app talks to the HOST: API_UPSTREAM / SECURE_CHAT_UPSTREAM /
+#     ADMIN_UPSTREAM, the scorer's API_BASE_URL, and cron's AGORA_URL / SECURE_CHAT_URL all resolve to
+#     `host.docker.internal` (extra_hosts maps it to host-gateway so this works on Linux too, not just
+#     Docker Desktop).
+#   • Backing ports are PUBLISHED to the host (redis :6379, db :5432, minio :9000/:9001, neo4j
+#     :7474/:7687) so your `pnpm dev` processes can reach them at localhost. Point your single host
+#     `.env` at localhost for these (DATABASE_URL=…@localhost:5432, REDIS_URL=redis://localhost:6379,
+#     NEO4J_URI=bolt://localhost:7687, S3_ENDPOINT=http://localhost:9000).
+#   • Containers that ALSO need the DB/Neo4j (scorer-worker) can't use your host `.env`'s localhost
+#     URLs (localhost inside a container is the container). They take *_DOCKER overrides that default to
+#     the in-network service names — selfhost works out of the box; on supabase set DATABASE_URL_DOCKER
+#     to the same cloud URL (it's reachable from both host and container). See each service below.
+#
+# Isolated project name so this stack's containers/volumes/network never collide with a
+# docker-compose.yml stack you may also have up.
+name: agora-dev
+
+services:
+  # ── backing services ─────────────────────────────────────────────────────────────────────────────
+  # Shared Redis — the secure-chat suspension index (hard dep of the host secure-chat process) + the
+  # optional cross-replica rate-limit store. PUBLISHED to the host so `pnpm dev` reaches it at
+  # localhost:6379 (set REDIS_URL=redis://localhost:6379 in .env).
+  redis:
+    image: redis:7-alpine
+    profiles: ["secure-chat", "scale", "full"]
+    command: ["redis-server", "--save", "", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru"]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    init: true
+    restart: unless-stopped
+
+  # Postgres for offline dev (selfhost). Same supabase/postgres image the migrations assume (pgvector +
+  # PostGIS + pgmq + auth roles). Published on :5432 → host DATABASE_URL=…@localhost:5432. Apply
+  # migrations from the host: `cd apps/api && pnpm db:migrate:run` (it reads your host .env).
+  db:
+    image: supabase/postgres:15.8.1.060
+    profiles: ["selfhost"]
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-please_change_me}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    init: true
+    restart: unless-stopped
+
+  # MinIO — S3-compatible storage for offline dev (STORAGE_PROVIDER=s3). Published on :9000 (API) /
+  # :9001 (console) → host S3_ENDPOINT=http://localhost:9000. The host API creates the bucket +
+  # public-read policy on first upload; the Caddy front door serves public objects at /media.
+  minio:
+    image: minio/minio:latest
+    profiles: ["selfhost"]
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-agora}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-please_change_me}
+    ports:
+      - "${MINIO_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    init: true
+    restart: unless-stopped
+
+  # Neo4j / DozerDB — social-graph DB. PUBLISHED (:7474 browser, :7687 Bolt) so the host API reaches it
+  # at bolt://localhost:7687 (NEO4J_URI in .env). The scorer-worker container reaches it in-network via
+  # NEO4J_URI_DOCKER (defaults bolt://neo4j:7687). Rides the `scorer` profile (scorer-worker hard-deps it).
+  neo4j:
+    profiles: ["scorer", "full"]
+    image: graphstack/dozerdb:5.26.3.0
+    environment:
+      NEO4J_AUTH: ${NEO4J_AUTH:-neo4j/please_change_me}
+      NEO4J_ACCEPT_LICENSE_AGREEMENT: ${NEO4J_ACCEPT_LICENSE_AGREEMENT:-yes}
+      NEO4J_initial_dbms_default__database: ${NEO4J_initial_dbms_default__database:-${NEO4J_DATABASE:-neo4j}}
+      NEO4J_PLUGINS: '["apoc"]'
+      NEO4J_apoc_export_file_enabled: ${NEO4J_apoc_export_file_enabled:-true}
+      NEO4J_apoc_import_file_enabled: ${NEO4J_apoc_import_file_enabled:-true}
+      NEO4J_dbms_security_procedures_unrestricted: ${NEO4J_dbms_security_procedures_unrestricted:-gds.*,apoc.*}
+      NEO4J_dbms_security_procedures_allowlist: ${NEO4J_dbms_security_procedures_allowlist:-gds.*,apoc.*}
+      NEO4J_server_memory_heap_initial__size: ${NEO4J_server_memory_heap_initial__size:-512m}
+      NEO4J_server_memory_heap_max__size: ${NEO4J_server_memory_heap_max__size:-1024m}
+      NEO4J_server_memory_pagecache_size: ${NEO4J_server_memory_pagecache_size:-256m}
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    volumes:
+      - neo4j-data:/data
+      - ./neo4j/plugins:/plugins    # OpenGDS jar (open-gds-*.jar) — loaded at startup
+    healthcheck:
+      test: ["CMD-SHELL", "cypher-shell -u \"$${NEO4J_AUTH%%/*}\" -p \"$${NEO4J_AUTH#*/}\" 'RETURN 1' >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 40s
+    init: true
+    restart: unless-stopped
+
+  # ── the Python scorer (the `scorer` profile) — built from source, like docker-compose.yml ─────────
+  # Two RoBERTa model servers (warm in RAM) + the orchestrator. The orchestrator writes moderation
+  # verdicts back to your HOST API over HTTP, and reads/writes the same Postgres (pgmq) the host API does.
+  scorer-toxicity:
+    profiles: ["scorer", "full"]
+    build:
+      context: .
+      dockerfile: services/scorer/Dockerfile.model-server
+    image: agora-scorer-model
+    env_file: .env
+    environment:
+      SCORER_MODEL: ${SCORER_TOXICITY_MODEL:-s-nlp/roberta_toxicity_classifier}
+      SCORER_MODEL_KIND: toxicity
+      SCORER_PORT: "8001"
+      OMP_NUM_THREADS: "1"
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      OTEL_SDK_DISABLED: ${OTEL_SDK_DISABLED:-true}
+      OTEL_SERVICE_NAME: agora-scorer-toxicity
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://alloy:4318}
+    cpuset: "0"
+    mem_limit: "1.5g"
+    init: true
+    restart: unless-stopped
+    volumes:
+      - scorer-hf-cache:/home/scorer/.cache/huggingface
+
+  scorer-relationship:
+    profiles: ["scorer", "full"]
+    build:
+      context: .
+      dockerfile: services/scorer/Dockerfile.model-server
+    image: agora-scorer-model
+    env_file: .env
+    environment:
+      SCORER_MODEL: ${SCORER_RELATIONSHIP_MODEL:-cardiffnlp/twitter-roberta-base-sentiment-latest}
+      SCORER_MODEL_KIND: relationship
+      SCORER_PORT: "8002"
+      OMP_NUM_THREADS: "1"
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      OTEL_SDK_DISABLED: ${OTEL_SDK_DISABLED:-true}
+      OTEL_SERVICE_NAME: agora-scorer-relationship
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://alloy:4318}
+    cpuset: "1"
+    mem_limit: "1.5g"
+    init: true
+    restart: unless-stopped
+    volumes:
+      - scorer-hf-cache:/home/scorer/.cache/huggingface
+
+  # Orchestrator: pgmq consumer + write-back + Neo4j edges + the operator-gated admin API on :4001.
+  #   • API_BASE_URL → the HOST API (write-back of moderation verdicts).
+  #   • DATABASE_URL → in-network service name on selfhost (your host .env's localhost would point the
+  #     container at itself). On the supabase data plane the cloud URL works from the container too, so
+  #     set DATABASE_URL_DOCKER to that same cloud URL in .env (or it falls back to DATABASE_URL).
+  #   • NEO4J_URI → the neo4j service (NEO4J_URI_DOCKER), not the host's localhost value.
+  scorer-worker:
+    profiles: ["scorer", "full"]
+    build:
+      context: .
+      dockerfile: services/scorer/Dockerfile.worker
+    image: agora-scorer-worker
+    env_file: .env
+    environment:
+      API_BASE_URL: ${API_BASE_URL_DOCKER:-http://host.docker.internal:4000}
+      DATABASE_URL: ${DATABASE_URL_DOCKER:-postgresql://postgres:${POSTGRES_PASSWORD:-please_change_me}@db:5432/postgres}
+      SCORER_TOXICITY_URL: http://scorer-toxicity:8001
+      SCORER_RELATIONSHIP_URL: http://scorer-relationship:8002
+      SCORER_ADMIN_PORT: "4001"
+      NEO4J_URI: ${NEO4J_URI_DOCKER:-bolt://neo4j:7687}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      OTEL_SDK_DISABLED: ${OTEL_SDK_DISABLED:-true}
+      OTEL_SERVICE_NAME: agora-scorer-worker
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://alloy:4318}
+    ports:
+      - "${SCORER_ADMIN_PORT:-4001}:4001"
+    mem_limit: "512m"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      scorer-toxicity:
+        condition: service_started
+      scorer-relationship:
+        condition: service_started
+      neo4j:
+        condition: service_healthy
+    init: true
+    restart: unless-stopped
+
+  # ── Caddy front door (rides the data-plane profiles) — routes to the HOST dev code ────────────────
+  # Same image/Caddyfile as prod, but the upstreams point at host.docker.internal and the SPA catch-all
+  # is reverse-proxied to the host vite dev server (HMR rides the proxied websocket) instead of the
+  # baked static build. The dev routing snippet (agora-routes.dev.caddy) is mounted OVER the baked
+  # /etc/caddy/agora-routes.caddy that the Caddyfile imports.
+  proxy:
+    profiles: ["supabase", "selfhost"]
+    build:
+      context: .
+      dockerfile: deploy/proxy/Dockerfile
+    image: agora-proxy
+    environment:
+      # localhost → Caddy's internal CA, so the front door is HTTPS with no setup. Plain HTTP: SERVER_NAME=:80.
+      SERVER_NAME: ${SERVER_NAME:-localhost}
+      MAX_BODY_SIZE: ${MAX_BODY_SIZE:-25MB}
+      ACME_EMAIL: ${ACME_EMAIL:-}
+      ACME_CA: ${ACME_CA:-https://acme-staging-v02.api.letsencrypt.org/directory}
+      # App surfaces live on the HOST; moderator/minio/demo stay in-network. All resolved lazily, so a
+      # route just 502s while its target (a host process you haven't started, an off-profile container) is down.
+      API_UPSTREAM: ${API_UPSTREAM:-http://host.docker.internal:4000}
+      SECURE_CHAT_UPSTREAM: ${SECURE_CHAT_UPSTREAM:-http://host.docker.internal:4002}
+      ADMIN_UPSTREAM: ${ADMIN_UPSTREAM:-http://host.docker.internal:5173}
+      MODERATOR_UPSTREAM: ${MODERATOR_UPSTREAM:-http://scorer-worker:4001}
+      MINIO_UPSTREAM: ${MINIO_UPSTREAM:-http://minio:9000}
+      DEMO_UPSTREAM: ${DEMO_UPSTREAM:-http://demo:80}
+      S3_BUCKET: ${S3_BUCKET:-agora}
+    volumes:
+      - ${CADDYFILE:-./deploy/proxy/Caddyfile}:/etc/caddy/Caddyfile:ro
+      # Dev routing snippet — SPA + /assets reverse-proxied to the host vite server (no immutable cache).
+      - ./deploy/proxy/agora-routes.dev.caddy:/etc/caddy/agora-routes.caddy:ro
+      - ${CADDY_CERTS_DIR:-./deploy/proxy/certs}:/certs:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      scorer-worker:
+        condition: service_started
+        required: false
+    init: true
+    restart: unless-stopped
+
+  # Scheduler: fires the secret-gated /internal/cron/* endpoints against the HOST API on the crontab
+  # schedule. Needs CRON_SECRET in .env (without it the endpoints 503).
+  cron:
+    profiles: ["supabase", "selfhost"]
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile.cron
+    image: agora-cron
+    env_file: .env
+    environment:
+      AGORA_URL: ${AGORA_URL:-http://host.docker.internal:4000}
+      SECURE_CHAT_URL: ${SECURE_CHAT_URL:-http://host.docker.internal:4002}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    init: true
+    restart: unless-stopped
+
+  # ── agora-demo (the `demo` profile) — PULLED, served behind the front door at /demo/ ──────────────
+  demo:
+    profiles: ["demo"]
+    image: ${AGORA_DEMO_IMAGE:-docker.io/agoraserver/agora-demo:latest}
+    environment:
+      # Browser-facing — same-origin through Caddy → host API. Override for a non-localhost front door.
+      AGORA_DEMO_API_BASE_URL: ${AGORA_DEMO_API_BASE_URL:-http://localhost/v7}
+      AGORA_DEMO_PROJECT_ID: ${AGORA_DEMO_PROJECT_ID:-11111111-1111-1111-1111-111111111111}
+    init: true
+    restart: unless-stopped
+
+  # ── Observability stack (the `observability` profile) ─────────────────────────────────────────────
+  # OTLP receiver published on :4317/:4318 so the HOST apps can export when OTEL_SDK_DISABLED=false
+  # (point their OTEL_*_ENDPOINT at http://localhost:4318).
+  alloy:
+    profiles: ["observability"]
+    image: grafana/alloy:v1.5.1
+    command:
+      - run
+      - /etc/alloy/config.alloy
+      - --storage.path=/var/lib/alloy/data
+      - --server.http.listen-addr=0.0.0.0:12345
+    volumes:
+      - ./deploy/observability/config.alloy:/etc/alloy/config.alloy:ro
+      - alloy-data:/var/lib/alloy/data
+    ports:
+      - "${ALLOY_PORT:-12345}:12345"   # Alloy UI
+      - "${ALLOY_OTLP_GRPC_PORT:-4317}:4317"
+      - "${ALLOY_OTLP_HTTP_PORT:-4318}:4318"
+    depends_on:
+      - tempo
+      - mimir
+      - loki
+    init: true
+    restart: unless-stopped
+
+  tempo:
+    profiles: ["observability"]
+    image: grafana/tempo:2.6.1
+    command: ["-config.file=/etc/tempo/tempo.yaml"]
+    volumes:
+      - ./deploy/observability/tempo.yaml:/etc/tempo/tempo.yaml:ro
+      - tempo-data:/var/tempo
+    init: true
+    restart: unless-stopped
+
+  mimir:
+    profiles: ["observability"]
+    image: grafana/mimir:2.14.2
+    command: ["-config.file=/etc/mimir/mimir.yaml"]
+    volumes:
+      - ./deploy/observability/mimir.yaml:/etc/mimir/mimir.yaml:ro
+      - mimir-data:/data
+    init: true
+    restart: unless-stopped
+
+  loki:
+    profiles: ["observability"]
+    image: grafana/loki:3.3.2
+    command: ["-config.file=/etc/loki/loki-config.yaml"]
+    volumes:
+      - ./deploy/observability/loki-config.yaml:/etc/loki/loki-config.yaml:ro
+      - loki-data:/loki
+    init: true
+    restart: unless-stopped
+
+  grafana:
+    profiles: ["observability"]
+    image: grafana/grafana:11.4.0
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_FEATURE_TOGGLES_ENABLE: traceqlEditor
+    volumes:
+      - ./deploy/observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    depends_on:
+      - tempo
+      - mimir
+      - loki
+    init: true
+    restart: unless-stopped
+
+volumes:
+  neo4j-data:
+  caddy-data:
+  caddy-config:
+  scorer-hf-cache:
+  db-data:
+  minio-data:
+  alloy-data:
+  tempo-data:
+  mimir-data:
+  loki-data:
+  grafana-data:

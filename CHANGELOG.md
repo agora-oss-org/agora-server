@@ -18,6 +18,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Documented in `deploy/proxy/README.md`, `docs/SELF-HOSTING.md`, and `.env.example`.
 
 ### Added
+- **`docker-compose.dev.yml` — local dev compose that runs the three app surfaces on the host.** A
+  standalone compose (`docker compose -f docker-compose.dev.yml --profile selfhost --profile full up`)
+  that brings up the backing services + supporting containers (Caddy front door, `cron`, the Python
+  scorer + model servers, Postgres/MinIO/Redis/Neo4j) but **omits** the `agora` API and `secure-chat`
+  containers — you run those plus the admin SPA as host `pnpm dev` (tsx/vite HMR). Mirrors the same
+  two-axis profile vocabulary as `docker-compose.yml`/`.prod` (`supabase`/`selfhost`, `scorer`,
+  `secure-chat`, `scale`, `full`, `demo`, `observability`). Every container that calls the app is
+  repointed at the host: the Caddy upstreams (`API_UPSTREAM`/`SECURE_CHAT_UPSTREAM`/new `ADMIN_UPSTREAM`),
+  the scorer's `API_BASE_URL`, and cron's `AGORA_URL`/`SECURE_CHAT_URL` all default to
+  `host.docker.internal` (with `extra_hosts: host-gateway` for Linux parity), and backing ports
+  (`redis:6379`, `db:5432`, `minio:9000/9001`, `neo4j:7474/7687`, Alloy OTLP `:4318`) are published so
+  host processes reach them at `localhost`. Containers that also need the DB/Neo4j take `*_DOCKER`
+  overrides (`DATABASE_URL_DOCKER`, existing `NEO4J_URI_DOCKER`) so a single host-oriented `.env` works
+  for both. Ships a dev Caddy routing snippet `deploy/proxy/agora-routes.dev.caddy` (mounted over the
+  baked one) whose SPA catch-all reverse-proxies the admin root to the host vite server (live HMR
+  through the front door) instead of the baked static build. Isolated compose project name `agora-dev`
+  so it never collides with a `docker-compose.yml` stack.
 - **CI: automatic GitHub Releases from CHANGELOG.md.** A new `release.yml` workflow fires on the same
   `v*` version tag as `docker-publish` / `npm-publish` and creates (or, on a re-pushed tag, updates) a
   GitHub Release whose notes are the CHANGELOG section for that exact version — the body between
