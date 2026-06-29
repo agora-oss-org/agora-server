@@ -214,6 +214,10 @@ services:
       SERVER_NAME: ${SERVER_NAME:-localhost}
       MAX_BODY_SIZE: ${MAX_BODY_SIZE:-25MB}
       ACME_EMAIL: ${ACME_EMAIL:-}
+      # ACME CA endpoint. Defaults to Let's Encrypt STAGING (untrusted certs, but no prod rate-limit risk
+      # while validating DNS/firewall). ⚠️ GOING LIVE: set ACME_CA to the prod directory in .env for real,
+      # browser-trusted certs: ACME_CA=https://acme-v02.api.letsencrypt.org/directory (see deploy/proxy/README.md).
+      ACME_CA: ${ACME_CA:-https://acme-staging-v02.api.letsencrypt.org/directory}
       # Per-service upstreams. Caddy resolves these LAZILY (per-request DNS), so a service that isn't
       # deployed (secure-chat without its profile, minio without selfhost) simply 502s its routes.
       API_UPSTREAM: http://agora:4000

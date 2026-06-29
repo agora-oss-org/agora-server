@@ -9,8 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **Caddy front door defaults to the Let's Encrypt *staging* ACME CA.** New `acme_ca` global option in
-  `deploy/proxy/Caddyfile` (driven by the `ACME_CA` env, threaded through the `proxy` service in
-  `docker-compose.yml`) so a first-time real-domain deploy validates DNS + firewall reachability without
+  `deploy/proxy/Caddyfile` (driven by the `ACME_CA` env, threaded through the `proxy` service in both
+  `docker-compose.yml` and `docker-compose.prod.yml`) so a first-time real-domain deploy validates DNS +
+  firewall reachability without
   burning the strict production rate limits. Staging certs are browser-untrusted (expected while testing);
   set `ACME_CA=https://acme-v02.api.letsencrypt.org/directory` for real certs before going live. Only
   affects a real-domain `SERVER_NAME` — `localhost` (internal CA) and `:80` (plain HTTP) never touch ACME.
