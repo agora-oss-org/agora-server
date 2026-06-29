@@ -5,16 +5,13 @@ import { useAuth } from "../../auth/AuthContext";
 import { cn } from "../../lib/cn";
 
 export function Topbar() {
-  const { user, session, signOut } = useAuth();
+  const { user, signOut } = useAuth();
   const navigate = useNavigate();
   const label = user?.name || user?.username || user?.email || "Account";
 
   return (
     <header className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-surface/60 px-6 backdrop-blur">
       <div className="flex items-center gap-3 text-xs text-faint">
-        <span>
-          project <code className="rounded bg-surface-2 px-1.5 py-0.5 text-muted">{session?.projectId}</code>
-        </span>
         <code className="rounded bg-surface-2 px-1.5 py-0.5 text-muted" title="Admin app version">
           v{__APP_VERSION__}
         </code>
