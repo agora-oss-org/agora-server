@@ -93,9 +93,9 @@ async def _run_ensure(monkeypatch: pytest.MonkeyPatch, db: str) -> list[tuple[st
 
 async def test_ensure_constraints_creates_non_default_db(monkeypatch: pytest.MonkeyPatch) -> None:
     log = await _run_ensure(monkeypatch, "agora-graph")
-    # CREATE DATABASE runs against the system db, exactly once.
+    # CREATE DATABASE runs against the system db, exactly once (backtick-quoted for Cypher parsing).
     creates = [q for d, q in log if d == "system"]
-    assert creates == ["CREATE DATABASE agora-graph IF NOT EXISTS"]
+    assert creates == ["CREATE DATABASE `agora-graph` IF NOT EXISTS"]
     # Constraints/indexes run against the target db, never the implicit default.
     target = [q for d, q in log if d == "agora-graph"]
     assert any("constraint scorer_user_id" in q for q in target)

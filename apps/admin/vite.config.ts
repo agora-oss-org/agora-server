@@ -21,6 +21,10 @@ export default defineConfig(() => {
     ],
     server: {
       port: 5173,
+      // Bind all interfaces only when DEV_HOST=true (the docker-compose.dev.yml workflow, where the
+      // Caddy container reaches this server via host.docker.internal). Default stays loopback-only so a
+      // plain `pnpm dev` isn't exposed on the LAN.
+      host: process.env.DEV_HOST === "true" || undefined,
       // Dev-only: proxy the API so the SPA talks same-origin (mirrors the nginx prod reverse proxy).
       proxy: {
         "/v7": { target: "http://localhost:4000", changeOrigin: true },

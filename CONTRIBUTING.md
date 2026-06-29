@@ -56,6 +56,10 @@ SDK's hooks is a regression, not a feature. Shared request/response types and zo
 
 ## Dev setup
 
+> 📖 For the full developer guide — setup, the three local run modes (incl. the hybrid
+> `docker-compose.dev.yml`), seeding, **debugging**, **researching the codebase**, and **testing** —
+> see **[`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md)**. The quick version follows.
+
 Prerequisites: **Node 22**, **corepack** (ships with Node), and a **Supabase project** (free tier is
 fine) for `DATABASE_URL`.
 

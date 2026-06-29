@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Scorer Neo4j startup no longer fails for a hyphenated `NEO4J_DATABASE`.** `ensure_constraints`
+  now backtick-quotes the database name in the `CREATE DATABASE` DDL (`services/scorer/scorer/neo4j.py`),
+  so a name like `agora-graph` parses in Cypher instead of erroring with
+  `Invalid input '-': expected ... 'IF NOT EXISTS'` and giving up on constraint setup. The regex name
+  guard already rejects backticks, so quoting stays injection-safe.
+- **Scorer `consumer poll failed` now logs its cause at `debug`.** The pgmq poll-loop catch was
+  message-only with no `debug` companion, making a repeating poll failure undiagnosable; it now emits
+  `repr(exc)` + traceback at `debug` (per the Log-with-intent convention), so `LOG_LEVEL=debug` reveals
+  why (e.g. a missing `pgmq.scorer_jobs` queue or an unreachable `DATABASE_URL`).
+
 ### Changed
 - **Caddy front door defaults to the Let's Encrypt *staging* ACME CA.** New `acme_ca` global option in
   `deploy/proxy/Caddyfile` (driven by the `ACME_CA` env, threaded through the `proxy` service in both
@@ -18,6 +29,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Documented in `deploy/proxy/README.md`, `docs/SELF-HOSTING.md`, and `.env.example`.
 
 ### Added
+- **`docs/DEVELOPMENT.md` — single developer guide (develop · debug · research · test).**
+  Consolidates the dev-loop material that was scattered across `CONTRIBUTING.md`,
+  `apps/api/README.md`, and `docs/CHEAT-SHEET.md` into one page: prerequisites/build, the **three local
+  run modes** (all-host `pnpm dev`, all-containers `docker-compose.yml`, the hybrid
+  `docker-compose.dev.yml`), seeding, the develop loop, debugging (log levels, test-JWT minting, the
+  secure-chat log correlator), researching the codebase, the two-tier test suite (+ the
+  integration-filter and `TMPDIR`/`ENOSPC` gotchas and the `db:migrate:run` foot-gun), and commit/PR
+  conventions. Linked from `README.md` and `CONTRIBUTING.md § Dev setup`.
 - **`docker-compose.dev.yml` — local dev compose that runs the three app surfaces on the host.** A
   standalone compose (`docker compose -f docker-compose.dev.yml --profile selfhost --profile full up`)
   that brings up the backing services + supporting containers (Caddy front door, `cron`, the Python
@@ -29,9 +48,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the scorer's `API_BASE_URL`, and cron's `AGORA_URL`/`SECURE_CHAT_URL` all default to
   `host.docker.internal` (with `extra_hosts: host-gateway` for Linux parity), and backing ports
   (`redis:6379`, `db:5432`, `minio:9000/9001`, `neo4j:7474/7687`, Alloy OTLP `:4318`) are published so
-  host processes reach them at `localhost`. Containers that also need the DB/Neo4j take `*_DOCKER`
-  overrides (`DATABASE_URL_DOCKER`, existing `NEO4J_URI_DOCKER`) so a single host-oriented `.env` works
-  for both. Ships a dev Caddy routing snippet `deploy/proxy/agora-routes.dev.caddy` (mounted over the
+  host processes reach them at `localhost`. The one container that also needs the DB (`scorer-worker`)
+  reaches the API + Neo4j at fixed in-network addresses (`host.docker.internal:4000`, `neo4j:7687`) and
+  uses the standard `DATABASE_URL` — on `supabase` the cloud URL works from the container as-is; on
+  `selfhost`, set `DEV_DATABASE_URL=…@db:5432/postgres` (mirrors `TEST_DATABASE_URL`; falls back to
+  `DATABASE_URL` when unset) since the host's `localhost:5432` won't reach the db from inside a container.
+  Ships a dev Caddy routing snippet `deploy/proxy/agora-routes.dev.caddy` (mounted over the
   baked one) whose SPA catch-all reverse-proxies the admin root to the host vite server (live HMR
   through the front door) instead of the baked static build. Isolated compose project name `agora-dev`
   so it never collides with a `docker-compose.yml` stack.

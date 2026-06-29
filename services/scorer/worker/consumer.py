@@ -78,7 +78,11 @@ async def run_consumer(settings: Settings, stop: asyncio.Event, wake: Optional[a
                     log(logger, "error", "job failed; will redeliver", msg_id=msg.msg_id)
                     log(logger, "debug", "job failure detail", msg_id=msg.msg_id,
                         err=repr(exc), trace=traceback.format_exc())
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            # Error-level stays message-only (no payload/trace); the cause goes to debug (off by
+            # default; the repeated poll failure is unreadable without LOG_LEVEL=debug to see why).
             log(logger, "error", "consumer poll failed")
+            log(logger, "debug", "consumer poll failure detail",
+                err=repr(exc), trace=traceback.format_exc())
         # Sleep up to one interval, but wake immediately on stop or a NOTIFY.
         await _wait_for_work(stop, wake, interval)

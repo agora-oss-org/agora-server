@@ -86,10 +86,11 @@ async def ensure_constraints(settings: Settings) -> None:
         try:
             # Create the target DozerDB database if it doesn't exist (DozerDB CREATE DATABASE both
             # creates and brings it online — no separate "join"). Run against the `system` db. The
-            # default `neo4j` always exists, so skip it. `db` is regex-validated above.
+            # default `neo4j` always exists, so skip it. `db` is regex-validated above; backticks let
+            # Cypher parse names with hyphens (e.g. agora-graph).
             if db != "neo4j":
                 async with driver.session(database="system") as system_session:
-                    await system_session.run(f"CREATE DATABASE {db} IF NOT EXISTS")
+                    await system_session.run(f"CREATE DATABASE `{db}` IF NOT EXISTS")
             async with db_session(driver, settings) as session:
                 await session.run("create constraint scorer_user_id if not exists for (u:User) require u.id is unique")
                 await session.run("create constraint scorer_content_id if not exists for (c:Content) require c.id is unique")

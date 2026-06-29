@@ -516,6 +516,9 @@ against Replyke — there's room to jump in, whatever your level.
   the deployment guide.
 - 📋 **Before you start,** read **[CONTRIBUTING.md](CONTRIBUTING.md)** — dev setup, the contract
   rules, coding conventions, the migration workflow, and how to open a PR.
+- 🛠️ **Setting up to hack on it?** **[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)** is the full
+  developer guide — the three local run modes, seeding, debugging, researching the codebase, and
+  testing.
 - 📖 **New here?** The **[wiki](https://github.com/agora-oss-org/agora-server/wiki)** is a curated
   handbook (getting started, deployment, architecture, the subsystems) that links into the deep `docs/`.
   Its source lives in `wiki/` and is auto-published — edit it via PR, see [CONTRIBUTING.md](CONTRIBUTING.md#editing-the-wiki).

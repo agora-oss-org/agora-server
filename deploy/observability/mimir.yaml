@@ -14,6 +14,14 @@ common:
     filesystem:
       dir: /data/storage
 
+# Single-node (monolithic) deploy: one ingester in the ring. Mimir defaults to
+# replication_factor 3, whose write quorum (2 live replicas) can never be met by a
+# lone ingester — every remote-write 500s with "at least 2 live replicas required,
+# could only find 1". RF 1 makes the single ingester authoritative. Scale-out needs RF 3.
+ingester:
+  ring:
+    replication_factor: 1
+
 blocks_storage:
   backend: filesystem
   filesystem:
