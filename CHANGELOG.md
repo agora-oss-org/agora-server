@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Social analytics no longer warns when the graph is empty.** `withProjectedGdsGraph`
+  (`apps/api/src/lib/social-gds.ts`) now returns early for an empty candidate set and pre-counts
+  matching `:User` nodes before projecting, degrading to `null` with a single `debug` line instead of
+  letting `gds.graph.project.cypher` throw `Node-Query returned no nodes`. Before the scorer has
+  projected any nodes/edges that exception surfaced as a `WARN`+stack on every
+  `/admin/social/recompute`; genuine GDS failures still warn.
 - **Scorer Neo4j startup no longer fails for a hyphenated `NEO4J_DATABASE`.** `ensure_constraints`
   now backtick-quotes the database name in the `CREATE DATABASE` DDL (`services/scorer/scorer/neo4j.py`),
   so a name like `agora-graph` parses in Cypher instead of erroring with
@@ -29,6 +35,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Documented in `deploy/proxy/README.md`, `docs/SELF-HOSTING.md`, and `.env.example`.
 
 ### Added
+- **`docker-compose.dev.yml` `--profile neo4j` starts just the graph DB.** Added `neo4j` to the neo4j
+  service's profile list so `docker compose -f docker-compose.dev.yml --profile neo4j up` brings up
+  Neo4j alone (no scorer model servers or LGTM stack) — for graph dev or exercising the API's
+  `/social/*` reads against a live graph without the full scorer fleet's memory footprint.
 - **`docs/DEVELOPMENT.md` — single developer guide (develop · debug · research · test).**
   Consolidates the dev-loop material that was scattered across `CONTRIBUTING.md`,
   `apps/api/README.md`, and `docs/CHEAT-SHEET.md` into one page: prerequisites/build, the **three local

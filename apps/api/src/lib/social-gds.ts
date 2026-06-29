@@ -34,6 +34,8 @@ export async function withProjectedGdsGraph<T>(
   userIds: string[],
   fn: (session: Session, graphName: string) => Promise<T>,
 ): Promise<T | null> {
+  // No candidate users → nothing to project; skip the round-trip entirely.
+  if (userIds.length === 0) return null;
   const session = driver.session({ database: neo4jDatabase() });
   const dropGraph = async () => {
     try {
@@ -43,6 +45,15 @@ export async function withProjectedGdsGraph<T>(
   try {
     await session.run("RETURN gds.version()"); // feature-detect — throws if OpenGDS isn't installed
     await dropGraph(); // clear any stale projection from a crashed prior run
+    // Empty graph is a legitimate "no edges projected yet" state (e.g. the scorer hasn't run), NOT a
+    // failure: gds.graph.project.cypher throws "Node-Query returned no nodes" on zero nodes, so pre-check
+    // and degrade quietly. Mirrors GDS_NODE_QUERY so the count reflects exactly what the projection sees.
+    const counted = await session.run(
+      "MATCH (u:User) WHERE u.id IN $userIds RETURN count(u) AS c", { userIds });
+    if (toNum(counted.records[0]?.get("c")) === 0) {
+      logger.debug({ graphName, candidates: userIds.length }, "social: no graph nodes yet; skipping GDS projection");
+      return null;
+    }
     await session.run(
       `CALL gds.graph.project.cypher($g, $nodeQuery, $relQuery,
          { parameters: { userIds: $userIds }, validateRelationships: false }
