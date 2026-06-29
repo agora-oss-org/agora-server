@@ -8,12 +8,12 @@ import { db } from "../db/index.js";
 import { events, eventHosts, eventRsvps, eventInvites, spaceMembers, spaces } from "../db/schema/index.js";
 import { readPagination, paginate } from "../http/envelope.js";
 import { parseBody } from "../lib/validation.js";
-import { createEventSchema, updateEventSchema, rsvpSchema } from "@agora-server/contract";
-import { shapeEvent, shapeEventRsvp, generateShortId, loadUsers, parseInclude } from "../lib/shape.js";
+import { createEventSchema, updateEventSchema, rsvpSchema, eventUserIdSchema } from "@agora-server/contract";
+import { shapeEvent, shapeEventRsvp, shapeEventInvite, generateShortId, loadUsers, parseInclude } from "../lib/shape.js";
 import { isProjectAdmin } from "../lib/project-roles.js";
 import { removedPolicy, shouldHide } from "../lib/moderation-visibility.js";
 import { assertCanPostInSpace, assertCanReadSpace } from "../lib/space-access.js";
-import { isEventHost, canViewEvent, canRsvpGoing } from "../lib/events-policy.js";
+import { isEventHost, canViewEvent, canRsvpGoing, wouldOrphanHosts } from "../lib/events-policy.js";
 import { storeImageFromUpload } from "../lib/images.js";
 import { logger } from "../lib/logger.js";
 
@@ -307,4 +307,50 @@ export const eventRoutes = new Hono<{ Variables: Variables }>()
     const userMap = include.has("user") ? await loadUsers(c.var.projectId, rows.map((r) => r.userId)) : null;
     const data = rows.map((r) => shapeEventRsvp(r, userMap ? userMap.get(r.userId) ?? null : undefined));
     return c.json(paginate(data, total, page, limit));
+  })
+  // ── invites (host-only) ──
+  .post("/:eventId/invites", requireAuth, async (c) => {
+    const row = await getEventOr404(c, c.req.param("eventId"));
+    requireEventManage(c, await loadHostIds(row.id));
+    const { userId } = parseBody(eventUserIdSchema, await c.req.json().catch(() => ({})), "events");
+    await db.insert(eventInvites).values({ projectId: c.var.projectId, eventId: row.id, userId }).onConflictDoNothing();
+    return c.json(await buildEventResponse(c, row));
+  })
+  .delete("/:eventId/invites", requireAuth, async (c) => {
+    const row = await getEventOr404(c, c.req.param("eventId"));
+    requireEventManage(c, await loadHostIds(row.id));
+    const { userId } = parseBody(eventUserIdSchema, await c.req.json().catch(() => ({})), "events");
+    // Removing an invite also drops that user's RSVP (revokes access to invite-only events).
+    await db.delete(eventInvites).where(and(eq(eventInvites.eventId, row.id), eq(eventInvites.userId, userId)));
+    await db.delete(eventRsvps).where(and(eq(eventRsvps.eventId, row.id), eq(eventRsvps.userId, userId)));
+    return c.json(await buildEventResponse(c, row));
+  })
+  .get("/:eventId/invites", requireAuth, async (c) => {
+    const row = await getEventOr404(c, c.req.param("eventId"));
+    requireEventManage(c, await loadHostIds(row.id)); // host-only list
+    const { page, limit, offset } = readPagination(c);
+    const rows = await db.select().from(eventInvites).where(eq(eventInvites.eventId, row.id))
+      .orderBy(desc(eventInvites.createdAt)).limit(limit).offset(offset);
+    const [{ total } = { total: 0 }] = await db.select({ total: count() }).from(eventInvites).where(eq(eventInvites.eventId, row.id));
+    const include = parseInclude(c);
+    const userMap = include.has("user") ? await loadUsers(c.var.projectId, rows.map((r) => r.userId)) : null;
+    const data = rows.map((r) => shapeEventInvite(r, userMap ? userMap.get(r.userId) ?? null : undefined));
+    return c.json(paginate(data, total, page, limit));
+  })
+  // ── hosts ──
+  .post("/:eventId/hosts", requireAuth, async (c) => {
+    const row = await getEventOr404(c, c.req.param("eventId"));
+    requireEventManage(c, await loadHostIds(row.id));
+    const { userId } = parseBody(eventUserIdSchema, await c.req.json().catch(() => ({})), "events");
+    await db.insert(eventHosts).values({ projectId: c.var.projectId, eventId: row.id, userId }).onConflictDoNothing();
+    return c.json(await buildEventResponse(c, row));
+  })
+  .delete("/:eventId/hosts", requireAuth, async (c) => {
+    const row = await getEventOr404(c, c.req.param("eventId"));
+    const hostIds = await loadHostIds(row.id);
+    requireEventManage(c, hostIds);
+    const { userId } = parseBody(eventUserIdSchema, await c.req.json().catch(() => ({})), "events");
+    if (wouldOrphanHosts(hostIds, userId)) throw Errors.badRequest("events/last-host", "An event must have at least one host");
+    await db.delete(eventHosts).where(and(eq(eventHosts.eventId, row.id), eq(eventHosts.userId, userId)));
+    return c.json(await buildEventResponse(c, row));
   });
