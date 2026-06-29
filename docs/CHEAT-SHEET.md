@@ -111,6 +111,7 @@ the `auth` roles. So "self-hosted" drops the Supabase *service*, not the Supabas
 |---|---|---|
 | `SERVER_NAME` | ◻️ | Your **domain** (e.g. `agora.example.com`) → auto-HTTPS via Let's Encrypt (DNS must point here; `:80`+`:443` reachable). · `:80` → **plain HTTP**, no TLS/ACME (behind your own terminator/CDN, or local dev). · *unset* → `localhost` with Caddy's internal CA. |
 | `RATE_LIMIT_TRUSTED_HOPS` | ◻️ | `1` (default) — one hop = the bundled Caddy. Use `2` only if a CDN/LB sits **in front of** Caddy. |
+| `ACME_CA` | ◻️ | ACME directory. **Defaults to Let's Encrypt _staging_** (untrusted certs — browsers warn — but no prod rate-limit risk while you validate DNS/firewall). ⚠️ **Going live:** set `https://acme-v02.api.letsencrypt.org/directory` for real, trusted certs. Only affects a real-domain `SERVER_NAME` (`localhost`/`:80` never hit ACME). |
 | `ACME_EMAIL` | ◻️ | Let's Encrypt expiry notices. Certs issue fine without it (also uncomment `email` in the Caddyfile to use). |
 | `CADDYFILE` / `CADDY_CERTS_DIR` | ◻️ | **Onion / static-cert mode only:** `./deploy/proxy/Caddyfile.onion` + a dir holding `site.pem`/`site.key`. See [`deploy/proxy/README.md`](../deploy/proxy/README.md). |
 
@@ -174,6 +175,8 @@ SUPABASE_URL=https://<ref>.supabase.co
 SUPABASE_ANON_KEY=<anon key>
 SUPABASE_SERVICE_ROLE_KEY=<service_role key>
 SERVER_NAME=your.domain        # or :80 for plain HTTP
+# ACME_CA defaults to Let's Encrypt STAGING (untrusted certs); set the prod directory before going live:
+ACME_CA=https://acme-v02.api.letsencrypt.org/directory
 ```
 
 **B. Fully self-contained** (`--profile selfhost`)
@@ -190,6 +193,8 @@ S3_ACCESS_KEY_ID=agora
 S3_SECRET_ACCESS_KEY=<same as MINIO_ROOT_PASSWORD>
 DEFAULT_AUTH_PROVIDER=native
 SERVER_NAME=your.domain        # or :80
+# ACME_CA defaults to Let's Encrypt STAGING (untrusted certs); set the prod directory before going live:
+ACME_CA=https://acme-v02.api.letsencrypt.org/directory
 ```
 
 **C. Everything** (`--profile full --profile <supabase|selfhost>`) — add to A or B:

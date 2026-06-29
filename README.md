@@ -433,7 +433,10 @@ docker compose --profile selfhost up --build            # just the API, self-con
 docker compose --profile full --profile selfhost up     # + every optional add-on
 ```
 
-For a real domain set `SERVER_NAME=your.domain` (DNS → this host so ACME can validate on :80). For Tor
+For a real domain set `SERVER_NAME=your.domain` (DNS → this host so ACME can validate on :80). ⚠️ ACME
+defaults to Let's Encrypt **staging** (untrusted certs, but no prod rate-limit risk while you validate
+DNS/firewall) — set `ACME_CA=https://acme-v02.api.letsencrypt.org/directory` for real, trusted certs
+before going live. For Tor
 hidden services — or any deploy where Let's Encrypt can't reach you — a second
 [`Caddyfile.onion`](deploy/proxy/Caddyfile.onion) serves a cert you supply at startup instead of
 auto-ACME (selected via the `CADDYFILE` env var); plain HTTP behind your own TLS terminator: set

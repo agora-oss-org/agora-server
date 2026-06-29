@@ -46,6 +46,9 @@ every service, and adds HSTS + security headers, a body-size cap, and an authori
 `X-Forwarded-For`. For a real domain set `SERVER_NAME=your.domain` (DNS → this host so ACME can
 validate on `:80`) and `RATE_LIMIT_TRUSTED_HOPS=1`.
 
+- ⚠️ **ACME defaults to Let's Encrypt _staging_** (untrusted certs, but safe against prod rate limits
+  while you validate DNS/firewall). Set `ACME_CA=https://acme-v02.api.letsencrypt.org/directory` for
+  real, browser-trusted certs before going live.
 - Plain HTTP behind your own TLS terminator: `SERVER_NAME=:80`.
 - Tor / bring-your-own-cert: the `Caddyfile.onion` static-cert variant (via `CADDYFILE`).
 - Custom routing / extra site blocks, and overriding the baked config via bind mounts:
