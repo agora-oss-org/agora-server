@@ -1,6 +1,6 @@
 // /v7/:projectId/events/* — events, RSVPs, invites, hosts (SDK v7.6.2). Pure REST (no sockets).
 import { Hono } from "hono";
-import { and, eq, isNull, sql, count, asc, type SQL } from "drizzle-orm";
+import { and, eq, isNull, sql, count, asc, desc, type SQL } from "drizzle-orm";
 import type { Variables } from "../http/context.js";
 import { Errors } from "../http/errors.js";
 import { requireAuth } from "../middleware/auth.js";
@@ -8,12 +8,12 @@ import { db } from "../db/index.js";
 import { events, eventHosts, eventRsvps, eventInvites, spaceMembers, spaces } from "../db/schema/index.js";
 import { readPagination, paginate } from "../http/envelope.js";
 import { parseBody } from "../lib/validation.js";
-import { createEventSchema, updateEventSchema } from "@agora-server/contract";
-import { shapeEvent, generateShortId, loadUsers, parseInclude } from "../lib/shape.js";
+import { createEventSchema, updateEventSchema, rsvpSchema } from "@agora-server/contract";
+import { shapeEvent, shapeEventRsvp, generateShortId, loadUsers, parseInclude } from "../lib/shape.js";
 import { isProjectAdmin } from "../lib/project-roles.js";
 import { removedPolicy, shouldHide } from "../lib/moderation-visibility.js";
 import { assertCanPostInSpace, assertCanReadSpace } from "../lib/space-access.js";
-import { isEventHost, canViewEvent } from "../lib/events-policy.js";
+import { isEventHost, canViewEvent, canRsvpGoing } from "../lib/events-policy.js";
 import { storeImageFromUpload } from "../lib/images.js";
 import { logger } from "../lib/logger.js";
 
@@ -268,4 +268,43 @@ export const eventRoutes = new Hono<{ Variables: Variables }>()
     await db.update(events).set({ status: "cancelled" }).where(eq(events.id, row.id));
     const [fresh] = await db.select().from(events).where(eq(events.id, row.id)).limit(1);
     return c.json(await buildEventResponse(c, fresh!));
+  })
+  .post("/:eventId/rsvp", requireAuth, async (c) => {
+    const row = await getEventOr404(c, c.req.param("eventId"));
+    const { status } = parseBody(rsvpSchema, await c.req.json().catch(() => ({})), "events");
+    if (row.status === "cancelled" || row.startTime.getTime() < Date.now()) {
+      throw Errors.badRequest("events/rsvp-closed", "RSVPs are closed for this event");
+    }
+    if (status === "maybe" && !row.allowMaybe) throw Errors.badRequest("events/maybe-not-allowed", "This event does not allow 'maybe'");
+    if (status === "going") {
+      const counts = await loadRsvpCounts(row.id);
+      // Only count an additional seat if the caller isn't already 'going'.
+      const [mine] = await db.select({ status: eventRsvps.status }).from(eventRsvps)
+        .where(and(eq(eventRsvps.eventId, row.id), eq(eventRsvps.userId, c.var.auth!.userId))).limit(1);
+      const effectiveGoing = mine?.status === "going" ? counts.going - 1 : counts.going;
+      if (!canRsvpGoing(effectiveGoing, row.capacity)) throw Errors.badRequest("events/capacity-full", "This event is at capacity");
+    }
+    await db.insert(eventRsvps).values({ projectId: c.var.projectId, eventId: row.id, userId: c.var.auth!.userId, status })
+      .onConflictDoUpdate({ target: [eventRsvps.eventId, eventRsvps.userId], set: { status, updatedAt: new Date() } });
+    return c.json(await buildEventResponse(c, row));
+  })
+  .delete("/:eventId/rsvp", requireAuth, async (c) => {
+    const row = await getEventOr404(c, c.req.param("eventId"));
+    await db.delete(eventRsvps).where(and(eq(eventRsvps.eventId, row.id), eq(eventRsvps.userId, c.var.auth!.userId)));
+    return c.json(await buildEventResponse(c, row));
+  })
+  .get("/:eventId/rsvps", async (c) => {
+    const row = await getEventOr404(c, c.req.param("eventId"));
+    const hostIds = await loadHostIds(row.id);
+    const isHostOrAdmin = !!(c.var.auth && (isProjectAdmin(c.var.auth) || isEventHost(hostIds, c.var.auth.userId)));
+    if (!isHostOrAdmin && !row.guestListVisible) throw Errors.forbidden("events/guest-list-hidden", "The guest list is private");
+    const { page, limit, offset } = readPagination(c);
+    const status = c.req.query("status");
+    const where = and(eq(eventRsvps.eventId, row.id), status ? sql`${eventRsvps.status} = ${status}::rsvp_status` : undefined);
+    const rows = await db.select().from(eventRsvps).where(where).orderBy(desc(eventRsvps.createdAt)).limit(limit).offset(offset);
+    const [{ total } = { total: 0 }] = await db.select({ total: count() }).from(eventRsvps).where(where);
+    const include = parseInclude(c);
+    const userMap = include.has("user") ? await loadUsers(c.var.projectId, rows.map((r) => r.userId)) : null;
+    const data = rows.map((r) => shapeEventRsvp(r, userMap ? userMap.get(r.userId) ?? null : undefined));
+    return c.json(paginate(data, total, page, limit));
   });
