@@ -27,5 +27,9 @@ describe("shapeEvent", () => {
   it("includes userRsvp when provided (incl. null)", () => {
     const out = shapeEvent(row, { location: null, hostIds: [], rsvpCounts: { going: 0, maybe: 0, not_going: 0 }, userRsvp: "going" }) as any;
     expect(out.userRsvp).toBe("going");
+    // null must be serialized (not omitted) — the !== undefined guard is what makes this work
+    const outNull = shapeEvent(row, { location: null, hostIds: [], rsvpCounts: { going: 0, maybe: 0, not_going: 0 }, userRsvp: null }) as any;
+    expect("userRsvp" in outNull).toBe(true);
+    expect(outNull.userRsvp).toBeNull();
   });
 });
