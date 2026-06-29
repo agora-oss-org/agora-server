@@ -10,6 +10,7 @@ import {
   createCollectionSchema,
   moderationSchema,
 } from "./validation.js";
+import { createEventSchema, rsvpSchema, rsvpStatusEnum } from "@agora-server/contract";
 
 describe("SDK contract — request field names (Class 1)", () => {
   describe("change-password: SDK sends `password` for the current password", () => {
@@ -77,5 +78,20 @@ describe("SDK contract — request field names (Class 1)", () => {
       expect(r.success).toBe(true);
       if (r.success) expect(r.data.status).toBe("approved");
     });
+  });
+});
+
+describe("event schemas", () => {
+  it("requires title, startTime, and type on create", () => {
+    expect(createEventSchema.safeParse({ title: "Party", startTime: "2026-07-01T18:00:00Z", type: "online" }).success).toBe(true);
+    expect(createEventSchema.safeParse({ title: "Party" }).success).toBe(false); // missing startTime/type
+  });
+  it("rejects an unknown event type", () => {
+    expect(createEventSchema.safeParse({ title: "x", startTime: "2026-07-01T18:00:00Z", type: "bogus" }).success).toBe(false);
+  });
+  it("accepts the three RSVP statuses and rejects others", () => {
+    for (const s of ["going", "maybe", "not_going"]) expect(rsvpSchema.safeParse({ status: s }).success).toBe(true);
+    expect(rsvpSchema.safeParse({ status: "perhaps" }).success).toBe(false);
+    expect(rsvpStatusEnum.options).toEqual(["going", "maybe", "not_going"]);
   });
 });
