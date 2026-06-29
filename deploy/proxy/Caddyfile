@@ -10,6 +10,15 @@
 # Plain-HTTP / behind-an-external-TLS-terminator: set SERVER_NAME=:80 so Caddy serves HTTP only and
 # skips ACME (replaces the old bare-nginx-on-8080 mode).
 {
+	# ACME CA endpoint. DEFAULTS TO LET'S ENCRYPT *STAGING* so first-time deploys can validate DNS +
+	# firewall reachability WITHOUT burning the strict production rate limits (5 failed validations/hour,
+	# 5 duplicate certs/week → locked out). ⚠️ Staging certs are signed by an UNTRUSTED root, so browsers
+	# show a security warning — this is expected until you go to prod. FLIP TO PRODUCTION for real,
+	# browser-trusted certs by setting in .env:
+	#   ACME_CA=https://acme-v02.api.letsencrypt.org/directory
+	# (Only consulted for a real-domain SERVER_NAME — `localhost` uses the internal CA and `:80` skips ACME.)
+	acme_ca {$ACME_CA:https://acme-staging-v02.api.letsencrypt.org/directory}
+
 	# ACME account email for Let's Encrypt expiry notices (optional; certs issue fine without it).
 	# Uncomment + set, or add `email you@example.com` here:
 	# email {$ACME_EMAIL}

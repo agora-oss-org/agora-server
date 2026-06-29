@@ -32,9 +32,24 @@ client ──HTTPS:443──▶ proxy (Caddy: TLS + SPA + router) ──▶ agor
 SERVER_NAME=agora.example.com      # your real domain (drives cert issuance)
 RATE_LIMIT_TRUSTED_HOPS=1          # one proxy in front of the api (just Caddy)
 # MAX_BODY_SIZE=25MB               # optional; default 25MB
+ACME_CA=https://acme-v02.api.letsencrypt.org/directory   # ⚠️ REQUIRED for prod — see below
 
 docker compose --profile supabase up --build
 ```
+
+> ### ⚠️ Switch to production ACME before going live
+>
+> The Caddyfile **defaults to the Let's Encrypt *staging* CA** (`acme_ca` in the global block) so a
+> first-time deploy can validate that DNS + the firewall are right **without** burning the strict
+> production rate limits (5 failed validations/hour, 5 duplicate certs/week → locked out for a week).
+> **Staging certs are signed by an untrusted root, so browsers show a security warning** — that's
+> expected while testing. Once the green-lock test passes against staging, set in `.env`:
+> ```bash
+> ACME_CA=https://acme-v02.api.letsencrypt.org/directory
+> ```
+> and restart the proxy (`docker compose up -d proxy`) to get real, browser-trusted certs. This only
+> matters for a real-domain `SERVER_NAME` — `localhost` (internal CA) and `SERVER_NAME=:80` (plain HTTP)
+> never touch ACME, staging or prod.
 
 - Point your domain's **DNS at this host** and make sure ports **80 and 443 are publicly reachable** —
   Caddy serves the ACME HTTP-01 challenge on `:80` and the site on `:443`. Caddy provisions the cert on

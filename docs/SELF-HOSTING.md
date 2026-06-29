@@ -72,6 +72,11 @@ profile-gated, so a bare `docker compose up` starts nothing.)
    > friction-free local run — `http://localhost` is a browser "secure context", so secure-chat's
    > WebCrypto still works. For a real host, set `SERVER_NAME=<your.domain>` and
    > `S3_PUBLIC_URL=https://<your.domain>/media` (auto-HTTPS).
+   >
+   > ⚠️ **Going to production with a real domain:** the Caddy front door defaults to the Let's Encrypt
+   > **staging** CA (untrusted certs, but safe against prod rate limits while you validate DNS/firewall).
+   > Set `ACME_CA=https://acme-v02.api.letsencrypt.org/directory` in `.env` for real, browser-trusted
+   > certs. See [deploy/proxy/README.md](../deploy/proxy/README.md#run-it).
 
 2. **Bring the stack up** — `--profile selfhost` is the API + local db + minio (incl. the Caddy front
    door); add `--profile full` for all optional add-ons, or `--profile scorer`/`--profile secure-chat`/

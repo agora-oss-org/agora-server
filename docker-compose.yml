@@ -334,6 +334,10 @@ services:
       # Caddyfile's global block. Left empty by default (an empty `email` arg would make Caddy error,
       # which is why the Caddyfile line stays commented until you opt in). Unused by the onion variant.
       ACME_EMAIL: ${ACME_EMAIL:-}
+      # ACME CA endpoint. Defaults to Let's Encrypt STAGING (untrusted certs, but no prod rate-limit risk
+      # while validating DNS/firewall). Set ACME_CA to the prod directory for real, browser-trusted certs:
+      #   ACME_CA=https://acme-v02.api.letsencrypt.org/directory   (see deploy/proxy/README.md)
+      ACME_CA: ${ACME_CA:-https://acme-staging-v02.api.letsencrypt.org/directory}
       # Per-service upstreams (same env names the old admin nginx used). Caddy resolves these LAZILY
       # (per-request DNS), so a service that isn't deployed (secure-chat without `--profile secure`,
       # minio without `--profile selfhost`) simply 502s on its routes instead of crashing the proxy.
