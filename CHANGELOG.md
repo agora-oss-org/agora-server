@@ -35,6 +35,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Documented in `deploy/proxy/README.md`, `docs/SELF-HOSTING.md`, and `.env.example`.
 
 ### Added
+- **Events domain — community events with RSVPs, invites, and co-hosts.** New `events` /
+  `event_rsvps` / `event_invites` / `event_hosts` tables (+ `files.event_id` so cover/gallery images
+  link to an event) and the `/v7/:projectId/events/*` REST surface (14 endpoints): CRUD + `cancel`,
+  RSVP set/withdraw/list (capacity + `allowMaybe` + closed-event gates), invites (host-only,
+  idempotent; removing an invite also drops the RSVP), and co-host add/remove (last-host guard). Event
+  visibility is `public | members | invite` (per-row gated on read; the list shows public + the
+  caller's own visible set), removed events are hidden from non-admins, and a PostGIS `location` powers
+  `locationFilters` radius (km) list filtering. Cover + gallery images go through the existing image
+  pipeline. New `@agora-server/contract` `Event` / `EventRsvp` / `EventInvite` types + `createEvent` /
+  `updateEvent` / `rsvp` request schemas. Documented in `docs/MODELS.md` + `docs/MANIFEST.md` (🔶
+  inferred — SDK-derived, not yet round-tripped against the live SDK).
 - **`docker-compose.dev.yml` `--profile neo4j` starts just the graph DB.** Added `neo4j` to the neo4j
   service's profile list so `docker compose -f docker-compose.dev.yml --profile neo4j up` brings up
   Neo4j alone (no scorer model servers or LGTM stack) — for graph dev or exercising the API's

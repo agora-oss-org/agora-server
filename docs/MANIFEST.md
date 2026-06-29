@@ -214,6 +214,33 @@ signs an RS256 JWT (issuer=projectId, aud="replyke.com", sub=userData.id, claim 
 | PATCH | `/spaces/:id/reports/entity/:id` | ✅ |
 | PATCH | `/spaces/:id/reports/comment/:id` | ✅ |
 
+### events
+Community events with RSVPs, invites, and co-hosts (Agora extension, SDK-derived — not yet
+round-tripped against the live SDK, hence 🔶). Visibility is `public | members | invite`
+(`members` = space members when `spaceId` is set, else any authed user); the list shows public events
+plus the caller's own visible set, single GET enforces the per-row gate (`403 events/not-visible`).
+Removed events are hidden from non-admins. **Manage** (PATCH/DELETE/cancel/invites/hosts) is gated to a
+host or project-admin (`403 events/not-host`). RSVP gates: `400 events/rsvp-closed` (cancelled or
+past), `events/maybe-not-allowed`, `events/capacity-full`. Removing the last host is rejected
+(`400 events/last-host`); a hidden guest list 403s non-hosts (`events/guest-list-hidden`).
+`POST /events` accepts JSON or `multipart/form-data` (`cover` + `gallery` images → the image pipeline).
+| Method | Path | Status |
+|---|---|---|
+| POST | `/events` (create; JSON or `multipart/form-data` with `cover`/`gallery`; creator auto-added as host) | 🔶 |
+| GET | `/events` (list; `page/limit/sortBy(startTime\|going)/sortDir/timeWindow(upcoming\|past\|ongoing)/spaceId/hostId/type/status/startsAfter/startsBefore/locationFilters[latitude\|longitude\|radius]` km) | 🔶 |
+| GET | `/events/:eventId` (`?include=user,userRsvp`) | 🔶 |
+| PATCH | `/events/:eventId` (host/admin; `removeImageIds` drops gallery files) | 🔶 |
+| DELETE | `/events/:eventId` (host/admin; soft-delete) | 🔶 |
+| POST | `/events/:eventId/cancel` (host/admin; sets `status=cancelled`) | 🔶 |
+| POST | `/events/:eventId/rsvp` (`{ status: going\|maybe\|not_going }`; upsert) | 🔶 |
+| DELETE | `/events/:eventId/rsvp` (withdraw own RSVP) | 🔶 |
+| GET | `/events/:eventId/rsvps` (`?status=`, `?include=user`; host/admin or `guestListVisible`) | 🔶 |
+| POST | `/events/:eventId/invites` (host/admin; `{ userId }`; idempotent) | 🔶 |
+| DELETE | `/events/:eventId/invites` (host/admin; `{ userId }`; also drops that user's RSVP) | 🔶 |
+| GET | `/events/:eventId/invites` (host/admin only; `?include=user`) | 🔶 |
+| POST | `/events/:eventId/hosts` (host/admin; `{ userId }`; idempotent) | 🔶 |
+| DELETE | `/events/:eventId/hosts` (host/admin; `{ userId }`; `400 events/last-host`) | 🔶 |
+
 ### chat (REST side — realtime is §4)
 | Method | Path | Status |
 |---|---|---|
@@ -361,7 +388,8 @@ lists captured in `docs/MODELS.md` (source: `interfaces/models/`):
 `Reaction` (+ `ReactionCounts`, 8 `ReactionType`s), `Space`/`SpaceDetailed`/`SpacePreview`,
 `SpaceMember`, `Rule`, `Conversation`/`ConversationPreview`, `ConversationMember`,
 `ChatMessage`, `Follow`, `Connection` (+ its many response shapes), `Collection`,
-`File`/`FileImage`, `Image`, `Mention` (user|space), `Project`, and the 17-variant
+`File`/`FileImage`, `Image`, `Mention` (user|space), `Project`,
+`Event`/`EventRsvp`/`EventInvite`, and the 17-variant
 `UnifiedAppNotification` union.
 
 **Reaction types (8):** `upvote, downvote, like, love, wow, sad, angry, funny`.

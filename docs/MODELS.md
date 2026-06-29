@@ -99,3 +99,13 @@ shape (see `AppNotification.ts`). Store generically: `type` + `action` + jsonb `
 
 ## Project
 `id, clientId, name, integrations[]{id, projectId, name, data(jsonb), createdAt}, createdAt, updatedAt`
+
+## Event / EventRsvp / EventInvite
+Event: `id, shortId, projectId, userId?, user?, title, description?, startTime, endTime?, timezone?,
+type(online|physical|hybrid), url?, venueName?, address?, location?(GeoJSON Point), spaceId?, space?,
+visibility(public|members|invite), status(active|cancelled), allowMaybe, guestListVisible, capacity?,
+hostIds[], coverImageId?, files?[], rsvpCounts{going, maybe, not_going}, userRsvp?(going|maybe|not_going),
+metadata(jsonb), createdAt, updatedAt, deletedAt?`
+`include`: user | userRsvp (and space/files when populated)
+EventRsvp: `id, eventId, userId, user?, status(going|maybe|not_going), createdAt, updatedAt`
+EventInvite: `id, eventId, userId, user?, invitedAt, createdAt, updatedAt`
