@@ -1,7 +1,7 @@
 // /v7/:projectId/chat/*  — conversations, members, messages.
 // REST writes fan out durable socket.io events (realtime/socket.ts) after the DB commit.
 import { Hono } from "hono";
-import { and, eq, desc, asc, count, inArray, gt, sql } from "drizzle-orm";
+import { and, eq, desc, asc, count, inArray, gt, ne, sql } from "drizzle-orm";
 import type { Variables } from "../http/context.js";
 import { Errors } from "../http/errors.js";
 import { requireAuth } from "../middleware/auth.js";
@@ -10,7 +10,7 @@ import {
   conversations, conversationMembers, chatMessages, chatMessageReactions, reports, profiles,
   spaces, spaceMembers,
 } from "../db/schema/index.js";
-import { shapeConversation, shapeConversationMember, shapeChatMessage, shapeFile, shapeUser, loadMessageFiles } from "../lib/shape.js";
+import { shapeConversation, shapeConversationMember, shapeChatMessage, shapeFile, shapeUser, loadMessageFiles, shapeConversationPreview, pickOtherMembers } from "../lib/shape.js";
 import { storeUpload } from "../lib/images.js";
 import {
   parseBody, createConversationSchema, directConversationSchema, updateConversationSchema,
@@ -57,6 +57,33 @@ async function userReactionsByMessage(messageIds: string[], userId: string | und
   return map;
 }
 
+// Build the inbox ConversationPreview for one (conversation, viewing member): latest message,
+// unread count vs the member's lastReadAt, and ≤5 other active members (empty for space chats).
+async function buildConversationPreview(c: any, convo: ConversationRow, member: MemberRow) {
+  const [last] = await db.select().from(chatMessages)
+    .where(eq(chatMessages.conversationId, convo.id)).orderBy(desc(chatMessages.createdAt)).limit(1);
+  const [{ u } = { u: 0 }] = await db.select({ u: count() }).from(chatMessages)
+    .where(and(eq(chatMessages.conversationId, convo.id), member.lastReadAt ? gt(chatMessages.createdAt, member.lastReadAt) : sql`true`));
+  let otherMembers: ReturnType<typeof pickOtherMembers> = [];
+  if (convo.type !== "space") {
+    const rows = await db.select({ p: profiles }).from(conversationMembers)
+      .innerJoin(profiles, eq(profiles.id, conversationMembers.userId))
+      .where(and(
+        eq(conversationMembers.conversationId, convo.id),
+        eq(conversationMembers.isActive, true),
+        ne(conversationMembers.userId, member.userId),
+      ))
+      .limit(5);
+    otherMembers = pickOtherMembers(rows.map((r) => shapeUser(r.p) as any));
+  }
+  return shapeConversationPreview(convo, {
+    unreadCount: u,
+    lastMessage: last ? (shapeChatMessage(last) as Record<string, unknown>) : null,
+    otherMembers,
+    currentMember: shapeConversationMember(member),
+  });
+}
+
 export const chatRoutes = new Hono<{ Variables: Variables }>()
   // ── conversations ─────────────────────────────────────────────────────────
   .get("/conversations", requireAuth, async (c) => {
@@ -86,18 +113,7 @@ export const chatRoutes = new Hono<{ Variables: Variables }>()
       .limit(limit + 1);
 
     const hasMore = rows.length > limit;
-    // Per-conversation lastMessage + unreadCount (page is small).
-    const data = await Promise.all(rows.slice(0, limit).map(async ({ convo, member }) => {
-      const [last] = await db.select().from(chatMessages)
-        .where(eq(chatMessages.conversationId, convo.id)).orderBy(desc(chatMessages.createdAt)).limit(1);
-      const [{ u } = { u: 0 }] = await db.select({ u: count() }).from(chatMessages)
-        .where(and(eq(chatMessages.conversationId, convo.id), member.lastReadAt ? gt(chatMessages.createdAt, member.lastReadAt) : sql`true`));
-      return shapeConversation(convo, {
-        unreadCount: u,
-        lastMessage: last ? shapeChatMessage(last) : null,
-        currentMember: shapeConversationMember(member),
-      });
-    }));
+    const data = await Promise.all(rows.slice(0, limit).map(({ convo, member }) => buildConversationPreview(c, convo, member)));
     return c.json({ conversations: data, hasMore });
   })
   .post("/conversations", requireAuth, async (c) => {
@@ -155,6 +171,11 @@ export const chatRoutes = new Hono<{ Variables: Variables }>()
     `)) as unknown as { total_unread: number; unread_conversation_count: number }[];
     const r = rows[0] ?? { total_unread: 0, unread_conversation_count: 0 };
     return c.json({ totalUnread: r.total_unread, unreadConversationCount: r.unread_conversation_count });
+  })
+  .get("/conversations/:id/preview", requireAuth, async (c) => {
+    const convo = await getConversation(c);
+    const member = await requireMember(c, convo.id);
+    return c.json(await buildConversationPreview(c, convo, member));
   })
   .get("/conversations/:id", requireAuth, async (c) => {
     const convo = await getConversation(c);
