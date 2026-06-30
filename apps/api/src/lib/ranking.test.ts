@@ -66,6 +66,7 @@ describe("RANKING_ALGORITHMS registry", () => {
     expect([...KNOWN_ALGORITHMS].sort()).toEqual([
       "bayesian",
       "controversial",
+      "createdAt",
       "decay",
       "gravity",
       "hot",
@@ -73,6 +74,12 @@ describe("RANKING_ALGORITHMS registry", () => {
       "top",
       "wilson",
     ]);
+  });
+
+  it("createdAt orders by createdAt honoring direction, with an id tiebreaker", () => {
+    const order = RANKING_ALGORITHMS.createdAt!.order(ctx as any);
+    expect(order.length).toBe(2); // createdAt + id tiebreaker
+    expect(RANKING_ALGORITHMS.createdAt!.storage).toBe("query-time");
   });
 
   it("only `hot` is index-served (stored); the rest are query-time", () => {

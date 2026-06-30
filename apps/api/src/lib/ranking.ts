@@ -75,6 +75,10 @@ export const RANKING_ALGORITHMS: Record<string, RankingAlgo> = {
   // "top this week/month". Ranks by the weighted net vote.
   top: { storage: "query-time", order: ({ weights, dir }) => [dir(netExpr(weights)), ...TIE] },
 
+  // Canonical chronological sort (SDK v7.6.2). Honors sortDir (asc|desc); `new` is its deprecated
+  // alias. Query-time (createdAt is indexed, but this isn't the denormalized score column).
+  createdAt: { storage: "query-time", order: ({ dir }) => [dir(entities.createdAt), desc(entities.id)] },
+
   new: { storage: "query-time", order: ({ dir }) => [dir(entities.createdAt), desc(entities.id)] },
 
   controversial: {
