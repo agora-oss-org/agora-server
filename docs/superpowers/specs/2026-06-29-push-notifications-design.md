@@ -193,3 +193,13 @@ choke point; wiring chat + its online/offline socket gating is a separate later 
   "send only to members whose socket is disconnected" gate.
 - **Deferred — per-user push preferences** (mute, quiet hours, per-type opt-out) — a future spec. v1's
   allowlist is the only filter.
+- **Deferred — provider-resolution caching (fast-follow perf).** `getProviders` resolves VAPID + FCM +
+  APNs from `project_integrations` on every push-worthy notification, and the FCM OAuth access token is
+  re-minted per `send`. Mirror `lib/social-config.ts`'s short-TTL per-project cache for the provider map,
+  and cache the FCM access token until near expiry. Non-blocking (web path is the only hot one; native is
+  credential-gated) — file as a follow-up ticket.
+- **Deferred — web-subscription cross-user persistence.** Web uniqueness is `(project, user, endpoint)`,
+  so a browser endpoint can persist under two users; if the SDK doesn't deregister on logout, user A's
+  stale row keeps delivering A's (generic, PII-free) pushes to a device later used by user B. By design
+  (deregister-on-logout is the SDK's job; the generic payload bounds the blast radius), but track it
+  alongside logout-deregister behavior.
