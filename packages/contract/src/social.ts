@@ -11,7 +11,7 @@ export const SOCIAL_PRIVACY_TIERS = ["community", "corporate"] as const;
 export type SocialPrivacyTier = (typeof SOCIAL_PRIVACY_TIERS)[number];
 
 // Flags that may only be true under the corporate tier. INVARIANT (docs/AGORA-CORP.md §4): the
-// k-anonymity floor is NOT in this list — no tier relaxes it below 5.
+// k-anonymity floor is NOT in this list — no tier relaxes it below 2.
 export const CORPORATE_ONLY_FLAGS = [
   "influenceScoresEnabled",
   "siloDetectionEnabled",
@@ -26,7 +26,7 @@ export interface ResolvedSocialConfig {
   graphEnabled: boolean;
   weatherEnabled: boolean;
   constellationEnabled: boolean;
-  constellationKFloor: number;
+  constellationKFloor: number | null;
   neighborhoodEnabled: boolean;
   /** When true, a member's Neighborhood also includes people they've recently *interacted* with (not
    *  just follows/connections). Default false — the project-wide default; a member can override it for
@@ -48,7 +48,7 @@ const COMMUNITY_DEFAULTS: ResolvedSocialConfig = {
   graphEnabled: true,
   weatherEnabled: true,
   constellationEnabled: true,
-  constellationKFloor: 5,
+  constellationKFloor: null,
   neighborhoodEnabled: true,
   neighborhoodIncludeInteractions: false,
   influenceScoresEnabled: false,
@@ -82,8 +82,8 @@ export const socialConfigSchema = z.object({
   graphEnabled: z.boolean().nullish(),
   weatherEnabled: z.boolean().nullish(),
   constellationEnabled: z.boolean().nullish(),
-  // LOCKSTEP: schema write bounds (5–1000) must stay aligned with resolver read bounds (intIn 1–1000 + Math.max(5)); change both together.
-  constellationKFloor: z.number().int().min(5).max(1000).nullish(),
+  // LOCKSTEP: schema write bounds (min 2, max 1000) must stay aligned with resolver read bounds (resolveKFloor: [1,1000] + Math.max(2)); change both together.
+  constellationKFloor: z.number().int().min(2).max(1000).nullish(),
   neighborhoodEnabled: z.boolean().nullish(),
   neighborhoodIncludeInteractions: z.boolean().nullish(),
   influenceScoresEnabled: z.boolean().nullish(),
@@ -124,6 +124,23 @@ const bool = (v: unknown, d: boolean): boolean => (typeof v === "boolean" ? v : 
 const intIn = (v: unknown, d: number, min: number, max: number): number =>
   typeof v === "number" && Number.isInteger(v) && v >= min && v <= max ? v : d;
 
+/** Resolve a stored k-floor value. null/absent/malformed/out-of-[1,1000] → null (adaptive,
+ *  resolved at materialization time via adaptiveConstellationFloor); integer in [1,1000] → raised
+ *  to ≥2 (the hard anonymity floor). The hard floor of 2 lives here and in adaptiveConstellationFloor. */
+function resolveKFloor(v: unknown): number | null {
+  if (typeof v !== "number" || !Number.isInteger(v) || v < 1 || v > 1000) return null;
+  return Math.max(2, v);
+}
+
+/** The adaptive (default) k-floor for a project of `memberCount` people. Always ≥2 (the hard
+ *  anonymity floor) and ≤5 (the large-community default). Used when constellationKFloor is null. */
+export function adaptiveConstellationFloor(memberCount: number): number {
+  if (memberCount < 50) return 2;
+  if (memberCount < 100) return 3;
+  if (memberCount < 500) return 4;
+  return 5;
+}
+
 /** Clamp-on-read: overlay stored jsonb onto tier defaults, neutralizing anything the tier forbids. */
 export function resolveSocialConfig(raw: unknown): ResolvedSocialConfig {
   const r = (raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {}) as Record<string, unknown>;
@@ -136,9 +153,9 @@ export function resolveSocialConfig(raw: unknown): ResolvedSocialConfig {
     graphEnabled: bool(r.graphEnabled, d.graphEnabled),
     weatherEnabled: bool(r.weatherEnabled, d.weatherEnabled),
     constellationEnabled: bool(r.constellationEnabled, d.constellationEnabled),
-    // LOCKSTEP: resolver read bounds (1–1000 + Math.max(5)) must stay aligned with schema write bounds (min 5, max 1000); change both together.
-    // The k-floor clamps UP only — a stored value below 5 is raised, never honored.
-    constellationKFloor: Math.max(5, intIn(r.constellationKFloor, d.constellationKFloor, 1, 1000)),
+    // LOCKSTEP: resolver read bounds (resolveKFloor: [1,1000] + Math.max(2)) must stay aligned with schema write bounds (min 2, max 1000); change both together.
+    // null/absent/malformed/out-of-[1,1000] → null (adaptive, resolved at materialization time); a stored value in [1,1000] is raised to ≥2.
+    constellationKFloor: resolveKFloor(r.constellationKFloor),
     neighborhoodEnabled: bool(r.neighborhoodEnabled, d.neighborhoodEnabled),
     neighborhoodIncludeInteractions: bool(r.neighborhoodIncludeInteractions, d.neighborhoodIncludeInteractions),
     influenceScoresEnabled: bool(r.influenceScoresEnabled, d.influenceScoresEnabled),

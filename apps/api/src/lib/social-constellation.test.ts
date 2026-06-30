@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { sizeBucket, blobsFromCommunities } from "./social-constellation.js";
-import { BLOB_SIZE_BUCKETS } from "@agora-server/contract";
+import { adaptiveConstellationFloor, BLOB_SIZE_BUCKETS } from "@agora-server/contract";
 
 const [B5, B10, B20, B50, B100] = BLOB_SIZE_BUCKETS;
 const community = (n: number, prefix: string) => Array.from({ length: n }, (_, i) => `${prefix}${i}`);
@@ -58,5 +58,18 @@ describe("blobsFromCommunities", () => {
     const communities = new Map([["c", community(8, "a")]]);
     expect(blobsFromCommunities(communities, new Map(), 5).blobs).toHaveLength(1);
     expect(blobsFromCommunities(communities, new Map(), 10).blobs).toHaveLength(0); // 8 < 10 → suppressed
+  });
+});
+
+describe("adaptiveConstellationFloor wiring", () => {
+  it("a 2-person cluster is kept at kFloor=2 and dropped at kFloor=5", () => {
+    const communities = new Map([["c", community(2, "u")]]);
+    expect(blobsFromCommunities(communities, new Map(), 2).blobs).toHaveLength(1); // 2 >= 2 → kept
+    expect(blobsFromCommunities(communities, new Map(), 5).blobs).toHaveLength(0); // 2 < 5 → dropped
+  });
+
+  it("adaptiveConstellationFloor(12) === 2 — a small community gets floor 2 so 2-person clusters render", () => {
+    // This documents the demo-fixing case: null config → adaptive floor → small communities visible
+    expect(adaptiveConstellationFloor(12)).toBe(2);
   });
 });

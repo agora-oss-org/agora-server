@@ -297,7 +297,7 @@ function SocialGraphForm({ view }: { view: SocialConfigView }) {
               type="number"
               min={5}
               step={1}
-              value={draft.constellationKFloor}
+              value={draft.constellationKFloor ?? ""}
               disabled={disabled}
               onChange={(e) => {
                 const v = Math.max(5, Number(e.target.value));

@@ -18,6 +18,8 @@ import {
   ANALYTICS_REPORT_FLAG, getEngagement, getInfluence, getSilos, rollupAnalytics,
 } from "../lib/social-analytics.js";
 import { getReadReceiptsCoverage } from "../lib/social-read-receipts.js";
+import { neo4jEnabled } from "../lib/neo4j.js";
+import { rollupConstellation, getConstellation } from "../lib/social-constellation.js";
 import { logger } from "../lib/logger.js";
 import { buildRunningConfig } from "../lib/running-config.js";
 import { getServerResources } from "../lib/server-resources.js";
@@ -313,6 +315,22 @@ export const adminRoutes = new Hono<{ Variables: Variables }>()
       ...(enabled.includes("silos") ? { silos: await getSilos(projectId) } : {}),
       ...(enabled.includes("engagement") ? { engagement: await getEngagement(projectId) } : {}),
     });
+  })
+  // POST /admin/social/constellation/recompute — project-admin-gated force-recompute of the Constellation
+  // snapshot on demand. The constellation is a member-facing Garden surface configurable by any project
+  // admin via PATCH /settings/social, so whoever can set the k-floor can trigger a recompute. Runs a
+  // synchronous GDS Louvain pass and returns the fresh materialized snapshot.
+  .post("/social/constellation/recompute", requireAuth, async (c) => {
+    requireProjectAdmin(c);
+    const projectId = c.var.projectId;
+    const cfg = await getSocialConfig(projectId);
+    if (!cfg.graphEnabled || !cfg.constellationEnabled) {
+      throw Errors.badRequest("social/constellation-disabled", "The Constellation is not enabled for this project");
+    }
+    if (!neo4jEnabled()) return c.json({ error: "Social graph not configured", code: "social/graph-unavailable" }, 503);
+    const result = await rollupConstellation(projectId, { force: true });
+    logger.info({ projectId }, "admin: constellation recompute requested");
+    return c.json({ recomputed: result.materialized > 0, constellation: await getConstellation(projectId) });
   })
   // ── Read receipts (operator-only, corporate-tier) — docs/SOCIAL-GRAPH.md §4. Live Postgres coverage
   // over read-receipts-enabled spaces (no snapshot, no cron, no graph). Gate: operator first, then the
