@@ -92,6 +92,11 @@ const schema = z.object({
     if (typeof v === "string") return !["false", "0", "no", "off"].includes(v.toLowerCase());
     return v;
   }, z.boolean()),
+  // Web push (VAPID) — optional until push notifications are enabled. The public key is published to clients;
+  // the private key and subject are used to sign the server's VAPID JWT with push service subscriptions.
+  VAPID_PUBLIC_KEY: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
+  VAPID_PRIVATE_KEY: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
+  VAPID_SUBJECT: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()), // mailto: or https URL
   // Secure-chat (E2E) ciphertext caps, enforced on the DECODED byte length. Deliberately NOT the
   // 25 MiB upload cap — that would invite DoS. App messages are small (default 256 KiB); MLS
   // handshakes (Welcome/Commit) scale with group size so they get a larger, separate cap (4 MiB).
