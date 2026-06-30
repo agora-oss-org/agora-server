@@ -8,7 +8,8 @@ import type { Variables } from "../http/context.js";
 import { Errors } from "../http/errors.js";
 import { requireAuth } from "../middleware/auth.js";
 import { db } from "../db/index.js";
-import { connections, profiles, appNotifications } from "../db/schema/index.js";
+import { connections, profiles } from "../db/schema/index.js";
+import { notifyOnConnectionRequest, notifyOnConnectionAccept } from "../lib/notifications.js";
 import { readPagination, paginate } from "../http/envelope.js";
 import { shapeUser } from "../lib/shape.js";
 import { parseBody, connectionRequestSchema } from "../lib/validation.js";
@@ -46,13 +47,6 @@ async function between(projectId: string, a: string, b: string): Promise<ConnRow
 
 const iso = (d: Date | null) => (d ? d.toISOString() : null);
 
-async function notify(projectId: string, recipientId: string, type: string, initiator: ProfileRow, connectionId: string) {
-  await db.insert(appNotifications).values({
-    projectId, userId: recipientId, type, action: "open-profile",
-    metadata: { connectionId, initiatorId: initiator.id, initiatorName: initiator.name, initiatorUsername: initiator.username, initiatorAvatar: initiator.avatar },
-  });
-}
-
 export const connectionRoutes = new Hono<{ Variables: Variables }>()
   // ── request / status / remove against a specific user ──────────────────────
   .post("/users/:userId/connection", requireAuth, async (c) => {
@@ -68,13 +62,13 @@ export const connectionRoutes = new Hono<{ Variables: Variables }>()
       const [row] = await db.update(connections)
         .set({ requesterId: self.id, addresseeId: target, status: "pending", message, respondedAt: null, createdAt: new Date() })
         .where(eq(connections.id, existing.id)).returning();
-      await notify(self.projectId, target, "connection-request", self, row!.id);
+      await notifyOnConnectionRequest(self.projectId, target, self.id, row!.id);
       return c.json({ id: row!.id, status: row!.status, createdAt: iso(row!.createdAt) });
     }
     const [row] = await db.insert(connections)
       .values({ projectId: self.projectId, requesterId: self.id, addresseeId: target, status: "pending", message })
       .returning();
-    await notify(self.projectId, target, "connection-request", self, row!.id);
+    await notifyOnConnectionRequest(self.projectId, target, self.id, row!.id);
     return c.json({ id: row!.id, status: row!.status, createdAt: iso(row!.createdAt) }, 201);
   })
   .get("/users/:userId/connection", requireAuth, async (c) => {
@@ -151,7 +145,7 @@ export const connectionRoutes = new Hono<{ Variables: Variables }>()
       .where(and(eq(connections.id, uuidParam(c, "id")), eq(connections.addresseeId, self.id), eq(connections.status, "pending"))).limit(1);
     if (!row) throw Errors.notFound("connections/not-pending", "No pending request to accept");
     const [updated] = await db.update(connections).set({ status: "connected", respondedAt: new Date() }).where(eq(connections.id, row.id)).returning();
-    await notify(self.projectId, row.requesterId, "connection-accepted", self, row.id);
+    await notifyOnConnectionAccept(self.projectId, row.requesterId, self.id, row.id);
     return c.json({ id: updated!.id, status: "connected", respondedAt: iso(updated!.respondedAt) });
   })
   .patch("/connections/:id/decline", requireAuth, async (c) => {

@@ -327,6 +327,34 @@ export async function notifyOnFollow(projectId: string, followerId: string, foll
   }
 }
 
+/** On a connection request: notify the addressee (connection-request). */
+export async function notifyOnConnectionRequest(
+  projectId: string, recipientId: string, requesterId: string, connectionId: string,
+): Promise<void> {
+  try {
+    const actor = await loadActor(projectId, requesterId);
+    if (!actor) return;
+    await insert(projectId, recipientId, requesterId, "connection-request", "open-profile", { connectionId, ...actor });
+  } catch (err) {
+    logger.error("[notifications] notifyOnConnectionRequest failed");
+    logger.debug({ err }, "[notifications] notifyOnConnectionRequest failed");
+  }
+}
+
+/** On a connection accept: notify the original requester (connection-accepted). */
+export async function notifyOnConnectionAccept(
+  projectId: string, recipientId: string, accepterId: string, connectionId: string,
+): Promise<void> {
+  try {
+    const actor = await loadActor(projectId, accepterId);
+    if (!actor) return;
+    await insert(projectId, recipientId, accepterId, "connection-accepted", "open-profile", { connectionId, ...actor });
+  } catch (err) {
+    logger.error("[notifications] notifyOnConnectionAccept failed");
+    logger.debug({ err }, "[notifications] notifyOnConnectionAccept failed");
+  }
+}
+
 // ─── steward conflict-resolution notifications ───────────────────────────────
 // The case lifecycle stage being announced.
 export type StewardCaseKind = "opened" | "in_mediation" | "closed";
