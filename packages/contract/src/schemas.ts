@@ -448,3 +448,8 @@ export const convMemberRoleSchema = z.object({
 export const connectionRequestSchema = z.object({
   message: z.string().max(500).optional(),
 });
+
+// ─── sort surfaces ────────────────────────────────────────────────────────────
+// Sort surfaces (SDK v7.6.2). `new`/`old` are deprecated aliases the server still accepts.
+export const sortDirSchema = z.enum(["asc", "desc"]);
+export const commentSortBySchema = z.enum(["createdAt", "top", "controversial", "new", "old"]);

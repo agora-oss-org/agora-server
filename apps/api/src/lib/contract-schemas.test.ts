@@ -10,7 +10,7 @@ import {
   createCollectionSchema,
   moderationSchema,
 } from "./validation.js";
-import { createEventSchema, rsvpSchema, rsvpStatusEnum, pushDeviceSchema } from "@agora-server/contract";
+import { createEventSchema, rsvpSchema, rsvpStatusEnum, pushDeviceSchema, commentSortBySchema, sortDirSchema } from "@agora-server/contract";
 
 describe("SDK contract — request field names (Class 1)", () => {
   describe("change-password: SDK sends `password` for the current password", () => {
@@ -93,6 +93,19 @@ describe("event schemas", () => {
     for (const s of ["going", "maybe", "not_going"]) expect(rsvpSchema.safeParse({ status: s }).success).toBe(true);
     expect(rsvpSchema.safeParse({ status: "perhaps" }).success).toBe(false);
     expect(rsvpStatusEnum.options).toEqual(["going", "maybe", "not_going"]);
+  });
+});
+
+describe("comment sort schemas", () => {
+  it("accepts the documented sortBy values incl. deprecated aliases", () => {
+    for (const v of ["createdAt", "top", "controversial", "new", "old"]) {
+      expect(commentSortBySchema.safeParse(v).success).toBe(true);
+    }
+  });
+  it("accepts asc/desc for sortDir", () => {
+    expect(sortDirSchema.safeParse("asc").success).toBe(true);
+    expect(sortDirSchema.safeParse("desc").success).toBe(true);
+    expect(sortDirSchema.safeParse("sideways").success).toBe(false);
   });
 });
 
