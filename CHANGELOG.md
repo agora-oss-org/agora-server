@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- Chat: `message:created` now fans out to every member's user room (inbox observers update without joining the thread room), not only the conversation room.
 - **Events domain hardening — visibility, capacity, and input robustness.** `GET /events` now applies
   the **space-read** gate to *every* visibility (not just `public`), so the list can no longer surface an
   `invite`/`members` event living in a members-reading space that single-GET would `403` — list and
@@ -35,6 +36,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   why (e.g. a missing `pgmq.scorer_jobs` queue or an unreachable `DATABASE_URL`).
 
 ### Changed
+- Chat: `GET /chat/conversations` now returns the `ConversationPreview` shape (`otherMembers`, `lastMessage` truncated to 100 chars).
+- Connections: request/accept notifications now route through the shared notification pipeline, so they fan out over `notification:created` (realtime) and the push webhook — previously inserted silently.
 - **Caddy front door defaults to the Let's Encrypt *staging* ACME CA.** New `acme_ca` global option in
   `deploy/proxy/Caddyfile` (driven by the `ACME_CA` env, threaded through the `proxy` service in both
   `docker-compose.yml` and `docker-compose.prod.yml`) so a first-time real-domain deploy validates DNS +
@@ -45,6 +48,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Documented in `deploy/proxy/README.md`, `docs/SELF-HOSTING.md`, and `.env.example`.
 
 ### Added
+- Chat: `GET /chat/conversations/:id/preview` (single `ConversationPreview` — `unreadCount`, `otherMembers`, truncated `lastMessage`).
+- Chat: `conversation:created` socket event fanned to member user rooms on new direct/group conversations.
+- Chat: `?after=<ISO>` cursor on `GET /chat/conversations/:id/messages` for reconnect catch-up (ascending, strictly after the cursor; `400 chat/invalid-after` on a malformed timestamp).
+- DB: `conversations_keyset_idx` for inbox keyset pagination.
 - **Events domain — community events with RSVPs, invites, and co-hosts.** New `events` /
   `event_rsvps` / `event_invites` / `event_hosts` tables (+ `files.event_id` so cover/gallery images
   link to an event) and the `/v7/:projectId/events/*` REST surface (14 endpoints): CRUD + `cancel`,
