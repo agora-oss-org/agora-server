@@ -45,10 +45,12 @@
     "postgres": "^3.4.9",
     "sharp": "^0.34.5",
     "socket.io": "^4.8.3",
+    "web-push": "^3.6.7",
     "zod": "^3.25.76"
   },
   "devDependencies": {
     "@types/node": "^22.19.20",
+    "@types/web-push": "^3.6.4",
     "@vitest/coverage-v8": "^4.1.8",
     "drizzle-kit": "^0.31.10",
     "socket.io-client": "^4.8.3",
