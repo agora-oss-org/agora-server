@@ -31,6 +31,36 @@ describe("dispatchToDevices", () => {
     expect(out.pruned).toBe(1);            // the ios device was pruned
     expect(prune).toHaveBeenCalledWith("d2");
   });
+
+  it("isolates provider failures — a throwing provider doesn't abort siblings", async () => {
+    const ios = { send: vi.fn().mockRejectedValue(new Error("boom")) };
+    const web = mk({ ok: true });
+    const providers = { ios, android: null, web } as any;
+    const prune = vi.fn().mockResolvedValue(undefined);
+    const devices = [
+      { id: "d1", platform: "ios", token: "t", subscription: null },
+      { id: "d2", platform: "web", token: null, subscription: {} },
+    ];
+    const out = await dispatchToDevices(devices as any, { title: "x", body: "y" }, providers, prune);
+    expect(ios.send).toHaveBeenCalledTimes(1);   // first provider threw
+    expect(web.send).toHaveBeenCalledTimes(1);   // sibling was still called
+    expect(out.sent).toBe(1);    // only the web send succeeded
+    expect(out.pruned).toBe(0);  // no prunes
+  });
+
+  it("handles prune failures distinctly from send failures", async () => {
+    const web = { send: vi.fn().mockResolvedValue({ ok: true, prune: true }) };
+    const providers = { ios: null, android: null, web } as any;
+    const prune = vi.fn().mockRejectedValue(new Error("prune failed"));
+    const devices = [
+      { id: "d1", platform: "web", token: null, subscription: {} },
+    ];
+    const out = await dispatchToDevices(devices as any, { title: "x", body: "y" }, providers, prune);
+    expect(web.send).toHaveBeenCalledTimes(1);  // send succeeded
+    expect(out.sent).toBe(1);     // send still counted
+    expect(out.pruned).toBe(0);   // prune failure doesn't count
+    expect(prune).toHaveBeenCalledWith("d1");
+  });
 });
 
 describe("notificationPushPayload", () => {

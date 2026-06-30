@@ -21,7 +21,15 @@ export async function dispatchToDevices(
     try {
       const res = await provider.send(d, payload);
       if (res.ok) sent++;
-      if (res.prune) { await prune(d.id); pruned++; }
+      if (res.prune) {
+        try {
+          await prune(d.id);
+          pruned++;
+        } catch (err) {
+          logger.error("push: prune device failed");
+          logger.debug({ err, deviceId: d.id }, "push: prune device failed");
+        }
+      }
     } catch (err) {
       logger.error("push: provider send failed");
       logger.debug({ err, platform: d.platform }, "push: provider send failed");
