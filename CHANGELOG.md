@@ -104,6 +104,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `## [x.y.z] - DATE` and the next `## [` heading, extracted with `awk` and published via the `gh` CLI
   (built-in `GITHUB_TOKEN`, `contents: write`). SemVer prereleases (a `-` suffix, e.g. `v0.16.0-rc.1`)
   are flagged as prereleases; a tag with no CHANGELOG section still releases with a fallback pointer.
+- Entity feed: first-class `createdAt` sort (honors `sortDir`); `new` kept as a deprecated alias.
+- Comment list: `createdAt` and `controversial` sorts; `sortDir` honored for `createdAt`.
+- RFC 8594 `Deprecation` header on `?sortBy=new` (entities) and `?sortBy=new|old` (comments).
+- `@agora-server/contract`: `commentSortBySchema` + `sortDirSchema`.
 
 ## [0.15.2] - 2026-06-28
 
