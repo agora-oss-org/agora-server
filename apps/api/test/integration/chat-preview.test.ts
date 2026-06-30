@@ -1,6 +1,5 @@
 // apps/api/test/integration/chat-preview.test.ts
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { db } from "../../src/db/index.js";
 import { conversations, conversationMembers } from "../../src/db/schema/index.js";

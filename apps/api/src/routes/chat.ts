@@ -90,20 +90,25 @@ async function buildConversationPreview(c: any, convo: ConversationRow, member: 
 // user room is harmless (their other tabs upsert it) and keeps the helper simple.
 async function emitConversationCreated(c: any, convo: ConversationRow, memberIds: string[]) {
   if (convo.type === "space" || memberIds.length === 0) return;
-  const profs = await db.select().from(profiles).where(inArray(profiles.id, memberIds));
-  const byId = new Map(profs.map((p) => [p.id, p]));
-  for (const recipientId of memberIds) {
-    const others = memberIds
-      .filter((id) => id !== recipientId)
-      .map((id) => byId.get(id))
-      .filter((p): p is NonNullable<typeof p> => !!p)
-      .map((p) => shapeUser(p) as any);
-    const preview = shapeConversationPreview(convo, {
-      unreadCount: 0,
-      lastMessage: null,
-      otherMembers: pickOtherMembers(others),
-    });
-    emitToUser(c.var.projectId, recipientId, "conversation:created", preview);
+  try {
+    const profs = await db.select().from(profiles).where(inArray(profiles.id, memberIds));
+    const byId = new Map(profs.map((p) => [p.id, p]));
+    for (const recipientId of memberIds) {
+      const others = memberIds
+        .filter((id) => id !== recipientId)
+        .map((id) => byId.get(id))
+        .filter((p): p is NonNullable<typeof p> => !!p)
+        .map((p) => shapeUser(p) as any);
+      const preview = shapeConversationPreview(convo, {
+        unreadCount: 0,
+        lastMessage: null,
+        otherMembers: pickOtherMembers(others),
+      });
+      emitToUser(c.var.projectId, recipientId, "conversation:created", preview);
+    }
+  } catch (err) {
+    logger.error("[chat] emitConversationCreated failed");
+    logger.debug({ err }, "[chat] emitConversationCreated failed");
   }
 }
 
