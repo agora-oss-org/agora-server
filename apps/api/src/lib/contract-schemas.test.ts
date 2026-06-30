@@ -10,7 +10,7 @@ import {
   createCollectionSchema,
   moderationSchema,
 } from "./validation.js";
-import { createEventSchema, rsvpSchema, rsvpStatusEnum } from "@agora-server/contract";
+import { createEventSchema, rsvpSchema, rsvpStatusEnum, pushDeviceSchema } from "@agora-server/contract";
 
 describe("SDK contract — request field names (Class 1)", () => {
   describe("change-password: SDK sends `password` for the current password", () => {
@@ -93,5 +93,20 @@ describe("event schemas", () => {
     for (const s of ["going", "maybe", "not_going"]) expect(rsvpSchema.safeParse({ status: s }).success).toBe(true);
     expect(rsvpSchema.safeParse({ status: "perhaps" }).success).toBe(false);
     expect(rsvpStatusEnum.options).toEqual(["going", "maybe", "not_going"]);
+  });
+});
+
+describe("pushDeviceSchema", () => {
+  it("accepts a native identifier", () => {
+    expect(pushDeviceSchema.safeParse({ platform: "ios", token: "abc" }).success).toBe(true);
+    expect(pushDeviceSchema.safeParse({ platform: "android", token: "abc" }).success).toBe(true);
+  });
+  it("accepts a web subscription", () => {
+    expect(pushDeviceSchema.safeParse({ platform: "web", subscription: { endpoint: "https://x", keys: { p256dh: "p", auth: "a" } } }).success).toBe(true);
+  });
+  it("rejects native without a token and web without a subscription", () => {
+    expect(pushDeviceSchema.safeParse({ platform: "ios" }).success).toBe(false);
+    expect(pushDeviceSchema.safeParse({ platform: "web", token: "abc" }).success).toBe(false);
+    expect(pushDeviceSchema.safeParse({ platform: "desktop", token: "abc" }).success).toBe(false);
   });
 });
