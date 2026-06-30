@@ -108,14 +108,38 @@ Zod schema for the device-identifier union in `packages/contract`; `parseBody` a
 
 ## 7. Trigger / wiring (decision resolved)
 
-**Mirror in-app notifications.** A single dispatch choke point: wherever an `app_notifications` row is
-created (comment replies, mentions, follows, etc.) and/or a chat message lands for an offline member,
-call `dispatchToUser(...)` with a payload derived from the notification. This reuses the existing
-taxonomy, keeps one fan-out site, and pairs with the §6 comment-notifications work in
-`FEATURE_MIGRATION.md`. Dispatch is **fire-and-forget** (don't block the request; log failures at
-`error` message-only + `debug` detail). "Offline" gating for chat: send push to members whose socket
-is not currently connected (or unconditionally to all devices for non-chat notifications — decide the
-exact online-check in the plan; simplest v1 = always dispatch, let the device dedupe).
+**Mirror in-app notifications.** A single dispatch choke point: `lib/notifications.ts` `insert()` (the
+one place every `app_notifications` row is written) calls `dispatchNotificationPush(projectId,
+recipientId, type)` after the existing socket fan-out. Self-notify is already skipped upstream in
+`insert()` (`recipientId === actorId`), so push inherits that for free. Dispatch is **fire-and-forget**
+(don't block the request; log failures at `error` message-only + `debug` detail).
+
+**Push-worthy allowlist (decision §10).** Not every `app_notifications` type is push-worthy. v1 pushes
+the human-attention types and **suppresses reactions + reaction-milestones** (kept in-app only — a
+buzz-per-upvote is noise). The allowlist + per-type copy live in **one pure function**
+(`notificationPushPayload(type) → PushPayload | null`): it returns `null` for non-push-worthy types
+(the bridge then no-ops) and otherwise a PII-free payload whose title is keyed by type. Pushed types:
+
+```
+PUSH:   entity-comment, comment-reply, comment-mention, entity-mention,
+        new-follow, connection-request, connection-accepted,
+        space-membership-approved,
+        steward-case-opened, steward-case-in-mediation, steward-case-resolved,
+        steward-content-removed, steward-mediation-invite
+SILENT: entity-upvote, comment-upvote, entity-reaction, comment-reaction,
+        entity-reaction-milestone-specific/total, comment-reaction-milestone-specific/total
+```
+
+**Per-type copy (decision §10).** Title is keyed by type (`new-follow → "New follower"`,
+`comment-reply → "New reply"`, `*-mention → "You were mentioned"`, `connection-request → "New
+connection request"`, `connection-accepted → "Connection accepted"`, `space-membership-approved →
+"Membership approved"`); body is the generic, PII-free `"Open the app to see what's new."`. **Steward
+types deliberately use the neutral `"New activity"` fallback** — a push must never hint that content was
+removed or carry the complainant's framing (SECURITY.md; mirrors `stewardCaseRecipients`). Clients
+deep-link via `data.type`.
+
+Chat-message push is **out of scope for v1** (chat messages don't flow through this `app_notifications`
+choke point; wiring chat + its online/offline socket gating is a separate later change — §11).
 
 ## 8. Files touched / added
 
@@ -144,7 +168,12 @@ exact online-check in the plan; simplest v1 = always dispatch, let the device de
 ## 10. Decisions (resolved)
 
 - **VAPID scope:** per-project, global env fallback.
-- **Trigger taxonomy:** mirror in-app notifications (single choke point).
+- **Trigger taxonomy:** mirror in-app notifications (single choke point at `insert()`).
+- **Push-worthy allowlist:** push the human-attention types; **suppress reactions + reaction-milestones**
+  (in-app only). Allowlist + copy in one pure `notificationPushPayload(type) → PushPayload | null` (§7).
+- **Per-type copy:** title keyed by type, generic PII-free body; **steward types use the neutral
+  fallback** (never hint content removal / complainant framing). Corrects `follow` → real `new-follow`.
+- **Chat push:** out of scope for v1 (chat doesn't hit this choke point; deferred with its online-gating).
 - **Transports:** all three behind a seam; Web Push is the testable path; FCM/APNs complete but
   exercised once creds exist.
 - **Deregister:** DELETE-with-body **plus** a `POST /devices/deregister` fallback.
@@ -152,8 +181,10 @@ exact online-check in the plan; simplest v1 = always dispatch, let the device de
 
 ## 11. Open questions
 
-- Exact online/offline gating for chat-message push (v1 simplest = always dispatch; refine if it
-  proves noisy). Flagged, not blocking.
-- Which `app_notifications` types are push-worthy by default vs noisy (e.g. suppress self-triggered)
-  — start with all non-self events; tune later.
-- Per-user push preferences (mute, quiet hours) — explicitly deferred to a future spec.
+- **Resolved — push-worthy types:** push the human-attention allowlist (§7/§10); suppress reactions +
+  reaction-milestones (in-app only). Self-notify already skipped upstream in `insert()`.
+- **Deferred — chat-message push + its online/offline socket gating.** Chat messages don't flow through
+  the `app_notifications` choke point, so v1 doesn't push them; a later change wires chat and decides the
+  "send only to members whose socket is disconnected" gate.
+- **Deferred — per-user push preferences** (mute, quiet hours, per-type opt-out) — a future spec. v1's
+  allowlist is the only filter.
