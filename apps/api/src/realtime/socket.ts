@@ -30,6 +30,8 @@ export interface ServerToClientEvents {
   "member:left": (p: { conversationId: string; userId: string }) => void;
   "conversation:updated": (patch: { id: string } & Record<string, unknown>) => void;
   "conversation:deleted": (p: { conversationId: string }) => void;
+  // New-conversation fan-out to each member's user room (inbox). Payload = a zero-state ConversationPreview.
+  "conversation:created": (preview: unknown) => void;
   // App-notification fan-out to a user-scoped room (not chat). Payload = the full shaped row.
   "notification:created": (n: ReturnType<typeof shapeNotification>) => void;
 }
@@ -193,4 +195,18 @@ export function emitToUser<E extends keyof ServerToClientEvents>(
   ...args: Parameters<ServerToClientEvents[E]>
 ) {
   ioRef?.to(userRoom(projectId, userId)).emit(event, ...args);
+}
+
+// Rooms a `message:created` must reach: the conversation room (active thread viewers) + every member's
+// user room (inbox-only observers, who never join the conversation room). socket.io unions an array of
+// rooms, so a socket present in several gets exactly ONE delivery.
+export function messageCreatedRooms(conversationId: string, projectId: string, memberUserIds: string[]): string[] {
+  return [room(conversationId), ...memberUserIds.map((u) => userRoom(projectId, u))];
+}
+
+// Fan a freshly-created message out to active viewers AND inbox observers in one emit. No-op if the
+// socket server isn't attached (e.g. unit tests). With the Redis adapter attached, crosses replicas.
+export function emitMessageCreated(conversationId: string, projectId: string, memberUserIds: string[], message: unknown): void {
+  if (!ioRef) return;
+  ioRef.to(messageCreatedRooms(conversationId, projectId, memberUserIds)).emit("message:created", message);
 }
