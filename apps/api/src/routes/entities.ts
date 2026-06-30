@@ -15,6 +15,7 @@ import { parseBracketQuery, buildFeedConditions, buildFeedOrder } from "../lib/e
 import { entities, reactions, collections, collectionEntities, spaces, readReceipts } from "../db/schema/index.js";
 import { getSocialConfig } from "../lib/social-config.js";
 import { readPagination, paginate } from "../http/envelope.js";
+import { markDeprecated, isDeprecatedEntitySort } from "../http/deprecation.js";
 import {
   shapeEntity,
   shapeFile,
@@ -80,6 +81,8 @@ export const entityRoutes = new Hono<{ Variables: Variables }>()
     // config also supplies the default algorithm (when sortBy is absent) + reaction weights.
     const feedCfg = await getFeedConfig(projectId);
     if (!clean(c.req.query("sortBy"))) parsed.sortBy = feedCfg.defaultAlgorithm;
+    // Legacy `new` alias → canonical `createdAt`; warn clients per RFC 8594 (no Sunset; see deprecation.ts).
+    if (isDeprecatedEntitySort(clean(c.req.query("sortBy")))) markDeprecated(c);
     // Pin the clock (rankAnchor) so query-time algos (decay/gravity) page consistently.
     const rankAnchorRaw = clean(c.req.query("rankAnchor"));
     const rankAnchor = rankAnchorRaw && !Number.isNaN(Date.parse(rankAnchorRaw))
