@@ -3,7 +3,9 @@
 // "load more replies"; /thread additionally exposes the fetch_comment_thread RPC as a full nested
 // subtree (server-only convenience — the SDK builds the tree client-side from one-level fetches).
 import { Hono } from "hono";
-import { and, eq, isNull, asc, desc, count, inArray, sql, type SQL } from "drizzle-orm";
+import { and, eq, isNull, desc, count, inArray, sql, type SQL } from "drizzle-orm";
+import { resolveCommentSort, commentOrderBy } from "../lib/comment-sort.js";
+import { markDeprecated } from "../http/deprecation.js";
 import type { Variables } from "../http/context.js";
 import { Errors } from "../http/errors.js";
 import { requireAuth } from "../middleware/auth.js";
@@ -48,12 +50,11 @@ export const commentRoutes = new Hono<{ Variables: Variables }>()
     if (excludeRemoved) conds.push(excludeRemoved);
     const where = and(...conds);
 
-    // SDK CommentsSortByOptions: "top" | "new" | "old" (new = newest first, old = oldest first).
-    const sortBy = c.req.query("sortBy");
-    const order =
-      sortBy === "top" ? [desc(sql`coalesce((${comments.reactionCounts}->>'upvote')::int, 0)`), desc(comments.createdAt)]
-      : sortBy === "old" ? [asc(comments.createdAt)]
-      : [desc(comments.createdAt)]; // "new" (default)
+    // SDK CommentsSortByOptions: createdAt | top | controversial | new | old. `new`/`old` are
+    // deprecated aliases for createdAt desc/asc (RFC 8594 Deprecation header, no Sunset).
+    const sort = resolveCommentSort(c.req.query("sortBy"), c.req.query("sortDir"));
+    if (sort.deprecated) markDeprecated(c);
+    const order = commentOrderBy(sort);
 
     const rows = await db
       .select()
