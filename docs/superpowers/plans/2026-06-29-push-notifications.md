@@ -413,16 +413,14 @@ describe("notificationPushPayload", () => {
     expect(notificationPushPayload("new-follow")!.title).toBe("New follower");
     expect(notificationPushPayload("follow")).toBeNull(); // not a real type → not push-worthy
   });
-  it("returns null for SILENT (in-app-only) types — reactions + milestones", () => {
+  it("returns null for SILENT (in-app-only) types — reactions, milestones, AND steward events", () => {
     for (const t of [
       "entity-upvote", "comment-upvote", "entity-reaction", "comment-reaction",
       "entity-reaction-milestone-specific", "comment-reaction-milestone-total",
+      // steward events are deliberately push-silent — never surface a case on a lock screen
+      "steward-case-opened", "steward-case-in-mediation", "steward-case-resolved",
+      "steward-content-removed", "steward-mediation-invite",
     ]) expect(notificationPushPayload(t)).toBeNull();
-  });
-  it("pushes steward types with the neutral fallback (never hints content removal)", () => {
-    const p = notificationPushPayload("steward-content-removed");
-    expect(p).not.toBeNull();
-    expect(p!.title).toBe("New activity"); // neutral — no 'removed'/complainant framing
   });
 });
 ```
@@ -485,15 +483,13 @@ export async function dispatchToDevices(
 }
 
 // Allowlist + PII-free push copy, keyed by the in-app notification `type`. ONE place owns both the
-// gate and the copy: returns null for non-push-worthy types (the bridge then no-ops), else a payload.
-// A push must never carry another user's identity/PII (SECURITY.md); clients deep-link via data.type.
+// gate and the copy: the allowlist IS the keys of this map — a type not present returns null and the
+// bridge no-ops. A push must never carry another user's identity/PII (SECURITY.md); deep-link via data.type.
 //
-// SILENT (in-app only): reactions + reaction-milestones (entity/comment -upvote, -reaction,
-// -reaction-milestone-specific/-total) — a buzz-per-upvote is noise. They're simply absent from the set.
-//
-// Steward types are push-worthy but intentionally have NO specific title → they fall to the neutral
-// "New activity" fallback so a push never hints content was removed / carries complainant framing
-// (mirrors stewardCaseRecipients in lib/notifications.ts).
+// SILENT (in-app only, deliberately absent from the map):
+//  - reactions + reaction-milestones (entity/comment -upvote, -reaction, -reaction-milestone-*) — noise.
+//  - ALL steward events (steward-case-*, steward-content-removed, steward-mediation-invite) — conflict
+//    resolution is sensitive; a lock-screen push must never reveal a case exists / content was removed.
 const PUSH_TITLES: Record<string, string> = {
   "entity-comment": "New comment",
   "comment-reply": "New reply",
@@ -504,16 +500,11 @@ const PUSH_TITLES: Record<string, string> = {
   "connection-accepted": "Connection accepted",
   "space-membership-approved": "Membership approved",
 };
-// Push-worthy but neutral-copy (sensitive): steward lifecycle + mediation invites.
-const PUSH_WORTHY_NEUTRAL = new Set<string>([
-  "steward-case-opened", "steward-case-in-mediation", "steward-case-resolved",
-  "steward-content-removed", "steward-mediation-invite",
-]);
 
 export function notificationPushPayload(type: string): PushPayload | null {
-  const titled = PUSH_TITLES[type];
-  if (!titled && !PUSH_WORTHY_NEUTRAL.has(type)) return null; // not push-worthy → in-app only
-  return { title: titled ?? "New activity", body: "Open the app to see what's new.", data: { type } };
+  const title = PUSH_TITLES[type];
+  if (!title) return null; // not push-worthy → in-app only
+  return { title, body: "Open the app to see what's new.", data: { type } };
 }
 ```
 
@@ -1051,11 +1042,11 @@ git commit -m "feat(push): dispatch on in-app notifications + docs"
 - **Hermetic tests:** pure `dispatchToDevices`/`pickProvider`/`notificationPushPayload`/`resolveVapid` unit-tested with mocks; web push integration mocks `webpush.sendNotification` (no real network); FCM/APNs are credential-gated and return `null` in tests (skipped) — matches the integration env forcing external creds empty.
 - **Type consistency:** `PushProvider`/`PushPayload`/`DeviceLike`/`ProviderMap`, `dispatchToDevices`/`pickProvider`/`notificationPushPayload`, `getProviders`/`dispatchToUser`/`dispatchNotificationPush`, `resolveVapid`/`getVapidKeys`, `registerDevice`/`deregisterDevice`, `getFcmProvider`/`getApnsProvider` are referenced identically across tasks. Task 6 creates a `native.ts` stub so it compiles before Task 8 fills it in.
 - **Push-worthy allowlist (spec §7/§10):** `notificationPushPayload` is the single gate — push the
-  human-attention types (comments/replies/mentions/new-follow/connection-request|accepted/space-approved
-  + steward lifecycle & mediation invites), return `null` for reactions + reaction-milestones (in-app
-  only). `dispatchNotificationPush` no-ops on `null`. Self-notify is already skipped upstream in
-  `insert()`. Corrected `follow` → the real `new-follow` type; steward types use the neutral fallback
-  (never hint content removal / complainant framing).
+  human-attention types (comments/replies/mentions/new-follow/connection-request|accepted/space-approved),
+  return `null` for reactions, reaction-milestones, AND all steward events (in-app only). The allowlist
+  IS the keys of the copy map. `dispatchNotificationPush` no-ops on `null`. Self-notify is already
+  skipped upstream in `insert()`. Corrected `follow` → the real `new-follow` type; steward events are
+  deliberately push-silent (conflict-resolution never surfaces on a lock screen).
 - **Open follow-ups (deferred, per spec §11):** chat-message push + its online/offline socket gating
   (chat doesn't hit this choke point — separate later wiring); per-user push preferences
   (mute/quiet-hours/per-type opt-out) deferred to a future spec.
