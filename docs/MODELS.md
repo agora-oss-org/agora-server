@@ -55,7 +55,13 @@ joinedAt, createdAt`
 `id, projectId, type(direct|group|space), name?, description?, spaceId?, createdById?, avatarFileId?,
 lastMessageAt?, postingPermission(members|admins|null), metadata(jsonb), createdAt, updatedAt,
 memberCount?, currentMember?, avatarFile?`
-ConversationPreview adds: `unreadCount, lastMessage?`
+ConversationPreview adds: `unreadCount, lastMessage?` (its `content` truncated to ≤100 codepoints),
+`otherMembers[]` (≤5 active non-self members as `{id, name, username, avatar}`; **empty for `space`
+conversations**). Returned by `GET /chat/conversations` (list), `GET /chat/conversations/:id/preview`,
+and the `conversation:created` socket event (zero-state: `unreadCount: 0`, `lastMessage: null`).
+`otherMembers` is Agora-specific (additive; stock SDK ignores it) and is NOT attached to the base
+`GET /chat/conversations/:id` detail. `currentMember` is present on the list + `/preview` but omitted
+from the `conversation:created` payload (client refills on the next list fetch).
 
 ## ConversationMember
 `id, projectId, conversationId, userId, role(admin|member|null), lastReadAt?, mutedUntil?, isActive,

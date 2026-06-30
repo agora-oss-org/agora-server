@@ -253,6 +253,7 @@ lock). Removing the last host is rejected (`400 events/last-host`); a hidden gue
 | POST | `/chat/conversations` | ✅ |
 | POST | `/chat/conversations/direct` | ✅ |
 | GET | `/chat/conversations/:id` | ✅ |
+| GET | `/chat/conversations/:id/preview` | ✅ |
 | PATCH | `/chat/conversations/:id` | ✅ |
 | DELETE | `/chat/conversations/:id` | ✅ |
 | DELETE | `/chat/conversations/:id/leave` | ✅ |
@@ -261,7 +262,7 @@ lock). Removing the last host is rejected (`400 events/last-host`); a hidden gue
 | POST | `/chat/conversations/:id/members` | ✅ |
 | DELETE | `/chat/conversations/:id/members/:id` | ✅ |
 | PATCH | `/chat/conversations/:id/members/:id/role` | ✅ |
-| GET | `/chat/conversations/:id/messages` | ✅ |
+| GET | `/chat/conversations/:id/messages` (query: `limit`, `sort`, `parentId`, `before` ISO cursor, **`after` ISO cursor** — reconnect catch-up: `created_at > after` ms-truncated, ascending; `400 chat/invalid-after` on a malformed timestamp) | ✅ |
 | POST | `/chat/conversations/:id/messages` (JSON, or `multipart/form-data` with `files` → uploaded files returned in `message.files`) | ✅ |
 | PATCH | `/chat/conversations/:id/messages/:id` | ✅ |
 | DELETE | `/chat/conversations/:id/messages/:id` | ✅ |
@@ -430,6 +431,7 @@ io(socketUrl, { auth: { token: accessToken }, query: { projectId }, autoConnect:
 | `member:left` | `{ conversationId, userId }` |
 | `conversation:updated` | `Partial<Conversation> & { id }` |
 | `conversation:deleted` | `{ conversationId }` |
+| `conversation:created` | `ConversationPreview` (zero-state: `unreadCount: 0`, `lastMessage: null`, `otherMembers`; room `user:<projectId>:<userId>`. Emitted to each new member on direct/group create — Agora addition, see §4 note) |
 | `notification:created` | `UnifiedAppNotification` (full shaped row; room `user:<projectId>:<userId>`, auto-joined on connect) |
 | `connect` / `disconnect` | (built-in) |
 
@@ -442,12 +444,23 @@ io(socketUrl, { auth: { token: accessToken }, query: { projectId }, autoConnect:
 | `typing:stop` | `{ conversationId }` |
 
 **Room semantics:** client emits `join:conversation` to subscribe; server fans out
-message/typing/member events to that conversation room. Read state via REST
+typing/member events to that conversation room. Read state via REST
 `POST /chat/conversations/:id/read`. Separately, every authenticated socket is **auto-joined**
 server-side to its own `user:<projectId>:<userId>` room (no client emit) — the server fans out
 `notification:created` there so the bell/badge updates live for every notification type. Across
 multiple API replicas this fan-out crosses processes when `REDIS_URL` is set (socket.io Redis
 adapter); otherwise it stays single-process.
+
+**Live inbox (Agora addition beyond the stock contract).** `message:created` fans out to the
+**union** of the conversation room AND every active member's `user:<projectId>:<userId>` room — so a
+member viewing the inbox (but not in the thread room) still receives the message and can reorder/bump
+unread without opening the thread (socket.io dedupes a socket present in both rooms → one delivery).
+On a new direct/group conversation the server emits **`conversation:created`** (a zero-state
+`ConversationPreview`) to each added member's user room (excluding the actor, who has it from the REST
+response), so a brand-new chat appears on the recipient's list instantly — the get-or-create direct
+branch does NOT re-emit when the conversation already existed. Connection request/accept run through the
+same `notification:created` path (no dedicated `connection:*` events). These ride the per-user room that
+also carries notifications; the stock Replyke SDK simply ignores `conversation:created`.
 
 > **Secure chat (Agora extension — not an SDK contract surface).** The end-to-end-encrypted secure-chat
 > surface lives outside this manifest; its full REST + realtime contract is in

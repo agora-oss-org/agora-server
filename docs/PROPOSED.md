@@ -18,10 +18,23 @@ Every item is tagged by its contract impact, because that's the constraint that 
 > (`{conversations|messages, hasMore}`), `localId` echo on messages, `request-new-access-token`
 > returns the user, connection routes reject non-UUID params with 400, and `ensureProfile` derives a
 > default username on account creation. See `CHANGELOG.md`.
+>
+> **Live-inbox cycle (2026-06-30, merged to `root`):** §2, §3, and §5 below are now **✅ SHIPPED**, and
+> §1 is **partially shipped** — see the per-section status banners. The realtime work landed *cheaper*
+> than these proposals estimated: the per-user socket room + `emitToUser` + `notification:created`
+> already existed, so §2/§5 needed no new SDK-contract divergence beyond the one net-new
+> `conversation:created` event. See `CHANGELOG.md` + `docs/superpowers/specs/2026-06-29-live-inbox-unified-design.md`.
 
 ---
 
 ## 1. Include the direct-conversation partner in conversation payloads
+
+> **Status: 🟡 PARTIALLY SHIPPED (2026-06-30).** The live-inbox work added `otherMembers[]`
+> (≤5 active non-self members) to the `ConversationPreview` returned by `GET /chat/conversations`
+> (list) and `GET /chat/conversations/:id/preview` — so the demo's per-row member fetch on the LIST
+> is eliminated (a direct chat's `otherMembers` is exactly the one partner). **Not done:** attaching it
+> to the base `GET /chat/conversations/:id` detail handler (deliberate non-goal — clients cache from the
+> list), and any server-derived display `name` for DMs. Remaining work is detail-only.
 
 **Tag:** 🟡 Additive divergence · **Priority:** High · **Effort:** Small
 
@@ -51,6 +64,16 @@ clients, which is what stock Replyke effectively forces.
 ---
 
 ## 2. Realtime connections + notifications (per-user socket channel)
+
+> **Status: ✅ SHIPPED (2026-06-30) — at far lower cost than estimated.** The per-user room
+> (`user:<projectId>:<userId>`, auto-joined on connect), `emitToUser()`, and the `notification:created`
+> event already existed; the only real gap was that `routes/connections.ts` had a *local* `notify()`
+> doing a raw `appNotifications` insert that bypassed `lib/notifications.ts`. Fixed by routing
+> connection request/accept through `notifyOnConnectionRequest`/`notifyOnConnectionAccept` →
+> the shared `insert()` → `notification:created` + push webhook. **No dedicated `connection:*` events
+> and NO SDK fork** — they ride the existing `notification:created` (types `connection-request` /
+> `connection-accepted`), so the "🔴 Hard divergence / Large" estimate was stale. The Inbox tab can now
+> drop its 6s connections poll.
 
 **Tag:** 🔴 Hard divergence · **Priority:** Medium · **Effort:** Large
 
@@ -82,6 +105,14 @@ fidelity-preserving choice.
 ---
 
 ## 3. Support an `after` cursor on `GET /chat/conversations/:id/messages`
+
+> **Status: ✅ SHIPPED (2026-06-30).** The messages handler now accepts `?after=<ISO>` — filters
+> `created_at > after` (ascending) for reconnect catch-up, validated up front (`400 chat/invalid-after`
+> on a malformed timestamp, never a Postgres 500). Implementation note: the comparison truncates the
+> column to milliseconds (`date_trunc('milliseconds', created_at)`) because the API serializes
+> timestamps at ms precision (`toISOString()`) while Postgres stores µs — without it the cursor message
+> re-appeared on every reconnect. (The SDK-side double-`/v7` URL bug in `catchUpMessages` is still an
+> SDK-fork fix, out of scope for the server.)
 
 **Tag:** 🟢 Compat · **Priority:** Medium · **Effort:** Small
 
@@ -126,6 +157,17 @@ script share one implementation.
 ---
 
 ## 5. Push a new conversation to its members in realtime (`conversation:created`)
+
+> **Status: ✅ SHIPPED (2026-06-30) — server side.** `conversation:created` is emitted to each new
+> member's `user:<projectId>:<userId>` room on `POST /chat/conversations` (group) and
+> `POST /chat/conversations/direct` (genuine create only — the get-or-create early-return does NOT
+> re-emit). Payload is the **rich** option: a zero-state `ConversationPreview` per recipient
+> (`unreadCount: 0`, `lastMessage: null`, `otherMembers` excluding that recipient), so the client upserts
+> with no follow-up GET. Also: `POST /chat/conversations/:id/messages` now fans `message:created` to the
+> union of the conversation room AND every active member's user room, so inbox observers reorder/bump
+> unread without joining the thread (the actual inbox-live driver). **Client/SDK follow-up still open:**
+> the `@agora-sdk` `chat-context.tsx` listener for `conversation:created` + the `types/socket.ts` entry
+> (this repo's `realtime/socket.ts` carries the event type already).
 
 **Tag:** 🔴 Hard divergence · **Priority:** Medium · **Effort:** Medium · **Depends on:** §2 (per-user room)
 
