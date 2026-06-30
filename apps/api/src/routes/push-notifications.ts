@@ -11,20 +11,27 @@ import { pushDeviceSchema, type PushDeviceIdentifier } from "@agora-server/contr
 import { getVapidKeys } from "../lib/push/vapid.js";
 
 // Upsert: native dedupes on (project,user,platform,token); web on (project,user,endpoint).
+// Atomic ON CONFLICT ... DO UPDATE avoids the TOCTOU race between concurrent register calls.
 async function registerDevice(projectId: string, userId: string, ident: PushDeviceIdentifier): Promise<void> {
   if (ident.platform === "web") {
-    const endpoint = ident.subscription.endpoint;
-    const updated = await db.update(pushDevices).set({ subscription: ident.subscription, updatedAt: new Date() })
-      .where(and(eq(pushDevices.projectId, projectId), eq(pushDevices.userId, userId), eq(pushDevices.platform, "web"), sql`${pushDevices.subscription}->>'endpoint' = ${endpoint}`)).returning({ id: pushDevices.id });
-    if (updated.length === 0) {
-      await db.insert(pushDevices).values({ projectId, userId, platform: "web", subscription: ident.subscription });
-    }
+    // The conflict target references an expression index ((subscription->>'endpoint')), which
+    // Drizzle's builder cannot express, so use a raw parameterized statement.
+    // All user-supplied values are bound parameters — no string interpolation.
+    await db.execute(sql`
+      INSERT INTO push_devices (project_id, user_id, platform, subscription)
+      VALUES (${projectId}::uuid, ${userId}::uuid, 'web', ${JSON.stringify(ident.subscription)}::jsonb)
+      ON CONFLICT (project_id, user_id, (subscription->>'endpoint')) WHERE platform = 'web'
+      DO UPDATE SET subscription = excluded.subscription, updated_at = now()
+    `);
   } else {
-    const updated = await db.update(pushDevices).set({ updatedAt: new Date() })
-      .where(and(eq(pushDevices.projectId, projectId), eq(pushDevices.userId, userId), eq(pushDevices.platform, ident.platform), eq(pushDevices.token, ident.token))).returning({ id: pushDevices.id });
-    if (updated.length === 0) {
-      await db.insert(pushDevices).values({ projectId, userId, platform: ident.platform, token: ident.token });
-    }
+    // Conflict target matches push_devices_native_unique partial index exactly.
+    await db.insert(pushDevices)
+      .values({ projectId, userId, platform: ident.platform, token: ident.token })
+      .onConflictDoUpdate({
+        target: [pushDevices.projectId, pushDevices.userId, pushDevices.platform, pushDevices.token],
+        targetWhere: sql`platform IN ('ios','android')`,
+        set: { updatedAt: new Date() },
+      });
   }
 }
 

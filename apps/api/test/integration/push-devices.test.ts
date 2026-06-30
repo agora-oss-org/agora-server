@@ -39,6 +39,8 @@ describe("push devices (integration)", () => {
   it("the POST /deregister fallback also removes", async () => {
     await api("POST", `${B}/push-notifications/devices`, { token: user.token, body: { platform: "android", token: "a1" } });
     expect((await api("POST", `${B}/push-notifications/devices/deregister`, { token: user.token, body: { platform: "android", token: "a1" } })).status).toBe(204);
+    const rows = await db.select().from(pushDevices).where(eq(pushDevices.userId, user.id));
+    expect(rows.length).toBe(0);
   });
 
   it("serves the VAPID public key unauthenticated", async () => {
