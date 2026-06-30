@@ -296,14 +296,22 @@ export const chatRoutes = new Hono<{ Variables: Variables }>()
     const convo = await getConversation(c);
     await requireMember(c, convo.id);
     const limit = Math.min(Number(c.req.query("limit")) || 20, 100);
-    const order = c.req.query("sort") === "asc" ? asc(chatMessages.createdAt) : desc(chatMessages.createdAt);
     const parentId = c.req.query("parentId");
-    const before = c.req.query("before"); // ISO timestamp cursor
+    const before = c.req.query("before"); // ISO timestamp cursor (back-pagination)
+    const after = c.req.query("after");   // ISO timestamp cursor (reconnect catch-up — forward)
+    if (after !== undefined && Number.isNaN(new Date(after).getTime())) {
+      throw Errors.badRequest("chat/invalid-after", "after must be an ISO timestamp", "after");
+    }
+    // Reconnect catch-up reads forward (ascending) regardless of sort; back-pagination respects sort.
+    const order = (after !== undefined || c.req.query("sort") === "asc") ? asc(chatMessages.createdAt) : desc(chatMessages.createdAt);
 
     const conds = [eq(chatMessages.conversationId, convo.id)];
     // Main stream = top-level messages; thread view = replies to a specific parent.
     conds.push(parentId ? eq(chatMessages.parentMessageId, parentId) : sql`${chatMessages.parentMessageId} is null`);
     if (before) conds.push(sql`${chatMessages.createdAt} < ${before}::timestamptz`);
+    // date_trunc: the API returns ms-precision timestamps; DB stores µs. Without truncation,
+    // a cursor of '...123Z' (ms) would include the cursor message (db: ...123456µs > ...123000µs).
+    if (after !== undefined) conds.push(sql`date_trunc('milliseconds', ${chatMessages.createdAt}) > ${after}::timestamptz`);
     // Hide moderation-removed messages from members (operators bypass for review) — mirrors entities/comments.
     const removedFilter = excludeRemovedSql(await removedPolicy(c), chatMessages);
     if (removedFilter) conds.push(removedFilter);
