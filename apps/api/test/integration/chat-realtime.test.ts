@@ -151,4 +151,45 @@ describe("chat realtime (socket.io e2e)", () => {
       sock.close();
     }
   });
+
+  it("delivers message:created to an inbox observer who has NOT joined the conversation room", async () => {
+    // bob is a member of `conversationId` but does NOT emit join:conversation — he only has his
+    // auto-joined user room. The fan-out must still reach him (the critical inbox-live fix).
+    const sock = await connect(bob.token);
+    try {
+      const created = once(sock, "message:created");
+      const sent = await api("POST", `${base(projectId)}/chat/conversations/${conversationId}/messages`, {
+        token: alice.token,
+        body: { content: "inbox observer ping" },
+      });
+      expect(sent.status).toBe(201);
+      const evt = await created;
+      expect(evt.id).toBe(sent.body.id);
+      expect(evt.content).toBe("inbox observer ping");
+    } finally {
+      sock.close();
+    }
+  });
+
+  it("emits conversation:created to a new direct conversation's recipient", async () => {
+    // A brand-new peer so the direct create is genuine (not get-or-create early-return).
+    const dave = await createUser(projectId);
+    const sock = await connect(dave.token); // auto-joins user:{proj}:dave
+    try {
+      const created = once(sock, "conversation:created");
+      const res = await api("POST", `${base(projectId)}/chat/conversations/direct`, {
+        token: alice.token,
+        body: { userId: dave.id },
+      });
+      expect(res.status).toBe(201);
+      const preview = await created;
+      expect(preview.id).toBe(res.body.id);
+      expect(preview.unreadCount).toBe(0);
+      expect(preview.lastMessage ?? null).toBeNull();
+      // dave's otherMembers = [alice]
+      expect(preview.otherMembers.map((m: any) => m.id)).toEqual([alice.id]);
+    } finally {
+      sock.close();
+    }
+  });
 });

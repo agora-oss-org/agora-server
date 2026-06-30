@@ -17,7 +17,7 @@ import {
   sendMessageSchema, editMessageSchema, messageReactionSchema, reportMessageSchema,
   addConversationMemberSchema, convMemberRoleSchema,
 } from "../lib/validation.js";
-import { emitToConversation } from "../realtime/socket.js";
+import { emitToConversation, emitToUser, emitMessageCreated } from "../realtime/socket.js";
 import { removedPolicy, excludeRemovedSql } from "../lib/moderation-visibility.js";
 import { logger } from "../lib/logger.js";
 import { indexContentAsync } from "../lib/embeddings.js";
@@ -84,6 +84,29 @@ async function buildConversationPreview(c: any, convo: ConversationRow, member: 
   });
 }
 
+// Notify each member's inbox of a new conversation. Zero-state preview (unreadCount 0, no lastMessage);
+// otherMembers is the rest of the roster (excluding the recipient). Skipped for space chats. The actor
+// is included in memberIds but already has the conversation from the REST response — emitting to their
+// user room is harmless (their other tabs upsert it) and keeps the helper simple.
+async function emitConversationCreated(c: any, convo: ConversationRow, memberIds: string[]) {
+  if (convo.type === "space" || memberIds.length === 0) return;
+  const profs = await db.select().from(profiles).where(inArray(profiles.id, memberIds));
+  const byId = new Map(profs.map((p) => [p.id, p]));
+  for (const recipientId of memberIds) {
+    const others = memberIds
+      .filter((id) => id !== recipientId)
+      .map((id) => byId.get(id))
+      .filter((p): p is NonNullable<typeof p> => !!p)
+      .map((p) => shapeUser(p) as any);
+    const preview = shapeConversationPreview(convo, {
+      unreadCount: 0,
+      lastMessage: null,
+      otherMembers: pickOtherMembers(others),
+    });
+    emitToUser(c.var.projectId, recipientId, "conversation:created", preview);
+  }
+}
+
 export const chatRoutes = new Hono<{ Variables: Variables }>()
   // ── conversations ─────────────────────────────────────────────────────────
   .get("/conversations", requireAuth, async (c) => {
@@ -130,6 +153,7 @@ export const chatRoutes = new Hono<{ Variables: Variables }>()
       projectId, conversationId: convo!.id, userId, role: userId === uid ? "admin" as const : "member" as const,
     }))).onConflictDoNothing();
     logger.info({ projectId, conversationId: convo!.id, userId: uid, type: convo!.type, spaceId: convo!.spaceId ?? null, members: memberIds.length }, "chat: conversation created");
+    await emitConversationCreated(c, convo!, memberIds);
     return c.json(shapeConversation(convo!, { memberCount: memberIds.length }), 201);
   })
   .post("/conversations/direct", requireAuth, async (c) => {
@@ -153,6 +177,7 @@ export const chatRoutes = new Hono<{ Variables: Variables }>()
       { projectId, conversationId: convo!.id, userId: uid, role: "member" as const },
       { projectId, conversationId: convo!.id, userId: other, role: "member" as const },
     ]);
+    await emitConversationCreated(c, convo!, [uid, other]);
     return c.json(shapeConversation(convo!, { memberCount: 2 }), 201);
   })
   // Total unread across the user's active conversations. MUST stay above /conversations/:id
@@ -343,7 +368,9 @@ export const chatRoutes = new Hono<{ Variables: Variables }>()
     const shaped = shapeChatMessage(row!, { localId: body.localId, ...(fileRows.length ? { files: fileRows.map(shapeFile) } : {}) });
     indexContentAsync(c.var.projectId, "message", row!.id, row!.content);
     logger.debug({ projectId: c.var.projectId, conversationId: convo.id, messageId: row!.id, userId: c.var.auth!.userId, parentMessageId: row!.parentMessageId ?? null, files: fileRows.length }, "chat: message created");
-    emitToConversation(convo.id, "message:created", shaped);
+    const memberRows = await db.select({ userId: conversationMembers.userId }).from(conversationMembers)
+      .where(and(eq(conversationMembers.conversationId, convo.id), eq(conversationMembers.isActive, true)));
+    emitMessageCreated(convo.id, c.var.projectId, memberRows.map((m) => m.userId), shaped);
     webhooks.broadcast(c.var.projectId, "message.created.complete", shaped);
     if (row!.parentMessageId) {
       const [parent] = await db.select({ n: chatMessages.threadReplyCount }).from(chatMessages).where(eq(chatMessages.id, row!.parentMessageId)).limit(1);
