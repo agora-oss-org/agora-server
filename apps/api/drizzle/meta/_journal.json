@@ -385,6 +385,12 @@
 			"when": 1781934611652,
 			"tag": "0054_conversations_keyset_idx",
 			"breakpoints": true
+		},{
+			"idx": 55,
+			"version": "7",
+			"when": 1781934611653,
+			"tag": "0055_push_devices",
+			"breakpoints": true
 		}
 	]
 }
