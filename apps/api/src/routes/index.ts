@@ -26,6 +26,7 @@ import { stewardRoutes } from "./steward.js";
 import { rolesRoutes } from "./roles.js";
 import { socialRoutes } from "./social.js";
 import { miscRoutes } from "./misc.js";
+import { pushNotificationRoutes } from "./push-notifications.js";
 
 export function mountRoutes() {
   // Project-scoped app: every request resolves :projectId, then attaches optional auth.
@@ -53,6 +54,7 @@ export function mountRoutes() {
   project.route("/steward", stewardRoutes);
   project.route("/roles", rolesRoutes);
   project.route("/social", socialRoutes);   // graph read side: transparency + weather
+  project.route("/push-notifications", pushNotificationRoutes);
   // oauth, projects, crypto, utils — small, grouped in misc
   project.route("/", miscRoutes);
 
