@@ -25,8 +25,8 @@ export async function dispatchToUser(projectId: string, userId: string, payload:
   if (devices.length === 0) return;
   const providers = await getProviders(projectId);
   const prune = async (deviceId: string) => { await db.delete(pushDevices).where(eq(pushDevices.id, deviceId)); };
-  const { sent, pruned } = await dispatchToDevices(devices as any, payload, providers, prune);
-  logger.info(`push: dispatched (sent=${sent} pruned=${pruned})`);
+  const { sent, pruned } = await dispatchToDevices(devices, payload, providers, prune);
+  if (sent || pruned) logger.info(`push: dispatched (sent=${sent} pruned=${pruned})`);
 }
 
 /** Fire-and-forget bridge from the notification choke point (never blocks/throws into the request).
