@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Events domain hardening — visibility, capacity, and input robustness.** `GET /events` now applies
+  the **space-read** gate to *every* visibility (not just `public`), so the list can no longer surface an
+  `invite`/`members` event living in a members-reading space that single-GET would `403` — list and
+  single-GET stay consistent and fail closed. RSVP `going` capacity is enforced inside a row-locked
+  transaction (`select … for update` on the event), closing a read-then-insert **TOCTOU** that could let
+  concurrent RSVPs overshoot `capacity`. Unknown enum query filters (`GET /events` `?type`/`?status`,
+  `GET /events/:eventId/rsvps` `?status`) now return a clean `400 events/invalid-filter` instead of a
+  Postgres invalid-enum `500`. PATCH `removeImageIds` now clears `events.cover_image_id` when the removed
+  file was the cover (no dangling pointer). (RSVP set/withdraw and the guest-list read already require
+  event-view access — `403 events/not-visible`.)
 - **Social analytics no longer warns when the graph is empty.** `withProjectedGdsGraph`
   (`apps/api/src/lib/social-gds.ts`) now returns early for an empty candidate set and pre-counts
   matching `:User` nodes before projecting, degrading to `null` with a single `debug` line instead of

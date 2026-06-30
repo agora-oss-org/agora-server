@@ -8,7 +8,7 @@ import { db } from "../db/index.js";
 import { events, eventHosts, eventRsvps, eventInvites, spaceMembers, spaces } from "../db/schema/index.js";
 import { readPagination, paginate } from "../http/envelope.js";
 import { parseBody } from "../lib/validation.js";
-import { createEventSchema, updateEventSchema, rsvpSchema, eventUserIdSchema } from "@agora-server/contract";
+import { createEventSchema, updateEventSchema, rsvpSchema, eventUserIdSchema, eventTypeEnum, eventStatusEnum, rsvpStatusEnum } from "@agora-server/contract";
 import { shapeEvent, shapeEventRsvp, shapeEventInvite, generateShortId, loadUsers, parseInclude } from "../lib/shape.js";
 import { isProjectAdmin } from "../lib/project-roles.js";
 import { removedPolicy, shouldHide } from "../lib/moderation-visibility.js";
@@ -192,8 +192,18 @@ export const eventRoutes = new Hono<{ Variables: Variables }>()
     const q = (k: string) => { const v = c.req.query(k); return v && v !== "null" && v !== "undefined" ? v : undefined; };
     const conds: SQL[] = [eq(events.projectId, projectId), isNull(events.deletedAt)];
     if (q("spaceId")) conds.push(eq(events.spaceId, q("spaceId")!));
-    if (q("type")) conds.push(sql`${events.type} = ${q("type")}::event_type`);
-    if (q("status")) conds.push(sql`${events.status} = ${q("status")}::event_status`);
+    // Validate enum filters against the contract enum BEFORE the ::cast — a bad value is a client
+    // error (clean 400), not a Postgres invalid-enum 500. Reject, don't coerce.
+    const typeQ = q("type");
+    if (typeQ !== undefined) {
+      if (!eventTypeEnum.safeParse(typeQ).success) throw Errors.badRequest("events/invalid-filter", "Invalid 'type' filter", "type");
+      conds.push(sql`${events.type} = ${typeQ}::event_type`);
+    }
+    const statusQ = q("status");
+    if (statusQ !== undefined) {
+      if (!eventStatusEnum.safeParse(statusQ).success) throw Errors.badRequest("events/invalid-filter", "Invalid 'status' filter", "status");
+      conds.push(sql`${events.status} = ${statusQ}::event_status`);
+    }
     if (q("startsAfter")) conds.push(sql`${events.startTime} >= ${q("startsAfter")}::timestamptz`);
     if (q("startsBefore")) conds.push(sql`${events.startTime} <= ${q("startsBefore")}::timestamptz`);
     const tw = q("timeWindow");
@@ -212,18 +222,23 @@ export const eventRoutes = new Hono<{ Variables: Variables }>()
     // refinement is enforced on single GET; the list shows public + the caller's own visible set.)
     if (!(c.var.auth && isProjectAdmin(c.var.auth))) {
       const uid = c.var.auth?.userId ?? null;
-      // A public event in a reading-restricted space must NOT leak in the list to a non-reader
-      // (mirrors assertCanReadSpace / readableEntitiesFilter): space null, OR readingPermission='anyone',
-      // OR the caller owns / actively belongs to the space. Fail closed for anonymous.
+      // Can the caller READ the event's space? (mirrors assertCanReadSpace / readableEntitiesFilter):
+      // space null, OR readingPermission='anyone', OR the caller owns / actively belongs to the space.
+      // Fail closed for anonymous.
       const spaceReadable = uid
         ? sql`(${events.spaceId} is null or exists (select 1 from spaces s where s.id = ${events.spaceId} and s.deleted_at is null and (s.reading_permission = 'anyone' or s.user_id = ${uid}::uuid or exists (select 1 from space_members m where m.space_id = s.id and m.user_id = ${uid}::uuid and m.status = 'active'))))`
         : sql`(${events.spaceId} is null or exists (select 1 from spaces s where s.id = ${events.spaceId} and s.deleted_at is null and s.reading_permission = 'anyone'))`;
+      // The space-read gate applies to EVERY event with a space (single-GET runs assertCanReadSpace
+      // for all visibilities, before the host short-circuit), so AND spaceReadable across the whole
+      // visibility predicate — not just the public branch. Otherwise the list is more permissive than
+      // single-GET (e.g. an invitee or host who can't read a members-reading space would see the row
+      // here but 403 on the single fetch). Fail closed.
       conds.push(uid
-        ? sql`((${events.visibility} = 'public' and ${spaceReadable})
+        ? sql`(${spaceReadable} and (${events.visibility} = 'public'
             or (${events.visibility} = 'members' and (${events.spaceId} is null or exists (select 1 from space_members m where m.space_id = ${events.spaceId} and m.user_id = ${uid}::uuid and m.status = 'active') or exists (select 1 from spaces s where s.id = ${events.spaceId} and s.user_id = ${uid}::uuid)))
             or (${events.visibility} = 'invite' and exists (select 1 from event_invites i where i.event_id = ${events.id} and i.user_id = ${uid}::uuid))
-            or exists (select 1 from event_hosts h where h.event_id = ${events.id} and h.user_id = ${uid}::uuid))`
-        : sql`(${events.visibility} = 'public' and ${spaceReadable})`);
+            or exists (select 1 from event_hosts h where h.event_id = ${events.id} and h.user_id = ${uid}::uuid)))`
+        : sql`(${spaceReadable} and ${events.visibility} = 'public')`);
     }
     const where = and(...conds);
     const sortBy = q("sortBy");
@@ -264,6 +279,10 @@ export const eventRoutes = new Hono<{ Variables: Variables }>()
     if (body.location !== undefined) await writeLocation(row.id, body.location);
     if (body.removeImageIds?.length) {
       await db.execute(sql`delete from files where event_id = ${row.id}::uuid and id = any(${sql`array[${sql.join(body.removeImageIds.map((id) => sql`${id}::uuid`), sql`, `)}]`})`);
+      // If the cover image was among those removed, clear the now-dangling pointer.
+      if (row.coverImageId && body.removeImageIds.includes(row.coverImageId)) {
+        await db.update(events).set({ coverImageId: null }).where(eq(events.id, row.id));
+      }
     }
     const [fresh] = await db.select().from(events).where(eq(events.id, row.id)).limit(1);
     return c.json(await buildEventResponse(c, fresh!));
@@ -290,16 +309,28 @@ export const eventRoutes = new Hono<{ Variables: Variables }>()
       throw Errors.badRequest("events/rsvp-closed", "RSVPs are closed for this event");
     }
     if (status === "maybe" && !row.allowMaybe) throw Errors.badRequest("events/maybe-not-allowed", "This event does not allow 'maybe'");
+    const uid = c.var.auth!.userId;
     if (status === "going") {
-      const counts = await loadRsvpCounts(row.id);
-      // Only count an additional seat if the caller isn't already 'going'.
-      const [mine] = await db.select({ status: eventRsvps.status }).from(eventRsvps)
-        .where(and(eq(eventRsvps.eventId, row.id), eq(eventRsvps.userId, c.var.auth!.userId))).limit(1);
-      const effectiveGoing = mine?.status === "going" ? counts.going - 1 : counts.going;
-      if (!canRsvpGoing(effectiveGoing, row.capacity)) throw Errors.badRequest("events/capacity-full", "This event is at capacity");
+      // Serialize concurrent going-RSVPs for this event so the capacity check + write are atomic — a
+      // plain read-then-insert is a TOCTOU race that could overshoot capacity. `for update` on the
+      // event row makes each going-RSVP re-count under the lock; maybe/not_going/withdraw never add a
+      // seat, so they skip the lock. Invariant held: the going count can never exceed capacity.
+      await db.transaction(async (tx) => {
+        await tx.execute(sql`select 1 from events where id = ${row.id}::uuid for update`);
+        const [g = { n: 0 }] = await tx.select({ n: count() }).from(eventRsvps)
+          .where(and(eq(eventRsvps.eventId, row.id), eq(eventRsvps.status, "going")));
+        const [mine] = await tx.select({ status: eventRsvps.status }).from(eventRsvps)
+          .where(and(eq(eventRsvps.eventId, row.id), eq(eventRsvps.userId, uid))).limit(1);
+        // Only count an additional seat if the caller isn't already 'going'.
+        const effectiveGoing = mine?.status === "going" ? Number(g.n) - 1 : Number(g.n);
+        if (!canRsvpGoing(effectiveGoing, row.capacity)) throw Errors.badRequest("events/capacity-full", "This event is at capacity");
+        await tx.insert(eventRsvps).values({ projectId: c.var.projectId, eventId: row.id, userId: uid, status })
+          .onConflictDoUpdate({ target: [eventRsvps.eventId, eventRsvps.userId], set: { status, updatedAt: new Date() } });
+      });
+    } else {
+      await db.insert(eventRsvps).values({ projectId: c.var.projectId, eventId: row.id, userId: uid, status })
+        .onConflictDoUpdate({ target: [eventRsvps.eventId, eventRsvps.userId], set: { status, updatedAt: new Date() } });
     }
-    await db.insert(eventRsvps).values({ projectId: c.var.projectId, eventId: row.id, userId: c.var.auth!.userId, status })
-      .onConflictDoUpdate({ target: [eventRsvps.eventId, eventRsvps.userId], set: { status, updatedAt: new Date() } });
     return c.json(await buildEventResponse(c, row));
   })
   .delete("/:eventId/rsvp", requireAuth, async (c) => {
@@ -317,6 +348,10 @@ export const eventRoutes = new Hono<{ Variables: Variables }>()
     if (!isHostOrAdmin && !row.guestListVisible) throw Errors.forbidden("events/guest-list-hidden", "The guest list is private");
     const { page, limit, offset } = readPagination(c);
     const status = c.req.query("status");
+    // Validate the optional status filter against the enum before the ::cast (clean 400, not a 500).
+    if (status !== undefined && status !== "" && !rsvpStatusEnum.safeParse(status).success) {
+      throw Errors.badRequest("events/invalid-filter", "Invalid 'status' filter", "status");
+    }
     const where = and(eq(eventRsvps.eventId, row.id), status ? sql`${eventRsvps.status} = ${status}::rsvp_status` : undefined);
     const rows = await db.select().from(eventRsvps).where(where).orderBy(desc(eventRsvps.createdAt)).limit(limit).offset(offset);
     const [{ total } = { total: 0 }] = await db.select({ total: count() }).from(eventRsvps).where(where);

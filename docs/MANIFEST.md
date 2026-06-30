@@ -219,10 +219,15 @@ Community events with RSVPs, invites, and co-hosts (Agora extension, SDK-derived
 round-tripped against the live SDK, hence 🔶). Visibility is `public | members | invite`
 (`members` = space members when `spaceId` is set, else any authed user); the list shows public events
 plus the caller's own visible set, single GET enforces the per-row gate (`403 events/not-visible`).
-Removed events are hidden from non-admins. **Manage** (PATCH/DELETE/cancel/invites/hosts) is gated to a
-host or project-admin (`403 events/not-host`). RSVP gates: `400 events/rsvp-closed` (cancelled or
-past), `events/maybe-not-allowed`, `events/capacity-full`. Removing the last host is rejected
-(`400 events/last-host`); a hidden guest list 403s non-hosts (`events/guest-list-hidden`).
+Both the list and single GET also apply the **space-read** gate — an event in a members-reading space
+is hidden/`403`s a caller who can't read that space (list ↔ single-GET stay consistent, fail-closed).
+RSVP set/withdraw and the guest-list read require the same view access (`403 events/not-visible`).
+Removed events are hidden from non-admins. An unknown enum filter (`?type`/`?status`, and RSVP
+`?status`) returns `400 events/invalid-filter`. **Manage** (PATCH/DELETE/cancel/invites/hosts) is gated
+to a host or project-admin (`403 events/not-host`). RSVP gates: `400 events/rsvp-closed` (cancelled or
+past), `events/maybe-not-allowed`, `events/capacity-full` (capacity is enforced atomically under a row
+lock). Removing the last host is rejected (`400 events/last-host`); a hidden guest list 403s non-hosts
+(`events/guest-list-hidden`).
 `POST /events` accepts JSON or `multipart/form-data` (`cover` + `gallery` images → the image pipeline).
 | Method | Path | Status |
 |---|---|---|

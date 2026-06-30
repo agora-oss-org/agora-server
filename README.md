@@ -314,6 +314,7 @@ complete** — no stubbed endpoints remain.
 | **connections** | bidirectional friend-request state machine (none → pending → connected/declined) with directional status |
 | **spaces** | nested spaces (depth cap + cycle guard), membership (join/approve/ban/roles), rules, moderation queues, **digest config** |
 | **collections** | nestable saved-entity folders |
+| **events** | community events with RSVPs (going/maybe/not_going, capacity-capped going), invites (host-only, invite-removal revokes the RSVP), co-hosts (last-host guard), `public/members/invite` visibility (gated against space-read access), cover + gallery images, and a PostGIS `location` for radius (km) list filtering |
 | **notifications** | fan-out across every write path, inbox, unread count, mark read |
 | **reports** | report queue + resolution (entities, comments, chat messages) |
 | **auth** | sign-up/in/out, refresh rotation + reuse-detection, change/reset password, email verify, external RS256, OAuth provider sign-in/link |

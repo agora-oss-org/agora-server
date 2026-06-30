@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { randomUUID } from "node:crypto";
+import { eq } from "drizzle-orm";
 import { db } from "../../src/db/index.js";
-import { spaces } from "../../src/db/schema/index.js";
+import { spaces, events, files } from "../../src/db/schema/index.js";
 import { api, createProject, createUser, deleteProject, base } from "./helpers.js";
 
 describe("events — CRUD + authorization (integration)", () => {
@@ -95,5 +96,46 @@ describe("events — CRUD + authorization (integration)", () => {
     // Space owner/host: event still appears.
     const ownerList = await api("GET", `${B}/events`, { token: host.token });
     expect(ownerList.body.data.some((e: any) => e.id === evId)).toBe(true);
+  });
+
+  it("rejects an unknown enum filter with a clean 400 (not a Postgres 500)", async () => {
+    expect((await api("GET", `${B}/events?type=bogus`, { token: host.token })).status).toBe(400);
+    expect((await api("GET", `${B}/events?status=nonsense`, { token: host.token })).status).toBe(400);
+    // valid enum filters still work
+    expect((await api("GET", `${B}/events?status=active`, { token: host.token })).status).toBe(200);
+  });
+
+  it("hides an invite-only event in a members-reading space from a non-member invitee (list ↔ single-GET consistent)", async () => {
+    // host owns a members-reading space and creates an *invite*-visibility event in it, then invites
+    // `other` — who is NOT a member of the space. single-GET 403s `other` via the space-read gate even
+    // though invited; the list must agree (previously the invite branch leaked it).
+    const [space] = await db.insert(spaces).values({
+      projectId, shortId: `sp_${Date.now().toString(36)}`, name: "Members-read invite", userId: host.id,
+      readingPermission: "members", postingPermission: "anyone",
+    }).returning();
+    const created = await api("POST", `${B}/events`, { token: host.token, body: { title: "Invite in private space", startTime: "2026-10-01T18:00:00Z", type: "online", visibility: "invite", spaceId: space!.id } });
+    expect(created.status).toBe(201);
+    const evId = created.body.id;
+    expect((await api("POST", `${B}/events/${evId}/invites`, { token: host.token, body: { userId: other.id } })).status).toBe(200);
+    // single-GET 403s the non-member invitee…
+    expect((await api("GET", `${B}/events/${evId}`, { token: other.token })).status).toBe(403);
+    // …so the list must hide it too.
+    const list = await api("GET", `${B}/events`, { token: other.token });
+    expect(list.body.data.some((e: any) => e.id === evId)).toBe(false);
+  });
+
+  it("clears coverImageId when the cover file is removed via removeImageIds", async () => {
+    const created = await api("POST", `${B}/events`, { token: host.token, body: { title: "Has cover", startTime: "2026-11-01T18:00:00Z", type: "online" } });
+    const evId = created.body.id;
+    // Simulate a stored cover (bypassing the upload pipeline): a files row + the event's cover pointer.
+    const [file] = await db.insert(files).values({
+      projectId, eventId: evId, type: "image", originalPath: "test/cover.webp",
+    }).returning();
+    await db.update(events).set({ coverImageId: file!.id }).where(eq(events.id, evId));
+    expect((await api("GET", `${B}/events/${evId}`, { token: host.token })).body.coverImageId).toBe(file!.id);
+    // Removing the cover file must null the pointer (no dangling coverImageId).
+    const patched = await api("PATCH", `${B}/events/${evId}`, { token: host.token, body: { removeImageIds: [file!.id] } });
+    expect(patched.status).toBe(200);
+    expect(patched.body.coverImageId ?? null).toBeNull();
   });
 });
