@@ -106,6 +106,10 @@ shape (see `AppNotification.ts`). Store generically: `type` + `action` + jsonb `
 ## Project
 `id, clientId, name, integrations[]{id, projectId, name, data(jsonb), createdAt}, createdAt, updatedAt`
 
+## PushDevice
+`id, projectId, userId, platform(ios|android|web), token?(string — FCM/APNs device token; null for web),
+subscription?({endpoint, keys:{p256dh, auth}} — Web Push subscription; null for native), createdAt, updatedAt`
+
 ## Event / EventRsvp / EventInvite
 Event: `id, shortId, projectId, userId?, user?, title, description?, startTime, endTime?, timezone?,
 type(online|physical|hybrid), url?, venueName?, address?, location?(GeoJSON Point), spaceId?, space?,

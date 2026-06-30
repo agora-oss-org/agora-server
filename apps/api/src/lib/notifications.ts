@@ -22,6 +22,7 @@ import { getStewardConfig } from "./steward-config.js";
 import * as webhooks from "./webhooks.js";
 import { emitToUser } from "../realtime/socket.js";
 import { logger } from "./logger.js";
+import { dispatchNotificationPush } from "./push/index.js";
 
 // Reaction-count thresholds that trigger a milestone notification. Tune to taste.
 const MILESTONES = [10, 25, 50, 100, 250, 500, 1000];
@@ -63,6 +64,10 @@ async function insert(
     webhooks.broadcast(projectId, "notification.created", shaped);
     // Realtime: live-deliver to the recipient's open sockets (no-op until the socket server is attached).
     emitToUser(projectId, recipientId, "notification:created", shaped);
+    // Push bridge: deliver to the recipient's registered devices (offline-friendly). Fire-and-forget
+    // — never block or throw into the caller. No-op when the user has no devices / no transport, and
+    // when the notification type isn't push-worthy (reactions/milestones/steward → in-app only).
+    dispatchNotificationPush(projectId, recipientId, type);
   }
 }
 

@@ -48,6 +48,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Documented in `deploy/proxy/README.md`, `docs/SELF-HOSTING.md`, and `.env.example`.
 
 ### Added
+- Push notifications: `push_devices` table + `/v7/:projectId/push-notifications/*` (register/deregister/deregister-fallback/vapid-public-key).
+- Push dispatch seam (Web Push fully wired; FCM HTTP v1 + APNs HTTP/2 credential-gated) bridged to the in-app notification choke point.
+- VAPID per-project (project_integrations `vapid`) with `VAPID_PUBLIC_KEY`/`VAPID_PRIVATE_KEY`/`VAPID_SUBJECT` env fallback.
 - Chat: `GET /chat/conversations/:id/preview` (single `ConversationPreview` — `unreadCount`, `otherMembers`, truncated `lastMessage`).
 - Chat: `conversation:created` socket event fanned to member user rooms on new direct/group conversations.
 - Chat: `?after=<ISO>` cursor on `GET /chat/conversations/:id/messages` for reconnect catch-up (ascending, strictly after the cursor; `400 chat/invalid-after` on a malformed timestamp).
