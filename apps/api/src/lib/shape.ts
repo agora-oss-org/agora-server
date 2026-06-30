@@ -519,6 +519,42 @@ export function shapeConversation(
   return convo;
 }
 
+/** Codepoint-safe truncation of a shaped message's `content` (inbox previews cap at 100 chars). */
+export function truncateMessageContent<T extends { content?: unknown }>(msg: T, max = 100): T {
+  const content = (msg as { content?: unknown }).content;
+  if (typeof content !== "string") return msg;
+  const chars = [...content];
+  if (chars.length <= max) return msg;
+  return { ...msg, content: chars.slice(0, max).join("") };
+}
+
+/** Project member profiles to the ≤5 inbox `otherMembers` subset (caller excludes self in the query). */
+export function pickOtherMembers(
+  rows: Array<{ id: string; name: string | null; username: string | null; avatar: string | null }>,
+  max = 5,
+): Array<{ id: string; name: string | null; username: string | null; avatar: string | null }> {
+  return rows.slice(0, max).map((r) => ({ id: r.id, name: r.name ?? null, username: r.username ?? null, avatar: r.avatar ?? null }));
+}
+
+/** Inbox row: base conversation + unreadCount + (truncated) lastMessage + otherMembers. */
+export function shapeConversationPreview(
+  row: ConversationRow,
+  opts: {
+    unreadCount: number;
+    lastMessage: Record<string, unknown> | null;
+    otherMembers: Array<{ id: string; name: string | null; username: string | null; avatar: string | null }>;
+    currentMember?: unknown;
+  },
+) {
+  const base = shapeConversation(row, {
+    unreadCount: opts.unreadCount,
+    lastMessage: opts.lastMessage ? truncateMessageContent(opts.lastMessage, 100) : null,
+    ...(opts.currentMember !== undefined ? { currentMember: opts.currentMember } : {}),
+  });
+  base.otherMembers = opts.otherMembers;
+  return base;
+}
+
 export function shapeConversationMember(row: ConversationMemberRow, user?: User | null) {
   const m: Record<string, unknown> = {
     id: row.id,
