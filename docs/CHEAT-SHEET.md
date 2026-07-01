@@ -2,7 +2,7 @@
 
 A one-page map of **what to run** (compose profiles) and **what to set** (env vars) for each
 deployment shape — and **where to get** each value. The full, commented env reference is
-[`.env.example`](../.env.example); the architecture lives in [`CLAUDE.md`](../CLAUDE.md) and
+[`.env.dev.example`](../.env.dev.example); the architecture lives in [`CLAUDE.md`](../CLAUDE.md) and
 [`docs/SELF-HOSTING.md`](SELF-HOSTING.md).
 
 > **Golden rule:** in `.env`, an **empty string == unset** (optional features stay off when blank).

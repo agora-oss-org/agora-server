@@ -84,7 +84,7 @@ pnpm -r build            # build every package (contract first, topologically)
 Then, from `apps/api`:
 
 ```bash
-cp .env.example .env      # fill in DATABASE_URL (required) — see Configuration below
+cp ../../.env.dev.example .env  # or .env.selfhost.example — see the root README → Environment files
 pnpm db:migrate           # apply migrations to your Supabase DB (idempotent; safe to re-run)
 pnpm dev                  # http://localhost:4000/v7   (GET /health to verify)
 
@@ -160,9 +160,10 @@ pnpm seed
 
 ## Configuration (`.env`)
 
-`@agora/api` loads **`apps/api/.env`** (`dotenv`, from this package's dir) — `cp .env.example .env` here
-to start. Only `DATABASE_URL` is strictly required; the rest gate specific features and are validated as
-optional (empty strings are treated as unset). (Want one env file across all the apps? See
+`@agora/api` loads **`apps/api/.env`** (`dotenv`, from this package's dir) — `cp ../../.env.dev.example .env`
+(or `.env.selfhost.example` — see the root README → Environment files) here to start. Only `DATABASE_URL`
+is strictly required; the rest gate specific features and are validated as optional (empty strings are
+treated as unset). (Want one env file across all the apps? See
 [Environment files](../../README.md#environment-files) in the repo README.)
 
 ```ini

@@ -226,8 +226,8 @@ pnpm install             # install all workspaces (from the repo root)
 pnpm -r build            # build every package (contract first, topologically)
 
 # Backend — the only hard requirement is a Supabase DATABASE_URL
+cp .env.dev.example .env  # dev (host + cloud Supabase); or .env.selfhost.example for a fully local stack
 cd apps/api
-cp .env.example .env      # fill in DATABASE_URL
 pnpm db:migrate:run       # apply migrations (idempotent; safe to re-run)
 pnpm dev                  # http://localhost:4000/v7   (GET /health to verify)
 
@@ -240,30 +240,21 @@ Each app's README covers its own configuration, commands, and Docker image. Star
 
 ## Environment files
 
-Each Node service loads **its own** `.env` (via `dotenv`, from the directory it runs in) — there is no
-shared or auto-loaded root env on a fresh clone, so every app you run needs a `.env` in its package:
+Agora runs in three first-class configurations, each with a **complete, ready-to-fill template**. Pick
+the one that matches how you're running it, copy it to `.env`, and fill the `<…>` placeholders:
 
-| Service | env file | start from |
+| Configuration | Template → `.env` | Bring it up |
 |---|---|---|
-| `@agora/api` | `apps/api/.env` | `cp apps/api/.env.example apps/api/.env` |
-| `@agora/admin` (browser `VITE_*`) | `apps/admin/.env` | `cp apps/admin/.env.example apps/admin/.env` |
-| `@agora/secure-chat` | `apps/secure-chat/.env` | fill from the root [`.env.example`](.env.example) (no per-app example) |
-| `services/scorer` (Python) | its own process env | — |
+| **dev** — you edit code on the host (HMR), cloud Supabase backs it | `cp .env.dev.example .env` | `docker compose -f docker-compose.dev.yml --profile supabase up --build` + `pnpm --filter @agora/api dev` |
+| **selfhost** — fully self-contained, no cloud account (local Postgres + MinIO) | `cp .env.selfhost.example .env` | `docker compose --profile selfhost up --build -d` |
+| **prod** — pulled images, cloud Supabase, real domain | `cp .env.prod.example .env` | `docker compose -f docker-compose.prod.yml --profile supabase up -d` |
 
-The repo-root [`.env.example`](.env.example) is the **comprehensive reference** (every var across the API
-+ scorer); the per-app `*.env.example` files are minimal subsets for running that app alone.
+Compose reads the root **`.env`** for both `${VAR}` interpolation and the services' `env_file`. Each app
+also loads it via `dotenv` (`apps/api/.env` is a symlink to the root `.env`). Every template carries an
+`AGORA_ENV=<mode>` marker; the destructive DB scripts (`drop`/`genesis`) read it to refuse a `--force`
+that would wipe a **cloud** database.
 
-**Optional — one file for everything.** If you'd rather maintain a single env file, fill the root `.env`
-once and symlink each service's file to it:
-
-```bash
-cp .env.example .env
-ln -sf ../../.env apps/api/.env
-ln -sf ../../.env apps/secure-chat/.env
-```
-
-That's a convenience, not a requirement — these symlinks are gitignored and never ship with the repo
-(the Docker path doesn't use them either; compose reads the root `.env` directly).
+The browser-facing admin SPA has its own build-time vars — see [`apps/admin/.env.example`](apps/admin/.env.example).
 
 ## Architecture
 

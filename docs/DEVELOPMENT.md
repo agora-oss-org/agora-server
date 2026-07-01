@@ -33,13 +33,14 @@ Then configure the API's env (each app loads **its own** `.env` from its package
 
 ```bash
 cd apps/api
-cp .env.example .env      # fill in DATABASE_URL (the only hard requirement) — see Configuration below
+cp ../../.env.dev.example .env  # dev (host + cloud); see Environment files in the README for all three modes
 ```
 
 Only `DATABASE_URL` is strictly required; everything else gates a feature and is validated as optional
-(empty strings = unset). The repo-root `.env.example` is the comprehensive reference; per-app
-`*.env.example` files are minimal subsets. (Want one file across apps? Symlink each app's `.env` to a
-root `.env` — `ln -sf ../../.env apps/api/.env`; gitignored, local convenience.)
+(empty strings = unset). Each of the three modes has a complete template — `.env.dev.example`,
+`.env.selfhost.example`, `.env.prod.example` (see the README → Environment files). (Want one file across
+apps? Symlink each app's `.env` to a root `.env` — `ln -sf ../../.env apps/api/.env`; gitignored, local
+convenience.)
 
 > 🔒 **Secrets:** never print `.env` secrets. To check a var, `grep` to it and report status/length
 > only.

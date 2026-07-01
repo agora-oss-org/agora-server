@@ -22,7 +22,7 @@
 # DEPLOY BUNDLE — the ACME/HTTPS path needs ONLY this compose file + .env. The default Caddyfile + the
 # routing snippet are BAKED into the agora-proxy image, so no proxy config files are required on the host.
 # A couple of files are needed only for opt-in cases:
-#   • .env                                  — the single config source (see .env.example / docs/CHEAT-SHEET.md)
+#   • .env                                  — the single config source (see .env.prod.example / docs/SELF-HOSTING.md)
 #   • neo4j/plugins/open-gds-*.jar          — only with --profile scorer/full (DozerDB GDS plugin)
 #   • deploy/proxy/Caddyfile.onion + certs/ — only for the ADVANCED .onion / static-cert variant, mounted
 #                                             over the baked defaults (see the proxy service below)

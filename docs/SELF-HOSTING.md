@@ -29,23 +29,19 @@ profile-gated, so a bare `docker compose up` starts nothing.)
 
 ## Quick start (whole stack, no Supabase)
 
-1. **Start from the local template.** [`.env.local.example`](../.env.local.example) is a ready-made
+1. **Start from the local template.** [`.env.selfhost.example`](../.env.selfhost.example) is a ready-made
    config for exactly this deploy — `--profile selfhost` (or `--profile full --profile selfhost`) — with
    every self-hosted var pre-wired (local Postgres, MinIO, native auth, the Caddy front door on plain
-   HTTP) and an `openssl` command beside each secret placeholder. Copy it, fill the `<GENERATE: …>`
-   placeholders, then activate it as `.env` (compose reads `.env` for both `${VAR}` interpolation **and**
-   the services' `env_file`):
+   HTTP) and an `openssl` command beside each secret placeholder. Copy it to `.env` and fill the
+   `<GENERATE: …>` placeholders (compose reads `.env` for both `${VAR}` interpolation **and** the
+   services' `env_file`):
 
    ```bash
-   cp .env.local.example .env.local        # 1. copy the template
-   # 2. fill every <GENERATE: …> placeholder with the openssl command shown beside it, e.g.:
-   #    openssl rand -hex 16     → POSTGRES_PASSWORD / MINIO_ROOT_PASSWORD / NEO4J_AUTH password
-   #    openssl rand -base64 48  → ACCESS_TOKEN_SECRET / CRON_SECRET / MODERATION_SERVICE_SECRET
-   cp .env.local .env                       # 3. make it the active env file
+   cp .env.selfhost.example .env            # copy the template
+   # …fill the <GENERATE:…> placeholders (openssl commands are shown inline)…
    ```
 
-   The self-hosted block it sets (what you'd otherwise assemble by hand from `.env.example` →
-   "Self-hosted"):
+   The self-hosted block it sets (what you'd otherwise assemble by hand):
 
    ```bash
    # DB — local Postgres
