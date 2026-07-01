@@ -5,8 +5,7 @@ dist/
 # Env files hold real secrets — ignore every variant; the *.example templates are the only ones tracked.
 .env
 .env.*
-!.env.example
-!.env.local.example
+!.env.*.example
 *.log
 .DS_Store
 
