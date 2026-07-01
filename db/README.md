@@ -23,7 +23,7 @@ migrations are skipped, and the custom SQL is itself re-runnable
 
 ```bash
 cd apps/api
-cp .env.example .env          # set DATABASE_URL (+ Supabase URL/keys)
+cp ../../.env.dev.example .env          # dev; see README -> Environment files
 pnpm db:generate              # regenerate after editing src/db/schema/*.ts
 pnpm db:migrate               # apply (safe to re-run)
 ```

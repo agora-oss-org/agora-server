@@ -19,7 +19,7 @@ pnpm -r build            # build every package (contract first, topologically)
 
 # Backend — the only hard requirement is a DATABASE_URL
 cd apps/api
-cp .env.example .env      # fill in DATABASE_URL
+cp ../../.env.dev.example .env      # dev (host + cloud); see README -> Environment files
 pnpm db:migrate:run       # apply migrations (idempotent; safe to re-run)
 pnpm dev                  # http://localhost:4000/v7   (GET /health to verify)
 
@@ -31,7 +31,7 @@ cd ../admin && pnpm dev   # http://localhost:5173
 
 ## Environment
 
-Each app loads its own `.env` from its package directory — for the API, `cp .env.example .env` in
+Each app loads its own `.env` from its package directory — for the API, `cp ../../.env.dev.example .env` in
 `apps/api/`. `DATABASE_URL` is the only hard requirement; everything else gates a specific feature and is
 validated as optional — e.g. `SUPABASE_*` (Auth + Storage), `VOYAGE_API_KEY` (semantic search),
 `NEO4J_URI` (the [[Social Graph]]), `OPERATOR_USER_IDS`/`OPERATOR_EMAILS` (the operator allowlist). The

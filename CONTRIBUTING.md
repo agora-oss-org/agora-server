@@ -69,7 +69,7 @@ pnpm install                    # all workspaces, from the repo root
 pnpm -r build                   # build every package (contract first, topologically)
 
 cd apps/api
-cp .env.example .env            # fill in DATABASE_URL (required); see README → Configuration
+cp ../../.env.dev.example .env            # fill in DATABASE_URL (required); see README → Configuration
 pnpm db:migrate                 # apply migrations (idempotent; safe to re-run)
 pnpm dev                        # http://localhost:4000/v7   (GET /health to verify)
 ```

@@ -101,6 +101,11 @@ profile-gated, so a bare `docker compose up` starts nothing.)
    > and the RLS migrations would fail with `schema "auth" does not exist`). That's why `DATABASE_URL`
    > points at `…@db:5432/postgres`.
 
+   > **`password authentication failed for user "postgres"`?** Postgres only applies `POSTGRES_PASSWORD`
+   > when it **first initializes** the data volume. If a `*_db-data` volume already exists from an earlier
+   > run, it keeps its old password and ignores the new one. Start the `db` fresh:
+   > `docker compose --profile selfhost down -v` (⚠️ wipes local DB + MinIO data) then `up` again.
+
    For a dev box you can instead `node scripts/genesis.mjs` (drop → rebuild → seed); it stamps the seed
    project's `auth_provider` from `DEFAULT_AUTH_PROVIDER`.
 

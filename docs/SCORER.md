@@ -278,7 +278,7 @@ plaintext to score.) The v1 schema is a deliberate, easily-revised starting poin
 
 ## Config & feature gates
 
-All via the root `.env` (see `.env.example`). Reused: `DATABASE_URL`, `ACCESS_TOKEN_SECRET`,
+All via the root `.env` (see the per-mode templates `.env.dev/selfhost/prod.example`). Reused: `DATABASE_URL`, `ACCESS_TOKEN_SECRET`,
 `API_BASE_URL`, `MODERATION_SERVICE_SECRET`, `MODERATION_BLOCK/REVIEW_AUTO_ACTION_THRESHOLD`. New:
 `SCORER_*` (models, URLs, gray-zone, Haiku, queue/poll) and `NEO4J_*`. Feature gates:
 

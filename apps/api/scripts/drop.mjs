@@ -19,9 +19,10 @@
 //
 // Safety (mirrors wipe.mjs):
 //   • DRY RUN by default — prints the target + what WOULD be dropped, changes nothing.
-//   • Pass --yes to actually execute. In a TTY you must then type the project ref to confirm
-//     (skip the prompt in CI with --force).
-//   • Target is derived from DATABASE_URL in your .env — double-check it.
+//   • Pass --yes to actually execute. In a TTY you must then type the project ref to confirm.
+//     For a LOCAL target (selfhost db / localhost) --force skips the prompt in CI; a CLOUD/REMOTE
+//     target refuses --force and requires --force-cloud (see the confirmation gate below).
+//   • Target is derived from DATABASE_URL + AGORA_ENV in your .env — double-check it.
 //
 // Usage:
 //   node scripts/drop.mjs                  # dry run (safe) — lists objects that would be dropped

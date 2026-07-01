@@ -137,8 +137,9 @@ Python sibling:
 `validation.ts` / `envelope.ts` / `context.ts` re-export the contract symbols so existing call sites
 are unchanged — never redefine a contract type locally (that reintroduces drift).
 
-Each app loads **its own** `.env` from its package dir (`dotenv`); the repo-root `.env.example` is the
-comprehensive reference, with minimal per-app `*.env.example` subsets. (Optionally keep one file by
+Each app loads **its own** `.env` from its package dir (`dotenv`). Agora ships one **complete per-mode
+template** — `.env.dev.example` (host app + cloud Supabase), `.env.selfhost.example` (local Postgres +
+MinIO), `.env.prod.example` (pulled image + cloud) — pick one and `cp` it to `.env`. (Optionally keep one file by
 symlinking each app's `.env` to a root `.env` — `ln -sf ../../.env apps/api/.env`; a local convenience,
 gitignored, not shipped. See README → "Environment files".) `docker-compose.yml` lives at the repo root
 and reads the root `.env` directly; each app image builds from the repo root context. **Every service is profile-gated, so a bare `docker compose up`
@@ -263,8 +264,8 @@ pnpm seed:graph      # standalone manifest graph world (03-seed-engine.mjs) — 
 > run `pnpm --filter @agora-server/contract build` (or `pnpm -r build`) before typechecking the api from a
 > clean checkout.
 
-**Env:** `@agora/api` loads `apps/api/.env` (`dotenv`, resolved from `apps/api/`) — `cp .env.example .env`
-there. (Optional: symlink it to a root `.env` to share one file across apps — gitignored; see README →
+**Env:** `@agora/api` loads `apps/api/.env` (`dotenv`, resolved from `apps/api/`) — `cp ../../.env.dev.example .env`
+there (or `.env.selfhost.example`; see README → "Environment files"). (Optional: symlink it to a root `.env` to share one file across apps — gitignored; see README →
 "Environment files".) `DATABASE_URL` is the Supabase
 **transaction pooler (:6543)** and is the only hard requirement. The rest gate specific features and
 are validated as optional: `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` + `SUPABASE_ANON_KEY`

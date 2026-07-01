@@ -1,8 +1,9 @@
 # Agora Deployment Cheat-Sheet
 
 A one-page map of **what to run** (compose profiles) and **what to set** (env vars) for each
-deployment shape — and **where to get** each value. The full, commented env reference is
-[`.env.dev.example`](../.env.dev.example); the architecture lives in [`CLAUDE.md`](../CLAUDE.md) and
+deployment shape — and **where to get** each value. The complete, commented env references are the three
+per-mode templates [`.env.dev.example`](../.env.dev.example) / [`.env.selfhost.example`](../.env.selfhost.example)
+/ [`.env.prod.example`](../.env.prod.example); the architecture lives in [`CLAUDE.md`](../CLAUDE.md) and
 [`docs/SELF-HOSTING.md`](SELF-HOSTING.md).
 
 > **Golden rule:** in `.env`, an **empty string == unset** (optional features stay off when blank).
@@ -165,43 +166,23 @@ Only `VITE_`-prefixed vars reach the browser; they're baked at build. See
 
 ---
 
-## 3. Minimal `.env` per recipe
+## 3. `.env` per recipe — start from a template
 
-**A. Just the API, Supabase-backed** (`--profile supabase`)
-```ini
-DATABASE_URL=postgresql://postgres.<ref>:<pw>@aws-0-<region>.pooler.supabase.com:6543/postgres
-ACCESS_TOKEN_SECRET=<openssl rand -base64 48>
-SUPABASE_URL=https://<ref>.supabase.co
-SUPABASE_ANON_KEY=<anon key>
-SUPABASE_SERVICE_ROLE_KEY=<service_role key>
-SERVER_NAME=your.domain        # or :80 for plain HTTP
-# ACME_CA defaults to Let's Encrypt STAGING (untrusted certs); set the prod directory before going live:
-ACME_CA=https://acme-v02.api.letsencrypt.org/directory
-```
+Each recipe starts from its **complete, ready-to-fill template** (which carries the `AGORA_ENV` marker the
+`drop`/`genesis` guardrail reads to refuse a `--force` against a cloud DB). `cp` the matching one to `.env`
+and fill the `<GENERATE:…>` placeholders — the templates are canonical, so don't hand-assemble an `.env`
+from the tables above.
 
-**B. Fully self-contained** (`--profile selfhost`)
-```ini
-POSTGRES_PASSWORD=<choose>
-DATABASE_URL=postgres://postgres:<same pw>@db:5432/postgres
-ACCESS_TOKEN_SECRET=<openssl rand -base64 48>
-STORAGE_PROVIDER=s3
-S3_ENDPOINT=http://minio:9000
-S3_PUBLIC_URL=https://your-host/media
-MINIO_ROOT_USER=agora
-MINIO_ROOT_PASSWORD=<choose>
-S3_ACCESS_KEY_ID=agora
-S3_SECRET_ACCESS_KEY=<same as MINIO_ROOT_PASSWORD>
-DEFAULT_AUTH_PROVIDER=native
-SERVER_NAME=your.domain        # or :80
-# ACME_CA defaults to Let's Encrypt STAGING (untrusted certs); set the prod directory before going live:
-ACME_CA=https://acme-v02.api.letsencrypt.org/directory
-```
+**A. Supabase-backed** — `cp .env.dev.example .env` (host dev, cloud) **or** `cp .env.prod.example .env`
+(production: pulled image, real domain + ACME). Fill: `DATABASE_URL` (Supabase pooler `:6543`),
+`ACCESS_TOKEN_SECRET`, `SUPABASE_URL` / `_ANON_KEY` / `_SERVICE_ROLE_KEY`, `SERVER_NAME` (`:80` for dev,
+`your.domain` for prod).
 
-**C. Everything** (`--profile full --profile <supabase|selfhost>`) — add to A or B:
-```ini
-MODERATION_SERVICE_SECRET=<openssl rand -base64 32>   # scorer write-back
-NEO4J_AUTH=neo4j/<choose>                             # social graph
-ANTHROPIC_API_KEY=<console.anthropic.com>             # Haiku adjudication (optional)
-REDIS_URL=redis://redis:6379                          # secure-chat hard dep
-VOYAGE_API_KEY=<dashboard.voyageai.com>               # semantic search (optional)
-```
+**B. Fully self-contained** — `cp .env.selfhost.example .env`. Fill the placeholders; **`POSTGRES_PASSWORD`
+must equal the password inside `DATABASE_URL`**, and **`MINIO_ROOT_PASSWORD` must equal
+`S3_SECRET_ACCESS_KEY`**. The template already sets `STORAGE_PROVIDER=s3` + `DEFAULT_AUTH_PROVIDER=native`.
+
+**C. Everything** (`--profile full`) — every template already carries the add-on keys; just fill them in:
+`MODERATION_SERVICE_SECRET` (scorer write-back), `NEO4J_AUTH` (social graph),
+`REDIS_URL=redis://redis:6379` (secure-chat hard dep), and optionally `ANTHROPIC_API_KEY` (Haiku) /
+`VOYAGE_API_KEY` (semantic search).

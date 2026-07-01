@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Three complete per-mode env templates + a destructive-script cloud guardrail.** Configuration is now
+  one authoritative template per way of running Agora — **`.env.dev.example`** (host app + cloud Supabase),
+  **`.env.selfhost.example`** (fully self-contained: local Postgres + MinIO, native auth),
+  **`.env.prod.example`** (pulled image + cloud + real domain). Copy the one that matches your setup to
+  `.env` and fill the placeholders; each carries an **`AGORA_ENV`** marker. `scripts/drop.mjs` /
+  `scripts/genesis.mjs` read that marker (+ the `DATABASE_URL` host): a **`--force` against a cloud/remote
+  DB is now refused** — a cloud wipe requires the interactive typed-ref confirm or an explicit
+  `--force-cloud` (`genesis --test`, which targets the disposable test project, implies it). Self-host was
+  validated end-to-end (boot → genesis → native admin seed → login → MinIO media). New pure helper
+  `apps/api/scripts/lib/db-target.mjs` (`isLocalTarget`/`dbTargetHost`, unit-tested). Docs (README,
+  SELF-HOSTING, DEVELOPMENT, CHEAT-SHEET, CONTRIBUTING, wiki) now describe the per-mode model.
 - **Adaptive, overridable Constellation k-anonymity floor + on-demand recompute.** The Constellation's
   cluster-suppression floor (`constellationKFloor`) is now **adaptive by default**. When a project leaves it
   unset (`null`), the materializer derives it from project size via `adaptiveConstellationFloor(N)`
@@ -27,6 +38,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   helper `adaptiveConstellationFloor(memberCount)`. The admin **Settings → Social** k-floor control is now an
   **Adaptive (recommended)** / **Fixed floor** selector (adaptive shows the size→floor tier table; fixed takes an
   explicit `2–1000`), plus a **"Recompute constellation now"** button that force-rematerializes the snapshot.
+
+### Removed
+- The stale env examples superseded by the per-mode templates above: the repo-root `.env.example`
+  (a 15-var stub that covered only compose interpolation + OTEL) and `apps/api/.env.example` (a stale
+  Supabase direct-connection shape). The `.gitignore` now tracks any `.env.*.example` via one pattern.
 
 ### Fixed
 - **Scorer `Failed to export metrics batch code: 404` log spam eliminated.** `services/scorer/scorer/telemetry.py`
