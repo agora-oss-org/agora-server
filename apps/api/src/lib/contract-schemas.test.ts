@@ -102,6 +102,11 @@ describe("comment sort schemas", () => {
       expect(commentSortBySchema.safeParse(v).success).toBe(true);
     }
   });
+  it("rejects values outside the documented set", () => {
+    for (const v of ["bogus", "hot", "", "CreatedAt"]) {
+      expect(commentSortBySchema.safeParse(v).success).toBe(false);
+    }
+  });
   it("accepts asc/desc for sortDir", () => {
     expect(sortDirSchema.safeParse("asc").success).toBe(true);
     expect(sortDirSchema.safeParse("desc").success).toBe(true);

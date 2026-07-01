@@ -23,7 +23,9 @@ export function resolveCommentSort(sortBy: string | undefined, sortDir: string |
   }
 }
 
-const rc = (k: string): SQL => sql`coalesce((${comments.reactionCounts}->>${k})::int, 0)`;
+// Reaction-count accessor. `k` is a code-literal reaction key (never user input); the `sql` tag binds
+// it as a parameter. Typed to the two keys we rank on so a stray call can't compile.
+const rc = (k: "upvote" | "downvote"): SQL => sql`coalesce((${comments.reactionCounts}->>${k})::int, 0)`;
 
 export function commentOrderBy(sort: CommentSort): SQL[] {
   const dirFn = sort.dir === "asc" ? asc : desc;

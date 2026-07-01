@@ -1,5 +1,15 @@
 import { describe, it, expect } from "vitest";
+import { PgDialect } from "drizzle-orm/pg-core";
+import type { SQL } from "drizzle-orm";
 import { resolveCommentSort, commentOrderBy } from "./comment-sort.js";
+
+// Serialize one ORDER BY clause to inspect its direction (asc|desc) and the bound params (jsonb keys).
+// Bound values (e.g. "upvote") are parameters, so they appear in `params`, not the SQL text.
+const dialect = new PgDialect();
+const ser = (clause: SQL) => {
+  const q = dialect.sqlToQuery(clause);
+  return { sql: q.sql.toLowerCase(), params: q.params };
+};
 
 describe("resolveCommentSort", () => {
   it("createdAt honors sortDir, default desc, not deprecated", () => {
@@ -36,8 +46,39 @@ describe("commentOrderBy", () => {
     }
   });
 
-  it("createdAt asc vs desc both produce a 2-clause order", () => {
-    expect(commentOrderBy({ column: "createdAt", dir: "asc", deprecated: false }).length).toBe(2);
-    expect(commentOrderBy({ column: "createdAt", dir: "desc", deprecated: false }).length).toBe(2);
+  it("createdAt honors direction in the emitted SQL, with a stable id-desc tiebreaker", () => {
+    const ascOrder = commentOrderBy({ column: "createdAt", dir: "asc", deprecated: false });
+    const descOrder = commentOrderBy({ column: "createdAt", dir: "desc", deprecated: false });
+    expect(ascOrder.length).toBe(2);
+    expect(descOrder.length).toBe(2);
+    // Primary clause direction actually reflects `dir` (not hardcoded).
+    expect(ser(ascOrder[0]!).sql).toContain("created_at");
+    expect(ser(ascOrder[0]!).sql).toContain("asc");
+    expect(ser(descOrder[0]!).sql).toContain("desc");
+    // Tiebreaker is always id desc for deterministic keyset pagination, regardless of primary dir.
+    expect(ser(ascOrder[1]!).sql).toContain("id");
+    expect(ser(ascOrder[1]!).sql).toContain("desc");
+  });
+
+  it("top ranks by upvote count desc, tie-broken by createdAt", () => {
+    const order = commentOrderBy({ column: "top", dir: "asc", deprecated: false }); // dir ignored for top
+    const first = ser(order[0]!);
+    expect(first.sql).toContain("coalesce");
+    expect(first.sql).toContain("desc"); // always desc, never asc
+    expect(first.params).toContain("upvote"); // ranks on the upvote jsonb key
+    expect(ser(order[1]!).sql).toContain("created_at");
+  });
+
+  it("controversial ranks by least(up,down) desc, then sum desc, matching the entity formula", () => {
+    const order = commentOrderBy({ column: "controversial", dir: "asc", deprecated: false }); // dir ignored
+    expect(order.length).toBe(3);
+    const first = ser(order[0]!);
+    expect(first.sql).toContain("least");
+    expect(first.sql).toContain("desc");
+    expect(first.params).toEqual(expect.arrayContaining(["upvote", "downvote"]));
+    const second = ser(order[1]!);
+    expect(second.sql).toContain("+"); // sum(up, down)
+    expect(second.sql).toContain("desc");
+    expect(ser(order[2]!).sql).toContain("id"); // deterministic tiebreaker
   });
 });

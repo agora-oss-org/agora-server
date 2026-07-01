@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { asc, desc, sql } from "drizzle-orm";
+import { PgDialect } from "drizzle-orm/pg-core";
 import {
   RANKING_ALGORITHMS,
   KNOWN_ALGORITHMS,
@@ -80,6 +81,16 @@ describe("RANKING_ALGORITHMS registry", () => {
     const order = RANKING_ALGORITHMS.createdAt!.order(ctx as any);
     expect(order.length).toBe(2); // createdAt + id tiebreaker
     expect(RANKING_ALGORITHMS.createdAt!.storage).toBe("query-time");
+  });
+
+  it("createdAt's primary clause reflects the requested direction in the emitted SQL", () => {
+    const dialect = new PgDialect();
+    const ascOrder = RANKING_ALGORITHMS.createdAt!.order({ ...ctx, dir: asc } as any);
+    const descOrder = RANKING_ALGORITHMS.createdAt!.order({ ...ctx, dir: desc } as any);
+    expect(dialect.sqlToQuery(ascOrder[0]!).sql.toLowerCase()).toContain("asc");
+    expect(dialect.sqlToQuery(descOrder[0]!).sql.toLowerCase()).toContain("desc");
+    // Tiebreaker stays id desc for deterministic pagination irrespective of primary dir.
+    expect(dialect.sqlToQuery(ascOrder[1]!).sql.toLowerCase()).toContain("desc");
   });
 
   it("only `hot` is index-served (stored); the rest are query-time", () => {
