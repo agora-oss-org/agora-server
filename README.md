@@ -225,10 +225,11 @@ corepack enable          # activate the pinned pnpm
 pnpm install             # install all workspaces (from the repo root)
 pnpm -r build            # build every package (contract first, topologically)
 
-# Backend — the only hard requirement is a Supabase DATABASE_URL
+# Backend — the dev template defaults to a local Postgres + MinIO (no cloud account needed).
+# Bring the backing services up first:  docker compose -f docker-compose.dev.yml --profile selfhost up
 cd apps/api
-cp ../../.env.dev.example .env   # dev (host + cloud Supabase); or ../../.env.selfhost.example for a fully local stack
-pnpm db:migrate:run       # apply migrations (idempotent; safe to re-run)
+cp ../../.env.dev.example .env   # local-PG dev; fill the <GENERATE> secrets (cloud Supabase = in-file switch)
+pnpm db:migrate:run       # apply migrations to the local db (idempotent; safe to re-run)
 pnpm dev                  # http://localhost:4000/v7   (GET /health to verify)
 
 # Admin dashboard (optional)
@@ -240,27 +241,34 @@ Each app's README covers its own configuration, commands, and Docker image. Star
 
 ## Environment files
 
-Agora runs in three first-class configurations, each with a **complete, ready-to-fill template**. Pick
-the one that matches how you're running it, copy it to `.env`, and fill the `<…>` placeholders:
+Agora is **local-Postgres-first**: it runs on a local Postgres (the `supabase/postgres` image) + MinIO
+out of the box, with **no cloud account required**. Cloud Supabase is an opt-in switch, not the default.
 
-| Configuration | Template → `.env` | Bring it up |
-|---|---|---|
-| **dev** — you edit code on the host (HMR), cloud Supabase backs it | `cp .env.dev.example .env` (root, for compose) — then `cd apps/api && cp ../../.env.dev.example .env` (the host process reads its own copy) | `docker compose -f docker-compose.dev.yml --profile supabase up --build` + `pnpm --filter @agora/api dev` |
-| **selfhost** — fully self-contained, no cloud account (local Postgres + MinIO) | `cp .env.selfhost.example .env` | `docker compose --profile selfhost up --build -d` |
-| **prod** — pulled images, cloud Supabase, real domain | `cp .env.prod.example .env` | `docker compose -f docker-compose.prod.yml --profile supabase up -d` |
+There's **one template per compose file** — pick by *how* you run Agora, not by data plane (each template
+does both). Copy it to `.env` and fill the `<…>` placeholders:
+
+| Template → `.env` | Compose file | Runs the app | Default data plane |
+|---|---|---|---|
+| `cp .env.dev.example .env` | `docker-compose.dev.yml` | on the **host** (HMR) | local PG + MinIO |
+| `cp .env.selfhost.example .env` | `docker-compose.yml` | in a **container** (built from source) | local PG + MinIO |
+| `cp .env.prod.example .env` | `docker-compose.prod.yml` | in a **container** (pulled image) | local PG + MinIO |
+
+**Switching a template to cloud Supabase** is an in-file edit: comment its LOCAL data-plane block,
+uncomment the CLOUD block (the full `SUPABASE_*` + pooler vars are right there), and run
+`--profile supabase` instead of `--profile selfhost`. No separate template.
 
 Compose reads the root **`.env`** for both `${VAR}` interpolation and the services' `env_file`. Separately,
-each app loads **its own** `.env` from its package dir via `dotenv` — for the backend that's
-`apps/api/.env`. In **selfhost**/**prod**, `@agora/api` itself runs as a container reading the root
-`.env` through `env_file`, so the one copy from the table above covers everything. In **dev**, the API
-runs on the *host* (`pnpm --filter @agora/api dev` / `pnpm db:migrate:run`) and needs its own
-`apps/api/.env` too — it is **not** created automatically (gitignored, untracked), so copy the template
-there as shown in the table/Quick start. Want one file instead of two? Symlink it —
-`ln -sf ../../.env apps/api/.env` — an optional, gitignored local convenience, not something that
-exists by default. (Same story for **`@agora/secure-chat`** when you run it on the host in dev —
-`--profile secure-chat`/`full` — it reads its own `apps/secure-chat/.env`; copy or symlink the root
-`.env` there too.) Every template carries an `AGORA_ENV=<mode>` marker; the destructive DB scripts
-(`drop`/`genesis`) read it to refuse a `--force` that would wipe a **cloud** database.
+each app loads **its own** `.env` from its package dir via `dotenv` — for the backend that's `apps/api/.env`.
+In **selfhost**/**prod** the API runs as a container reading the root `.env` through `env_file`, so one copy
+covers everything. In **dev** the API runs on the *host* (`pnpm --filter @agora/api dev`) and needs its own
+`apps/api/.env` — copy the template there too (`cd apps/api && cp ../../.env.dev.example .env`), or symlink it
+(`ln -sf ../../.env apps/api/.env` — an optional, gitignored convenience, not created by default). Same for
+`@agora/secure-chat` when you run it on the host.
+
+Every template carries an **`AGORA_ENV`** marker (`dev`/`selfhost`/`prod`). The destructive DB scripts
+(`drop`/`genesis`) combine it with the `DATABASE_URL` host to gate a `--force`: a **local throwaway**
+(`db`/`localhost` host, non-`prod`) drops unattended, while a **protected** target — any cloud/remote DB,
+**or** an `AGORA_ENV=prod` deployment even on a local DB — requires typing the project ref to confirm.
 
 The browser-facing admin SPA has its own build-time vars — see [`apps/admin/.env.example`](apps/admin/.env.example).
 

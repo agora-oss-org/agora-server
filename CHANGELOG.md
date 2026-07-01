@@ -8,17 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **Three complete per-mode env templates + a destructive-script cloud guardrail.** Configuration is now
-  one authoritative template per way of running Agora — **`.env.dev.example`** (host app + cloud Supabase),
-  **`.env.selfhost.example`** (fully self-contained: local Postgres + MinIO, native auth),
-  **`.env.prod.example`** (pulled image + cloud + real domain). Copy the one that matches your setup to
-  `.env` and fill the placeholders; each carries an **`AGORA_ENV`** marker. `scripts/drop.mjs` /
-  `scripts/genesis.mjs` read that marker (+ the `DATABASE_URL` host): a **`--force` against a cloud/remote
-  DB is now refused** — a cloud wipe requires the interactive typed-ref confirm or an explicit
-  `--force-cloud` (`genesis --test`, which targets the disposable test project, implies it). Self-host was
-  validated end-to-end (boot → genesis → native admin seed → login → MinIO media). New pure helper
-  `apps/api/scripts/lib/db-target.mjs` (`isLocalTarget`/`dbTargetHost`, unit-tested). Docs (README,
-  SELF-HOSTING, DEVELOPMENT, CHEAT-SHEET, CONTRIBUTING, wiki) now describe the per-mode model.
+- **Local-Postgres-first configuration: one dual-mode env template per compose file + a destructive-script
+  guardrail.** Agora now defaults to a **local Postgres (the `supabase/postgres` image) + MinIO** — no cloud
+  account required; cloud Supabase is an opt-in in-file switch. There's one authoritative template per
+  compose file: **`.env.dev.example`** (`docker-compose.dev.yml`, host app), **`.env.selfhost.example`**
+  (`docker-compose.yml`, container from source), **`.env.prod.example`** (`docker-compose.prod.yml`, pulled
+  image). Each **defaults to local PG + native auth** and carries the full cloud-Supabase block commented
+  inline (comment LOCAL / uncomment CLOUD, run `--profile supabase`). Every template carries an
+  **`AGORA_ENV`** marker (`dev`/`selfhost`/`prod`). `scripts/drop.mjs` / `scripts/genesis.mjs` gate a
+  destructive `--force` on the **`DATABASE_URL` host + `AGORA_ENV`**: a LOCAL throwaway (`db`/`localhost`,
+  non-`prod`) drops unattended, while a **PROTECTED** target — any cloud/remote host, **or**
+  `AGORA_ENV=prod` even on a local db — requires typing the project ref (`--force` won't skip it; the only
+  non-interactive exception is `genesis --test` on the disposable test DB). Self-host was validated
+  end-to-end (boot → genesis → native admin seed → login → MinIO media). New pure helper
+  `apps/api/scripts/lib/db-target.mjs` (`dbTargetHost`/`isLocalHost`/`isProtectedTarget`, unit-tested). Docs
+  (README, SELF-HOSTING, DEVELOPMENT, CHEAT-SHEET, CONTRIBUTING, CLAUDE.md, wiki) describe the local-first,
+  one-template-per-compose-file model.
 - **Adaptive, overridable Constellation k-anonymity floor + on-demand recompute.** The Constellation's
   cluster-suppression floor (`constellationKFloor`) is now **adaptive by default**. When a project leaves it
   unset (`null`), the materializer derives it from project size via `adaptiveConstellationFloor(N)`

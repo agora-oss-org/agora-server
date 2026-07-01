@@ -137,9 +137,12 @@ Python sibling:
 `validation.ts` / `envelope.ts` / `context.ts` re-export the contract symbols so existing call sites
 are unchanged — never redefine a contract type locally (that reintroduces drift).
 
-Each app loads **its own** `.env` from its package dir (`dotenv`). Agora ships one **complete per-mode
-template** — `.env.dev.example` (host app + cloud Supabase), `.env.selfhost.example` (local Postgres +
-MinIO), `.env.prod.example` (pulled image + cloud) — pick one and `cp` it to `.env`. (Optionally keep one file by
+Each app loads **its own** `.env` from its package dir (`dotenv`). Agora is **local-Postgres-first**: it
+ships one **complete template per compose file** — `.env.dev.example` (`docker-compose.dev.yml`, host app),
+`.env.selfhost.example` (`docker-compose.yml`, container from source), `.env.prod.example`
+(`docker-compose.prod.yml`, pulled image) — each **defaulting to a local Postgres + MinIO** with cloud
+Supabase as a commented in-file switch (comment LOCAL / uncomment CLOUD, run `--profile supabase`). Pick
+one by how you run Agora and `cp` it to `.env`. (Optionally keep one file by
 symlinking each app's `.env` to a root `.env` — `ln -sf ../../.env apps/api/.env`; a local convenience,
 gitignored, not shipped. See README → "Environment files".) `docker-compose.yml` lives at the repo root
 and reads the root `.env` directly; each app image builds from the repo root context. **Every service is profile-gated, so a bare `docker compose up`

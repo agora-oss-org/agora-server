@@ -33,7 +33,7 @@ Then configure the API's env (each app loads **its own** `.env` from its package
 
 ```bash
 cd apps/api
-cp ../../.env.dev.example .env  # dev (host + cloud); see Environment files in the README for all three modes
+cp ../../.env.dev.example .env  # dev template — local Postgres by default (cloud Supabase = in-file switch)
 ```
 
 Only `DATABASE_URL` is strictly required; everything else gates a feature and is validated as optional

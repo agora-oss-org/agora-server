@@ -1,17 +1,17 @@
 // 🌱 GENESIS — from nothing to a valid, seeded schema in one command.
 //   Drop the schema → rebuild from migrations (0000…N) → seed fixtures + validate triggers/RPC.
 //
-//   node scripts/genesis.mjs            # DEV  → DATABASE_URL
-//   node scripts/genesis.mjs --test     # TEST → TEST_DATABASE_URL (disposable cloud test project)
-//   node scripts/genesis.mjs --force    # skip the confirm — LOCAL targets only (selfhost db / localhost)
-//   node scripts/genesis.mjs --force-cloud   # skip the confirm against a disposable CLOUD DB
+//   node scripts/genesis.mjs            # → DATABASE_URL
+//   node scripts/genesis.mjs --test     # → TEST_DATABASE_URL (disposable test project; non-interactive)
+//   node scripts/genesis.mjs --force    # skip the prompt — LOCAL non-prod throwaway only
 //
 // DESTRUCTIVE. This wraps `drop.mjs --yes --migrate` (which drops private/drizzle/public and rebuilds
 // from migrations — see that file for the safety model) and then applies `seeds/seed.sql` in-process.
-// The drop.mjs guardrail (AGORA_ENV + the DATABASE_URL host) decides the confirm: a LOCAL target may be
-// forced with --force; a CLOUD/REMOTE target refuses --force and needs the typed-ref confirm or
-// --force-cloud. The `--test` flag retargets every step at TEST_DATABASE_URL and implies --force-cloud,
-// so it never touches the dev DB and stays non-interactive in CI.
+// The drop.mjs guard (DATABASE_URL host + AGORA_ENV) decides the confirm: a LOCAL non-prod throwaway may
+// be forced with --force; a PROTECTED target (cloud/remote host, or AGORA_ENV=prod even on a local db)
+// ignores --force and requires the typed-ref confirm. The `--test` flag retargets every step at
+// TEST_DATABASE_URL and passes the sole non-interactive exception (AGORA_TEST_DROP) to drop, so it never
+// touches the dev DB and stays non-interactive in CI.
 //
 // NOTE: this seeds the DB-level fixtures only (seed.sql: tenant rows + trigger/RPC asserts). The demo
 // CONTENT posts (`seed-*-post.mjs`) need a running server and live behind `pnpm seed` — not here.
@@ -26,9 +26,6 @@ const here = dirname(fileURLToPath(import.meta.url));
 const args = new Set(process.argv.slice(2));
 const isTest = args.has("--test");
 const force = args.has("--force") || args.has("-f");
-// --test targets the dedicated, disposable TEST_DATABASE_URL (a cloud test project), so treat it as an
-// explicit opt-in to the cloud bypass; otherwise forward --force-cloud only when the caller passed it.
-const forceCloud = args.has("--force-cloud") || isTest;
 
 const urlVar = isTest ? "TEST_DATABASE_URL" : "DATABASE_URL";
 const url = process.env[urlVar];
@@ -42,10 +39,13 @@ console.log(`🌱 genesis → ${isTest ? "TEST" : "DEV"} (${urlVar})\n`);
 // ── 1. drop + rebuild from migrations (delegated to the hardened drop.mjs) ──────
 // drop.mjs reads DATABASE_URL; we force it to the chosen target. `import "dotenv/config"` in the child
 // won't override an env var that's already set, so this override wins even though .env defines both.
-const dropArgs = ["--yes", "--migrate", ...(force ? ["--force"] : []), ...(forceCloud ? ["--force-cloud"] : [])];
+// `--test` targets the disposable TEST_DATABASE_URL — set AGORA_TEST_DROP=1 so drop.mjs allows the
+// (protected, cloud) test DB to be rebuilt non-interactively. This is the ONLY non-interactive bypass of
+// the protected-target guard; a normal `--force` only skips the prompt for a LOCAL non-prod throwaway.
+const dropArgs = ["--yes", "--migrate", ...(force ? ["--force"] : [])];
 const drop = spawnSync(process.execPath, [join(here, "drop.mjs"), ...dropArgs], {
   stdio: "inherit",
-  env: { ...process.env, DATABASE_URL: url },
+  env: { ...process.env, DATABASE_URL: url, ...(isTest ? { AGORA_TEST_DROP: "1" } : {}) },
 });
 if (drop.status !== 0) {
   console.error("\n✗ genesis aborted at drop/migrate (nothing seeded).");

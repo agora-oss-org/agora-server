@@ -37,9 +37,10 @@
 #     Docker Desktop).
 #   • Backing ports are PUBLISHED to the host (redis :6379, db :5432, minio :9000/:9001, neo4j
 #     :7474/:7687) so your `pnpm dev` processes can reach them at localhost. Start from `cp
-#     .env.dev.example .env` (cloud Supabase) or `cp .env.selfhost.example .env` (fully offline, points
-#     these at localhost: DATABASE_URL=…@localhost:5432, REDIS_URL=redis://localhost:6379,
-#     NEO4J_URI=bolt://localhost:7687, S3_ENDPOINT=http://localhost:9000).
+#     .env.dev.example .env` — it defaults to a LOCAL Postgres + MinIO with host-side localhost URLs
+#     (DATABASE_URL=…@localhost:5432, REDIS_URL=redis://localhost:6379, NEO4J_URI=bolt://localhost:7687,
+#     S3_ENDPOINT=http://localhost:9000) and DEV_DATABASE_URL=…@db:5432 for the scorer container. Cloud
+#     Supabase is the commented in-file switch (then use --profile supabase instead of --profile selfhost).
 #   • The scorer-worker reaches the API + Neo4j at fixed in-network addresses (host.docker.internal:4000,
 #     neo4j:7687), so no host-vs-container override is needed for those. For the DB it uses the standard
 #     DATABASE_URL — on supabase the cloud URL works from the container as-is. The one case the host URL

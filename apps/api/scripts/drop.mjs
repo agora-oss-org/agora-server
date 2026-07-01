@@ -19,30 +19,35 @@
 //
 // Safety (mirrors wipe.mjs):
 //   • DRY RUN by default — prints the target + what WOULD be dropped, changes nothing.
-//   • Pass --yes to actually execute. In a TTY you must then type the project ref to confirm.
-//     For a LOCAL target (selfhost db / localhost) --force skips the prompt in CI; a CLOUD/REMOTE
-//     target refuses --force and requires --force-cloud (see the confirmation gate below).
+//   • Pass --yes to actually execute. Then the confirmation depends on the TARGET:
+//       – LOCAL throwaway (DATABASE_URL host is db/localhost/127.0.0.1, and AGORA_ENV≠prod):
+//         `--force` drops it unattended (no prompt). This is the common dev/selfhost case.
+//       – PROTECTED (any cloud/remote host, OR AGORA_ENV=prod even on a local db): `--force` does NOT
+//         skip the guard — you type the project ref to confirm. Non-interactively it refuses (the one
+//         sanctioned exception is `genesis --test`, which targets the disposable TEST_DATABASE_URL).
 //   • Target is derived from DATABASE_URL + AGORA_ENV in your .env — double-check it.
 //
 // Usage:
 //   node scripts/drop.mjs                  # dry run (safe) — lists objects that would be dropped
-//   node scripts/drop.mjs --yes            # drop schema (interactive typed-ref confirm)
-//   node scripts/drop.mjs --yes --force    # non-interactive — LOCAL targets only (selfhost db/localhost)
-//   node scripts/drop.mjs --yes --force-cloud  # non-interactive against a disposable CLOUD DB (e.g. test)
+//   node scripts/drop.mjs --yes            # drop schema (typed-ref confirm on a protected target)
+//   node scripts/drop.mjs --yes --force    # skip the prompt — LOCAL non-prod throwaway only
 //   node scripts/drop.mjs --yes --migrate  # drop, then immediately rebuild from migrations
 import "dotenv/config";
 import { createInterface } from "node:readline/promises";
 import postgres from "postgres";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
-import { isLocalTarget } from "./lib/db-target.mjs";
+import { isProtectedTarget } from "./lib/db-target.mjs";
 
 // ── args ──────────────────────────────────────────────────────────────────────
 const args = new Set(process.argv.slice(2));
 const EXECUTE = args.has("--yes") || args.has("-y");
 const FORCE = args.has("--force");
-const FORCE_CLOUD = args.has("--force-cloud");
-const LOCAL = isLocalTarget({ agoraEnv: process.env.AGORA_ENV, databaseUrl: process.env.DATABASE_URL });
+// A protected target needs the typed-ref confirm. `genesis --test` (disposable TEST_DATABASE_URL) sets
+// AGORA_TEST_DROP=1 for this child so CI can rebuild the test DB non-interactively — the ONLY bypass;
+// there is deliberately no user-facing "force a protected target" flag.
+const TEST_BYPASS = process.env.AGORA_TEST_DROP === "1";
+const PROTECTED = isProtectedTarget({ agoraEnv: process.env.AGORA_ENV, databaseUrl: process.env.DATABASE_URL });
 const RUN_MIGRATE = args.has("--migrate");
 
 // Schemas this app owns end-to-end: migrations create `public` + the `drizzle` ledger; 0017 creates
@@ -61,7 +66,7 @@ console.log(`   Project ref  : ${ref}`);
 console.log(`   Schemas      : ${SCHEMAS.join(", ")}  (DROP … CASCADE, then recreate empty public)`);
 console.log(`   Preserves    : auth schema + Auth users + Storage (use wipe.mjs for those)`);
 console.log(`   AGORA_ENV    : ${process.env.AGORA_ENV ?? "(unset)"}`);
-console.log(`   Target kind  : ${LOCAL ? "LOCAL (safe to --force)" : "CLOUD/REMOTE (needs --force-cloud)"}`);
+console.log(`   Target kind  : ${PROTECTED ? "PROTECTED (cloud/remote or AGORA_ENV=prod — confirm required)" : "LOCAL throwaway (--force may drop unattended)"}`);
 console.log("");
 
 const sql = postgres(dbUrl, { max: 1, prepare: false, onnotice() {} });
@@ -86,21 +91,34 @@ try {
   }
 
   // ── confirmation gate ────────────────────────────────────────────────────────
-  // A LOCAL target (selfhost db / localhost) may be forced with --force. A CLOUD/REMOTE target must
-  // NOT be wiped on a bare --force — require the interactive typed-ref confirm, or an explicit
-  // --force-cloud for known-disposable cloud DBs (e.g. the test project). This closes the
-  // "genesis --force against a cloud .env" footgun.
-  const bypass = LOCAL ? (FORCE || FORCE_CLOUD) : FORCE_CLOUD;
-  if (!bypass && process.stdin.isTTY) {
-    const rl = createInterface({ input: process.stdin, output: process.stdout });
-    const answer = await rl.question(`Type the project ref "${ref}" to confirm IRREVERSIBLE drop: `);
-    rl.close();
-    if (answer.trim() !== ref) die("Confirmation did not match — aborted. Nothing was dropped.");
-  } else if (!bypass) {
-    die(LOCAL
-      ? "Refusing non-interactive drop without --force. Re-run with --yes --force."
-      : `Refusing to drop a CLOUD/REMOTE target (${dbHost}, AGORA_ENV=${process.env.AGORA_ENV ?? "unset"}) on --force alone. `
-        + "Use the interactive typed-ref confirm, or --force-cloud if this DB is disposable (e.g. a test project).");
+  // PROTECTED target (cloud/remote host, or AGORA_ENV=prod even on a local db): --force can NOT skip
+  // the guard — type the project ref to confirm; non-interactively refuse (except the sanctioned
+  // `genesis --test` bypass). LOCAL non-prod throwaway: --force drops it unattended. This is what
+  // closes the "genesis --force against a real DB" footgun while keeping the dev/selfhost path frictionless.
+  if (PROTECTED) {
+    if (!TEST_BYPASS) {
+      if (process.stdin.isTTY) {
+        const rl = createInterface({ input: process.stdin, output: process.stdout });
+        const answer = await rl.question(
+          `⚠️  PROTECTED target (${dbHost}, AGORA_ENV=${process.env.AGORA_ENV ?? "unset"}). ` +
+          `Type the project ref "${ref}" to confirm IRREVERSIBLE drop: `);
+        rl.close();
+        if (answer.trim() !== ref) die("Confirmation did not match — aborted. Nothing was dropped.");
+      } else {
+        die(`Refusing to drop a PROTECTED target (${dbHost}, AGORA_ENV=${process.env.AGORA_ENV ?? "unset"}) non-interactively. ` +
+          "Run it in a terminal and type the project ref — `--force` does not skip this. " +
+          "(CI resetting the disposable test DB: use `genesis --test`.)");
+      }
+    }
+  } else if (!FORCE) {
+    if (process.stdin.isTTY) {
+      const rl = createInterface({ input: process.stdin, output: process.stdout });
+      const answer = await rl.question(`Type the project ref "${ref}" to confirm IRREVERSIBLE drop: `);
+      rl.close();
+      if (answer.trim() !== ref) die("Confirmation did not match — aborted. Nothing was dropped.");
+    } else {
+      die("Refusing non-interactive drop without --force. Re-run with --yes --force.");
+    }
   }
 
   // ── drop + recreate (atomic) ──────────────────────────────────────────────────

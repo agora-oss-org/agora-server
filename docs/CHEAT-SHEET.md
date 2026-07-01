@@ -166,23 +166,31 @@ Only `VITE_`-prefixed vars reach the browser; they're baked at build. See
 
 ---
 
-## 3. `.env` per recipe — start from a template
+## 3. `.env` — start from a template (local-Postgres-first)
 
-Each recipe starts from its **complete, ready-to-fill template** (which carries the `AGORA_ENV` marker the
-`drop`/`genesis` guardrail reads to refuse a `--force` against a cloud DB). `cp` the matching one to `.env`
-and fill the `<GENERATE:…>` placeholders — the templates are canonical, so don't hand-assemble an `.env`
-from the tables above.
+There's **one template per compose file**, each **defaulting to a local Postgres + MinIO** (no cloud
+account needed). `cp` the one matching how you run Agora, fill the `<GENERATE:…>` placeholders — the
+templates are canonical, so don't hand-assemble an `.env`.
 
-**A. Supabase-backed** — `cp .env.dev.example .env` (host dev, cloud) **or** `cp .env.prod.example .env`
-(production: pulled image, real domain + ACME). Fill: `DATABASE_URL` (Supabase pooler `:6543`),
-`ACCESS_TOKEN_SECRET`, `SUPABASE_URL` / `_ANON_KEY` / `_SERVICE_ROLE_KEY`, `SERVER_NAME` (`:80` for dev,
-`your.domain` for prod).
+| Template | Compose file | App runs |
+|---|---|---|
+| `cp .env.dev.example .env` | `docker-compose.dev.yml` | host (HMR) |
+| `cp .env.selfhost.example .env` | `docker-compose.yml` | container (from source) |
+| `cp .env.prod.example .env` | `docker-compose.prod.yml` | container (pulled image) |
 
-**B. Fully self-contained** — `cp .env.selfhost.example .env`. Fill the placeholders; **`POSTGRES_PASSWORD`
-must equal the password inside `DATABASE_URL`**, and **`MINIO_ROOT_PASSWORD` must equal
-`S3_SECRET_ACCESS_KEY`**. The template already sets `STORAGE_PROVIDER=s3` + `DEFAULT_AUTH_PROVIDER=native`.
+**Local Postgres (default).** Fill the placeholders; **`POSTGRES_PASSWORD` must equal the password inside
+`DATABASE_URL`**, and **`MINIO_ROOT_PASSWORD` must equal `S3_SECRET_ACCESS_KEY`**. The template already sets
+`STORAGE_PROVIDER=s3` + `DEFAULT_AUTH_PROVIDER=native`. Bring it up with `--profile selfhost`.
 
-**C. Everything** (`--profile full`) — every template already carries the add-on keys; just fill them in:
+**Cloud Supabase (switch).** In the template, comment the LOCAL data-plane block and uncomment the CLOUD
+block (`DATABASE_URL` pooler `:6543` + `SUPABASE_URL`/`_ANON_KEY`/`_SERVICE_ROLE_KEY` +
+`DEFAULT_AUTH_PROVIDER=supabase`), then run `--profile supabase`.
+
+**Everything (`--profile full`).** Every template already carries the add-on keys; just fill them in:
 `MODERATION_SERVICE_SECRET` (scorer write-back), `NEO4J_AUTH` (social graph),
 `REDIS_URL=redis://redis:6379` (secure-chat hard dep), and optionally `ANTHROPIC_API_KEY` (Haiku) /
 `VOYAGE_API_KEY` (semantic search).
+
+> **Destructive-script guard.** `drop`/`genesis` combine `AGORA_ENV` + the `DATABASE_URL` host: a LOCAL
+> throwaway (`db`/`localhost`, non-`prod`) drops on `--force`; a PROTECTED target (any cloud/remote host,
+> **or** `AGORA_ENV=prod` even on a local db) requires typing the project ref (`--force` won't skip it).
