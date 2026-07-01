@@ -25,19 +25,23 @@
 //
 // Usage:
 //   node scripts/drop.mjs                  # dry run (safe) — lists objects that would be dropped
-//   node scripts/drop.mjs --yes            # drop schema (interactive ref confirm)
-//   node scripts/drop.mjs --yes --force    # non-interactive (CI)
+//   node scripts/drop.mjs --yes            # drop schema (interactive typed-ref confirm)
+//   node scripts/drop.mjs --yes --force    # non-interactive — LOCAL targets only (selfhost db/localhost)
+//   node scripts/drop.mjs --yes --force-cloud  # non-interactive against a disposable CLOUD DB (e.g. test)
 //   node scripts/drop.mjs --yes --migrate  # drop, then immediately rebuild from migrations
 import "dotenv/config";
 import { createInterface } from "node:readline/promises";
 import postgres from "postgres";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
+import { isLocalTarget } from "./lib/db-target.mjs";
 
 // ── args ──────────────────────────────────────────────────────────────────────
 const args = new Set(process.argv.slice(2));
 const EXECUTE = args.has("--yes") || args.has("-y");
 const FORCE = args.has("--force");
+const FORCE_CLOUD = args.has("--force-cloud");
+const LOCAL = isLocalTarget({ agoraEnv: process.env.AGORA_ENV, databaseUrl: process.env.DATABASE_URL });
 const RUN_MIGRATE = args.has("--migrate");
 
 // Schemas this app owns end-to-end: migrations create `public` + the `drizzle` ledger; 0017 creates
@@ -55,6 +59,8 @@ console.log(`   DB target    : ${dbHost}`);
 console.log(`   Project ref  : ${ref}`);
 console.log(`   Schemas      : ${SCHEMAS.join(", ")}  (DROP … CASCADE, then recreate empty public)`);
 console.log(`   Preserves    : auth schema + Auth users + Storage (use wipe.mjs for those)`);
+console.log(`   AGORA_ENV    : ${process.env.AGORA_ENV ?? "(unset)"}`);
+console.log(`   Target kind  : ${LOCAL ? "LOCAL (safe to --force)" : "CLOUD/REMOTE (needs --force-cloud)"}`);
 console.log("");
 
 const sql = postgres(dbUrl, { max: 1, prepare: false, onnotice() {} });
@@ -79,13 +85,21 @@ try {
   }
 
   // ── confirmation gate ────────────────────────────────────────────────────────
-  if (!FORCE && process.stdin.isTTY) {
+  // A LOCAL target (selfhost db / localhost) may be forced with --force. A CLOUD/REMOTE target must
+  // NOT be wiped on a bare --force — require the interactive typed-ref confirm, or an explicit
+  // --force-cloud for known-disposable cloud DBs (e.g. the test project). This closes the
+  // "genesis --force against a cloud .env" footgun.
+  const bypass = LOCAL ? (FORCE || FORCE_CLOUD) : FORCE_CLOUD;
+  if (!bypass && process.stdin.isTTY) {
     const rl = createInterface({ input: process.stdin, output: process.stdout });
     const answer = await rl.question(`Type the project ref "${ref}" to confirm IRREVERSIBLE drop: `);
     rl.close();
     if (answer.trim() !== ref) die("Confirmation did not match — aborted. Nothing was dropped.");
-  } else if (!FORCE) {
-    die("Refusing non-interactive drop without --force. Re-run with --yes --force.");
+  } else if (!bypass) {
+    die(LOCAL
+      ? "Refusing non-interactive drop without --force. Re-run with --yes --force."
+      : `Refusing to drop a CLOUD/REMOTE target (${dbHost}, AGORA_ENV=${process.env.AGORA_ENV ?? "unset"}) on --force alone. `
+        + "Use the interactive typed-ref confirm, or --force-cloud if this DB is disposable (e.g. a test project).");
   }
 
   // ── drop + recreate (atomic) ──────────────────────────────────────────────────

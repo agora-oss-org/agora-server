@@ -24,6 +24,9 @@ const here = dirname(fileURLToPath(import.meta.url));
 const args = new Set(process.argv.slice(2));
 const isTest = args.has("--test");
 const force = args.has("--force") || args.has("-f");
+// --test targets the dedicated, disposable TEST_DATABASE_URL (a cloud test project), so treat it as an
+// explicit opt-in to the cloud bypass; otherwise forward --force-cloud only when the caller passed it.
+const forceCloud = args.has("--force-cloud") || isTest;
 
 const urlVar = isTest ? "TEST_DATABASE_URL" : "DATABASE_URL";
 const url = process.env[urlVar];
@@ -37,7 +40,7 @@ console.log(`🌱 genesis → ${isTest ? "TEST" : "DEV"} (${urlVar})\n`);
 // ── 1. drop + rebuild from migrations (delegated to the hardened drop.mjs) ──────
 // drop.mjs reads DATABASE_URL; we force it to the chosen target. `import "dotenv/config"` in the child
 // won't override an env var that's already set, so this override wins even though .env defines both.
-const dropArgs = ["--yes", "--migrate", ...(force ? ["--force"] : [])];
+const dropArgs = ["--yes", "--migrate", ...(force ? ["--force"] : []), ...(forceCloud ? ["--force-cloud"] : [])];
 const drop = spawnSync(process.execPath, [join(here, "drop.mjs"), ...dropArgs], {
   stdio: "inherit",
   env: { ...process.env, DATABASE_URL: url },
