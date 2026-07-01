@@ -9,7 +9,7 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     environment: "node",
-    include: ["src/**/*.test.ts"],
+    include: ["src/**/*.test.ts", "scripts/**/*.test.mjs"],
     env: {
       DATABASE_URL: "postgres://test:test@localhost:5432/agora_test",
       ACCESS_TOKEN_SECRET: "unit-test-secret-unit-test-secret-unit-test",
