@@ -29,6 +29,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   explicit `2–1000`), plus a **"Recompute constellation now"** button that force-rematerializes the snapshot.
 
 ### Fixed
+- Logging hygiene: `closeMediationForCase`'s catch put a raw `{ err }` on an **`error`**-level log
+  (`lib/mediation.ts`) — the only such site in the codebase. Split to a message-only `error` plus a
+  `debug({ err })` companion per the Log-with-intent policy, so exception detail (a potential
+  secret/PII carrier) no longer ships to aggregators at `error` level.
 - Chat: `message:created` now fans out to every member's user room (inbox observers update without joining the thread room), not only the conversation room.
 - **Events domain hardening — visibility, capacity, and input robustness.** `GET /events` now applies
   the **space-read** gate to *every* visibility (not just `public`), so the list can no longer surface an

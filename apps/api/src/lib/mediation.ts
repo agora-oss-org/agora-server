@@ -152,6 +152,7 @@ export async function closeMediationForCase(projectId: string, caseId: string, o
       }
     }
   } catch (err) {
-    logger.error({ err }, "[mediation] closeMediationForCase failed");
+    logger.error("[mediation] closeMediationForCase failed");
+    logger.debug({ err }, "[mediation] closeMediationForCase failed");
   }
 }
