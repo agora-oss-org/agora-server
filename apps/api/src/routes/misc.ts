@@ -11,6 +11,7 @@ import { db } from "../db/index.js";
 import { oauthIdentities, oauthStates, profiles, projects, projectIntegrations } from "../db/schema/index.js";
 import { pkceClient, oauthConfigured } from "../lib/oauth.js";
 import { env } from "../lib/env.js";
+import { defaultUsername } from "../lib/profiles.js";
 import { mintSession } from "../lib/tokens.js";
 import * as webhooks from "../lib/webhooks.js";
 import { getFeedConfig, invalidateFeedConfig, feedConfigView } from "../lib/feed-config.js";
@@ -89,8 +90,10 @@ export const miscRoutes = new Hono<{ Variables: Variables }>()
         if (!p) return errorRedirect(c, base, "link_failed", "Account not found");
         profile = p;
       } else {
-        // Username is unique per project, so we don't auto-claim it from the provider — the user
-        // can set one later via profile update.
+        // We don't auto-claim a username from the provider's profile data (providers rarely expose
+        // one, and it's unique per project) — instead derive the same email-local-part default the
+        // native/Supabase password path uses (defaultUsername, lib/profiles.ts), so an OAuth signup
+        // isn't left nameless. The user can still change it later via profile update.
         profile = await ensureOAuthProfile(projectId, u.id, state.provider, {
           email: u.email ?? undefined,
           name: meta.full_name ?? meta.name ?? undefined,
@@ -366,7 +369,11 @@ async function startOAuth(
 }
 
 // Create-or-return the profile for an OAuth-authenticated Supabase user (keyed by auth user id).
-async function ensureOAuthProfile(
+// Exported so integration tests can exercise the upsert directly — the surrounding /oauth/callback
+// route needs a real Supabase code exchange (see test/integration/oauth.test.ts), but this helper's own
+// logic (default username, no-duplicate-on-repeat-login) doesn't depend on Supabase and is testable
+// in isolation against a real test DB.
+export async function ensureOAuthProfile(
   projectId: string,
   authUserId: string,
   provider: string,
@@ -375,8 +382,9 @@ async function ensureOAuthProfile(
   const [existing] = await db.select().from(profiles)
     .where(and(eq(profiles.projectId, projectId), eq(profiles.authUserId, authUserId))).limit(1);
   if (existing) return existing;
+  const username = await defaultUsername(projectId, attrs.email, authUserId);
   const [row] = await db.insert(profiles).values({
-    projectId, authUserId, email: attrs.email, name: attrs.name, avatar: attrs.avatar,
+    projectId, authUserId, email: attrs.email, name: attrs.name, avatar: attrs.avatar, username,
     authMethods: [provider],
   }).returning();
   return row!;

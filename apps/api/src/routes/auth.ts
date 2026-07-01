@@ -12,6 +12,7 @@ import { requireAuth, optionalAuth } from "../middleware/auth.js";
 import { db } from "../db/index.js";
 import { profiles, userSuspensions, projects } from "../db/schema/index.js";
 import { getAuthProvider } from "../lib/auth/index.js";
+import { defaultUsername } from "../lib/profiles.js";
 import { mintSession, rotateRefreshToken, revokeRefreshToken, revokeAllForProfile } from "../lib/tokens.js";
 import { requestAccountDeletion, verifyAccountDeletionCode, resolveDeletionMode } from "../lib/account-deletion.js";
 import { isOperator } from "../lib/operators.js";
@@ -34,23 +35,9 @@ async function profileByAuthUser(projectId: string, authUserId: string): Promise
   return row ?? null;
 }
 
-// Create-or-return the profile for a freshly authenticated Supabase user.
-// Derive a default username from an email local-part so new accounts aren't nameless (the SDK/UI
-// falls back to a raw id slice otherwise). Sanitized to [a-z0-9_-]; the `+tag` is dropped. The
-// `(project_id, username)` unique constraint means we must avoid collisions: if the base is taken,
-// suffix with the auth user's id prefix (unique per user) → no insert failure.
-async function defaultUsername(projectId: string, email?: string, authUserId?: string): Promise<string | undefined> {
-  if (!email) return undefined;
-  const local = (email.split("@")[0] ?? "").split("+")[0] ?? "";
-  let base = local.toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 30);
-  if (!base) base = "user";
-  const [taken] = await db.select({ id: profiles.id }).from(profiles)
-    .where(and(eq(profiles.projectId, projectId), eq(profiles.username, base))).limit(1);
-  if (!taken) return base;
-  const suffix = (authUserId ?? "").replace(/-/g, "").slice(0, 8) || Math.random().toString(36).slice(2, 10);
-  return `${base.slice(0, 27)}-${suffix}`;
-}
-
+// Create-or-return the profile for a freshly authenticated Supabase user. `defaultUsername`
+// (lib/profiles.ts) is shared with the OAuth path (routes/misc.ts) so every "new auth user → new
+// profile" path derives a username the same way, regardless of which identity provider created it.
 async function ensureProfile(projectId: string, authUserId: string, attrs: { email?: string; name?: string; username?: string }): Promise<ProfileRow> {
   const existing = await profileByAuthUser(projectId, authUserId);
   if (existing) return existing;

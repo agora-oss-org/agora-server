@@ -3,10 +3,11 @@
 // configured provider + real browser consent and is verified manually / out of band.
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { randomUUID } from "node:crypto";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { api, createProject, createUser, deleteProject, base } from "./helpers.js";
 import { db } from "../../src/db/index.js";
-import { oauthStates } from "../../src/db/schema/index.js";
+import { oauthStates, profiles } from "../../src/db/schema/index.js";
+import { ensureOAuthProfile } from "../../src/routes/misc.js";
 
 describe("oauth flow orchestration (integration)", () => {
   let projectId: string;
@@ -87,5 +88,47 @@ describe("oauth flow orchestration (integration)", () => {
     expect(res.status).toBe(302);
     const loc = res.headers.get("location")!;
     expect(loc).toContain("?next=%2Fhome&error=denied");
+  });
+
+  // ensureOAuthProfile is the profile-upsert helper the /oauth/callback handler calls after a real
+  // Supabase code exchange (which this test suite can't perform — see the file header). It has no
+  // Supabase dependency of its own, so it's exercised directly against the real test DB here.
+  describe("ensureOAuthProfile (profile upsert)", () => {
+    it("derives a username from the email local-part on first login — not left null", async () => {
+      const authUserId = randomUUID();
+      const profile = await ensureOAuthProfile(projectId, authUserId, "google", {
+        email: "dana@example.com",
+        name: "Dana",
+      });
+      expect(profile.username).toBe("dana");
+      expect(profile.authMethods).toEqual(["google"]);
+    });
+
+    it("suffixes the username on a collision instead of leaving it null or erroring", async () => {
+      const first = await ensureOAuthProfile(projectId, randomUUID(), "google", { email: "erin@example.com" });
+      expect(first.username).toBe("erin");
+      const secondAuthUserId = randomUUID();
+      const second = await ensureOAuthProfile(projectId, secondAuthUserId, "github", { email: "erin@example.com" });
+      expect(second.username).not.toBe("erin");
+      expect(second.username).toMatch(/^erin-/);
+    });
+
+    it("is idempotent: a repeat login for the same auth user returns the existing profile, untouched", async () => {
+      const authUserId = randomUUID();
+      const first = await ensureOAuthProfile(projectId, authUserId, "google", { email: "frank@example.com" });
+      const second = await ensureOAuthProfile(projectId, authUserId, "google", { email: "different@example.com" });
+      expect(second.id).toBe(first.id);
+      expect(second.username).toBe(first.username);
+      expect(second.email).toBe(first.email); // unchanged — not re-upserted from the second call's attrs
+      const rows = await db.select().from(profiles)
+        .where(and(eq(profiles.projectId, projectId), eq(profiles.authUserId, authUserId)));
+      expect(rows).toHaveLength(1);
+    });
+
+    it("still creates a profile (with no username) when the OAuth account has no email", async () => {
+      const profile = await ensureOAuthProfile(projectId, randomUUID(), "github", {});
+      expect(profile.username).toBeNull();
+      expect(profile.id).toBeTruthy();
+    });
   });
 });

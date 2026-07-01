@@ -49,6 +49,9 @@ describe("native auth (integration)", () => {
     expect(signIn.body.accessToken).toBeTruthy();
     expect(signIn.body.refreshToken).toBeTruthy();
     expect(signIn.body.user.email).toBe(email);
+    // Derived from the email local-part (lib/profiles.ts defaultUsername) since sign-up didn't pass
+    // one — the same derivation OAuth first-login now uses, so neither path leaves a user nameless.
+    expect(signIn.body.user.username).toBe("alice");
   });
 
   it("rejects a wrong password", async () => {
