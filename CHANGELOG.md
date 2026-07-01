@@ -24,9 +24,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `number → number | null` (`null` = adaptive); `COMMUNITY_DEFAULTS.constellationKFloor` is now `null`; the
   `socialConfigSchema` write bound relaxed `min(5) → min(2)`; the read resolver now maps a malformed /
   out-of-`[1,1000]` / absent value to `null` (adaptive) and raises a stored value to `≥2`. New exported pure
-  helper `adaptiveConstellationFloor(memberCount)`. The admin Settings → Social k-floor input accepts the new
-  range and shows blank for adaptive; a dedicated adaptive-vs-explicit control + a "recompute now" button are
-  the UI follow-up (Phase 2).
+  helper `adaptiveConstellationFloor(memberCount)`. The admin **Settings → Social** k-floor control is now an
+  **Adaptive (recommended)** / **Fixed floor** selector (adaptive shows the size→floor tier table; fixed takes an
+  explicit `2–1000`), plus a **"Recompute constellation now"** button that force-rematerializes the snapshot.
 
 ### Fixed
 - Chat: `message:created` now fans out to every member's user room (inbox observers update without joining the thread room), not only the conversation room.
