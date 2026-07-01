@@ -69,6 +69,13 @@ path segment after `/v7`.
 ```
 Status codes: `400 / 401 / 403 / 404 / 409 / 429 / 500`.
 
+**Deprecation header (RFC 8594):** a response to a request that used a **deprecated sort alias**
+carries `Deprecation: true` (no `Sunset` — the aliases keep working indefinitely; there is no
+scheduled removal). Emitted on `GET /entities?sortBy=new` and `GET /comments?sortBy=new|old`. The
+canonical replacement is `sortBy=createdAt` (+ `sortDir`). The typed alias/dir surface is exported
+from `@agora-server/contract` (`commentSortBySchema`, `sortDirSchema`); the server **coerces** an
+unknown `sortBy` to `createdAt` rather than 400-ing (forward-compat).
+
 ---
 
 ## 2. REST endpoint checklist (grouped by module)
@@ -120,7 +127,7 @@ signs an RS256 JWT (issuer=projectId, aud="replyke.com", sub=userData.id, claim 
 ### entities
 | Method | Path | Status |
 |---|---|---|
-| GET | `/entities` (feed/list — accepts filters §5; `sortBy` also takes `decay`/`gravity`/`wilson`/`bayesian`, plus optional `rankParams` JSON scalar, `rankAnchor` (echoed back), `rerank`) | ✅ |
+| GET | `/entities` (feed/list — accepts filters §5; `sortBy` also takes `createdAt` (first-class chronological, honors `sortDir`), `decay`/`gravity`/`wilson`/`bayesian`, plus optional `rankParams` JSON scalar, `rankAnchor` (echoed back), `rerank`. `new` is a **deprecated alias** for `createdAt` desc → emits `Deprecation: true` (§1)) | ✅ |
 | POST | `/entities` (JSON, or `multipart/form-data` with `images.files`/`files.files` + `images.options` → uploaded files returned in `entity.files`) | ✅ |
 | GET | `/entities/:id` | ✅ |
 | PATCH | `/entities/:id` | ✅ |
@@ -136,7 +143,7 @@ signs an RS256 JWT (issuer=projectId, aud="replyke.com", sub=userData.id, claim 
 ### comments
 | Method | Path | Status |
 |---|---|---|
-| GET | `/comments` (list; `entityId`, `parentId`, `sortBy` new/old/top, pagination) | ✅ |
+| GET | `/comments` (list; `entityId`, `parentId`, pagination; `sortBy` ∈ `createdAt`\|`top`\|`controversial`\|`new`\|`old` + `sortDir` (`asc`\|`desc`, honored for `createdAt`). `new`/`old` are **deprecated aliases** for `createdAt` desc/asc → emit `Deprecation: true` (§1); unknown `sortBy` coerces to `createdAt` desc) | ✅ |
 | GET | `/comments/thread` (full nested subtree; `entityId`, `rootId?` → `{ data: Comment[] }` w/ `replies[]`) | ✅ |
 | POST | `/comments` | ✅ |
 | GET | `/comments/:id` (→ `{ comment }`; `include`=user,parent) | ✅ |
@@ -298,6 +305,22 @@ lock). Removing the last host is rejected (`400 events/last-host`); a hidden gue
 | PATCH | `/app-notifications/:id/mark-as-read` | ✅ |
 | POST/PATCH | `/app-notifications/mark-all-as-read` (SDK uses PATCH → `{ success, markedAsRead }`) | ✅ |
 
+### push-notifications (Agora extension — Web Push / FCM / APNs device registry)
+Device registration for push delivery of in-app notifications (Agora addition, not an SDK hook). The
+dispatch layer mirrors the **push-worthy allowlist** into a background send whenever an in-app
+notification is written — reactions, reaction-milestones, and **all steward events** are suppressed
+(in-app only). Web Push (VAPID) is fully wired; FCM HTTP v1 + APNs HTTP/2 are credential-gated
+(per-project `project_integrations`, env fallback). The device body is the
+`PushDevice` identifier union (native `{platform:ios|android, token}` or web
+`{platform:web, subscription:{endpoint, keys:{p256dh, auth}}}`); registration is an idempotent upsert
+(native keyed on `(project,user,platform,token)`, web on `(project,user,endpoint)`).
+| Method | Path | Status |
+|---|---|---|
+| POST | `/push-notifications/devices` (auth; register/upsert a device → `204`) | ✅ |
+| DELETE | `/push-notifications/devices` (auth; deregister; body identifies the device → `204`) | ✅ |
+| POST | `/push-notifications/devices/deregister` (auth; proxy-safe fallback for gateways that strip DELETE bodies → `204`) | ✅ |
+| GET | `/push-notifications/vapid-public-key` (**unauthenticated**, rate-limited — fetched pre-sign-in → `{ publicKey: string \| null }`) | ✅ |
+
 ### reports
 | Method | Path | Status |
 |---|---|---|
@@ -343,10 +366,11 @@ and infra-gated (`NEO4J_URI` set; `503 social/graph-unavailable`).
 |---|---|---|
 | GET | `/social/weather` (→ `SocialWeather { band, value, trend, cachedAt }`) | ✅ |
 | GET | `/social/neighborhood` (own ties only; `?includeInteractions=` overrides `social_config.neighborhoodIncludeInteractions` (default false — adds interaction-only ties); `?includeCoParticipates=` (default false — adds CO_PARTICIPATES co-commenter ties at floor brightness, 0 warmth/friction); response echoes `includesInteractions` + `includesCoParticipates`) | ✅ |
-| GET | `/social/constellation` (k-anonymized cluster blobs, k ≥ 5; seasonally cron-materialized) | ✅ |
+| GET | `/social/constellation` (k-anonymized cluster blobs; seasonally cron-materialized. **Adaptive k-floor:** `social_config.constellationKFloor` = `null` (default) → resolved per project size at materialization by `adaptiveConstellationFloor` (2 for `<50` members, 3 `<100`, 4 `<500`, 5 `≥500`); an integer override is raised to ≥2 and capped at 1000. Hard anonymity floor **2** — a blob always represents ≥2 people. Clusters below the floor are suppressed) | ✅ |
 | GET | `/social/transparency` (active tier + enabled flags; readable by members) | ✅ |
 | GET | `/settings/social` (project-admin; resolved `social_config`) | ✅ |
 | PATCH | `/settings/social` (project-admin; deep-merge `social_config`; cache-invalidated) | ✅ |
+| POST | `/admin/social/constellation/recompute` (**project-admin**; forces a synchronous GDS Louvain re-materialization on demand — the config-companion to `PATCH /settings/social`, so whoever can set the k-floor can recompute. Config gate `400 social/constellation-disabled`, infra gate `503 social/graph-unavailable`; → `{ recomputed, constellation }`) | ✅ |
 
 ### webhooks (project-admin; server-side admin surface, not an SDK hook)
 Replyke-style project webhooks: synchronous `validate` events (host may veto a write → 403) +
@@ -395,7 +419,7 @@ lists captured in `docs/MODELS.md` (source: `interfaces/models/`):
 `SpaceMember`, `Rule`, `Conversation`/`ConversationPreview`, `ConversationMember`,
 `ChatMessage`, `Follow`, `Connection` (+ its many response shapes), `Collection`,
 `File`/`FileImage`, `Image`, `Mention` (user|space), `Project`,
-`Event`/`EventRsvp`/`EventInvite`, and the 17-variant
+`Event`/`EventRsvp`/`EventInvite`, `PushDevice`, and the 17-variant
 `UnifiedAppNotification` union.
 
 **Reaction types (8):** `upvote, downvote, like, love, wow, sad, angry, funny`.
@@ -484,7 +508,9 @@ From `interfaces/entity-filters/`:
 - **attachments**: `hasAttachments`
 - **metadata**: `includes`, `includesAny[]`, `doesNotInclude`, `exists[]`, `doesNotExist[]`
 - **location**: `{ latitude, longitude, radius }` (GeoJSON Point on entity)
-- plus sort (hot/top/new/controversial via `score`), `spaceId`, pagination, `include[]`
+- plus sort: `createdAt` (first-class chronological, honors `sortDir`) and the score-based
+  `hot/top/controversial/decay/gravity/wilson/bayesian`; `new` is the deprecated `createdAt`-desc
+  alias (emits `Deprecation: true`, §1). Plus `spaceId`, pagination, `include[]`
   (`space|user|topComment|saved|files`)
 
 ---

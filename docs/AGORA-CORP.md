@@ -136,7 +136,8 @@ Set `social_config.privacy_tier = "corporate"`
 
 **The invariants that hold in EVERY tier — including corporate — are not negotiable:**
 
-1. **k-anonymity floor of 5** on member-facing graph renderings. (Operator analytics may
+1. **k-anonymity on member-facing graph renderings** — the Constellation's cluster floor is
+   **adaptive (2–5 by community size, hard floor 2)**, never below 2. (Operator analytics may
    name individuals; what *members* see of each other never does.)
 2. **Feed read-affinity never becomes graph data** — private, per-viewer, Postgres-only.
    Read receipts exist *only* in disclosed announcement spaces.

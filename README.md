@@ -143,9 +143,11 @@ bends toward one non-negotiable:
 - **One public signal: warmth.** Loneliness and conflict both render as *dim* — indistinguishable on
   purpose, because both mean "bring care here." There is no per-person "bad actor" score, in any view.
 - **A zoom ladder that is a privacy ladder.** ☀️ **Community Weather** (one project-wide warmth scalar
-  with band + trend) → 🏡 **Neighborhood** (your *own* ties only, each rendered by its **dyadic**
-  brightness `B(you, them)` — never the friend's global score, which closes the friction side-channel
-  entirely). *(✨ Constellation — anonymous cluster blobs — is designed and next.)*
+  with band + trend) → ✨ **Constellation** (anonymous cluster blobs — size + warmth only, never
+  individual nodes; an **adaptive k-floor of 2–5 by community size**, hard floor 2, so small
+  communities see an accurate shape while large ones keep a privacy-meaningful floor) → 🏡
+  **Neighborhood** (your *own* ties only, each rendered by its **dyadic** brightness `B(you, them)` —
+  never the friend's global score, which closes the friction side-channel entirely).
 - **Friction is quarantined and decays.** A user report projects a directed `FRICTION` edge that can
   only *dim* an existing tie and fades at a ~14-day half-life ("a bad week is not a permanent
   identity"); it never creates a tie, and never becomes a per-person verdict.
@@ -308,14 +310,14 @@ complete** — no stubbed endpoints remain.
 
 | Domain | Highlights |
 |---|---|
-| **entities** | feed with full filter grammar + **pluggable ranking** (`hot`/`top`/`new`/`controversial`/`decay`/`gravity`/`wilson`/`bayesian`, per-project + per-request tunable), CRUD, drafts, foreign/short-id lookup, reactions, saved state |
-| **comments** | threaded (adjacency list + recursive CTE full-tree endpoint), reactions, Reddit-style soft delete, `sortBy` |
+| **entities** | feed with full filter grammar + **pluggable ranking** (`createdAt`/`hot`/`top`/`controversial`/`decay`/`gravity`/`wilson`/`bayesian`, per-project + per-request tunable, `sortDir`), CRUD, drafts, foreign/short-id lookup, reactions, saved state |
+| **comments** | threaded (adjacency list + recursive CTE full-tree endpoint), reactions, Reddit-style soft delete, `sortBy` (`createdAt`/`top`/`controversial` + `sortDir`; `new`/`old` kept as RFC 8594-deprecated aliases) |
 | **users / follows** | profiles, follow graph + counts, suggestions |
 | **connections** | bidirectional friend-request state machine (none → pending → connected/declined) with directional status |
 | **spaces** | nested spaces (depth cap + cycle guard), membership (join/approve/ban/roles), rules, moderation queues, **digest config** |
 | **collections** | nestable saved-entity folders |
 | **events** | community events with RSVPs (going/maybe/not_going, capacity-capped going), invites (host-only, invite-removal revokes the RSVP), co-hosts (last-host guard), `public/members/invite` visibility (gated against space-read access), cover + gallery images, and a PostGIS `location` for radius (km) list filtering |
-| **notifications** | fan-out across every write path, inbox, unread count, mark read |
+| **notifications** | fan-out across every write path, inbox, unread count, mark read; **web + native push** (Web Push/VAPID wired, FCM + APNs credential-gated) driven by a push-worthy allowlist (reactions, milestones, and all steward events stay in-app only) |
 | **reports** | report queue + resolution (entities, comments, chat messages) |
 | **auth** | sign-up/in/out, refresh rotation + reuse-detection, change/reset password, email verify, external RS256, OAuth provider sign-in/link |
 | **chat** | conversations (direct/group/space), members, messages, reactions, typing, read state — **socket.io realtime** |
@@ -325,7 +327,7 @@ complete** — no stubbed endpoints remain.
 | **webhooks** | project webhooks (HMAC validation gates + `*.complete` broadcasts) + per-space digests |
 | **moderation** | report resolution + server-enforced removed-content hiding (lists, single reads, **and** the search RPC); space-moderator + operator roles; **AI Agent Moderator** that flags inappropriate content on post — configurable violation categories, confidence thresholds, and auto-actions (immediate hide or human review) — tunable per-project in Settings; escalation to Stewards for conflict resolution |
 | **stewardship** | first-class **conflict resolution** — a DB-granted steward role (between member and operator), a caseload (`open → in_mediation → closed`), transformative outcomes, a "targeting" power-imbalance flag, **private mediation channels** (caucus + consensual joint room, built on chat), **configurable participant notifications** (power-aware/symmetric/resolution-only, never leaking who raised a case), append-only timeline, and escalate-to-removal for posts/comments/chat messages ([`docs/STEWARDSHIP.md`](docs/STEWARDSHIP.md)) |
-| **social graph** *(optional · Neo4j)* | the **Garden** — community-health analytics pointed *back at the community*: **Community Weather** (project-wide warmth scalar + band/trend, cached with hysteresis) and **Neighborhood** (your own ties by **dyadic** brightness); one public signal (warmth), friction quarantined + decaying, per-project privacy **tier** (community ↔ corporate). Scorer projects the edges, the API reads them. Off unless `NEO4J_URI` is set ([`docs/SOCIAL-GRAPH.md`](docs/SOCIAL-GRAPH.md)) |
+| **social graph** *(optional · Neo4j)* | the **Garden** — community-health analytics pointed *back at the community*: **Community Weather** (project-wide warmth scalar + band/trend, cached with hysteresis), **Constellation** (anonymous GDS-Louvain cluster blobs with an adaptive 2–5 k-floor + on-demand project-admin recompute), and **Neighborhood** (your own ties by **dyadic** brightness); one public signal (warmth), friction quarantined + decaying, per-project privacy **tier** (community ↔ corporate). Scorer projects the edges, the API reads them. Off unless `NEO4J_URI` is set ([`docs/SOCIAL-GRAPH.md`](docs/SOCIAL-GRAPH.md)) |
 
 Denormalized counts (reaction counts, reply counts, member counts, thread counts, reputation) are
 maintained atomically by Postgres **triggers** — never recomputed per request.
@@ -490,14 +492,15 @@ pass a `projectId` + a signed user token to the provider; the SDK's typed hooks 
 - ✅ **Governance** — moderation (report queues + optional LLM auto-moderation) and the stewardship
   caseload (cases, private mediation channels, participant notifications) are wired and operator-gated
   in the admin dashboard.
-- 🌱 **Social graph (optional · Neo4j)** — the `social_config` foundation, **Community Weather**, and
-  **Neighborhood** are live and env-gated behind `NEO4J_URI` (scorer writes the `INTERACTED` / `FOLLOWS`
-  / `CONNECTED` / `FRICTION` edges, the API reads them); Constellation + admin graph analytics are
-  designed and next ([`docs/SOCIAL-GRAPH.md`](docs/SOCIAL-GRAPH.md)).
+- 🌱 **Social graph (optional · Neo4j)** — the full **Garden** is live and env-gated behind `NEO4J_URI`
+  (scorer writes the `INTERACTED` / `FOLLOWS` / `CONNECTED` / `FRICTION` edges, the API reads them):
+  **Community Weather**, **Constellation** (GDS-Louvain blobs, adaptive 2–5 k-floor, project-admin
+  recompute), and **Neighborhood**, plus the operator-only corporate analytics tier
+  (influence / silos / engagement + React dashboards) ([`docs/SOCIAL-GRAPH.md`](docs/SOCIAL-GRAPH.md)).
 - ✅ **Supabase-optional** — provider seams run the same server on **native** email/password auth
   (`DEFAULT_AUTH_PROVIDER=native`) + **S3-compatible** storage (`STORAGE_PROVIDER=s3`) + a local
   Postgres, fully self-contained; DB layer validated end-to-end ([`docs/SELF-HOSTING.md`](docs/SELF-HOSTING.md)).
-- ✅ Idempotent Drizzle migrations `0000`–`0048`; unit + integration test suites green.
+- ✅ Idempotent Drizzle migrations `0000`–`0055`; unit + integration test suites green.
 - ✅ Client SDK published + repointed — validated 1:1 by the
   [`agora-demo`](https://github.com/jenova-marie/agora-demo) compatibility harness.
 - ⬜ Ops backlog: deployment guides, and RLS write policies (only needed if the Supabase Data API is

@@ -77,15 +77,23 @@ Projection rules: reply/upvote/mention → `INTERACTED` (warmth); same-thread po
   re-identification surface. Ships first. The *only* place friction shows publicly — as a
   dip in collective climate.
 - **✨ Constellation** — the anonymous *shape*: cluster blobs (size = members, brightness =
-  warmth), **never individual nodes**. Guardrails: k-anonymity (k ≥ 5, smaller merges up),
-  layout re-randomized per load, warmth-only (friction never renders as structure).
+  warmth), **never individual nodes**. Guardrails: k-anonymity (an **adaptive floor of 2–5 by
+  community size**, hard floor **2** — sub-floor clusters suppressed), layout re-randomized per load,
+  warmth-only (friction never renders as structure).
 
 > **As shipped (PR 5):** `GET /social/constellation` returns cluster **blobs** — a bucketed size
 > (`5–9`, `10–19`, …) + a warmth band, **no ids, names, or member lists**. Clustering is **GDS Louvain**
 > (`gds.louvain.stream`) over the warmth/structure graph (`INTERACTED ∪ FOLLOWS ∪ CONNECTED`; **`FRICTION`
 > excluded** — friction is never structure), scoped by the project's user set, with a **by-space fallback**
-> when OpenGDS is absent. Clusters smaller than `constellationKFloor` (default 5, admin-raisable) are
-> **suppressed**; each blob is tinted by its members' mean `S_p`. Per §12 it's **materialized seasonally**
+> when OpenGDS is absent. Clusters smaller than the effective `constellationKFloor` are **suppressed**;
+> each blob is tinted by its members' mean `S_p`. **The k-floor is adaptive (2026-06):**
+> `constellationKFloor` defaults to `null` → resolved at materialization by `adaptiveConstellationFloor`
+> (2 for `<50` members, 3 `<100`, 4 `<500`, 5 `≥500`) so a small community sees an accurate, non-empty
+> constellation instead of a permanently-empty one; an admin may pin a fixed override (raised to ≥2,
+> capped 1000). The **hard anonymity floor is 2** in both paths — a blob can never *be* one identifiable
+> person. A project-admin can force an on-demand re-materialization via `POST
+> /admin/social/constellation/recompute` (the config-companion to `PATCH /settings/social`). Per §12 it's
+> otherwise **materialized seasonally**
 > (a `social_constellation` snapshot refreshed by a weekly cron with a ~6-week per-project epoch gate —
 > never per-load), and blobs carry **no persistent identity** (re-clustered fresh each epoch). The
 > coarse buckets + slow cadence are the temporal-anonymity protection.
@@ -101,8 +109,8 @@ Projection rules: reply/upvote/mention → `INTERACTED` (warmth); same-thread po
 > The toggle governs only *who appears* — a structural tie still glows from your interactions either way.
 > `FRICTION` only *dims* an existing tie (FLOOR-bounded → unreadable) and never *creates* one — a
 > report-only pair never appears. Reuses the PR 3 warmth math (additive friction, read-time decay, age
-> cutoff) per dyad. No k-anonymity here (named self-view of people you already know — k≥5 governs the
-> Constellation's view of *others*). Computed live, no cache (bounded by your own degree).
+> cutoff) per dyad. No k-anonymity here (named self-view of people you already know — the adaptive
+> k-floor governs the Constellation's view of *others*). Computed live, no cache (bounded by your own degree).
 
 **The abuser edge case, named:** a genuine abuser also reads "needs care" publicly. That's
 accepted — *the Garden is not where abuse is adjudicated*; the steward tier is.
