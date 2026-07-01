@@ -2,14 +2,16 @@
 //   Drop the schema → rebuild from migrations (0000…N) → seed fixtures + validate triggers/RPC.
 //
 //   node scripts/genesis.mjs            # DEV  → DATABASE_URL
-//   node scripts/genesis.mjs --test     # TEST → TEST_DATABASE_URL
-//   node scripts/genesis.mjs --force    # skip the type-the-ref confirm (CI / non-interactive)
+//   node scripts/genesis.mjs --test     # TEST → TEST_DATABASE_URL (disposable cloud test project)
+//   node scripts/genesis.mjs --force    # skip the confirm — LOCAL targets only (selfhost db / localhost)
+//   node scripts/genesis.mjs --force-cloud   # skip the confirm against a disposable CLOUD DB
 //
 // DESTRUCTIVE. This wraps `drop.mjs --yes --migrate` (which drops private/drizzle/public and rebuilds
 // from migrations — see that file for the safety model) and then applies `seeds/seed.sql` in-process.
-// By default you must type the project ref to confirm (drop.mjs's interactive gate); pass --force to
-// skip it. The `--test` flag retargets every step at TEST_DATABASE_URL by overriding DATABASE_URL for
-// the child (dotenv won't clobber an already-set env var), so it can never touch the dev DB.
+// The drop.mjs guardrail (AGORA_ENV + the DATABASE_URL host) decides the confirm: a LOCAL target may be
+// forced with --force; a CLOUD/REMOTE target refuses --force and needs the typed-ref confirm or
+// --force-cloud. The `--test` flag retargets every step at TEST_DATABASE_URL and implies --force-cloud,
+// so it never touches the dev DB and stays non-interactive in CI.
 //
 // NOTE: this seeds the DB-level fixtures only (seed.sql: tenant rows + trigger/RPC asserts). The demo
 // CONTENT posts (`seed-*-post.mjs`) need a running server and live behind `pnpm seed` — not here.

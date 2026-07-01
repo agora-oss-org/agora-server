@@ -257,7 +257,9 @@ runs on the *host* (`pnpm --filter @agora/api dev` / `pnpm db:migrate:run`) and 
 `apps/api/.env` too — it is **not** created automatically (gitignored, untracked), so copy the template
 there as shown in the table/Quick start. Want one file instead of two? Symlink it —
 `ln -sf ../../.env apps/api/.env` — an optional, gitignored local convenience, not something that
-exists by default. Every template carries an `AGORA_ENV=<mode>` marker; the destructive DB scripts
+exists by default. (Same story for **`@agora/secure-chat`** when you run it on the host in dev —
+`--profile secure-chat`/`full` — it reads its own `apps/secure-chat/.env`; copy or symlink the root
+`.env` there too.) Every template carries an `AGORA_ENV=<mode>` marker; the destructive DB scripts
 (`drop`/`genesis`) read it to refuse a `--force` that would wipe a **cloud** database.
 
 The browser-facing admin SPA has its own build-time vars — see [`apps/admin/.env.example`](apps/admin/.env.example).
