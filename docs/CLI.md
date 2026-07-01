@@ -173,6 +173,18 @@ the corresponding `.mjs` so there is a single source of truth for those operatio
 
 Each is just a future capability module or provider — no architectural change required:
 
+- **Guided setup — "Option C" (generator / task-runner).** A `make setup` (or `node
+  scripts/env-init.mjs`, or an `agora setup` capability module) that asks/takes `--mode`, generates a
+  correct `.env` with secrets auto-filled (`openssl rand`), and a `make dev|selfhost|prod` that runs
+  the right compose + profile command for you. The matrix knowledge lives in one generator.
+  - *Pros:* best adoption UX — "run `make setup`, answer one question, you have a valid env + the right
+    up command." Eliminates hostname/placeholder mistakes entirely and wraps the destructive-op guard.
+  - *Context:* this is the deferred alternative from the env-config cleanup design
+    ([`docs/superpowers/specs/2026-07-01-env-config-design.md`](superpowers/specs/2026-07-01-env-config-design.md)),
+    which shipped **Option A** first (three complete per-mode `.env.*.example` templates + a `cp`
+    workflow + an `AGORA_ENV` marker and destructive-script guard). Option A was designed so this
+    generator can layer on top later **without rework** — it reads the same templates/marker rather
+    than replacing them.
 - **Swarm** container driver (behind the existing `containerDriver` interface).
 - **Codegen** of the operator structs (zod → OpenAPI → Go) to restore compile-time-ish drift safety.
 - **Alerts / thresholds** (disk low, container unhealthy, cert expiring).
