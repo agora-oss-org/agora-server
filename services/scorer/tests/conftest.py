@@ -12,6 +12,10 @@ import pytest
 
 os.environ.setdefault("DATABASE_URL", "postgresql://test:test@localhost:5432/test")
 os.environ.setdefault("ACCESS_TOKEN_SECRET", "test-secret")
+# FORCE-default off: telemetry_enabled() treats unset as ON, and setup_telemetry() now binds a real
+# :9464 socket for the Prometheus metrics reader — tests that build an app (e.g. test_model_server.py)
+# would otherwise open a real port every run. Individual telemetry tests override this via monkeypatch.
+os.environ.setdefault("OTEL_SDK_DISABLED", "true")
 # FORCE empty (not setdefault): direnv/.env may export a real key into the shell, and a real key
 # makes Settings().haiku_enabled() true → the gray-zone cascade fires a *real* Haiku call in tests
 # (non-hermetic, flaky). Tests that need Haiku enabled set it per-Settings via dataclasses.replace.

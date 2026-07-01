@@ -165,6 +165,9 @@ services:
       SCORER_PORT: "8001"
       OMP_NUM_THREADS: "1"
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      # Traces push OTLP to alloy; metrics are exposed on :9464 for alloy to SCRAPE (see
+      # deploy/observability/config.alloy's scorer scrape job) — never pushed, so no 404s against
+      # alloy's OTLP receiver (which intentionally drops metrics to avoid double-counting).
       OTEL_SDK_DISABLED: ${OTEL_SDK_DISABLED:-true}
       OTEL_SERVICE_NAME: agora-scorer-toxicity
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://alloy:4318}
@@ -188,6 +191,8 @@ services:
       SCORER_PORT: "8002"
       OMP_NUM_THREADS: "1"
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      # Traces push OTLP to alloy; metrics are exposed on :9464 for alloy to SCRAPE — see the toxicity
+      # service's comment above (same story, different model).
       OTEL_SDK_DISABLED: ${OTEL_SDK_DISABLED:-true}
       OTEL_SERVICE_NAME: agora-scorer-relationship
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://alloy:4318}
@@ -220,6 +225,8 @@ services:
       SCORER_ADMIN_PORT: "4001"
       NEO4J_URI: bolt://neo4j:7687
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      # Traces push OTLP to alloy; metrics are exposed on :9464 for alloy to SCRAPE — see the toxicity
+      # service's comment above.
       OTEL_SDK_DISABLED: ${OTEL_SDK_DISABLED:-true}
       OTEL_SERVICE_NAME: agora-scorer-worker
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://alloy:4318}

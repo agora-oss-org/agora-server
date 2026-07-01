@@ -29,6 +29,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   explicit `2–1000`), plus a **"Recompute constellation now"** button that force-rematerializes the snapshot.
 
 ### Fixed
+- **Scorer `Failed to export metrics batch code: 404` log spam eliminated.** `services/scorer/scorer/telemetry.py`
+  no longer pushes metrics via OTLP — Alloy's OTLP receiver intentionally drops that signal (see
+  `deploy/observability/config.alloy`), so every export attempt 404'd forever. Metrics are now exposed on
+  `:9464` via `PrometheusMetricReader`, the same scrape pattern the Node apps already use;
+  `config.alloy` gained a `prometheus.scrape "agora_scorer"` job for the worker + 2 model servers, giving
+  the scorer real metrics in Grafana/Mimir for the first time (previously it contributed traces + logs
+  only). Traces are unaffected (still OTLP push to Tempo). New dep: `opentelemetry-exporter-prometheus`.
 - Logging hygiene: `closeMediationForCase`'s catch put a raw `{ err }` on an **`error`**-level log
   (`lib/mediation.ts`) — the only such site in the codebase. Split to a message-only `error` plus a
   `debug({ err })` companion per the Log-with-intent policy, so exception detail (a potential

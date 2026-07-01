@@ -2,11 +2,13 @@
 //
 // Apps push OTLP here for TRACES + LOGS (OTEL_*_ENDPOINT / OTEL_EXPORTER_OTLP_ENDPOINT → http://alloy:4318):
 //   @agora/api · @agora/secure-chat · services/scorer.
-// METRICS are collected by SCRAPING the Node apps' Prometheus endpoints (:9464) instead of OTLP — the
-// scraped names are deterministic (exactly the instrument names: agora_embeddings_total,
-// agora_embedding_duration_ms_bucket, agora_socket_active_connections, …), which is what the bundled
-// Grafana dashboards query. The apps still emit OTLP metrics too, but Alloy drops them here (the OTLP
-// `metrics` output is empty) so series are never double-counted. See docs/TELEMETRY.md.
+// METRICS are collected by SCRAPING Prometheus endpoints (:9464, both the Node apps AND the scorer's
+// worker + 2 model servers) instead of OTLP — the scraped names are deterministic (exactly the
+// instrument names: agora_embeddings_total, agora_embedding_duration_ms_bucket,
+// agora_socket_active_connections, …), which is what the bundled Grafana dashboards query. Traces still
+// push OTLP; only metrics are scrape-only — a service that also pushed OTLP metrics here would just
+// 404 (the OTLP `metrics` output below is intentionally empty) since Alloy never registers a consumer
+// for that signal. See docs/TELEMETRY.md.
 
 // ── OTLP ingress (traces + logs) ───────────────────────────────────────────────────────────────────
 otelcol.receiver.otlp "in" {
@@ -44,6 +46,21 @@ prometheus.scrape "agora_nodes" {
   targets = [
     { "__address__" = "agora:9464",       "service" = "agora-api" },
     { "__address__" = "secure-chat:9464", "service" = "agora-secure-chat" },
+  ]
+  scrape_interval = "15s"
+  forward_to      = [prometheus.remote_write.mimir.receiver]
+}
+
+// ── Metrics: scrape the scorer's Prometheus endpoints → Mimir ───────────────────────────────────────
+// Same pattern as the Node apps above (scorer/telemetry.py's setup_telemetry binds :9464 with
+// PrometheusMetricReader when OTEL_SDK_DISABLED=false). Separate job so a scorer-only deploy
+// (--profile scorer without the Node apps, or vice versa) doesn't need both target lists edited
+// together. Targets that are off-profile or telemetry-disabled are simply marked down — harmless.
+prometheus.scrape "agora_scorer" {
+  targets = [
+    { "__address__" = "scorer-worker:9464",       "service" = "agora-scorer-worker" },
+    { "__address__" = "scorer-toxicity:9464",     "service" = "agora-scorer-toxicity" },
+    { "__address__" = "scorer-relationship:9464", "service" = "agora-scorer-relationship" },
   ]
   scrape_interval = "15s"
   forward_to      = [prometheus.remote_write.mimir.receiver]

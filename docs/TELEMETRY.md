@@ -22,7 +22,7 @@ collects it**.
 | Signal | Source | Exporters | Backend |
 |---|---|---|---|
 | **Traces** | auto-instrumentation (HTTP in/out; the scorer also auto-instruments its `asyncpg` DB driver) + manual `withSpan()` (socket.io) | OTLP/HTTP | Tempo |
-| **Metrics** | **custom instruments** (below) — the SDK emits no runtime/HTTP metrics by default | **Prometheus `:9464`** (Node) + **OTLP push** | Mimir |
+| **Metrics** | **custom instruments** (below) — the SDK emits no runtime/HTTP metrics by default | **Prometheus `:9464`** (Node + scorer) + **OTLP push** (traces/logs only) | Mimir |
 | **Logs** | `wonder-logger` Pino (Node) / structured JSON (Python), console + OTLP | console + OTLP | Loki |
 
 - **Trace ↔ log correlation is automatic.** Every log line emitted **inside a request/span** carries
@@ -39,14 +39,14 @@ collects it**.
 |---|---|---|---|---|---|
 | **`@agora/api`** | ✅ | ✅ custom | ✅ | ✅ | `agora-api` |
 | **`@agora/secure-chat`** | ✅ | ◐ endpoint only | ✅ | ✅ | `agora-secure-chat` |
-| **`services/scorer`** (worker + 2 model servers) | ✅ | — | ✅ (trace-correlated) | — | `agora-scorer-*` |
+| **`services/scorer`** (worker + 2 model servers) | ✅ | ◐ endpoint only | ✅ (trace-correlated) | ✅ | `agora-scorer-*` |
 | **`@agora/admin`** (browser SPA) | — | — | — | — | — (no RUM by design) |
 
 > **Metrics today are the API's custom instruments.** They're registered only in `@agora/api`
-> ([next section](#custom-metrics-the-api)). `@agora/secure-chat` exposes a `:9464` endpoint but registers
-> no app-level series yet, and the scorer's OTLP metrics are dropped at the collector (see
-> [Collection](#collection-the-bundled-grafana-stack)) — so the series that actually reach Mimir are the
-> API's. Traces + logs flow from all three.
+> ([next section](#custom-metrics-the-api)). `@agora/secure-chat` and the scorer both expose a `:9464`
+> endpoint (scraped by Alloy, see [Collection](#collection-the-bundled-grafana-stack)) but register no
+> app-level series yet — just whatever auto-instrumentation RED metrics their instrumented libraries
+> emit (asyncpg/httpx/FastAPI for the scorer). Traces + logs flow from all three.
 
 The Node SDK is bootstrapped in each app's `src/instrument.ts`, imported **first** in `index.ts` (right
 after `dotenv`) so the HTTP auto-instrumentation patches `http` (incoming + outbound `fetch`) before it
@@ -54,7 +54,9 @@ loads. Note: Drizzle's `postgres.js` driver has **no** OTel auto-instrumentation
 `pg`), so DB calls aren't auto-traced; the socket.io realtime path is traced **manually** via `withSpan`.
 Both Node apps share one [`wonder-logger.yaml`](../packages/core/wonder-logger.yaml) via `@agora/core`;
 only the `SERVICE_NAME` differs. The scorer bootstraps in `scorer/telemetry.py` (auto-instruments
-FastAPI + asyncpg + httpx — so its DB *is* traced).
+FastAPI + asyncpg + httpx — so its DB *is* traced). Unlike the Node side, the scorer's metrics **only**
+go out via the `:9464` scrape endpoint (`PrometheusMetricReader`) — no OTLP metric exporter is wired at
+all, since Alloy would just 404 it (see [Collection](#collection-the-bundled-grafana-stack)).
 
 ### Custom metrics (the API)
 
@@ -101,13 +103,15 @@ three:
 services/scorer ────┘   scrape :9464 ─────────┴─ metrics (scrape→remote-write) ─▶ Mimir ┘
 ```
 
-**Traces and logs** are pushed via OTLP. **Metrics** are *scraped* from the Node apps' Prometheus
-endpoints (`:9464`) and remote-written to Mimir — deliberately, because the scraped names are
-**deterministic** (exactly the instrument names: `agora_embeddings_total`,
+**Traces and logs** are pushed via OTLP. **Metrics** are *scraped* from Prometheus endpoints (`:9464`) —
+the two Node apps (`prometheus.scrape "agora_nodes"`) plus the scorer's worker + 2 model servers
+(`prometheus.scrape "agora_scorer"`) — and remote-written to Mimir — deliberately, because the scraped
+names are **deterministic** (exactly the instrument names: `agora_embeddings_total`,
 `agora_embedding_duration_ms_bucket`, `agora_socket_active_connections`, …), which is what the bundled
-dashboards query. The apps still emit OTLP metrics too, but Alloy drops those (its OTLP `metrics` output
-is empty) so series are never double-counted. The scorer has no custom metrics yet, so it contributes
-traces + logs only.
+dashboards query. The Node apps still emit OTLP metrics too, but Alloy drops those (its OTLP `metrics`
+output is empty) so series are never double-counted; the scorer skips the OTLP metric exporter entirely
+(scrape-only from the start — see the note above) to avoid the same 404s. The scorer has no *custom*
+metrics yet, so its scraped series are auto-instrumentation RED metrics only.
 
 > **Internal by design.** The `:9464` endpoints and the LGTM backends are reachable only on the compose
 > network, **never** through the public Caddy front door (a Prometheus endpoint must not be public).
@@ -164,9 +168,10 @@ pre-loaded — open **Agora — Overview** and **Agora — Logs** for the curate
   to jump to Tempo. Scorer log lines carry `trace_id` too.
 
 ```bash
-# the Node Prometheus endpoints are live whenever the SDK is on (handy for a quick sanity check):
-docker compose exec agora       curl -s localhost:9464/metrics | head
-docker compose exec secure-chat curl -s localhost:9464/metrics | head
+# the Prometheus endpoints are live whenever the SDK is on (handy for a quick sanity check):
+docker compose exec agora              curl -s localhost:9464/metrics | head
+docker compose exec secure-chat        curl -s localhost:9464/metrics | head
+docker compose exec scorer-worker      curl -s localhost:9464/metrics | head
 ```
 
 ### Bare deploys stay dark
@@ -174,8 +179,9 @@ docker compose exec secure-chat curl -s localhost:9464/metrics | head
 Without `--profile observability` and with the default `OTEL_SDK_DISABLED=true`, the SDK **collects and
 exports nothing** — no traces, no metric data, no OTLP pushes, no export warnings. (The Node Prometheus
 server still binds `:9464` and serves a near-empty response — that's the exporter's own startup, not the
-SDK — but compose never publishes `:9464` to the host, so nothing is reachable from outside the network.)
-Telemetry is strictly opt-in.
+SDK — but compose never publishes `:9464` to the host, so nothing is reachable from outside the network.
+The scorer's `:9464` doesn't even bind when disabled — `setup_telemetry` returns early before calling
+`start_http_server`, so there's no caveat on the Python side.) Telemetry is strictly opt-in.
 
 ---
 
@@ -300,10 +306,11 @@ tests), so call sites are guard-free. Scorer-side, use `opentelemetry.trace.get_
 |---|---|
 | Periodic `OTLP export failed` warnings | SDK is on but no collector at the endpoint. Bring up `--profile observability`, fix `OTEL_*_ENDPOINT`, or set `OTEL_SDK_DISABLED=true`. |
 | `Invalid input: expected boolean, received string` on boot | A `${VAR}` used for a boolean/number in `wonder-logger.yaml`. Booleans/numbers **must be literals**. |
-| `:9464/metrics` responds but has no `agora_*` series | `OTEL_SDK_DISABLED=true` — the Prometheus server binds, but the SDK records nothing until enabled (set `false` + restart). |
+| `:9464/metrics` responds but has no `agora_*` series | Node: `OTEL_SDK_DISABLED=true` — the Prometheus server binds, but the SDK records nothing until enabled (set `false` + restart). |
 | Logs in Loki have empty `trace_id` | Line logged outside an active span (e.g. at boot), or `traceContext`/scorer injection unavailable. |
 | secure-chat shows up as `agora-api` | `SECURE_CHAT_SERVICE_NAME` / `SERVICE_NAME` not reaching the container — check the compose `environment` block. |
-| scorer emits no traces | Python OTel deps not installed in the image, or `OTEL_SDK_DISABLED=true`. `setup_telemetry` logs a skip line. |
+| scorer emits no traces, or `:9464` connection refused | Python OTel deps not installed in the image, or `OTEL_SDK_DISABLED=true` (the scorer's `:9464` doesn't bind at all when disabled — see [Bare deploys stay dark](#bare-deploys-stay-dark)). `setup_telemetry` logs a skip line. |
+| Docker logs spam `Failed to export metrics batch code: 404` for a scorer container | Stale image predating the scrape-only metrics change — rebuild (`docker compose build scorer-worker scorer-toxicity scorer-relationship`). A current image never pushes OTLP metrics, so it can't hit this. |
 
 ---
 
