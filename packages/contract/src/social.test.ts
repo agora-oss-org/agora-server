@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  adaptiveConstellationFloor,
   CORPORATE_ONLY_FLAGS,
   forbiddenSocialKeys,
   readReceiptCoverage,
@@ -30,9 +31,12 @@ describe("socialConfigSchema — PATCH body contract", () => {
   it("rejects an unknown tier", () => {
     expect(socialConfigSchema.safeParse({ privacyTier: "surveillance" }).success).toBe(false);
   });
-  it("rejects constellationKFloor below 5 — the k-anonymity floor is not tier-relaxable", () => {
-    expect(socialConfigSchema.safeParse({ constellationKFloor: 4 }).success).toBe(false);
-    expect(socialConfigSchema.safeParse({ constellationKFloor: 5 }).success).toBe(true);
+  it("rejects constellationKFloor below 2 — the hard k-anonymity floor is not tier-relaxable", () => {
+    expect(socialConfigSchema.safeParse({ constellationKFloor: 1 }).success).toBe(false);
+    expect(socialConfigSchema.safeParse({ constellationKFloor: 2 }).success).toBe(true);
+    expect(socialConfigSchema.safeParse({ constellationKFloor: 1001 }).success).toBe(false);
+    expect(socialConfigSchema.safeParse({ constellationKFloor: null }).success).toBe(true);
+    expect(socialConfigSchema.safeParse({}).success).toBe(true); // omitted is valid
   });
   it("rejects non-positive half-lives", () => {
     expect(socialConfigSchema.safeParse({ warmthHalfLifeDays: 0 }).success).toBe(false);
@@ -51,15 +55,15 @@ describe("SOCIAL_TIER_DEFAULTS — the two postures", () => {
     expect(d.frictionVisibleToStewards).toBe(true);
     expect(d.readAffinityEnabled).toBe(true);
     for (const k of CORPORATE_ONLY_FLAGS) expect(d[k]).toBe(false);
-    expect(d.constellationKFloor).toBe(5);
+    expect(d.constellationKFloor).toBe(null);
     expect(d.warmthHalfLifeDays).toBe(30);
     expect(d.frictionHalfLifeDays).toBe(14);
   });
-  it("corporate defaults: analytics on, k-floor still 5", () => {
+  it("corporate defaults: analytics on, k-floor inherits null/adaptive", () => {
     const d = SOCIAL_TIER_DEFAULTS.corporate;
     expect(d.privacyTier).toBe("corporate");
     for (const k of CORPORATE_ONLY_FLAGS) expect(d[k]).toBe(true);
-    expect(d.constellationKFloor).toBe(5); // k-anonymity is not tier-relaxable
+    expect(d.constellationKFloor).toBe(null); // adaptive-by-default, resolved at materialization time
   });
 });
 
@@ -121,8 +125,12 @@ describe("resolveSocialConfig — clamp-on-read (fail closed)", () => {
     });
     for (const k of CORPORATE_ONLY_FLAGS) expect(cfg[k]).toBe(false);
   });
-  it("CLAMP: a stored k-floor below 5 is raised to 5", () => {
-    expect(resolveSocialConfig({ constellationKFloor: 2 }).constellationKFloor).toBe(5);
+  it("CLAMP: a stored k-floor below 2 is raised to 2; valid values pass through; absent → null (adaptive)", () => {
+    expect(resolveSocialConfig({ constellationKFloor: 1 }).constellationKFloor).toBe(2);
+    expect(resolveSocialConfig({ constellationKFloor: 2 }).constellationKFloor).toBe(2);
+    expect(resolveSocialConfig({ constellationKFloor: 30 }).constellationKFloor).toBe(30);
+    expect(resolveSocialConfig({ constellationKFloor: 1000 }).constellationKFloor).toBe(1000);
+    expect(resolveSocialConfig({}).constellationKFloor).toBe(null);
   });
   it("ignores non-boolean garbage in boolean fields (falls back to default)", () => {
     expect(resolveSocialConfig({ weatherEnabled: "yes" }).weatherEnabled).toBe(true);
@@ -130,13 +138,49 @@ describe("resolveSocialConfig — clamp-on-read (fail closed)", () => {
   it("tiers are exactly community and corporate", () => {
     expect(SOCIAL_PRIVACY_TIERS).toEqual(["community", "corporate"]);
   });
-  it("rejects float/Infinity/NaN numerics at read time (falls back to defaults)", () => {
-    expect(resolveSocialConfig({ constellationKFloor: Infinity }).constellationKFloor).toBe(5);
-    expect(resolveSocialConfig({ constellationKFloor: NaN }).constellationKFloor).toBe(5);
+  it("rejects float/Infinity/NaN numerics at read time (falls back to null for k-floor, default for others)", () => {
+    expect(resolveSocialConfig({ constellationKFloor: Infinity }).constellationKFloor).toBe(null);
+    expect(resolveSocialConfig({ constellationKFloor: NaN }).constellationKFloor).toBe(null);
     expect(resolveSocialConfig({ warmthHalfLifeDays: 12.5 }).warmthHalfLifeDays).toBe(30);
   });
-  it("an out-of-range stored k-floor (above the 1000 ceiling) falls back to the default", () => {
-    expect(resolveSocialConfig({ constellationKFloor: 2000 }).constellationKFloor).toBe(5);
+  it("an out-of-range stored k-floor (above the 1000 ceiling) resolves to null (adaptive)", () => {
+    expect(resolveSocialConfig({ constellationKFloor: 2000 }).constellationKFloor).toBe(null);
+  });
+});
+
+describe("adaptiveConstellationFloor — size-based k-floor", () => {
+  it("returns 2 for small communities (0 and 49 members)", () => {
+    expect(adaptiveConstellationFloor(0)).toBe(2);
+    expect(adaptiveConstellationFloor(49)).toBe(2);
+  });
+  it("returns 3 for communities of 50–99 members", () => {
+    expect(adaptiveConstellationFloor(50)).toBe(3);
+    expect(adaptiveConstellationFloor(99)).toBe(3);
+  });
+  it("returns 4 for communities of 100–499 members", () => {
+    expect(adaptiveConstellationFloor(100)).toBe(4);
+    expect(adaptiveConstellationFloor(499)).toBe(4);
+  });
+  it("returns 5 for communities of 500+ members", () => {
+    expect(adaptiveConstellationFloor(500)).toBe(5);
+    expect(adaptiveConstellationFloor(10000)).toBe(5);
+  });
+});
+
+describe("resolveSocialConfig — constellationKFloor resolver cases", () => {
+  it("absent/garbage → null (adaptive, resolved at materialization time)", () => {
+    expect(resolveSocialConfig({}).constellationKFloor).toBe(null);
+    expect(resolveSocialConfig({ constellationKFloor: "x" }).constellationKFloor).toBe(null);
+    expect(resolveSocialConfig({ constellationKFloor: 12.5 }).constellationKFloor).toBe(null);
+  });
+  it("stored 1 is raised to 2 (hard floor)", () => {
+    expect(resolveSocialConfig({ constellationKFloor: 1 }).constellationKFloor).toBe(2);
+  });
+  it("stored 2 stays 2", () => {
+    expect(resolveSocialConfig({ constellationKFloor: 2 }).constellationKFloor).toBe(2);
+  });
+  it("stored 30 passes through unchanged", () => {
+    expect(resolveSocialConfig({ constellationKFloor: 30 }).constellationKFloor).toBe(30);
   });
 });
 

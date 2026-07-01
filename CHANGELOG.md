@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Adaptive, overridable Constellation k-anonymity floor + on-demand recompute.** The Constellation's
+  cluster-suppression floor (`constellationKFloor`) is now **adaptive by default**. When a project leaves it
+  unset (`null`), the materializer derives it from project size via `adaptiveConstellationFloor(N)`
+  (`N<50→2`, `<100→3`, `<500→4`, `≥500→5`), so a small community (e.g. a dozen members) finally renders its
+  real shape instead of an always-empty "forming" snapshot, while large communities keep the
+  privacy-meaningful floor of 5. A project may still pin an explicit floor, now `2–1000` — the **hard
+  anonymity floor is 2** (a blob always represents ≥2 people, so it can never *be* one identifiable person).
+  New **`POST /v7/:projectId/admin/social/constellation/recompute`** (project-admin-gated) force-rematerializes
+  the snapshot on demand (synchronous GDS Louvain; same gate order as the Garden reads — config `400
+  social/constellation-disabled` → infra `503 social/graph-unavailable`) and returns the fresh snapshot.
+
+### Changed
+- **`@agora-server/contract` 0.15.2 → 0.16.0.** `ResolvedSocialConfig.constellationKFloor` widened
+  `number → number | null` (`null` = adaptive); `COMMUNITY_DEFAULTS.constellationKFloor` is now `null`; the
+  `socialConfigSchema` write bound relaxed `min(5) → min(2)`; the read resolver now maps a malformed /
+  out-of-`[1,1000]` / absent value to `null` (adaptive) and raises a stored value to `≥2`. New exported pure
+  helper `adaptiveConstellationFloor(memberCount)`. The admin **Settings → Social** k-floor control is now an
+  **Adaptive (recommended)** / **Fixed floor** selector (adaptive shows the size→floor tier table; fixed takes an
+  explicit `2–1000`), plus a **"Recompute constellation now"** button that force-rematerializes the snapshot.
+
 ### Fixed
 - Chat: `message:created` now fans out to every member's user room (inbox observers update without joining the thread room), not only the conversation room.
 - **Events domain hardening — visibility, capacity, and input robustness.** `GET /events` now applies

@@ -7,7 +7,7 @@
 //
 // Transparency note: the active privacy tier and enabled analytics are disclosed to members
 // via the public /transparency endpoint — analytics are disclosed, never covert.
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { NetworkIcon, Save } from "lucide-react";
 import {
@@ -20,9 +20,10 @@ import { useToast } from "../../components/ui/Toast";
 import { SETTINGS_READ_ONLY } from "../../config";
 import { ApiError } from "../../lib/api";
 import {
-  getSocialConfig, updateSocialConfig,
+  getSocialConfig, updateSocialConfig, recomputeConstellation,
   type SocialConfigView, type SocialConfigPatch, type ResolvedSocialConfig, type SocialPrivacyTier,
 } from "../../lib/settings";
+import { clampKFloor, ADAPTIVE_KFLOOR_TIERS } from "../../lib/social-kfloor";
 
 // ── Corporate-tier-only flag keys — disabled + clamped to false when tier = community ──────────────
 const CORPORATE_ONLY_FLAGS = [
@@ -116,6 +117,23 @@ function SocialGraphForm({ view }: { view: SocialConfigView }) {
   });
 
   const disabled = save.isPending || SETTINGS_READ_ONLY;
+
+  const recompute = useMutation({
+    mutationFn: () => recomputeConstellation(),
+    onSuccess: (r) =>
+      toast({
+        title: r.recomputed
+          ? "Constellation recomputed"
+          : "Recompute ran — no snapshot produced yet",
+        variant: "success",
+      }),
+    onError: (e) =>
+      toast({
+        title: "Recompute failed",
+        description: e instanceof ApiError || e instanceof Error ? e.message : undefined,
+        variant: "danger",
+      }),
+  });
 
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -289,22 +307,82 @@ function SocialGraphForm({ view }: { view: SocialConfigView }) {
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 sm:grid-cols-3">
-          <Field
-            label="Constellation k-floor"
-            hint="Minimum cluster size for the constellation view. Raising this strengthens k-anonymity. Minimum 5."
-          >
-            <Input
-              type="number"
-              min={5}
-              step={1}
-              value={draft.constellationKFloor}
-              disabled={disabled}
-              onChange={(e) => {
-                const v = Math.max(5, Number(e.target.value));
-                set("constellationKFloor", v);
-              }}
-            />
-          </Field>
+          {/* ── k-floor: adaptive / fixed ─────────────────────────────────────────────────────── */}
+          {(() => {
+            const kFloorMode = draft.constellationKFloor === null ? "adaptive" : "fixed";
+            return (
+              <div className="sm:col-span-3 space-y-3">
+                <Field
+                  label="Constellation k-floor"
+                  hint="Minimum cluster size for the constellation view. Adaptive is recommended — it picks the floor from your community's current size. The hard minimum is 2 (a blob always represents ≥ 2 people); raising the floor strengthens k-anonymity."
+                >
+                  <select
+                    className={selectCls}
+                    value={kFloorMode}
+                    disabled={disabled}
+                    onChange={(e) => {
+                      if (e.target.value === "adaptive") {
+                        set("constellationKFloor", null);
+                      } else {
+                        set("constellationKFloor", view.effective.constellationKFloor ?? 5);
+                      }
+                    }}
+                  >
+                    <option value="adaptive">Adaptive (recommended)</option>
+                    <option value="fixed">Fixed floor</option>
+                  </select>
+
+                  {kFloorMode === "fixed" && (
+                    <Input
+                      type="number"
+                      min={2}
+                      max={1000}
+                      step={1}
+                      value={draft.constellationKFloor ?? ""}
+                      disabled={disabled}
+                      onChange={(e) => set("constellationKFloor", clampKFloor(Number(e.target.value)))}
+                    />
+                  )}
+
+                  {kFloorMode === "adaptive" && (
+                    <div className="rounded-lg border border-border/60 bg-surface-2/50 px-3 py-2 space-y-1.5">
+                      <p className="text-xs font-medium text-muted mb-1.5">Adaptive floor by community size</p>
+                      <div className="grid grid-cols-2 gap-x-4 gap-y-0.5">
+                        <span className="text-[11px] font-semibold uppercase tracking-wide text-faint">Community size</span>
+                        <span className="text-[11px] font-semibold uppercase tracking-wide text-faint">Floor</span>
+                        {ADAPTIVE_KFLOOR_TIERS.map((tier) => (
+                          <Fragment key={tier.range}>
+                            <span className="text-xs text-muted">{tier.range}</span>
+                            <span className="text-xs text-muted">{tier.floor}</span>
+                          </Fragment>
+                        ))}
+                      </div>
+                      <p className="text-xs text-faint pt-0.5">
+                        Adaptive picks the floor from your community's current size — small communities see
+                        their real shape while large ones keep a floor of 5.
+                      </p>
+                    </div>
+                  )}
+                </Field>
+
+                {/* Recompute button */}
+                <div className="space-y-1.5">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={recompute.isPending || SETTINGS_READ_ONLY}
+                    onClick={() => recompute.mutate()}
+                  >
+                    {recompute.isPending ? "Recomputing…" : "Recompute constellation now"}
+                  </Button>
+                  <p className="text-xs text-faint">
+                    Runs GDS clustering synchronously against the saved settings — this can take a while
+                    on a large community. Save your changes first.
+                  </p>
+                </div>
+              </div>
+            );
+          })()}
           <Field
             label="Warmth half-life (days)"
             hint="How quickly warmth signal decays toward zero. Minimum 1 day."

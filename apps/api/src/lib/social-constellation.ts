@@ -7,6 +7,7 @@
 import type { Driver } from "neo4j-driver";
 import { and, desc, eq } from "drizzle-orm";
 import {
+  adaptiveConstellationFloor,
   BLOB_SIZE_BUCKETS, WEATHER_BANDS,
   type BlobSizeBucket, type ConstellationBlob, type SocialConstellation,
 } from "@agora-server/contract";
@@ -129,7 +130,8 @@ async function materializeProject(
   const method: "louvain" | "space" = louvain ? "louvain" : "space";
 
   const sP = personScoresFromPairs(await fetchWarmthPairs(driver, projectId, cfg, now));
-  const { blobs, memberCount } = blobsFromCommunities(communities, sP, cfg.constellationKFloor);
+  const kFloor = cfg.constellationKFloor ?? adaptiveConstellationFloor(userIds.length);
+  const { blobs, memberCount } = blobsFromCommunities(communities, sP, kFloor);
 
   const computedAt = new Date(now);
   await db

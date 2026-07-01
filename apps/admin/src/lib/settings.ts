@@ -9,8 +9,8 @@ import {
 // Social-graph config types are the contract's — re-exported so downstream admin code keeps importing
 // them from here, but there's a single source of truth (adding a social_config field no longer needs a
 // matching hand-edit in this file).
-export type { ResolvedSocialConfig, SocialPrivacyTier, SocialConfigPatch } from "@agora-server/contract";
-import type { ResolvedSocialConfig, SocialConfigPatch } from "@agora-server/contract";
+export type { ResolvedSocialConfig, SocialPrivacyTier, SocialConfigPatch, SocialConstellation } from "@agora-server/contract";
+import type { ResolvedSocialConfig, SocialConfigPatch, SocialConstellation } from "@agora-server/contract";
 import { api } from "./api";
 
 // KNOWN_ALGORITHMS lives in the API's lib/ranking.ts (not the shared contract), so it's mirrored here.
@@ -176,4 +176,14 @@ export function getSocialConfig(signal?: AbortSignal): Promise<SocialConfigView>
 
 export function updateSocialConfig(patch: SocialConfigPatch): Promise<SocialConfigView> {
   return api<SocialConfigView>("/settings/social", { method: "PATCH", body: patch });
+}
+
+export interface ConstellationRecomputeResult {
+  recomputed: boolean;
+  constellation: SocialConstellation;
+}
+
+/** POST /admin/social/constellation/recompute — force-rematerialize the Constellation snapshot (project-admin). */
+export function recomputeConstellation(): Promise<ConstellationRecomputeResult> {
+  return api<ConstellationRecomputeResult>("/admin/social/constellation/recompute", { method: "POST" });
 }
