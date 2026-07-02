@@ -1,11 +1,7 @@
-// Download seed post images from Pexels (CC0)
-// Run: node scripts/seeds/download-images.mjs
-// This is needed once per fresh clone to populate seeds/images/ for the seed scripts.
-
-import fs from "fs";
-import path from "path";
-
-const images = {
+// Seed post images (Pexels, CC0) — fetched in-memory per seeder run, never persisted to disk. Keeps
+// the seed flow writable-directory-free (dev host, self-host container, and the read-only-by-default
+// prod image all behave the same way). Override a single image's source via `<NAME>_IMAGE_URL`.
+export const SEED_IMAGE_URLS = {
   keyboard: "https://images.pexels.com/photos/3587478/pexels-photo-3587478.jpeg?auto=compress&cs=tinysrgb&w=1200&h=800&dpr=1",
   bikecommute: "https://images.pexels.com/photos/1568601/pexels-photo-1568601.jpeg?auto=compress&cs=tinysrgb&w=1200&h=800&dpr=1",
   coldbrew: "https://images.pexels.com/photos/312418/pexels-photo-312418.jpeg?auto=compress&cs=tinysrgb&w=1200&h=800&dpr=1",
@@ -21,34 +17,12 @@ const images = {
   miso: "https://images.pexels.com/photos/6349331/pexels-photo-6349331.jpeg?auto=compress&cs=tinysrgb&w=1200&h=800&dpr=1",
 };
 
-const imagesDir = path.join(import.meta.dirname, "images");
-if (!fs.existsSync(imagesDir)) {
-  fs.mkdirSync(imagesDir, { recursive: true });
-  console.log(`Created ${imagesDir}/`);
+/** Fetch a named seed image's bytes. Throws with a clear message on a missing name or failed HTTP fetch. */
+export async function fetchSeedImageBytes(name) {
+  const url = process.env[`${name.toUpperCase()}_IMAGE_URL`] || SEED_IMAGE_URLS[name];
+  if (!url) throw new Error(`no seed image URL registered for "${name}"`);
+  const res = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
+  if (!res.ok) throw new Error(`downloading "${name}" image failed: HTTP ${res.status}`);
+  const buffer = await res.arrayBuffer();
+  return { bytes: new Uint8Array(buffer), contentType: "image/jpeg" };
 }
-
-let downloaded = 0;
-let failed = 0;
-
-for (const [name, url] of Object.entries(images)) {
-  const filepath = path.join(imagesDir, `${name}.jpg`);
-  if (fs.existsSync(filepath) && fs.statSync(filepath).size > 1000) {
-    console.log(`✓ ${name}.jpg (cached)`);
-    continue;
-  }
-
-  try {
-    const res = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const buffer = await res.arrayBuffer();
-    fs.writeFileSync(filepath, Buffer.from(buffer));
-    console.log(`✓ ${name}.jpg (${Math.round(buffer.byteLength / 1024)} KB)`);
-    downloaded++;
-  } catch (err) {
-    console.error(`✗ ${name}.jpg — ${err.message}`);
-    failed++;
-  }
-}
-
-console.log(`\n${downloaded} downloaded, ${failed} failed`);
-process.exit(failed > 0 ? 1 : 0);
