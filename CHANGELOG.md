@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-07-01
+
 ### Added
 - **Local-Postgres-first configuration: one dual-mode env template per compose file + a destructive-script
   guardrail.** Agora now defaults to a **local Postgres (the `supabase/postgres` image) + MinIO** — no cloud
@@ -1740,7 +1742,8 @@ cloud Supabase — no stubbed endpoints remain.
   (`@agora/*`), a repointed fork of `@replyke/core`.
 - Backlog: rate limiting, refresh-token cleanup sweep, RLS write policies, turnkey deploy guide.
 
-[Unreleased]: https://github.com/jenova-marie/agora/compare/v0.15.2...HEAD
+[Unreleased]: https://github.com/jenova-marie/agora/compare/v0.16.0...HEAD
+[0.16.0]: https://github.com/jenova-marie/agora/compare/v0.15.2...v0.16.0
 [0.15.2]: https://github.com/jenova-marie/agora/compare/v0.15.0...v0.15.2
 [0.15.0]: https://github.com/jenova-marie/agora/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/jenova-marie/agora/compare/v0.12.0...v0.14.0
