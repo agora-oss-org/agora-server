@@ -15,13 +15,17 @@
 //   • No idempotency / ledger: this is run-once-on-clean-DB seed data. Re-running on a dirty DB will
 //     duplicate content (and reactions TOGGLE) — wipe first.
 //
-// Env: API_BASE_URL (default http://localhost:4000), PROJECT_ID (default 11111111-…),
-//      SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY (required — users are created via Supabase admin).
+// Env: API_BASE_URL (default http://localhost:4000), PROJECT_ID (default 11111111-…), DATABASE_URL
+//      (required — used to read the project's auth_provider and, on a native project, insert the
+//      confirmed auth_credentials rows directly). SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY are required
+//      only when the project's auth_provider is 'supabase'.
 import "dotenv/config";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
 import { createClient } from "@supabase/supabase-js";
+import postgres from "postgres";
+import { hash } from "@node-rs/argon2";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -102,47 +106,82 @@ function phase(name, n) {
 }
 
 // ── 1. users ──────────────────────────────────────────────────────────────────
-// Create a pre-confirmed Supabase auth user (idempotent), sign in via the API to materialise the
-// profile + capture its id and token, then PATCH name/username/avatar/bio (best-effort).
+// Ensure a pre-confirmed auth credential on whichever backend the project actually uses (native
+// in-API argon2, or Supabase admin), then sign in via the API to materialise the profile + capture its
+// id and token, then PATCH name/username/avatar/bio (best-effort). The DB is only ever used to read
+// auth_provider and — on a native project — insert the confirmed auth_credentials row directly (the
+// same thing helpers/seed-native-auth-admin.mjs does for the single admin user); everything else
+// still goes through the normal HTTP API.
 async function seedUsers() {
   const users = realized.users ?? [];
   phase("users", users.length);
-  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-    die("users require SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY in env (.env) — they're created via Supabase admin.");
+  if (!process.env.DATABASE_URL) {
+    die("users require DATABASE_URL in env (.env) to resolve the project's auth_provider.");
   }
-  const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-    auth: { autoRefreshToken: false, persistSession: false },
-  });
+  const sql = postgres(process.env.DATABASE_URL, { max: 1, prepare: false, onnotice() {} });
+  try {
+    const [project] = await sql`select auth_provider from projects where id = ${PROJECT_ID}`;
+    if (!project) die(`project ${PROJECT_ID} not found — run \`node scripts/genesis.mjs\` first (or set PROJECT_ID).`);
+    const authProvider = project.auth_provider;
 
-  for (const u of users) {
-    const password = u.password || DEFAULT_PASSWORD;
-    // create (or accept already-exists)
-    const { error } = await admin.auth.admin.createUser({ email: u.email, password, email_confirm: true });
-    if (error && !/already|exist|registered/i.test(error.message)) {
-      die(`createUser failed for ${u.email}: ${error.message}`);
-    }
-    // sign in → profile id + token (also runs ensureProfile)
-    const session = await http("POST", api("/auth/sign-in"), {
-      json: { email: u.email, password }, label: `sign-in ${u.handle}`,
-    });
-    if (!session.accessToken || !session.user?.id) die(`sign-in for ${u.handle} returned no token/user id`);
-    u.id = session.user.id;
-    tokens.set(u.handle, session.accessToken);
-
-    // set display fields (best-effort — a strict schema shouldn't abort the run)
-    const patch = {};
-    if (u.name !== undefined) patch.name = u.name;
-    if (u.username !== undefined) patch.username = u.username;
-    if (u.avatar !== undefined) patch.avatar = u.avatar;
-    if (u.bio !== undefined) patch.bio = u.bio;
-    if (Object.keys(patch).length) {
-      try {
-        await http("PATCH", api(`/users/${u.id}`), { token: session.accessToken, json: patch, label: `profile ${u.handle}` });
-      } catch (e) {
-        console.warn(`  ⚠ profile update for ${u.handle} skipped: ${e.message}`);
+    let supabaseAdmin;
+    if (authProvider === "supabase") {
+      if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+        die("users require SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY in env (.env) for a supabase-backed project.");
       }
+      supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+        auth: { autoRefreshToken: false, persistSession: false },
+      });
+    } else if (authProvider !== "native") {
+      die(`project ${PROJECT_ID} has unsupported auth_provider "${authProvider}" (expected native or supabase)`);
     }
-    console.log(`  ✓ ${u.handle.padEnd(6)} ${u.name ?? ""}  (${u.id})`);
+    console.log(`  auth backend: ${authProvider}`);
+
+    for (const u of users) {
+      const password = u.password || DEFAULT_PASSWORD;
+      const email = u.email.trim().toLowerCase();
+
+      if (authProvider === "native") {
+        // Confirmed credential, direct insert (mirrors seed-native-auth-admin.mjs). ON CONFLICT DO
+        // NOTHING mirrors the Supabase branch's tolerance of an already-existing user below.
+        const passwordHash = await hash(password); // argon2id PHC string — verifyPassword reads it back
+        await sql`
+          insert into auth_credentials (project_id, email, password_hash, email_confirmed_at)
+          values (${PROJECT_ID}, ${email}, ${passwordHash}, now())
+          on conflict (project_id, email) do nothing`;
+      } else {
+        // create (or accept already-exists)
+        const { error } = await supabaseAdmin.auth.admin.createUser({ email, password, email_confirm: true });
+        if (error && !/already|exist|registered/i.test(error.message)) {
+          die(`createUser failed for ${email}: ${error.message}`);
+        }
+      }
+
+      // sign in → profile id + token (also runs ensureProfile)
+      const session = await http("POST", api("/auth/sign-in"), {
+        json: { email, password }, label: `sign-in ${u.handle}`,
+      });
+      if (!session.accessToken || !session.user?.id) die(`sign-in for ${u.handle} returned no token/user id`);
+      u.id = session.user.id;
+      tokens.set(u.handle, session.accessToken);
+
+      // set display fields (best-effort — a strict schema shouldn't abort the run)
+      const patch = {};
+      if (u.name !== undefined) patch.name = u.name;
+      if (u.username !== undefined) patch.username = u.username;
+      if (u.avatar !== undefined) patch.avatar = u.avatar;
+      if (u.bio !== undefined) patch.bio = u.bio;
+      if (Object.keys(patch).length) {
+        try {
+          await http("PATCH", api(`/users/${u.id}`), { token: session.accessToken, json: patch, label: `profile ${u.handle}` });
+        } catch (e) {
+          console.warn(`  ⚠ profile update for ${u.handle} skipped: ${e.message}`);
+        }
+      }
+      console.log(`  ✓ ${u.handle.padEnd(6)} ${u.name ?? ""}  (${u.id})`);
+    }
+  } finally {
+    await sql.end();
   }
 }
 
