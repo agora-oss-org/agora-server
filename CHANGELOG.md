@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **`http://<host>/demo` (no trailing slash) 404'd behind the Caddy front door.** `handle_path /demo/*`
+  only matches the trailing-slash form, so the bare path fell through to the catch-all SPA handler.
+  `deploy/proxy/agora-routes.caddy` now redirects the bare `/demo` to `/demo/` (308) before that
+  handler runs.
+- **`docker-compose.yml`'s demo-seeding instructions pointed at nonexistent scripts and the wrong
+  email.** The comment above the `demo` service referenced `scripts/seeds/seed-native-admin.mjs` /
+  `seed-demo-user.mjs` (neither exists — the real entry point is `00-seed-auth-admin.mjs`) and told
+  self-hosters to seed `agora-admin@gmail.com`, while `docs/SELF-HOSTING.md` separately asserted the
+  demo signs in as `agora-demo@gmail.com` — neither matched the demo's now-runtime-retargeted
+  `AGORA_DEMO_EMAIL`/`AGORA_DEMO_PASSWORD` (defaulted here to `agora-admin@gmail.com`, matching
+  `00-seed-auth-admin.mjs`'s own default), so following either doc left the demo's pre-filled login
+  401ing. Both docs now agree, and `.env.selfhost.example`'s `AGORA_DEMO_UMAMI_URLL` typo (extra `L`,
+  didn't match the entrypoint's actual `AGORA_DEMO_UMAMI_URL`) is fixed.
 - **Demo seed image posts 500'd on a self-hosted prod deploy.** The 13 `seed-*-post.mjs` fixtures (and
   the `02-download-images.mjs` cache step) downloaded Pexels images to
   `apps/api/scripts/seeds/images/` on disk, but the prod image's `COPY --from=builder /out ./` runs as

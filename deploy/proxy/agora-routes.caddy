@@ -70,10 +70,16 @@
 		reverse_proxy {$API_UPSTREAM:http://agora:4000}
 	}
 
-	# 7. agora-demo SPA (the `demo` profile) → demo container. handle_path strips /demo so the demo's
-	#    own nginx sees /, /assets/*, /config.js (the bundle is built with Vite base=/demo/, so its asset
-	#    refs already carry the prefix). Same origin as /v7 above → no CORS; chat rides #2/#3. Lazily
-	#    resolved, so /demo/* just 502s until `--profile demo` is up.
+	# 7. agora-demo SPA (the `demo` profile) → demo container. The bare path (no trailing slash) doesn't
+	#    match handle_path's /demo/* below, so it'd otherwise fall through to the catch-all SPA handler
+	#    (#9) and 404 — redirect it to the canonical trailing-slash form first.
+	handle /demo {
+		redir {uri}/ 308
+	}
+
+	# handle_path strips /demo so the demo's own nginx sees /, /assets/*, /config.js (the bundle is built
+	# with Vite base=/demo/, so its asset refs already carry the prefix). Same origin as /v7 above → no
+	# CORS; chat rides #2/#3. Lazily resolved, so /demo/* just 502s until `--profile demo` is up.
 	handle_path /demo/* {
 		reverse_proxy {$DEMO_UPSTREAM:http://demo:80}
 	}

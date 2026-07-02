@@ -411,9 +411,13 @@ services:
   # reads window.__AGORA__ first (falling back to its baked default). The bundle is built with Vite
   # base=/demo/, which the Caddy handle_path strips.
   #   docker compose --profile selfhost --profile demo up      # API + demo at http://localhost/demo/
-  # Seed the demo login first (genesis/migrations must already be applied — see docs/SELF-HOSTING.md):
-  #   docker compose run --rm -e ADMIN_EMAIL=agora-admin@gmail.com -e ADMIN_PASSWORD=DemoPass123! \
-  #     agora node scripts/seeds/seed-native-admin.mjs           # native (selfhost); supabase: seed-demo-user.mjs
+  # Seed the demo login first (genesis/migrations must already be applied — see docs/SELF-HOSTING.md).
+  # The demo's login prefill is ALSO runtime-retargeted (AGORA_DEMO_EMAIL/AGORA_DEMO_PASSWORD below,
+  # same window.__AGORA__ mechanism as the API URL) — defaulted here to match the credential
+  # 00-seed-auth-admin.mjs itself defaults to, so seeding with no ADMIN_EMAIL/PASSWORD override lines up:
+  #   docker compose run --rm agora node scripts/seeds/00-seed-auth-admin.mjs   # prompts, Enter = default
+  #   docker compose run --rm -e ADMIN_EMAIL=... -e ADMIN_PASSWORD=... agora node scripts/seeds/00-seed-auth-admin.mjs
+  # If you override AGORA_DEMO_EMAIL/PASSWORD in .env, seed that same address instead.
   # Pin a version instead of latest via AGORA_DEMO_IMAGE in .env.
   demo:
     profiles: ["demo"]
@@ -424,6 +428,10 @@ services:
       # via new URL(baseUrl), so a relative path would throw.
       AGORA_DEMO_API_BASE_URL: ${AGORA_DEMO_API_BASE_URL:-http://localhost/v7}
       AGORA_DEMO_PROJECT_ID: ${AGORA_DEMO_PROJECT_ID:-11111111-1111-1111-1111-111111111111}
+      AGORA_DEMO_EMAIL: ${AGORA_DEMO_EMAIL:-agora-admin@gmail.com}
+      AGORA_DEMO_PASSWORD: ${AGORA_DEMO_PASSWORD:-DemoPass123!}
+      AGORA_DEMO_ADMIN_URL: ${AGORA_DEMO_ADMIN_URL:-http://localhost}
+
     # No host port: the demo is reached through the Caddy front door at /demo/, never directly. Caddy
     # resolves the upstream lazily, so it just 502s /demo/* until this service is up.
     init: true
