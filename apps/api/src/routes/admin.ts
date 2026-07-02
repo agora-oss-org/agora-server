@@ -18,6 +18,7 @@ import {
   ANALYTICS_REPORT_FLAG, getEngagement, getInfluence, getSilos, rollupAnalytics,
 } from "../lib/social-analytics.js";
 import { getReadReceiptsCoverage } from "../lib/social-read-receipts.js";
+import { rollupCommunityStats } from "../lib/community-stats.js";
 import { neo4jEnabled } from "../lib/neo4j.js";
 import { rollupConstellation, getConstellation } from "../lib/social-constellation.js";
 import { logger } from "../lib/logger.js";
@@ -262,6 +263,18 @@ export const adminRoutes = new Hono<{ Variables: Variables }>()
       },
       topPosts,
     });
+  })
+  // POST /admin/community/recompute — project-admin-gated, SYNCHRONOUS on-demand rollup of this
+  // project's community stats (same work as the community-stats cron, scoped to one project). Lets the
+  // dashboard's empty state offer a button instead of telling the operator to run a script/curl a
+  // cron-secret-gated endpoint. Cheap (bounded 25h backfill window), unlike the social-analytics GDS
+  // recomputes above.
+  .post("/community/recompute", requireAuth, async (c) => {
+    requireProjectAdmin(c);
+    const projectId = c.var.projectId;
+    await rollupCommunityStats(projectId);
+    logger.info({ projectId }, "admin: community stats recompute requested");
+    return c.json({ recomputed: true });
   })
   // ── Admin analytics reads (operator-only, corporate-tier) — docs/AGORA-CORP.md. Each serves the LATEST
   // materialized snapshot (names hydrated fresh), or an empty `{ …, asOf: null }` sentinel when none exists

@@ -5,9 +5,9 @@
 // and moderation pressure (reports opened vs resolved + the live open count). Degrades to a friendly
 // empty state until the first rollup cron has run.
 import { useState, type ReactNode } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Activity, BarChart3, FileText, Flag, Heart, MessageSquare, PenLine, ThumbsUp,
+  Activity, BarChart3, FileText, Flag, Heart, Inbox, MessageSquare, PenLine, RefreshCw, ThumbsUp,
   TrendingUp, Trophy, UserPlus, Users, type LucideIcon,
 } from "lucide-react";
 import type { User } from "@agora-server/contract";
@@ -15,11 +15,15 @@ import { useAuth } from "../auth/AuthContext";
 import { PageHeader } from "../components/ui/PageHeader";
 import { Card } from "../components/ui/Card";
 import { Badge } from "../components/ui/Badge";
-import { LoadingPanel } from "../components/ui/Spinner";
+import { Button } from "../components/ui/Button";
+import { EmptyState } from "../components/ui/EmptyState";
+import { LoadingPanel, Spinner } from "../components/ui/Spinner";
+import { useToast } from "../components/ui/Toast";
+import { ApiError } from "../lib/api";
 import { cn } from "../lib/cn";
 import { DEMO_URL, SOCIAL_GRAPH_ENABLED } from "../config";
 import {
-  getCommunityOverview, communityOverviewKey,
+  getCommunityOverview, communityOverviewKey, recomputeCommunityStats,
   getSocialWeather, socialWeatherKey,
   type CommunityOverview, type CommunityLeader, type CommunitySeriesPoint,
   type SocialWeather, type WeatherBand,
@@ -66,17 +70,42 @@ export function CommunityPage() {
       ) : isError ? (
         <Card className="p-5"><p className="text-sm text-danger">Couldn’t load community pulse: {(error as Error)?.message ?? "unknown error"}</p></Card>
       ) : !data!.configured ? (
-        <Card className="p-5">
-          <p className="text-sm text-muted">
-            No community stats yet. They’re built hourly by the <code className="text-fg">community-stats</code> rollup —
-            run <code className="text-fg">scripts/rollup-community-stats.mjs</code> or hit{" "}
-            <code className="text-fg">POST /internal/cron/community-stats</code> to populate them.
-          </p>
-        </Card>
+        <EmptyState
+          icon={Inbox}
+          title="No community stats yet"
+          description="They're normally built hourly by the community-stats rollup — compute them now to see the pulse right away."
+          action={<RecomputeCommunityButton days={days} />}
+        />
       ) : (
         <CommunityBody data={data!} days={days} />
       )}
     </>
+  );
+}
+
+// Project-admin-forced synchronous rollup of this project's community stats (POST
+// /admin/community/recompute), then refetches the overview so the page populates immediately.
+function RecomputeCommunityButton({ days }: { days: number }) {
+  const qc = useQueryClient();
+  const toast = useToast();
+  const m = useMutation({
+    mutationFn: recomputeCommunityStats,
+    onSuccess: async () => {
+      toast({ title: "Community stats computed", variant: "success" });
+      await qc.invalidateQueries({ queryKey: communityOverviewKey(days) });
+    },
+    onError: (e) =>
+      toast({
+        title: "Compute failed",
+        description: e instanceof ApiError || e instanceof Error ? e.message : undefined,
+        variant: "danger",
+      }),
+  });
+  return (
+    <Button variant="outline" size="sm" disabled={m.isPending} onClick={() => m.mutate()}>
+      {m.isPending ? <Spinner /> : <RefreshCw />}
+      {m.isPending ? "Computing…" : "Compute now"}
+    </Button>
   );
 }
 

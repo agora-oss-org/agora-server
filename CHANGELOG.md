@@ -35,6 +35,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the snapshot on demand (synchronous GDS Louvain; same gate order as the Garden reads — config `400
   social/constellation-disabled` → infra `503 social/graph-unavailable`) and returns the fresh snapshot.
 
+- **On-demand community-stats compute button.** The admin Community dashboard's empty state (no rollup
+  has run yet) previously just printed shell-command instructions. New **`POST
+  /v7/:projectId/admin/community/recompute`** (project-admin-gated) runs the same rollup as the
+  `community-stats` cron, scoped to the current project, so the empty state now offers a "Compute now"
+  button instead.
+
 ### Changed
 - **`@agora-server/contract` 0.15.2 → 0.16.0.** `ResolvedSocialConfig.constellationKFloor` widened
   `number → number | null` (`null` = adaptive); `COMMUNITY_DEFAULTS.constellationKFloor` is now `null`; the

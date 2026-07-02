@@ -57,6 +57,12 @@ export function getCommunityOverview(days: number, signal?: AbortSignal): Promis
   return api<CommunityOverview>("/admin/community/overview", { query: { days }, signal });
 }
 
+// POST /admin/community/recompute — synchronous on-demand rollup of this project's community stats
+// (same work as the hourly cron, scoped to one project). Powers the empty state's "Compute now" button.
+export function recomputeCommunityStats(): Promise<{ recomputed: boolean }> {
+  return api<{ recomputed: boolean }>("/admin/community/recompute", { method: "POST" });
+}
+
 // ── Community Weather (GET /social/weather) ─────────────────────────────────────────────────────
 // Hand-copied from @agora-server/contract SocialWeather (PR-1 precedent in lib/settings.ts).
 export type WeatherBand = "quiet" | "stormy" | "overcast" | "fine" | "sunny";
