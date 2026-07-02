@@ -6,14 +6,12 @@
 // (all optional): API_BASE_URL (default http://localhost:4000), PROJECT_ID (default 11111111-…),
 // DEMO_EMAIL / DEMO_PASSWORD, COLDBREW_IMAGE_URL.
 import "dotenv/config";
-import fs from "fs";
-import path from "path";
+import { fetchSeedImageBytes } from "./lib/seed-images.mjs";
 
 const BASE = (process.env.API_BASE_URL || "http://localhost:4000").replace(/\/$/, "").replace(/\/v7$/, "");
 const PROJECT_ID = process.env.PROJECT_ID || "11111111-1111-1111-1111-111111111111";
 const EMAIL = process.env.DEMO_EMAIL || "agora-admin@gmail.com";
 const PASSWORD = process.env.DEMO_PASSWORD || "DemoPass123!";
-const IMAGE_PATH = process.env.COLDBREW_IMAGE_PATH || path.join(import.meta.dirname, "images", "coldbrew.jpg");
 const FILENAME = "cold-brew.jpg";
 
 // Original copy (not reproduced from any source) — a friendly demo post.
@@ -46,11 +44,9 @@ if (existing) {
   process.exit(0);
 }
 
-// 3. Load the local image bytes.
-console.log(`Loading image: ${IMAGE_PATH}`);
-if (!fs.existsSync(IMAGE_PATH)) die(`image file not found: ${IMAGE_PATH}`);
-const bytes = new Uint8Array(fs.readFileSync(IMAGE_PATH));
-const contentType = "image/jpeg";
+// 3. Download the image bytes.
+console.log(`Downloading image: coldbrew`);
+const { bytes, contentType } = await fetchSeedImageBytes("coldbrew");
 
 // 4. Create the entity as multipart (title + content + images.files) — the server runs the image
 //    through sharp → Storage → a files row linked to the new entity (same path the SDK uses).

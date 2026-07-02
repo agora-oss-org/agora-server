@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Demo seed image posts 500'd on a self-hosted prod deploy.** The 13 `seed-*-post.mjs` fixtures (and
+  the `02-download-images.mjs` cache step) downloaded Pexels images to
+  `apps/api/scripts/seeds/images/` on disk, but the prod image's `COPY --from=builder /out ./` runs as
+  root before `USER node`, leaving `/app` root-owned — the non-root runtime user got `EACCES` trying to
+  `mkdir` the cache dir. Rather than widen the shipped image's writable surface, the seed images are now
+  fetched **in-memory per seeder run** (new `scripts/seeds/lib/seed-images.mjs`, `fetchSeedImageBytes()`)
+  and never touch disk; `02-download-images.mjs` and the on-disk cache are removed entirely. Each
+  seeder's per-image URL override (`<NAME>_IMAGE_URL`) now actually works — it was documented but
+  previously dead code (the scripts only read a `_IMAGE_PATH` file-path override).
+
+### Changed
+- **`03-seed-engine.mjs` now seeds `follows` before `posts`.** Order is
+  `users → spaces → memberships → follows → posts → comments → connections → reactions` (previously
+  `follows` ran after `comments`). A post's seeded followers now already follow its author by the time
+  the post is created, so follow-driven notification/feed fan-out reflects the relationship instead of
+  the post predating it.
+
 ## [0.16.0] - 2026-07-01
 
 ### Added

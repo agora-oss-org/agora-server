@@ -13,9 +13,6 @@ dist/
 neo4j/data/
 neo4j/plugins/*.jar
 
-# Seed images — downloaded from web, not tracked (scripts regenerate from URLs if needed)
-apps/api/scripts/seeds/images/
-
 # TLS edge certs (deploy/proxy/Caddyfile.onion) — never commit private keys/certs
 deploy/proxy/certs/*
 !deploy/proxy/certs/.gitkeep

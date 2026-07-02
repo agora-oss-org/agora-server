@@ -6,7 +6,10 @@
 //
 // Design (kept deliberately simple — see the brainstorm that produced it):
 //   • Groups are processed in a fixed DEPENDENCY ORDER so every reference resolves by construction:
-//       users → spaces → memberships → posts → comments → follows → connections → reactions
+//       users → spaces → memberships → follows → posts → comments → connections → reactions
+//     (follows before posts is deliberate, not just dependency order — it means a post's author is
+//     already followed by its seeded followers when the post is created, so the demo data reads as a
+//     real social feed instead of posts predating the relationships that would surface them.)
 //   • `realized` is a deep clone of the manifest, annotated IN MEMORY with the real id of each
 //     created node as we go. It never touches disk. By the time an edge group runs, every node it
 //     points at already carries a real UUID.
@@ -220,7 +223,20 @@ async function seedMemberships() {
   }
 }
 
-// ── 4. posts ────────────────────────────────────────────────────────────────
+// ── 4. follows ────────────────────────────────────────────────────────────────
+async function seedFollows() {
+  const follows = realized.follows ?? [];
+  phase("follows", follows.length);
+  for (const f of follows) {
+    const ctx = `follow ${f.follower}→${f.following}`;
+    const token = tokenFor(f.follower, ctx);
+    const followedId = refId("users", f.following, ctx);
+    await http("POST", api(`/users/${followedId}/follow`), { token, json: {}, label: ctx });
+    console.log(`  ✓ ${f.follower.padEnd(6)} → ${f.following}`);
+  }
+}
+
+// ── 5. posts ────────────────────────────────────────────────────────────────
 async function seedPosts() {
   const posts = realized.posts ?? [];
   phase("posts", posts.length);
@@ -260,7 +276,7 @@ async function seedPosts() {
   }
 }
 
-// ── 5. comments ───────────────────────────────────────────────────────────────
+// ── 6. comments ───────────────────────────────────────────────────────────────
 async function seedComments() {
   const comments = realized.comments ?? [];
   phase("comments", comments.length);
@@ -276,19 +292,6 @@ async function seedComments() {
     const created = await http("POST", api("/comments"), { token, json: body, label: ctx });
     cm.id = created.id;
     console.log(`  ✓ ${cm.handle.padEnd(4)} ${cm.author} on ${cm.entity}${cm.parent ? ` ↪ ${cm.parent}` : ""}`);
-  }
-}
-
-// ── 6. follows ────────────────────────────────────────────────────────────────
-async function seedFollows() {
-  const follows = realized.follows ?? [];
-  phase("follows", follows.length);
-  for (const f of follows) {
-    const ctx = `follow ${f.follower}→${f.following}`;
-    const token = tokenFor(f.follower, ctx);
-    const followedId = refId("users", f.following, ctx);
-    await http("POST", api(`/users/${followedId}/follow`), { token, json: {}, label: ctx });
-    console.log(`  ✓ ${f.follower.padEnd(6)} → ${f.following}`);
   }
 }
 
@@ -343,13 +346,13 @@ async function main() {
   await seedUsers();
   await seedSpaces();
   await seedMemberships();
+  await seedFollows();
   await seedPosts();
   await seedComments();
-  await seedFollows();
   await seedConnections();
   await seedReactions();
 
-  const counts = ["users", "spaces", "memberships", "posts", "comments", "follows", "connections", "reactions"]
+  const counts = ["users", "spaces", "memberships", "follows", "posts", "comments", "connections", "reactions"]
     .map((g) => `${(realized[g] ?? []).length} ${g}`)
     .join(", ");
   console.log(`\n✅ seed complete — ${counts}.`);

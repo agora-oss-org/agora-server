@@ -1,7 +1,7 @@
 // Demo-data GATE — asks whether to seed the demo CONTENT (sample posts, comments, images), and if not,
 // halts the rest of the `seed.mjs` run. Everything BEFORE this (the 00- admin login) has already run;
-// everything AFTER it (02-download-images, 03-seed-engine, 04-seed-homepage-comments, the seed-*-post
-// fixtures) is demo content this gate guards.
+// everything AFTER it (03-seed-engine, 04-seed-homepage-comments, the seed-*-post fixtures) is demo
+// content this gate guards.
 //
 // Contract with the orchestrator: exit 0 → proceed (run the remaining seeders); exit 78 → a clean
 // "no", which seed.mjs recognizes as STOP and breaks the loop (the remaining seeders are skipped). 78
