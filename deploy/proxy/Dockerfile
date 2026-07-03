@@ -20,6 +20,13 @@ RUN pnpm install --frozen-lockfile --filter @agora/admin...
 # allow CORS).
 ARG VITE_API_BASE_URL=/v7
 ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
+# Admin feature flags are Vite BUILD-TIME vars — they're inlined into the static bundle here and cannot
+# be set at container runtime. Pass them as build args (empty default = feature off) so a deployment
+# that wired NEO4J_URI can surface the Social tab / lock Settings read-only.
+ARG VITE_SOCIAL_GRAPH_ENABLED=
+ENV VITE_SOCIAL_GRAPH_ENABLED=$VITE_SOCIAL_GRAPH_ENABLED
+ARG VITE_SETTINGS_READ_ONLY=
+ENV VITE_SETTINGS_READ_ONLY=$VITE_SETTINGS_READ_ONLY
 RUN pnpm --filter @agora-server/contract build && pnpm --filter @agora/admin build
 
 # ── Runtime: Caddy serving the static build + routing every service ─────────────

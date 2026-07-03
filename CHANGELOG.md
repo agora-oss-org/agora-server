@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **The admin Social tab (and Settings read-only mode) can now actually be enabled in published
+  images.** `VITE_SOCIAL_GRAPH_ENABLED` / `VITE_SETTINGS_READ_ONLY` are Vite build-time flags baked
+  into the admin SPA, but `deploy/proxy/Dockerfile` only declared `ARG VITE_API_BASE_URL` and the
+  `docker-publish.yml` build step passed **no** `build-args`, so the flags were always compiled off
+  regardless of any runtime env — the Social tab could never appear in a pulled `agora-proxy` image.
+  The Dockerfile now declares both flags as build args (empty default = off) and the publish workflow
+  forwards them from repo/environment Variables (`vars.VITE_SOCIAL_GRAPH_ENABLED` /
+  `vars.VITE_SETTINGS_READ_ONLY`). Set the repo Variable to `true` and rebuild/republish the proxy
+  image to surface the Social tab (still operator-gated + requires `NEO4J_URI` on the API).
+
 ## [0.16.1] - 2026-07-02
 
 ### Added
