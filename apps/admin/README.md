@@ -92,10 +92,6 @@ defaults work behind the bundled nginx image (and the dev proxy).
 # "/moderator" (same-origin; forwarded, prefix stripped). Override for a cross-origin scorer.
 # VITE_MODERATOR_BASE_URL=/moderator
 
-# The project this admin manages (the API is multi-tenant). For a single-project deployment, bake it
-# in; if unset, the login form asks for it.
-# VITE_PROJECT_ID=11111111-1111-1111-1111-111111111111
-
 # Origin of your consumer app, for the moderation "Open in app" deep link.
 # VITE_DEMO_URL=https://demo.example.com/
 

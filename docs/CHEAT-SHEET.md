@@ -160,7 +160,6 @@ Only `VITE_`-prefixed vars reach the browser; they're baked at build. See
 | Var | | Value |
 |---|---|---|
 | `VITE_API_BASE_URL` | ◻️ | API base. Default `/v7` (same-origin via the Caddy front door). Override only for a cross-origin API. |
-| `VITE_PROJECT_ID` | ◻️ | The project this admin manages. Bake in for single-project deploys; if unset the login form asks. |
 | `VITE_MODERATOR_BASE_URL` | ◻️ | Scorer base. Default `/moderator` (same-origin). |
 | `VITE_SETTINGS_READ_ONLY` | ◻️ | `true` → Settings page view-only (UI guard, not a security boundary). |
 

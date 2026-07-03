@@ -15,7 +15,6 @@ export function LoginPage() {
 
   const [email, setEmail] = useState(DEMO_EMAIL);
   const [password, setPassword] = useState(DEMO_PASSWORD);
-  const [projectId, setProjectId] = useState(ENV_PROJECT_ID ?? "");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -26,7 +25,7 @@ export function LoginPage() {
     setError(null);
     setBusy(true);
     try {
-      await signIn(email.trim(), password, projectId.trim());
+      await signIn(email.trim(), password, ENV_PROJECT_ID);
       navigate(from, { replace: true });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Sign-in failed. Check your connection and try again.");
@@ -45,12 +44,6 @@ export function LoginPage() {
         </div>
 
         <form onSubmit={onSubmit} className="space-y-4 rounded-[var(--radius-card)] border border-border bg-surface p-6">
-          {!ENV_PROJECT_ID && (
-            <div className="space-y-1.5">
-              <Label htmlFor="projectId">Project ID</Label>
-              <Input id="projectId" value={projectId} onChange={(e) => setProjectId(e.target.value)} placeholder="00000000-0000-…" required autoComplete="off" />
-            </div>
-          )}
           <div className="space-y-1.5">
             <Label htmlFor="email">Email</Label>
             <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" required autoComplete="email" autoFocus />

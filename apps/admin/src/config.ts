@@ -7,9 +7,10 @@ export const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? "/v7").replace(/\/
 // host, stripping the prefix so it lands on the moderator's own /v7/:projectId/moderation/* routes.
 export const MODERATOR_BASE = (import.meta.env.VITE_MODERATOR_BASE_URL ?? "/moderator").replace(/\/+$/, "");
 
-// The project this admin manages. When unset (no single-project default baked in), the login form
-// collects it and it's persisted alongside the session.
-export const ENV_PROJECT_ID = import.meta.env.VITE_PROJECT_ID || undefined;
+// The project this admin manages. Defaults to the single-project seed UUID (the `projects` row
+// genesis/seed.sql creates), so a single-project / self-host deploy needs no config and the login form
+// doesn't ask for it. Override with VITE_PROJECT_ID to point the build at a different project.
+export const ENV_PROJECT_ID = import.meta.env.VITE_PROJECT_ID || "11111111-1111-1111-1111-111111111111";
 
 // Optional dev convenience: prefill the login form with seeded demo credentials
 // (apps/api/scripts/seeds/00-seed-auth-admin.mjs). Leave unset in any real deployment.

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Admin login no longer asks for a Project ID.** The admin resolves its project automatically, so the
+  login form's Project ID field is removed and sign-in uses that project directly.
+
 ### Fixed
 - **`docker-compose.yml`'s `demo` service dropped the Umami analytics vars.** The service correctly
   omits `env_file` (the arms-length demo image must never see `DATABASE_URL` / the token secrets), but
