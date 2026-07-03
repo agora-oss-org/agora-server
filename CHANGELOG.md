@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **`docker-compose.yml`'s `demo` service dropped the Umami analytics vars.** The service correctly
+  omits `env_file` (the arms-length demo image must never see `DATABASE_URL` / the token secrets), but
+  that means only explicitly-listed vars reach it — and `AGORA_DEMO_UMAMI_URL` / `AGORA_DEMO_UMAMI_ID`
+  (set in `.env.selfhost.example` for the demo) weren't forwarded, so setting them did nothing. The
+  service now forwards the full `AGORA_DEMO_*` runtime set the published image's entrypoint reads
+  (adds the two Umami vars + `AGORA_DEMO_SECURE_CHAT_DEBUG`), matching the `agora-demo` repo's own
+  compose.
 - **`http://<host>/demo` (no trailing slash) 404'd behind the Caddy front door.** `handle_path /demo/*`
   only matches the trailing-slash form, so the bare path fell through to the catch-all SPA handler.
   `deploy/proxy/agora-routes.caddy` now redirects the bare `/demo` to `/demo/` (308) before that

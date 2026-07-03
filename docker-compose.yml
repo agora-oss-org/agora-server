@@ -427,11 +427,16 @@ services:
       # domain (e.g. https://example.com/v7). Must be ABSOLUTE — the SDK derives the socket.io origin
       # via new URL(baseUrl), so a relative path would throw.
       AGORA_DEMO_API_BASE_URL: ${AGORA_DEMO_API_BASE_URL:-http://localhost/v7}
-      AGORA_DEMO_PROJECT_ID: ${AGORA_DEMO_PROJECT_ID:-11111111-1111-1111-1111-111111111111}
       AGORA_DEMO_EMAIL: ${AGORA_DEMO_EMAIL:-agora-admin@gmail.com}
       AGORA_DEMO_PASSWORD: ${AGORA_DEMO_PASSWORD:-DemoPass123!}
+      # Optional operator link back to the admin SPA (empty hides the button); secure-chat SDK trace
+      # toggle; Umami analytics (both empty = no-op). The published image's nginx entrypoint reads all
+      # of these into /config.js at start — this is the full AGORA_DEMO_* runtime set (no env_file here
+      # on purpose: the arms-length demo image must never see DATABASE_URL / the token secrets).
       AGORA_DEMO_ADMIN_URL: ${AGORA_DEMO_ADMIN_URL:-http://localhost}
-
+      AGORA_DEMO_SECURE_CHAT_DEBUG: ${AGORA_DEMO_SECURE_CHAT_DEBUG:-false}
+      AGORA_DEMO_UMAMI_URL: ${AGORA_DEMO_UMAMI_URL:-}
+      AGORA_DEMO_UMAMI_ID: ${AGORA_DEMO_UMAMI_ID:-}
     # No host port: the demo is reached through the Caddy front door at /demo/, never directly. Caddy
     # resolves the upstream lazily, so it just 502s /demo/* until this service is up.
     init: true
