@@ -60,6 +60,15 @@
 		reverse_proxy {$DEMO_UPSTREAM:http://demo:80}
 	}
 
+	# 8. Grafana observability UI (the `observability` profile) → grafana. Do NOT strip the prefix —
+	#    Grafana serves from /grafana/ (GF_SERVER_SERVE_FROM_SUB_PATH). Anonymous in dev (localhost).
+	handle /grafana {
+		redir {uri}/ 308
+	}
+	handle /grafana/* {
+		reverse_proxy {$GRAFANA_UPSTREAM:http://grafana:3000}
+	}
+
 	# 8 + 9. DEV: the admin SPA (root + vite asset/HMR paths) → the host vite dev server. No immutable
 	# cache header here (dev assets are not content-hashed). The websocket HMR connection rides this
 	# same reverse_proxy (auto-upgraded). Bare `handle` = lowest precedence (catch-all).

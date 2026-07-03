@@ -4,8 +4,16 @@
 # `latest`): `AGORA_TAG=v0.13.0 docker compose -f docker-compose.prod.yml --profile full --profile supabase up -d`.
 #
 # Same TWO-AXIS profile model as docker-compose.yml — a bare `up` starts NOTHING:
-#   Axis 1 (REQUIRED, pick EXACTLY ONE): --profile supabase | --profile selfhost
-#   Axis 2 (OPTIONAL, compose freely):   --profile scorer | --profile secure-chat | --profile scale | --profile full
+#   Axis 1 — DATA PLANE (REQUIRED, pick EXACTLY ONE, mutually exclusive):
+#     --profile supabase   the API against EXTERNAL Supabase Postgres + Storage
+#     --profile selfhost   the API PLUS local Postgres (db) + MinIO — fully self-contained
+#   Axis 2 — OPTIONAL ADD-ONS (compose freely on top of a data plane):
+#     --profile scorer        content-moderation + social-graph: scorer (×3) + neo4j
+#     --profile secure-chat   the blind MLS E2E delivery process + redis
+#     --profile scale         redis as the cross-replica rate-limit store (multi-replica API)
+#     --profile full          shorthand for ALL optional add-ons (= scorer + secure-chat)
+#     --profile demo          the 1:1 SDK compatibility harness, served behind Caddy at /demo/
+#     --profile observability Grafana Alloy collector + LGTM (Tempo/Mimir/Loki/Grafana)
 # Typical production deploys (run detached with -d):
 #   docker compose -f docker-compose.prod.yml --profile supabase up -d                 # API only, Supabase-backed
 #   docker compose -f docker-compose.prod.yml --profile full --profile supabase up -d  # everything, Supabase-backed
@@ -24,6 +32,8 @@
 # A couple of files are needed only for opt-in cases:
 #   • .env                                  — the single config source (see .env.prod.example / docs/SELF-HOSTING.md)
 #   • neo4j/plugins/open-gds-*.jar          — only with --profile scorer/full (DozerDB GDS plugin)
+#   • deploy/observability/                 — only with --profile observability (Alloy/Tempo/Mimir/Loki/
+#                                             Grafana configs are host-mounted from this dir)
 #   • deploy/proxy/Caddyfile.onion + certs/ — only for the ADVANCED .onion / static-cert variant, mounted
 #                                             over the baked defaults (see the proxy service below)
 # For a real domain: set SERVER_NAME=<your.domain> (DNS → this host so ACME can validate on :80). Plain
@@ -37,6 +47,13 @@ services:
       # Address Neo4j by service name on the compose network (.env's NEO4J_URI uses localhost for
       # host-side dev, which inside a container is the container itself). Override via NEO4J_URI_DOCKER.
       NEO4J_URI: ${NEO4J_URI_DOCKER:-bolt://neo4j:7687}
+      # OpenTelemetry — OFF by default (bare deploys stay dark, no export warnings). The OTLP endpoints
+      # are pre-wired to the `observability` profile's Alloy collector, so turning telemetry on is a
+      # single flag: set OTEL_SDK_DISABLED=false in .env and bring up `--profile observability`.
+      OTEL_SDK_DISABLED: ${OTEL_SDK_DISABLED:-true}
+      OTEL_TRACES_ENDPOINT: ${OTEL_TRACES_ENDPOINT:-http://alloy:4318/v1/traces}
+      OTEL_METRICS_ENDPOINT: ${OTEL_METRICS_ENDPOINT:-http://alloy:4318/v1/metrics}
+      OTEL_LOGS_ENDPOINT: ${OTEL_LOGS_ENDPOINT:-http://alloy:4318/v1/logs}
     # No host port — the proxy reaches it internally on :4000. Publish it only for debugging.
     init: true
     restart: unless-stopped
@@ -104,6 +121,16 @@ services:
     image: agoraserver/agora-secure-chat:${AGORA_TAG:-latest}
     profiles: ["secure-chat", "full"]
     env_file: .env
+    environment:
+      # Distinct service.name so secure-chat is its own service in Grafana — the shared @agora/core YAML
+      # defaults to agora-api, and env_file would inject the API's SERVICE_NAME here. This override wins
+      # (instrument.ts has the same fallback for non-compose runs).
+      SERVICE_NAME: ${SECURE_CHAT_SERVICE_NAME:-agora-secure-chat}
+      # OpenTelemetry — same off-by-default + Alloy-pre-wired model as the api (see the agora service).
+      OTEL_SDK_DISABLED: ${OTEL_SDK_DISABLED:-true}
+      OTEL_TRACES_ENDPOINT: ${OTEL_TRACES_ENDPOINT:-http://alloy:4318/v1/traces}
+      OTEL_METRICS_ENDPOINT: ${OTEL_METRICS_ENDPOINT:-http://alloy:4318/v1/metrics}
+      OTEL_LOGS_ENDPOINT: ${OTEL_LOGS_ENDPOINT:-http://alloy:4318/v1/logs}
     depends_on:
       redis:
         condition: service_healthy
@@ -123,6 +150,12 @@ services:
       SCORER_PORT: "8001"
       OMP_NUM_THREADS: "1"
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      # OpenTelemetry (Python SDK) — off by default. Traces push OTLP to the observability Alloy
+      # collector; metrics are exposed on :9464 for Alloy to SCRAPE (see config.alloy's scorer scrape
+      # job), never pushed — Alloy's OTLP receiver intentionally drops metrics to avoid double-counting.
+      OTEL_SDK_DISABLED: ${OTEL_SDK_DISABLED:-true}
+      OTEL_SERVICE_NAME: agora-scorer-toxicity
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://alloy:4318}
     cpuset: "0"
     mem_limit: "1.5g"
     init: true
@@ -141,6 +174,11 @@ services:
       SCORER_PORT: "8002"
       OMP_NUM_THREADS: "1"
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      # OpenTelemetry (Python SDK) — off by default. Traces push OTLP, metrics are scraped on :9464 —
+      # see the toxicity service's comment above.
+      OTEL_SDK_DISABLED: ${OTEL_SDK_DISABLED:-true}
+      OTEL_SERVICE_NAME: agora-scorer-relationship
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://alloy:4318}
     cpuset: "1"
     mem_limit: "1.5g"
     init: true
@@ -161,6 +199,11 @@ services:
       SCORER_ADMIN_PORT: "4001"
       NEO4J_URI: ${NEO4J_URI_DOCKER:-bolt://neo4j:7687}
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      # OpenTelemetry (Python SDK) — off by default. Traces push OTLP, metrics are scraped on :9464 —
+      # see the toxicity service's comment above.
+      OTEL_SDK_DISABLED: ${OTEL_SDK_DISABLED:-true}
+      OTEL_SERVICE_NAME: agora-scorer-worker
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://alloy:4318}
     mem_limit: "512m"
     depends_on:
       agora:
@@ -182,7 +225,9 @@ services:
     environment:
       NEO4J_AUTH: ${NEO4J_AUTH:-neo4j/please_change_me}
       NEO4J_ACCEPT_LICENSE_AGREEMENT: ${NEO4J_ACCEPT_LICENSE_AGREEMENT:-yes}
-      NEO4J_initial_dbms_default__database: ${NEO4J_initial_dbms_default__database:-neo4j}
+      # Tie the server's default database to NEO4J_DATABASE so the named DB always restarts online
+      # (DozerDB doesn't yet auto-start non-default DBs). Overridable via NEO4J_initial_dbms_default__database.
+      NEO4J_initial_dbms_default__database: ${NEO4J_initial_dbms_default__database:-${NEO4J_DATABASE:-neo4j}}
       NEO4J_PLUGINS: '["apoc"]'
       NEO4J_apoc_export_file_enabled: ${NEO4J_apoc_export_file_enabled:-true}
       NEO4J_apoc_import_file_enabled: ${NEO4J_apoc_import_file_enabled:-true}
@@ -224,6 +269,11 @@ services:
       MODERATOR_UPSTREAM: http://scorer-worker:4001
       SECURE_CHAT_UPSTREAM: http://secure-chat:4002
       MINIO_UPSTREAM: http://minio:9000
+      # Demo SPA upstream (the `demo` profile). Lazily resolved like the others — 502s /demo/* until up.
+      DEMO_UPSTREAM: http://demo:80
+      # Grafana upstream (the `observability` profile). Front door serves it at /grafana/ (502s until up).
+      # Grafana requires a login in prod (anonymous is disabled below), so this route is safe to expose.
+      GRAFANA_UPSTREAM: http://grafana:3000
       S3_BUCKET: ${S3_BUCKET:-agora}
     volumes:
       # No proxy config mounts needed — the default auto-ACME Caddyfile + routing snippet are baked in.
@@ -260,6 +310,123 @@ services:
     init: true
     restart: unless-stopped
 
+  # ── agora-demo (the `demo` profile) ──────────────────────────────────────────────────────────────
+  # The 1:1 SDK compatibility harness (../agora-demo) — an OPTIONAL add-on served behind the SAME Caddy
+  # front door at /demo/ (same-origin with the API at /v7). A PULLED, PRE-BUILT image (arms-length on
+  # purpose — never built here). The published nginx image bakes its URLs at build time, so it is made
+  # retargetable at container start: an entrypoint writes /config.js from AGORA_DEMO_* and the bundle
+  # reads window.__AGORA__ first (falling back to its baked default).
+  #   docker compose -f docker-compose.prod.yml --profile supabase --profile demo up -d
+  # Seed the demo login first (see docs/SELF-HOSTING.md). The login prefill is ALSO runtime-retargeted
+  # (AGORA_DEMO_EMAIL/PASSWORD below) — defaulted to match 00-seed-auth-admin.mjs's own defaults. Pin a
+  # version via AGORA_DEMO_IMAGE in .env.
+  demo:
+    profiles: ["demo"]
+    image: ${AGORA_DEMO_IMAGE:-docker.io/agoraserver/agora-demo:latest}
+    environment:
+      # What the BROWSER uses to reach the API. Same-origin through Caddy → /v7. Override for a real
+      # domain (e.g. https://example.com/v7). Must be ABSOLUTE — the SDK derives the socket.io origin
+      # via new URL(baseUrl), so a relative path would throw.
+      AGORA_DEMO_API_BASE_URL: ${AGORA_DEMO_API_BASE_URL:-http://localhost/v7}
+      AGORA_DEMO_EMAIL: ${AGORA_DEMO_EMAIL:-agora-admin@gmail.com}
+      AGORA_DEMO_PASSWORD: ${AGORA_DEMO_PASSWORD:-DemoPass123!}
+      # Optional operator link back to the admin SPA (empty hides the button); secure-chat SDK trace
+      # toggle; Umami analytics (both empty = no-op). The published image's nginx entrypoint reads all
+      # of these into /config.js at start — this is the full AGORA_DEMO_* runtime set (no env_file here
+      # on purpose: the arms-length demo image must never see DATABASE_URL / the token secrets).
+      AGORA_DEMO_ADMIN_URL: ${AGORA_DEMO_ADMIN_URL:-http://localhost}
+      AGORA_DEMO_SECURE_CHAT_DEBUG: ${AGORA_DEMO_SECURE_CHAT_DEBUG:-false}
+      AGORA_DEMO_UMAMI_URL: ${AGORA_DEMO_UMAMI_URL:-}
+      AGORA_DEMO_UMAMI_ID: ${AGORA_DEMO_UMAMI_ID:-}
+    # No host port: reached through the Caddy front door at /demo/, never directly. Caddy resolves the
+    # upstream lazily, so it just 502s /demo/* until this service is up.
+    init: true
+    restart: unless-stopped
+
+  # ── Observability stack (the `observability` profile) ────────────────────────────────────────────
+  # Grafana Alloy collector + the LGTM backends (Tempo · Mimir · Loki · Grafana). An OPTIONAL add-on
+  # on top of any data plane. The apps' OTLP endpoints already point at `alloy` (see each service's
+  # environment block), so the only thing to flip is OTEL_SDK_DISABLED=false in .env. Configs are
+  # host-mounted from deploy/observability/ — ship that dir in the deploy bundle to use this profile.
+  # Grafana on :3000 (anonymous admin — LOCK THIS DOWN for a shared deploy). See docs/TELEMETRY.md.
+  #   docker compose -f docker-compose.prod.yml --profile supabase --profile observability up -d
+  alloy:
+    profiles: ["observability"]
+    image: grafana/alloy:v1.5.1
+    command:
+      - run
+      - /etc/alloy/config.alloy
+      - --storage.path=/var/lib/alloy/data
+      - --server.http.listen-addr=0.0.0.0:12345
+    volumes:
+      - ./deploy/observability/config.alloy:/etc/alloy/config.alloy:ro
+      - alloy-data:/var/lib/alloy/data
+    # No host port — the Alloy UI (:12345) has no auth, so it stays internal in prod (tunnel in if needed;
+    # prod hardening: only the proxy's 80/443 are public).
+    depends_on:
+      - tempo
+      - mimir
+      - loki
+    init: true
+    restart: unless-stopped
+
+  tempo:
+    profiles: ["observability"]
+    image: grafana/tempo:2.6.1
+    command: ["-config.file=/etc/tempo/tempo.yaml"]
+    volumes:
+      - ./deploy/observability/tempo.yaml:/etc/tempo/tempo.yaml:ro
+      - tempo-data:/var/tempo
+    init: true
+    restart: unless-stopped
+
+  mimir:
+    profiles: ["observability"]
+    image: grafana/mimir:2.14.2
+    command: ["-config.file=/etc/mimir/mimir.yaml"]
+    volumes:
+      - ./deploy/observability/mimir.yaml:/etc/mimir/mimir.yaml:ro
+      - mimir-data:/data
+    init: true
+    restart: unless-stopped
+
+  loki:
+    profiles: ["observability"]
+    image: grafana/loki:3.3.2
+    command: ["-config.file=/etc/loki/loki-config.yaml"]
+    volumes:
+      - ./deploy/observability/loki-config.yaml:/etc/loki/loki-config.yaml:ro
+      - loki-data:/loki
+    init: true
+    restart: unless-stopped
+
+  grafana:
+    profiles: ["observability"]
+    image: grafana/grafana:11.4.0
+    environment:
+      # PROD auth: anonymous is DISABLED (the Caddy front door exposes /grafana/ publicly), so a login is
+      # required. Set GRAFANA_ADMIN_PASSWORD in .env — the default is a placeholder that MUST be changed.
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-please_change_me}
+      GF_FEATURE_TOGGLES_ENABLE: traceqlEditor
+      # Served behind the Caddy front door at /grafana/ (no direct host port in prod). serve-from-sub-path
+      # needs the matching root_url so Grafana's asset + redirect URLs carry the prefix. Set
+      # GRAFANA_ROOT_URL=https://<your-domain>/grafana/ in .env for a real domain.
+      GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-https://localhost/grafana/}
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+    volumes:
+      - ./deploy/observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/observability/grafana/dashboards:/var/lib/grafana/dashboards:ro   # auto-loaded dashboards
+      - grafana-data:/var/lib/grafana
+    # No host port — reached through the Caddy front door at /grafana/ (prod hardening: only 80/443 public).
+    depends_on:
+      - tempo
+      - mimir
+      - loki
+    init: true
+    restart: unless-stopped
+
 volumes:
   neo4j-data:
   caddy-data:
@@ -267,3 +434,8 @@ volumes:
   scorer-hf-cache: # HF model downloads for the two scorer model servers (persist across recreate)
   db-data:         # self-hosted Postgres data (selfhost profile)
   minio-data:      # self-hosted object storage (selfhost profile)
+  alloy-data:      # Alloy WAL/positions (observability profile)
+  tempo-data:      # Tempo trace blocks (observability profile)
+  mimir-data:      # Mimir metric blocks (observability profile)
+  loki-data:       # Loki log chunks (observability profile)
+  grafana-data:    # Grafana state — dashboards, prefs (observability profile)

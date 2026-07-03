@@ -84,14 +84,27 @@
 		reverse_proxy {$DEMO_UPSTREAM:http://demo:80}
 	}
 
-	# 8. Immutable hashed Vite assets — cache hard.
+	# 8. Grafana observability UI (the `observability` profile) → grafana. Do NOT strip the prefix —
+	#    Grafana serves from /grafana/ (GF_SERVER_SERVE_FROM_SUB_PATH), so it MUST see the full path.
+	#    The bare /grafana (no slash) is redirected to the canonical trailing-slash form first, like
+	#    /demo above. Lazily resolved → /grafana/* just 502s until `--profile observability` is up.
+	#    Access control is the DEPLOY's job: prod runs Grafana with a login (anonymous disabled); dev
+	#    keeps it anonymous on localhost. WS (live tail) auto-upgrades.
+	handle /grafana {
+		redir {uri}/ 308
+	}
+	handle /grafana/* {
+		reverse_proxy {$GRAFANA_UPSTREAM:http://grafana:3000}
+	}
+
+	# 9. Immutable hashed Vite assets — cache hard.
 	handle /assets/* {
 		header Cache-Control "public, immutable, max-age=31536000"
 		root * /srv
 		file_server
 	}
 
-	# 9. Catch-all: SPA static + client-side-routing fallback. Bare `handle` = lowest precedence.
+	# 10. Catch-all: SPA static + client-side-routing fallback. Bare `handle` = lowest precedence.
 	handle {
 		root * /srv
 		try_files {path} /index.html

@@ -351,6 +351,8 @@ services:
       MINIO_UPSTREAM: http://minio:9000
       # Demo SPA upstream (the `demo` profile). Lazily resolved like the others — 502s /demo/* until up.
       DEMO_UPSTREAM: http://demo:80
+      # Grafana upstream (the `observability` profile). Front door serves it at /grafana/ (502s until up).
+      GRAFANA_UPSTREAM: http://grafana:3000
       S3_BUCKET: ${S3_BUCKET:-agora}
     volumes:
       # The default Caddyfile + routing snippet are BAKED into the agora-proxy image; these two mounts
@@ -508,6 +510,10 @@ services:
       GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
       GF_AUTH_DISABLE_LOGIN_FORM: "true"
       GF_FEATURE_TOGGLES_ENABLE: traceqlEditor
+      # Served behind the Caddy front door at /grafana/ (as well as the direct :3000 below). serve-from-
+      # sub-path needs the matching root_url so Grafana's asset + redirect URLs carry the prefix.
+      GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-https://localhost/grafana/}
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
     volumes:
       - ./deploy/observability/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./deploy/observability/grafana/dashboards:/var/lib/grafana/dashboards:ro   # auto-loaded dashboards

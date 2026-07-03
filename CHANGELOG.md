@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Grafana is reachable through the Caddy front door at `/grafana/`.** The proxy now routes
+  `/grafana/*` (and redirects the bare `/grafana`) to the observability Grafana, gated behind the
+  `observability` profile like the other lazy upstreams (502s until it's up). Added to both routing
+  snippets (`agora-routes.caddy`, `agora-routes.dev.caddy`) and the `GRAFANA_UPSTREAM` env on all three
+  compose files' `proxy` service; Grafana runs with `serve_from_sub_path` + a matching `GF_SERVER_ROOT_URL`
+  so its asset/redirect URLs carry the prefix. **Security posture differs by environment:** in prod
+  (`docker-compose.prod.yml`) anonymous access is DISABLED and a login is required
+  (`GRAFANA_ADMIN_USER`/`GRAFANA_ADMIN_PASSWORD`, documented in `.env.prod.example` — change the
+  placeholder), and Grafana's public `:3000` host port is dropped (reached only via `/grafana/`); dev keeps
+  the anonymous-admin convenience and the direct `:3000` port on localhost. For the same reason the
+  prod `alloy` service no longer publishes its unauthenticated `:12345` UI port either — it stays internal
+  (tunnel in if needed); dev keeps it.
 - **Admin Settings warn before you lose unsaved edits.** Each Settings form (Feed ranking, Moderator,
   Webhooks, Social graph) now tracks whether it has unsaved changes and, when it does, shows a sticky
   banner — "You have unsaved changes — save before navigating away" — so operators don't silently lose
@@ -21,6 +33,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   login form's Project ID field is removed and sign-in uses that project directly.
 
 ### Fixed
+- **`docker-compose.prod.yml` had drifted behind `docker-compose.yml`.** Several dev-compose additions
+  were never backported to the prod (pulled-image) file, so a prod deploy silently lost them. Reconciled
+  so the only intended differences are prod's hardening (pulled images, no published backend ports, baked
+  proxy config): restored the OpenTelemetry env wiring on every instrumented service (`agora`,
+  `secure-chat`, `scorer-toxicity`, `scorer-relationship`, `scorer-worker`); restored `secure-chat`'s
+  whole `environment` block — including the `SERVICE_NAME` override that stops `env_file` from making it
+  report under the API's identity in Grafana; restored the `--profile demo` service (+ the proxy's
+  `DEMO_UPSTREAM`); restored the `--profile observability` stack (Alloy/Tempo/Mimir/Loki/Grafana) and its
+  five volumes; and restored the `neo4j` `NEO4J_DATABASE` default-database fallback. Header/profile-list
+  and deploy-bundle notes updated to match.
 - **`docker-compose.yml`'s `demo` service dropped the Umami analytics vars.** The service correctly
   omits `env_file` (the arms-length demo image must never see `DATABASE_URL` / the token secrets), but
   that means only explicitly-listed vars reach it — and `AGORA_DEMO_UMAMI_URL` / `AGORA_DEMO_UMAMI_ID`
