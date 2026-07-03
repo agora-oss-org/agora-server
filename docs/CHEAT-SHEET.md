@@ -25,7 +25,15 @@ add **optional services** (Axis 2). A bare `docker compose up` starts nothing.
 | **Everything**, self-contained | `docker compose --profile full --profile selfhost up` |
 | API + moderation only | `docker compose --profile scorer --profile supabase up` |
 | Standalone / split **secure-chat** box | `docker compose --profile secure-chat up` *(remote `DATABASE_URL`)* |
-| Apply migrations (any time) | `docker compose run --rm agora node scripts/migrate.mjs` |
+| Apply migrations (existing DB, any time) | `docker compose run --rm agora node scripts/migrate.mjs` |
+| First-time schema + tenant row (⚠ drops — fresh DB only) | `docker compose run --rm -it agora node scripts/genesis.mjs` |
+| Seed admin login + demo content (stack up first) | `docker compose exec agora node scripts/seeds/seed.mjs` |
+
+> **Seeding runs inside the container** (no host `pnpm`/`psql`): `genesis.mjs` applies the schema +
+> `seed.sql` in-process, then `seed.mjs` adds the admin login + demo content. Use `exec` (not `run`) for
+> `seed.mjs` — the demo posts call the API, and inside the **live** container `localhost:4000` is the
+> server (a one-off `run` container would `ECONNREFUSED`). Full flow →
+> [`apps/api/README.md`](../apps/api/README.md#seeding-a-running-container-docker).
 
 ### Profiles → services
 
@@ -37,6 +45,8 @@ add **optional services** (Axis 2). A bare `docker compose up` starts nothing.
 | `secure-chat` | add-on | `secure-chat` + `redis` | a data plane *(or remote DB)* |
 | `scale` | add-on | `redis` | a data plane |
 | `full` | add-on shorthand | = `scorer` + `secure-chat` | a data plane |
+| `observability` | add-on | `alloy` + `tempo` + `mimir` + `loki` + `grafana` (LGTM) — Grafana at `/grafana/` | a data plane |
+| `demo` | add-on | `demo` — pulled SDK harness at `/demo/` | a data plane |
 
 ### Dev build vs. production pull
 
@@ -150,7 +160,8 @@ the `auth` roles. So "self-hosted" drops the Supabase *service*, not the Supabas
 | Operators (god-view) | `OPERATOR_EMAILS` / `OPERATOR_USER_IDS` | ◻️ | **You choose** — your admin email(s) / profile UUID(s), comma-separated. Unset → no operators. |
 | Cron jobs | `CRON_SECRET` | ◻️ | Gates `POST /internal/cron/*` (503 until set). `openssl rand -base64 32`. |
 | OAuth callbacks behind a proxy | `PUBLIC_BASE_URL` | ◻️ | Your public origin, e.g. `https://api.example.com` — used to build absolute OAuth callback URLs. |
-| Tracing/metrics | `OTEL_*_ENDPOINT` | ◻️ | Your OpenTelemetry collector. `OTEL_SDK_DISABLED=true` (default) keeps it off. |
+| Tracing/metrics (bundled LGTM) | `OTEL_SDK_DISABLED`, `OTEL_*_ENDPOINT` | ◻️ | `--profile observability` brings up Alloy + Tempo/Mimir/Loki/Grafana; the apps already point their OTLP at `alloy`, so just set `OTEL_SDK_DISABLED=false`. Or point `OTEL_*_ENDPOINT` at your own collector. Off by default. |
+| Grafana login (prod) | `GRAFANA_ADMIN_PASSWORD` | ◻️ | Served at **`/grafana/`** via the front door. In **prod** anonymous is disabled → set this (with `GRAFANA_ADMIN_USER`, `GRAFANA_ROOT_URL=https://<host>/grafana/`). Dev keeps anonymous-admin on `localhost`. |
 
 ### 2.8 — Admin SPA (build-time, in `apps/admin/.env` — **not** the root `.env`)
 

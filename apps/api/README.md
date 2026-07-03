@@ -110,13 +110,13 @@ pnpm db:migrate           # apply migrations (idempotent: journal skips applied;
 pnpm test                 # unit tests (no DB)
 pnpm test:integration     # integration tests (needs TEST_DATABASE_URL — a dedicated cloud DB)
 pnpm seed                 # create the admin login + (optionally) seed demo content — see Seeding
-pnpm seed:graph           # standalone: seed the manifest graph world (seed.json) — not idempotent
 ```
 
 ## Seeding
 
 Two layers, run in order. The first is pure SQL against the DB; the second drives the **running API**
-over HTTP as the seeded admin.
+over HTTP as the seeded admin. The commands below are the **host-checkout** flow (`pnpm` + `psql`); for a
+Docker deploy see [Seeding a running container](#seeding-a-running-container-docker) below.
 
 **1. Database fixtures (`seed.sql`).** Creates the tenant/`projects` row everything else needs and
 asserts the triggers/RPC are wired. Run it once against a migrated DB (or use `pnpm genesis`, which
@@ -148,7 +148,7 @@ seeders in `scripts/seeds/` in order:
   cleanly, not failed.
 - **Demo content** (`02`–`04` + `seed-*-post.mjs`) is each idempotent (skips if its row exists), so the
   content layer is safe to re-run. **Exception:** the graph world (`03-seed-engine.mjs`, also runnable
-  standalone via `pnpm seed:graph`) is **not** idempotent — re-running duplicates it; wipe first.
+  standalone via `pnpm seed:graph`) is **not** idempotent — re-running duplicates it; genesis first.
 
 **Non-interactive / CI.** Every prompt has an env override, so `pnpm seed` runs unattended:
 
@@ -157,6 +157,37 @@ ADMIN_EMAIL=you@example.com ADMIN_PASSWORD='…' \  # skip the admin prompt (DEM
 SEED_DEMO_DATA=1 \                                 # 1/yes = seed content, 0/no = admin only (skip the gate prompt)
 pnpm seed
 ```
+
+### Seeding a running container (Docker)
+
+The commands above assume a host checkout with `pnpm` + `psql`. In a Docker deploy you have neither
+inside the app image — the slim runtime ships **no `pnpm` and no `psql`** — but the seed scripts **are**
+bundled (`pnpm deploy` copies `scripts/` into the image at WORKDIR `/app`). So run them with `node` —
+either a **one-off container** (`docker compose run --rm agora …`) for steps that only need the DB, or,
+for steps that call the API over HTTP, `docker compose exec agora …` **inside the already-running
+container** (where `localhost:4000` is the server). Both inherit the `agora` service's `.env`, so
+`DATABASE_URL` and friends are already set. Add `-it` (`run`) / omit `-T` (`exec`) when a step prompts;
+pass the env overrides above to run unattended. (For the prod compose, prefix each command with
+`-f docker-compose.prod.yml`.)
+
+```bash
+# 1. Schema + DB fixtures. genesis.mjs runs the migrations AND applies seed.sql (the tenant/project row
+#    + trigger/RPC validation) in-process — no psql needed. ⚠ It DROPS then rebuilds, so it's the FRESH /
+#    first-boot path (and guards a protected cloud target — run with -it to answer its confirm prompt).
+docker compose run --rm -it agora node scripts/genesis.mjs
+#    Existing DB you don't want to wipe? Apply just new migrations instead (non-destructive; the project
+#    row already exists): docker compose run --rm agora node scripts/migrate.mjs
+
+# 2. Admin login + optional demo content (node — no psql). seed.mjs seeds the admin credential first
+#    (straight to the DB via DATABASE_URL), then the GATED demo content. The demo posts drive the API over
+#    HTTP, so run these with `exec` INSIDE the already-running `agora` container (bring the stack up first:
+#    docker compose up -d) — there `localhost:4000` IS the server. With a one-off `run` container it isn't
+#    (localhost would be that container), so the posts would ECONNREFUSED :4000.
+docker compose exec agora node scripts/seeds/seed.mjs                                  # prompts (admin, then "seed demo? [Y/n]")
+```
+
+For the full container deploy sequence (migrate → bootstrap operator → optional demo), see
+[`docs/SELF-HOSTING.md`](../../docs/SELF-HOSTING.md).
 
 ## Configuration (`.env`)
 
