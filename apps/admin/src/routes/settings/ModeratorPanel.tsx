@@ -19,9 +19,11 @@ import {
 import { Button } from "../../components/ui/Button";
 import { Input, Label } from "../../components/ui/Input";
 import { LoadingPanel } from "../../components/ui/Spinner";
+import { UnsavedBanner } from "../../components/ui/UnsavedBanner";
 import { useToast } from "../../components/ui/Toast";
 import { SETTINGS_READ_ONLY } from "../../config";
 import { ApiError } from "../../lib/api";
+import { isDirty } from "../../lib/dirty";
 import {
   getModeratorConfig, updateModeratorConfig,
   type ModeratorConfigView, type ModeratorConfigPatch, type LlmProvider,
@@ -91,6 +93,14 @@ function ModeratorForm({
   const save = useMutation({
     mutationFn: (patch: ModeratorConfigPatch) => updateModeratorConfig(patch),
     onSuccess: (view) => {
+      // Re-sync every field to the server's resolved view so the unsaved banner clears after a save.
+      setBlockThreshold(str(view.blockAutoActionThreshold));
+      setReviewThreshold(str(view.reviewAutoActionThreshold));
+      setProvider(view.llmProvider ?? "");
+      setBaseUrl(view.llmBaseUrl ?? "");
+      setModel(view.llmModel ?? "");
+      setMaxTokens(str(view.llmMaxTokens));
+      setCategories(view.categories ?? []);
       setHasLlmApiKey(view.hasLlmApiKey);
       setApiKey("");
       qc.setQueryData(["settings", "moderator"], view);
@@ -155,8 +165,26 @@ function ModeratorForm({
   const ph = (fallback: string | number | null | undefined, generic: string) =>
     fallback !== null && fallback !== undefined && fallback !== "" ? `${fallback} — server default` : generic;
 
+  // Dirty = current fields differ from the saved config. Categories are order-independent (sorted),
+  // and the write-only API key is tracked as a "was it (re)entered" flag, never its value.
+  const dirty = isDirty(
+    {
+      blockThreshold: blockThreshold.trim(), reviewThreshold: reviewThreshold.trim(),
+      provider, baseUrl: baseUrl.trim(), model: model.trim(), maxTokens: maxTokens.trim(),
+      categories: [...categories].sort(), apiKeyDirty: apiKey.trim() !== "",
+    },
+    {
+      blockThreshold: str(initial.blockAutoActionThreshold).trim(),
+      reviewThreshold: str(initial.reviewAutoActionThreshold).trim(),
+      provider: initial.llmProvider ?? "", baseUrl: (initial.llmBaseUrl ?? "").trim(),
+      model: (initial.llmModel ?? "").trim(), maxTokens: str(initial.llmMaxTokens).trim(),
+      categories: [...(initial.categories ?? [])].sort(), apiKeyDirty: false,
+    },
+  );
+
   return (
     <form onSubmit={onSubmit} className="space-y-5">
+      {dirty && !SETTINGS_READ_ONLY && <UnsavedBanner />}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">

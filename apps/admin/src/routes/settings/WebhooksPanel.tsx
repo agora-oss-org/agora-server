@@ -9,9 +9,11 @@ import {
 import { Button } from "../../components/ui/Button";
 import { Input, Label } from "../../components/ui/Input";
 import { LoadingPanel } from "../../components/ui/Spinner";
+import { UnsavedBanner } from "../../components/ui/UnsavedBanner";
 import { useToast } from "../../components/ui/Toast";
 import { SETTINGS_READ_ONLY } from "../../config";
 import { ApiError } from "../../lib/api";
+import { isDirty } from "../../lib/dirty";
 import {
   getWebhookConfig, updateWebhookConfig, testWebhook,
   WEBHOOK_VALIDATION_EVENTS, WEBHOOK_BROADCAST_EVENTS,
@@ -55,6 +57,9 @@ function WebhookForm({ initial }: { initial: WebhookConfigView }) {
   const save = useMutation({
     mutationFn: (patch: WebhookConfigPatch) => updateWebhookConfig(patch),
     onSuccess: (view) => {
+      // Re-sync every field to the server's resolved view so the unsaved banner clears after a save.
+      setUrl(view.url ?? "");
+      setEvents(new Set(view.events));
       setHasSecret(view.hasSecret);
       setSecret("");
       qc.setQueryData(["settings", "webhooks"], view);
@@ -89,8 +94,16 @@ function WebhookForm({ initial }: { initial: WebhookConfigView }) {
 
   const enabled = !!url.trim();
 
+  // Dirty = current fields differ from the saved config. Events are order-independent (Set → sorted),
+  // and the write-only secret is tracked as a "was it (re)entered" flag, never its value.
+  const dirty = isDirty(
+    { url: url.trim(), events: [...events].sort(), secretDirty: secret.trim() !== "" },
+    { url: (initial.url ?? "").trim(), events: [...initial.events].sort(), secretDirty: false },
+  );
+
   return (
     <form onSubmit={onSubmit} className="space-y-5">
+      {dirty && !SETTINGS_READ_ONLY && <UnsavedBanner />}
       <Card>
         <CardHeader>
           <CardTitle>Endpoint</CardTitle>

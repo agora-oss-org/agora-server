@@ -16,9 +16,11 @@ import {
 import { Button } from "../../components/ui/Button";
 import { Input, Label } from "../../components/ui/Input";
 import { LoadingPanel } from "../../components/ui/Spinner";
+import { UnsavedBanner } from "../../components/ui/UnsavedBanner";
 import { useToast } from "../../components/ui/Toast";
 import { SETTINGS_READ_ONLY } from "../../config";
 import { ApiError } from "../../lib/api";
+import { isDirty } from "../../lib/dirty";
 import {
   getSocialConfig, updateSocialConfig, recomputeConstellation,
   type SocialConfigView, type SocialConfigPatch, type ResolvedSocialConfig, type SocialPrivacyTier,
@@ -101,6 +103,10 @@ function SocialGraphForm({ view }: { view: SocialConfigView }) {
 
   const isCommunity = draft.privacyTier === "community";
 
+  // Dirty = draft differs from the saved effective config (the same diff onSubmit sends). onSuccess
+  // re-syncs `draft` to next.effective, so the banner clears after a save.
+  const dirty = isDirty(draft, view.effective);
+
   const save = useMutation({
     mutationFn: (patch: SocialConfigPatch) => updateSocialConfig(patch),
     onSuccess: (next) => {
@@ -158,6 +164,7 @@ function SocialGraphForm({ view }: { view: SocialConfigView }) {
 
   return (
     <form onSubmit={onSubmit} className="space-y-5">
+      {dirty && !SETTINGS_READ_ONLY && <UnsavedBanner />}
       {/* ── Tier + transparency ──────────────────────────────────────────────────────────────────── */}
       <Card>
         <CardHeader>

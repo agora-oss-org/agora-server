@@ -1,6 +1,6 @@
 // Feed-ranking config — the first Settings slice. Reads GET /settings/feed and PATCHes changes.
 // Project-admin only on the server (403 otherwise → surfaced as an error card).
-import { useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Save } from "lucide-react";
 import {
@@ -9,9 +9,11 @@ import {
 import { Button } from "../../components/ui/Button";
 import { Input, Label } from "../../components/ui/Input";
 import { LoadingPanel } from "../../components/ui/Spinner";
+import { UnsavedBanner } from "../../components/ui/UnsavedBanner";
 import { useToast } from "../../components/ui/Toast";
 import { SETTINGS_READ_ONLY } from "../../config";
 import { ApiError } from "../../lib/api";
+import { isDirty } from "../../lib/dirty";
 import {
   getFeedConfig, updateFeedConfig, FEED_ALGORITHMS, REACTION_TYPES,
   type FeedConfigView, type FeedConfigPatch,
@@ -91,6 +93,12 @@ function FeedForm({ initial }: { initial: FeedConfigView }) {
   const set = <K extends keyof FormState>(k: K, v: FormState[K]) => setS((p) => ({ ...p, [k]: v }));
   const hadWebhook = !!initial.rerankWebhook;
 
+  // Dirty = current form differs from the saved baseline. `toState` blanks the write-only secret in
+  // both, so it only trips when the operator actually re-enters one. onSuccess re-syncs `s` to the
+  // server's resolved view, so the banner clears after a save.
+  const baseline = useMemo(() => toState(initial), [initial]);
+  const dirty = isDirty(s, baseline);
+
   const mutation = useMutation({
     mutationFn: (patch: FeedConfigPatch) => updateFeedConfig(patch),
     onSuccess: (view) => {
@@ -131,6 +139,7 @@ function FeedForm({ initial }: { initial: FeedConfigView }) {
 
   return (
     <form onSubmit={onSubmit} className="space-y-5">
+      {dirty && !SETTINGS_READ_ONLY && <UnsavedBanner />}
       {/* Ranking */}
       <Card>
         <CardHeader>

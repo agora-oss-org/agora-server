@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Admin Settings warn before you lose unsaved edits.** Each Settings form (Feed ranking, Moderator,
+  Webhooks, Social graph) now tracks whether it has unsaved changes and, when it does, shows a sticky
+  banner — "You have unsaved changes — save before navigating away" — so operators don't silently lose
+  edits by switching tabs or leaving the page. The banner is informational only (it points to the form's
+  own Save button, not a duplicate) so it can never imply it saves more than the one section. Write-only
+  secrets (webhook/re-rank signing secret, LLM API key) only trip the banner when actually re-entered.
+  (The Stewardship tab saves each choice immediately and has no form state, so it has no banner.)
+
 ### Changed
 - **Admin login no longer asks for a Project ID.** The admin resolves its project automatically, so the
   login form's Project ID field is removed and sign-in uses that project directly.
