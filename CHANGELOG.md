@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`scripts/bootstrap-supabase-compat.sql` — one-time Supabase-compat bootstrap for a VANILLA
+  Postgres deploy** (e.g. `postgres:bookworm`, not the `supabase/postgres` image). The migrations
+  assume the Supabase-managed `anon`/`authenticated`/`service_role` roles and an `auth` schema with
+  `auth.uid()` already exist (`0008`/`0017` grant to them; `0017`'s RLS policies call `auth.uid()`);
+  on a plain Postgres they don't, so `genesis`/`drop` die with `role "anon" does not exist`. Run this
+  once as a superuser before `genesis.mjs` to provision them (idempotent, survives `genesis` re-runs).
+  None of it is load-bearing — the server connects as the owner role and bypasses RLS — but the DDL
+  must still execute without erroring.
+
+### Changed
+- **`genesis.mjs` now prints the resolved DB target before it does anything destructive.** The header
+  shows `host:port/dbname` (credentials stripped — never printed) plus `AGORA_ENV`, so the operator
+  can confirm exactly which database is about to be dropped and rebuilt before the drop runs.
+- **README: the social graph (Garden) is labelled `alpha`.** The layer is functional and off by
+  default, but its APIs/scoring/admin surfaces are still evolving; everything below it stays beta/stable.
+
+### Fixed
+- **`docker-publish.yml` image matrix reordered** so `agora-proxy` builds after `agora-secure-chat`.
+
 ## [0.16.2] - 2026-07-02
 
 ### Fixed
