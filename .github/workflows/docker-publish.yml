@@ -37,10 +37,12 @@ jobs:
         image:
           - name: agora-api
             dockerfile: ./apps/api/Dockerfile
-          - name: agora-proxy
-            dockerfile: ./deploy/proxy/Dockerfile
+          - name: agora-admin
+            dockerfile: ./apps/admin/Dockerfile
           - name: agora-secure-chat
             dockerfile: ./apps/secure-chat/Dockerfile
+          - name: agora-proxy
+            dockerfile: ./deploy/proxy/Dockerfile
           - name: agora-cron
             dockerfile: ./apps/api/Dockerfile.cron
           - name: agora-scorer-worker
