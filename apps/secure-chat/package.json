@@ -1,6 +1,6 @@
 {
   "name": "@agora/secure-chat",
-  "version": "0.16.2",
+  "version": "0.16.3",
   "private": true,
   "type": "module",
   "description": "Agora secure-chat — the blind MLS (E2E) Delivery Service, an independently-deployable service split from @agora/api. Shares the @agora/core kernel (db, env, logger, auth) + Postgres + Redis.",

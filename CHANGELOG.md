@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.3] - 2026-07-03
+
 ### Added
 - **`scripts/bootstrap-supabase-compat.sql` — one-time Supabase-compat bootstrap for a VANILLA
   Postgres deploy** (e.g. `postgres:bookworm`, not the `supabase/postgres` image). The migrations
@@ -1850,7 +1852,8 @@ cloud Supabase — no stubbed endpoints remain.
   (`@agora/*`), a repointed fork of `@replyke/core`.
 - Backlog: rate limiting, refresh-token cleanup sweep, RLS write policies, turnkey deploy guide.
 
-[Unreleased]: https://github.com/jenova-marie/agora/compare/v0.16.2...HEAD
+[Unreleased]: https://github.com/jenova-marie/agora/compare/v0.16.3...HEAD
+[0.16.3]: https://github.com/jenova-marie/agora/compare/v0.16.2...v0.16.3
 [0.16.2]: https://github.com/jenova-marie/agora/compare/v0.16.1...v0.16.2
 [0.16.1]: https://github.com/jenova-marie/agora/compare/v0.16.0...v0.16.1
 [0.16.0]: https://github.com/jenova-marie/agora/compare/v0.15.2...v0.16.0
