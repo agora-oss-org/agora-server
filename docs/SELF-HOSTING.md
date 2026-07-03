@@ -110,7 +110,9 @@ profile-gated, so a bare `docker compose up` starts nothing.)
    project's `auth_provider` from `DEFAULT_AUTH_PROVIDER`.
 
 4. **Bootstrap the first admin.** A virgin DB has no users, and native auth gates sign-in on email
-   confirmation (the default `ConsoleEmailSender` only *logs* the confirm link — no SMTP). So seed a
+   confirmation. Unless you've configured Postmark (`POSTMARK_SERVER_TOKEN` + a Postmark-verified
+   `AUTH_EMAIL_FROM`, and `AUTH_EMAIL_LINK_BASE` = your front-end origin — see `.env.prod.example`), the
+   default `ConsoleEmailSender` only *logs* the confirm link and delivers no mail. So seed a
    **pre-confirmed** native credential directly, then make it an operator:
 
    ```bash

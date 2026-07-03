@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Postmark transactional-email transport for native auth.** Native-auth confirmation, password-reset,
+  and account-deletion emails are now actually *sent* when Postmark is configured — previously the only
+  `EmailSender` was the dev `ConsoleEmailSender`, which merely logged the confirm link (so a native-auth
+  deploy reported "confirmation email dispatched" but delivered nothing). New `PostmarkEmailSender`
+  (`apps/api/src/lib/auth/email/postmark.ts`) posts to Postmark's `/email` API; `resolveEmailSender()`
+  selects it when `POSTMARK_SERVER_TOKEN` is set, else falls back to the console stub. All Postmark
+  values are env-driven: `POSTMARK_SERVER_TOKEN`, `AUTH_EMAIL_FROM` (default `noreply@agora-oss.org`,
+  must be a Postmark-verified sender), `POSTMARK_MESSAGE_STREAM` (default `outbound`), `POSTMARK_API_BASE`,
+  and `AUTH_EMAIL_LINK_BASE` (front-end origin for the emailed links; now validated in the env schema
+  instead of read ad hoc). Documented in all three `.env.*.example` templates and `docs/SELF-HOSTING.md`.
+  Supabase-backed projects are unaffected (Supabase Auth sends its own emails).
+
 ## [0.16.3] - 2026-07-03
 
 ### Added

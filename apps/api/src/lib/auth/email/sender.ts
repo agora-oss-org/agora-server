@@ -1,8 +1,10 @@
-// Pluggable transport for native-auth confirmation / reset emails. Ships a dev console
-// impl; the production transport (Resend/SES/Postmark) is a later impl behind this
-// interface — no caller change. A module-level override provides a test seam so the
-// integration suite can capture the raw token (which never appears in logs at info).
+// Pluggable transport for native-auth confirmation / reset emails. Ships a dev console impl and a
+// production Postmark transport (postmark.ts) selected via env — no caller change. A module-level
+// override provides a test seam so the integration suite can capture the raw token (which never
+// appears in logs at info).
+import { env } from "../../env.js";
 import { logger } from "../../logger.js";
+import { PostmarkEmailSender } from "./postmark.js";
 
 export interface EmailSender {
   sendConfirmation(to: string, link: string): Promise<void>;
@@ -31,12 +33,39 @@ let _override: EmailSender | null = null;
 export function setEmailSender(sender: EmailSender | null): void {
   _override = sender;
 }
+
+/** Pure selector (extracted for testability): a test override wins; else Postmark when a server token
+ *  is configured; else the dev console stub that only LOGS the link. */
+export function selectEmailSender(
+  postmark: { token?: string; from: string; stream: string; apiBase: string },
+  override: EmailSender | null,
+): EmailSender {
+  if (override) return override;
+  if (postmark.token) {
+    return new PostmarkEmailSender({
+      token: postmark.token,
+      from: postmark.from,
+      stream: postmark.stream,
+      apiBase: postmark.apiBase,
+    });
+  }
+  return new ConsoleEmailSender();
+}
+
 export function resolveEmailSender(): EmailSender {
-  return _override ?? new ConsoleEmailSender();
+  return selectEmailSender(
+    {
+      token: env.POSTMARK_SERVER_TOKEN,
+      from: env.AUTH_EMAIL_FROM,
+      stream: env.POSTMARK_MESSAGE_STREAM,
+      apiBase: env.POSTMARK_API_BASE,
+    },
+    _override,
+  );
 }
 
 function linkBase(): string {
-  return process.env.AUTH_EMAIL_LINK_BASE || "http://localhost:5173";
+  return env.AUTH_EMAIL_LINK_BASE;
 }
 export function confirmLink(projectId: string, rawToken: string): string {
   return `${linkBase()}/auth/verify-email?projectId=${projectId}&token=${encodeURIComponent(rawToken)}`;

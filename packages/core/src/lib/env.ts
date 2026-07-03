@@ -139,6 +139,20 @@ const schema = z.object({
   ANTHROPIC_API_KEY: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
   ANTHROPIC_MODEL: z.string().default("claude-sonnet-4-6"),
   ANTHROPIC_MAX_TOKENS: z.coerce.number().default(1024),
+  // Native-auth transactional email (confirmation / password-reset / account-deletion). Supabase-backed
+  // projects don't use this — Supabase Auth sends its own emails; it only applies to the native (in-API)
+  // auth backend (DEFAULT_AUTH_PROVIDER=native). Sent via Postmark when POSTMARK_SERVER_TOKEN is set;
+  // otherwise the ConsoleEmailSender only LOGS the confirm link (dev) and NO mail is delivered.
+  POSTMARK_SERVER_TOKEN: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
+  // From address for those emails — MUST be a Postmark-verified Sender Signature or a verified domain.
+  AUTH_EMAIL_FROM: z.preprocess((v) => (v === "" ? undefined : v), z.string().default("noreply@agora-oss.org")),
+  // Postmark Message Stream id (Postmark → Servers → Message Streams). Default transactional stream.
+  POSTMARK_MESSAGE_STREAM: z.preprocess((v) => (v === "" ? undefined : v), z.string().default("outbound")),
+  // Postmark API base — override only for testing / an outbound proxy. Default is the public API.
+  POSTMARK_API_BASE: z.preprocess((v) => (v === "" ? undefined : v), z.string().url().default("https://api.postmarkapp.com")),
+  // Base URL the emailed confirm/reset links point at (your FRONT-END, which calls the verify endpoints).
+  // Unset → http://localhost:5173 (dev). Set to your public app origin in production or the links 404.
+  AUTH_EMAIL_LINK_BASE: z.preprocess((v) => (v === "" ? undefined : v), z.string().url().default("http://localhost:5173")),
 });
 
 export const env = schema.parse(process.env);
