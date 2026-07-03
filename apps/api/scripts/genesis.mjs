@@ -34,7 +34,22 @@ if (!url) {
   process.exit(1);
 }
 
-console.log(`🌱 genesis → ${isTest ? "TEST" : "DEV"} (${urlVar})\n`);
+// Resolve the exact target from the URL so the operator sees WHICH database will be dropped + rebuilt
+// BEFORE anything runs — never print credentials, only host:port/dbname.
+const target = describeTarget(url);
+
+console.log(`🌱 genesis → ${isTest ? "TEST" : "DEV"} (${urlVar})`);
+console.log(`   target : ${target.host}${target.database ? `/${target.database}` : ""}`);
+console.log(`   AGORA_ENV : ${process.env.AGORA_ENV ?? "(unset)"}\n`);
+
+function describeTarget(u) {
+  try {
+    const parsed = new URL(u);
+    return { host: parsed.host || "(no host)", database: decodeURIComponent(parsed.pathname).replace(/^\//, "") };
+  } catch {
+    return { host: "(unparseable " + urlVar + ")", database: "" };
+  }
+}
 
 // ── 1. drop + rebuild from migrations (delegated to the hardened drop.mjs) ──────
 // drop.mjs reads DATABASE_URL; we force it to the chosen target. `import "dotenv/config"` in the child
