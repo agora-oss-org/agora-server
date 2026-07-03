@@ -114,6 +114,11 @@ Full design, threat model, schema, endpoints, and roadmap: **[`docs/SECURE_CHAT.
 
 ## Your social graph, pointed back at the community — not at you
 
+> [!NOTE]
+> **The social graph is in alpha.** The graph is functional and env-gated off by default, but its
+> APIs, scoring, and admin surfaces are still evolving and may change ahead of a stable release.
+> Everything below the social layer (the backend, chat, moderation, stewardship) is beta and stable.
+
 Every platform mines the social graph *at* the user — to target, rank, and sell them. Agora points the
 same structure **back at the community, for the community**, in service of its health. It's an
 **optional, off-by-default** layer: wire up a Neo4j instance (`NEO4J_URI`) and the **Garden** comes
@@ -334,7 +339,7 @@ complete** — no stubbed endpoints remain.
 | **webhooks** | project webhooks (HMAC validation gates + `*.complete` broadcasts) + per-space digests |
 | **moderation** | report resolution + server-enforced removed-content hiding (lists, single reads, **and** the search RPC); space-moderator + operator roles; **AI Agent Moderator** that flags inappropriate content on post — configurable violation categories, confidence thresholds, and auto-actions (immediate hide or human review) — tunable per-project in Settings; escalation to Stewards for conflict resolution |
 | **stewardship** | first-class **conflict resolution** — a DB-granted steward role (between member and operator), a caseload (`open → in_mediation → closed`), transformative outcomes, a "targeting" power-imbalance flag, **private mediation channels** (caucus + consensual joint room, built on chat), **configurable participant notifications** (power-aware/symmetric/resolution-only, never leaking who raised a case), append-only timeline, and escalate-to-removal for posts/comments/chat messages ([`docs/STEWARDSHIP.md`](docs/STEWARDSHIP.md)) |
-| **social graph** *(optional · Neo4j)* | the **Garden** — community-health analytics pointed *back at the community*: **Community Weather** (project-wide warmth scalar + band/trend, cached with hysteresis), **Constellation** (anonymous GDS-Louvain cluster blobs with an adaptive 2–5 k-floor + on-demand project-admin recompute), and **Neighborhood** (your own ties by **dyadic** brightness); one public signal (warmth), friction quarantined + decaying, per-project privacy **tier** (community ↔ corporate). Scorer projects the edges, the API reads them. Off unless `NEO4J_URI` is set ([`docs/SOCIAL-GRAPH.md`](docs/SOCIAL-GRAPH.md)) |
+| **social graph** *(optional · Neo4j · **alpha**)* | the **Garden** — community-health analytics pointed *back at the community*: **Community Weather** (project-wide warmth scalar + band/trend, cached with hysteresis), **Constellation** (anonymous GDS-Louvain cluster blobs with an adaptive 2–5 k-floor + on-demand project-admin recompute), and **Neighborhood** (your own ties by **dyadic** brightness); one public signal (warmth), friction quarantined + decaying, per-project privacy **tier** (community ↔ corporate). Scorer projects the edges, the API reads them. Off unless `NEO4J_URI` is set ([`docs/SOCIAL-GRAPH.md`](docs/SOCIAL-GRAPH.md)) |
 
 Denormalized counts (reaction counts, reply counts, member counts, thread counts, reputation) are
 maintained atomically by Postgres **triggers** — never recomputed per request.
@@ -499,7 +504,7 @@ pass a `projectId` + a signed user token to the provider; the SDK's typed hooks 
 - ✅ **Governance** — moderation (report queues + optional LLM auto-moderation) and the stewardship
   caseload (cases, private mediation channels, participant notifications) are wired and operator-gated
   in the admin dashboard.
-- 🌱 **Social graph (optional · Neo4j)** — the full **Garden** is live and env-gated behind `NEO4J_URI`
+- 🌱 **Social graph (optional · Neo4j · alpha)** — the full **Garden** is live and env-gated behind `NEO4J_URI`
   (scorer writes the `INTERACTED` / `FOLLOWS` / `CONNECTED` / `FRICTION` edges, the API reads them):
   **Community Weather**, **Constellation** (GDS-Louvain blobs, adaptive 2–5 k-floor, project-admin
   recompute), and **Neighborhood**, plus the operator-only corporate analytics tier
