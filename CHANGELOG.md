@@ -20,6 +20,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   instead of read ad hoc). Documented in all three `.env.*.example` templates and `docs/SELF-HOSTING.md`.
   Supabase-backed projects are unaffected (Supabase Auth sends its own emails).
 
+### Changed
+- **`MINIO_UPSTREAM` is now env-configurable in `docker-compose.prod.yml`**
+  (`${MINIO_UPSTREAM:-http://minio:9000}`, previously hardcoded) and documented in
+  `.env.prod.example`. Needed when MinIO runs outside the compose stack (external/swarm service
+  name). The template warns it must be a **directly reachable container address**, never another
+  reverse proxy's public hostname: Caddy's `reverse_proxy` forwards the original client `Host`
+  header, so routing `/media` back through an outer front door matches the wrong vhost, whose
+  auto-HTTPS 308 ultimately serves the SPA's `index.html` as the "image" — a silent broken-image
+  failure with no console error.
+
 ## [0.16.3] - 2026-07-03
 
 ### Added

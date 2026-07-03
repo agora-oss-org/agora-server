@@ -268,7 +268,7 @@ services:
       API_UPSTREAM: http://agora:4000
       MODERATOR_UPSTREAM: http://scorer-worker:4001
       SECURE_CHAT_UPSTREAM: http://secure-chat:4002
-      MINIO_UPSTREAM: http://minio:9000
+      MINIO_UPSTREAM: ${MINIO_UPSTREAM:-http://minio:9000}
       # Demo SPA upstream (the `demo` profile). Lazily resolved like the others — 502s /demo/* until up.
       DEMO_UPSTREAM: http://demo:80
       # Grafana upstream (the `observability` profile). Front door serves it at /grafana/ (502s until up).
