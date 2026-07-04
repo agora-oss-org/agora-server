@@ -17,6 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Omitted, or the allowlist unset, falls back to `AUTH_EMAIL_LINK_BASE` as before. Supabase-backed auth
   ignores the field (Supabase Auth sends its own emails). See `docs/SDK-EMAIL-REDIRECT-TO-SPEC.md` for
   the SDK-side contract this unblocks.
+- **`docker-compose.prod.yml` no longer uses `env_file`**: the prod service definitions now enumerate
+  every consumed var explicitly via `${VAR:?required}` / `${VAR:-default}` interpolation, so no secret
+  has to live in a `.env` file on disk for a prod deploy (values come from the process environment —
+  shell export / systemd / Swarm / K8s secret injection). `docker-compose.yml` (selfhost) and
+  `docker-compose.dev.yml` are unaffected and still use `env_file: .env`.
 - **`/propagate` doc & config propagation system**: `docs/PROPAGATION.yaml` (the map of what
   mirrors what), a `check:propagation` drift-checker CLI in `@agora/api` (`--diff <base>` /
   full-scan, `--json`) that derives typed obligations from the branch diff, and the

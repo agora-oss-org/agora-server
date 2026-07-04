@@ -262,10 +262,13 @@ does both). Copy it to `.env` and fill the `<…>` placeholders:
 uncomment the CLOUD block (the full `SUPABASE_*` + pooler vars are right there), and run
 `--profile supabase` instead of `--profile selfhost`. No separate template.
 
-Compose reads the root **`.env`** for both `${VAR}` interpolation and the services' `env_file`. Separately,
-each app loads **its own** `.env` from its package dir via `dotenv` — for the backend that's `apps/api/.env`.
-In **selfhost**/**prod** the API runs as a container reading the root `.env` through `env_file`, so one copy
-covers everything. In **dev** the API runs on the *host* (`pnpm --filter @agora/api dev`) and needs its own
+Compose reads the root **`.env`** for `${VAR}` interpolation, and (in **selfhost**) the services'
+`env_file` too — one copy covers everything there. Separately, each app loads **its own** `.env` from its
+package dir via `dotenv` — for the backend that's `apps/api/.env`. In **selfhost** the API runs as a
+container reading the root `.env` through `env_file`. In **prod** there is no `env_file`: each service
+enumerates every var it consumes explicitly (`${VAR:?required}` / `${VAR:-default}`), so no secret has to
+live in a `.env` file on disk — `.env` still only supplies `${VAR}` interpolation if you keep one. In
+**dev** the API runs on the *host* (`pnpm --filter @agora/api dev`) and needs its own
 `apps/api/.env` — copy the template there too (`cd apps/api && cp ../../.env.dev.example .env`), or symlink it
 (`ln -sf ../../.env apps/api/.env` — an optional, gitignored convenience, not created by default). Same for
 `@agora/secure-chat` when you run it on the host.

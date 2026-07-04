@@ -42,17 +42,71 @@ services:
   agora:
     profiles: ["supabase", "selfhost"]
     image: agoraserver/agora-api:${AGORA_TAG:-latest}
-    env_file: .env
+    # NO env_file — the prod contract is enumerated explicitly so NO secret has to live in a .env on
+    # disk. Each value is interpolated from the PROCESS environment (shell export / systemd / Swarm|K8s
+    # secret injection); Compose also reads a local ./.env for interpolation if you keep one for dev.
+    # Rules: ${VAR:?…} = required (deploy fails loudly if unset); ${VAR:-x} = default x; ${VAR:-} = pass
+    # through / empty (the app's schema turns "" into its own default or "unset"). Deep tuning knobs
+    # (token TTLs, embed-throttle timings, model names, upload cap) are deliberately OMITTED → they use
+    # their built-in code defaults; add them here to override. Full list: packages/core/src/lib/env.ts.
     environment:
-      # Address Neo4j by service name on the compose network (.env's NEO4J_URI uses localhost for
-      # host-side dev, which inside a container is the container itself). Override via NEO4J_URI_DOCKER.
-      NEO4J_URI: ${NEO4J_URI_DOCKER:-bolt://neo4j:7687}
-      # Content deletion semantics: soft (default — tombstone rows, keep media) | hard (truly DELETE
-      # rows AND remove their media objects from storage). See .env.prod.example for the full contract.
+      # ── required (deploy fails if unset) ──────────────────────────────────────
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      ACCESS_TOKEN_SECRET: ${ACCESS_TOKEN_SECRET:?ACCESS_TOKEN_SECRET is required}
+      # ── core / server ─────────────────────────────────────────────────────────
+      PORT: ${PORT:-4000}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-}
+      CORS_ORIGIN: ${CORS_ORIGIN:-*}
+      DEFAULT_AUTH_PROVIDER: ${DEFAULT_AUTH_PROVIDER:-}
       CONTENT_DELETE_MODE: ${CONTENT_DELETE_MODE:-soft}
-      # OpenTelemetry — OFF by default (bare deploys stay dark, no export warnings). The OTLP endpoints
-      # are pre-wired to the `observability` profile's Alloy collector, so turning telemetry on is a
-      # single flag: set OTEL_SDK_DISABLED=false in .env and bring up `--profile observability`.
+      AGORA_ENV: ${AGORA_ENV:-}
+      AGORA_SOURCE_URL: ${AGORA_SOURCE_URL:-}
+      LOG_LEVEL: ${LOG_LEVEL:-}
+      LOG_CONSOLE: ${LOG_CONSOLE:-}
+      # ── operators (admin god-view allowlist) ──────────────────────────────────
+      OPERATOR_EMAILS: ${OPERATOR_EMAILS:-}
+      OPERATOR_USER_IDS: ${OPERATOR_USER_IDS:-}
+      # ── rate limiting ─────────────────────────────────────────────────────────
+      RATE_LIMIT_TRUSTED_HOPS: ${RATE_LIMIT_TRUSTED_HOPS:-1}
+      RATE_LIMIT_MAX: ${RATE_LIMIT_MAX:-}
+      RATE_LIMIT_AUTH_MAX: ${RATE_LIMIT_AUTH_MAX:-}
+      REDIS_URL: ${REDIS_URL:-}
+      # ── Supabase (auth + storage; optional) ───────────────────────────────────
+      SUPABASE_URL: ${SUPABASE_URL:-}
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY:-}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
+      # ── storage (S3 / MinIO) ──────────────────────────────────────────────────
+      STORAGE_PROVIDER: ${STORAGE_PROVIDER:-}
+      S3_ENDPOINT: ${S3_ENDPOINT:-}
+      S3_PUBLIC_URL: ${S3_PUBLIC_URL:-}
+      S3_BUCKET: ${S3_BUCKET:-agora}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
+      S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-true}
+      # ── native-auth email (Postmark) ──────────────────────────────────────────
+      POSTMARK_SERVER_TOKEN: ${POSTMARK_SERVER_TOKEN:-}
+      AUTH_EMAIL_FROM: ${AUTH_EMAIL_FROM:-}
+      POSTMARK_MESSAGE_STREAM: ${POSTMARK_MESSAGE_STREAM:-}
+      AUTH_EMAIL_LINK_BASE: ${AUTH_EMAIL_LINK_BASE:-}
+      AUTH_EMAIL_LINK_ALLOWED_ORIGINS: ${AUTH_EMAIL_LINK_ALLOWED_ORIGINS:-}
+      # ── internal endpoints (cron + scorer write-back) ─────────────────────────
+      CRON_SECRET: ${CRON_SECRET:-}
+      MODERATION_SERVICE_SECRET: ${MODERATION_SERVICE_SECRET:-}
+      # ── social graph (Neo4j) ── NEO4J_URI is overridden to the compose service name (the .env value
+      # uses localhost for host-side dev, which inside a container is the container itself).
+      NEO4J_URI: ${NEO4J_URI_DOCKER:-bolt://neo4j:7687}
+      NEO4J_AUTH: ${NEO4J_AUTH:-}
+      NEO4J_DATABASE: ${NEO4J_DATABASE:-}
+      # ── AI (optional) ─────────────────────────────────────────────────────────
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      VOYAGE_API_KEY: ${VOYAGE_API_KEY:-}
+      # ── web push (VAPID; optional) ────────────────────────────────────────────
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-}
+      # ── OpenTelemetry — OFF by default; endpoints pre-wired to the observability profile's Alloy.
+      # Turn on with OTEL_SDK_DISABLED=false + `--profile observability`.
       OTEL_SDK_DISABLED: ${OTEL_SDK_DISABLED:-true}
       OTEL_TRACES_ENDPOINT: ${OTEL_TRACES_ENDPOINT:-http://alloy:4318/v1/traces}
       OTEL_METRICS_ENDPOINT: ${OTEL_METRICS_ENDPOINT:-http://alloy:4318/v1/metrics}
@@ -123,11 +177,24 @@ services:
   secure-chat:
     image: agoraserver/agora-secure-chat:${AGORA_TAG:-latest}
     profiles: ["secure-chat", "full"]
-    env_file: .env
+    # NO env_file — explicit contract (see the agora service). secure-chat persists secure_* to
+    # DATABASE_URL and uses Redis as its fail-closed suspension index (hard dep — depends_on below). The
+    # MAX_SECURE_*/SECURE_RESTORE_* ciphertext caps are omitted → they use their code defaults; override
+    # by adding them here.
     environment:
-      # Distinct service.name so secure-chat is its own service in Grafana — the shared @agora/core YAML
-      # defaults to agora-api, and env_file would inject the API's SERVICE_NAME here. This override wins
-      # (instrument.ts has the same fallback for non-compose runs).
+      # ── required (deploy fails if unset — @agora/core validates these at import) ──
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      ACCESS_TOKEN_SECRET: ${ACCESS_TOKEN_SECRET:?ACCESS_TOKEN_SECRET is required}
+      # ── secure-chat runtime ──
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      SECURE_CHAT_PORT: ${SECURE_CHAT_PORT:-4002}
+      CORS_ORIGIN: ${CORS_ORIGIN:-*}
+      CRON_SECRET: ${CRON_SECRET:-}
+      AGORA_SOURCE_URL: ${AGORA_SOURCE_URL:-}
+      LOG_LEVEL: ${LOG_LEVEL:-}
+      LOG_CONSOLE: ${LOG_CONSOLE:-}
+      # Distinct service.name so secure-chat is its own service in Grafana (the shared @agora/core YAML
+      # defaults to agora-api). instrument.ts has the same fallback for non-compose runs.
       SERVICE_NAME: ${SECURE_CHAT_SERVICE_NAME:-agora-secure-chat}
       # OpenTelemetry — same off-by-default + Alloy-pre-wired model as the api (see the agora service).
       OTEL_SDK_DISABLED: ${OTEL_SDK_DISABLED:-true}
@@ -146,7 +213,7 @@ services:
   scorer-toxicity:
     image: agoraserver/agora-scorer-model-server:${AGORA_TAG:-latest}
     profiles: ["scorer", "full"]
-    env_file: .env
+    # NO env_file — this model server is self-contained; it reads only the vars below (no DB / secrets).
     environment:
       SCORER_MODEL: ${SCORER_TOXICITY_MODEL:-s-nlp/roberta_toxicity_classifier}
       SCORER_MODEL_KIND: toxicity
@@ -170,7 +237,7 @@ services:
   scorer-relationship:
     image: agoraserver/agora-scorer-model-server:${AGORA_TAG:-latest}
     profiles: ["scorer", "full"]
-    env_file: .env
+    # NO env_file — this model server is self-contained; it reads only the vars below (no DB / secrets).
     environment:
       SCORER_MODEL: ${SCORER_RELATIONSHIP_MODEL:-cardiffnlp/twitter-roberta-base-sentiment-latest}
       SCORER_MODEL_KIND: relationship
@@ -194,8 +261,23 @@ services:
   scorer-worker:
     image: agoraserver/agora-scorer-worker:${AGORA_TAG:-latest}
     profiles: ["scorer", "full"]
-    env_file: .env
+    # NO env_file — explicit contract. The worker consumes pgmq (DATABASE_URL), mints a token to call the
+    # API write-back (ACCESS_TOKEN_SECRET + MODERATION_SERVICE_SECRET), adjudicates with Haiku
+    # (ANTHROPIC_API_KEY), and writes social edges (NEO4J_*). Scorer tuning knobs default in config.py.
     environment:
+      # ── required (deploy fails if unset) ──
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      ACCESS_TOKEN_SECRET: ${ACCESS_TOKEN_SECRET:?ACCESS_TOKEN_SECRET is required}
+      # ── write-back + LLM adjudication (empty = that capability degrades, no crash) ──
+      MODERATION_SERVICE_SECRET: ${MODERATION_SERVICE_SECRET:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      MODERATION_BLOCK_AUTO_ACTION_THRESHOLD: ${MODERATION_BLOCK_AUTO_ACTION_THRESHOLD:-0.50}
+      MODERATION_REVIEW_AUTO_ACTION_THRESHOLD: ${MODERATION_REVIEW_AUTO_ACTION_THRESHOLD:-0.75}
+      SCORER_LISTEN_DATABASE_URL: ${SCORER_LISTEN_DATABASE_URL:-}
+      # ── social graph (Neo4j) — NEO4J_URI overridden to the compose service name below ──
+      NEO4J_AUTH: ${NEO4J_AUTH:-}
+      NEO4J_DATABASE: ${NEO4J_DATABASE:-}
+      # ── in-network service wiring ──
       API_BASE_URL: http://agora:4000
       SCORER_TOXICITY_URL: http://scorer-toxicity:8001
       SCORER_RELATIONSHIP_URL: http://scorer-relationship:8002
@@ -304,8 +386,9 @@ services:
   cron:
     image: agoraserver/agora-cron:${AGORA_TAG:-latest}
     profiles: ["supabase", "selfhost"]
-    env_file: .env
+    # NO env_file — cron only curls the API / secure-chat internal endpoints with the X-Cron-Secret header.
     environment:
+      CRON_SECRET: ${CRON_SECRET:-}
       AGORA_URL: http://agora:4000
       SECURE_CHAT_URL: ${SECURE_CHAT_URL:-http://secure-chat:4002}
     depends_on:
