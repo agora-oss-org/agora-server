@@ -92,6 +92,12 @@ const schema = z.object({
     if (typeof v === "string") return !["false", "0", "no", "off"].includes(v.toLowerCase());
     return v;
   }, z.boolean()),
+  // Content deletion semantics, deployment-wide. soft (default) = tombstone the row
+  // (deleted_at / user_deleted_at), hide it from reads, and KEEP its media in storage (the content is
+  // conceptually recoverable, so its objects must survive). hard = truly DELETE the row (FK cascades
+  // take dependents: a comment's reply subtree, an entity's comments/reactions/files rows) AND delete
+  // the media objects from storage (collected before the row delete; removal is async best-effort).
+  CONTENT_DELETE_MODE: z.preprocess((v) => (v === "" ? undefined : v), z.enum(["soft", "hard"]).default("soft")),
   // Web push (VAPID) — optional until push notifications are enabled. The public key is published to clients;
   // the private key and subject are used to sign the server's VAPID JWT with push service subscriptions.
   VAPID_PUBLIC_KEY: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
@@ -152,7 +158,15 @@ const schema = z.object({
   POSTMARK_API_BASE: z.preprocess((v) => (v === "" ? undefined : v), z.string().url().default("https://api.postmarkapp.com")),
   // Base URL the emailed confirm/reset links point at (your FRONT-END, which calls the verify endpoints).
   // Unset → http://localhost:5173 (dev). Set to your public app origin in production or the links 404.
+  // This is the DEFAULT/fallback base; per-front-end selection is layered on via the allowlist below.
   AUTH_EMAIL_LINK_BASE: z.preprocess((v) => (v === "" ? undefined : v), z.string().url().default("http://localhost:5173")),
+  // Native-auth link-base ALLOWLIST for multi-front-end deploys. Comma-separated app origins a client
+  // may request via the sign-up/reset/resend `emailRedirectTo` field (e.g.
+  // https://agora-oss.org,https://demo.agora-oss.org). The server ONLY builds emailed links to an
+  // allowlisted origin (open-redirect / phishing guard) and 400s a non-allowlisted emailRedirectTo.
+  // Unset → feature off: emailRedirectTo is ignored and links always use AUTH_EMAIL_LINK_BASE. Never
+  // trust an un-allowlisted client value. Empty=unset.
+  AUTH_EMAIL_LINK_ALLOWED_ORIGINS: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
 });
 
 export const env = schema.parse(process.env);

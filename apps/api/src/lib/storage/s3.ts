@@ -6,6 +6,7 @@ import {
   PutObjectCommand,
   CreateBucketCommand,
   PutBucketPolicyCommand,
+  DeleteObjectsCommand,
 } from "@aws-sdk/client-s3";
 import { env } from "../env.js";
 import { logger } from "../logger.js";
@@ -73,5 +74,18 @@ export class S3StorageProvider implements StorageProvider {
 
   publicUrl(key: string): string {
     return `${this.publicBase}/${key}`;
+  }
+
+  async remove(keys: string[]): Promise<void> {
+    // S3 caps DeleteObjects at 1000 keys per request; real callers send a handful.
+    for (let i = 0; i < keys.length; i += 1000) {
+      const chunk = keys.slice(i, i + 1000);
+      await this.client.send(
+        new DeleteObjectsCommand({
+          Bucket: this.bucket,
+          Delete: { Objects: chunk.map((Key) => ({ Key })), Quiet: true },
+        }),
+      );
+    }
   }
 }

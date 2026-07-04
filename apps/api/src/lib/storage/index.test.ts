@@ -29,7 +29,11 @@ vi.mock("@aws-sdk/client-s3", () => {
     __type = "PutBucketPolicy";
     constructor(public input: unknown) {}
   }
-  return { S3Client, PutObjectCommand, CreateBucketCommand, PutBucketPolicyCommand, __calls, __onSend };
+  class DeleteObjectsCommand {
+    __type = "DeleteObjects";
+    constructor(public input: unknown) {}
+  }
+  return { S3Client, PutObjectCommand, CreateBucketCommand, PutBucketPolicyCommand, DeleteObjectsCommand, __calls, __onSend };
 });
 
 const mock = awsS3 as unknown as {
@@ -146,5 +150,34 @@ describe("S3StorageProvider", () => {
     mock.__calls.length = 0;
     await p.init();
     expect(mock.__calls).toHaveLength(0);
+  });
+
+  it("remove() sends one DeleteObjectsCommand with all keys (Quiet)", async () => {
+    const p = new S3StorageProvider();
+    await p.remove(["proj/images/a/original.png", "proj/images/a/small.png"]);
+    const dels = mock.__calls.filter((c) => c.__type === "DeleteObjects");
+    expect(dels).toHaveLength(1);
+    expect(dels[0]!.input).toMatchObject({
+      Bucket: "agora",
+      Delete: {
+        Objects: [{ Key: "proj/images/a/original.png" }, { Key: "proj/images/a/small.png" }],
+        Quiet: true,
+      },
+    });
+  });
+
+  it("remove() is a no-op for an empty key list", async () => {
+    const p = new S3StorageProvider();
+    await p.remove([]);
+    expect(mock.__calls).toHaveLength(0);
+  });
+
+  it("remove() chunks batches at the S3 1000-key limit", async () => {
+    const p = new S3StorageProvider();
+    await p.remove(Array.from({ length: 1001 }, (_, i) => `k/${i}`));
+    const dels = mock.__calls.filter((c) => c.__type === "DeleteObjects");
+    expect(dels).toHaveLength(2);
+    const sizes = dels.map((d) => (d.input as { Delete: { Objects: unknown[] } }).Delete.Objects.length);
+    expect(sizes).toEqual([1000, 1]);
   });
 });

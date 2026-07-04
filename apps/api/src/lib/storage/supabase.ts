@@ -25,4 +25,10 @@ export class SupabaseStorageProvider implements StorageProvider {
   publicUrl(key: string): string {
     return getSupabase().storage.from(BUCKET).getPublicUrl(key).data.publicUrl;
   }
+
+  async remove(keys: string[]): Promise<void> {
+    if (!keys.length) return;
+    const { error } = await getSupabase().storage.from(BUCKET).remove(keys);
+    if (error) throw new Error(`storage remove failed: ${error.message}`);
+  }
 }

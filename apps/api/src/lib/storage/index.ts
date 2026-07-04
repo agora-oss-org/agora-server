@@ -19,4 +19,9 @@ export function resetStorageForTest(): void {
   provider = null;
 }
 
+/** Test-only: inject a fake provider (integration tests run hermetic — no real storage backend). */
+export function setStorageForTest(p: StorageProvider | null): void {
+  provider = p;
+}
+
 export type { StorageProvider } from "./provider.js";

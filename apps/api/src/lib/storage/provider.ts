@@ -8,4 +8,6 @@ export interface StorageProvider {
   put(key: string, bytes: Uint8Array, contentType: string): Promise<string>;
   /** The browser-reachable public URL for an already-stored `key` (no I/O). */
   publicUrl(key: string): string;
+  /** Batch-delete stored objects. Missing keys are not an error (idempotent); empty list is a no-op. */
+  remove(keys: string[]): Promise<void>;
 }
