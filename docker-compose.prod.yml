@@ -47,6 +47,9 @@ services:
       # Address Neo4j by service name on the compose network (.env's NEO4J_URI uses localhost for
       # host-side dev, which inside a container is the container itself). Override via NEO4J_URI_DOCKER.
       NEO4J_URI: ${NEO4J_URI_DOCKER:-bolt://neo4j:7687}
+      # Content deletion semantics: soft (default — tombstone rows, keep media) | hard (truly DELETE
+      # rows AND remove their media objects from storage). See .env.prod.example for the full contract.
+      CONTENT_DELETE_MODE: ${CONTENT_DELETE_MODE:-soft}
       # OpenTelemetry — OFF by default (bare deploys stay dark, no export warnings). The OTLP endpoints
       # are pre-wired to the `observability` profile's Alloy collector, so turning telemetry on is a
       # single flag: set OTEL_SDK_DISABLED=false in .env and bring up `--profile observability`.
