@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`/propagate` doc & config propagation system**: `docs/PROPAGATION.yaml` (the map of what
+  mirrors what), a `check:propagation` drift-checker CLI in `@agora/api` (`--diff <base>` /
+  full-scan, `--json`) that derives typed obligations from the branch diff, and the
+  `.claude/skills/propagate` skill that drafts mirror edits (env templates, compose, docs, wiki,
+  CHANGELOG) via agent fan-out, propose-then-approve. Surfaced real drift on first run
+  (`CONTENT_DELETE_MODE` was missing from `docker-compose.dev.yml`).
 - **`CONTENT_DELETE_MODE` (soft|hard) — configurable content-delete semantics** for entities,
   comments, chat messages, and events. `soft` (default, previous behavior): the row is tombstoned
   (`deleted_at`/`user_deleted_at`), hidden from reads, and its media stays in storage (recoverable).

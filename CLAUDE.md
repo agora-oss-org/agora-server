@@ -261,7 +261,17 @@ url=$(grep '^DATABASE_URL=' .env | cut -d= -f2-); psql "$url" -v ON_ERROR_STOP=1
 #   seeders (not auto-discovered). See apps/api/README.md → "Seeding".
 pnpm seed
 pnpm seed:graph      # standalone manifest graph world (03-seed-engine.mjs) — NOT idempotent
+
+pnpm check:propagation           # (in apps/api) propagation drift checker — see docs/PROPAGATION.yaml
+pnpm check:propagation --diff X  # obligations arising from the diff vs ref X (what /propagate uses)
 ```
+
+**Propagation (docs/config mirrors).** One change often has many mirrors (env var →
+`.env.*.example` ×3, compose ×3, docs, wiki). `docs/PROPAGATION.yaml` maps what mirrors what;
+the `/propagate` skill (`.claude/skills/propagate/`) runs the checker over the branch diff,
+fans out drafting agents per audience cluster, and presents a propose-then-approve checklist.
+When you add an env var / endpoint / compose service by hand, consult the map — or run
+`/propagate` before finishing the branch.
 
 > ⚠️ `@agora/api` depends on `@agora-server/contract`'s built `dist/` (consumed via its `exports` map), so
 > run `pnpm --filter @agora-server/contract build` (or `pnpm -r build`) before typechecking the api from a
