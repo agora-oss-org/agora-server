@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`CONTENT_DELETE_MODE` (soft|hard) — configurable content-delete semantics** for entities,
+  comments, chat messages, and events. `soft` (default, previous behavior): the row is tombstoned
+  (`deleted_at`/`user_deleted_at`), hidden from reads, and its media stays in storage (recoverable).
+  `hard`: the row is truly `DELETE`d — FK cascades take dependents (an entity's comments/reactions,
+  a comment's reply subtree) — **and the uploaded media is removed from storage** (MinIO/S3 via
+  `DeleteObjects`, Supabase Storage via `remove`); previously deleted posts orphaned their images in
+  the bucket forever. Object keys are collected before the row delete (`lib/storage-cleanup.ts` —
+  an entity gathers its comments' files, a comment its whole reply subtree via recursive CTE) and
+  removed async best-effort (a storage failure logs and never fails the request). Moderation
+  removal and account deletion are deliberately unaffected. New `StorageProvider.remove(keys)` on
+  the storage seam; knob documented in all three `.env.*.example` templates.
 - **Postmark transactional-email transport for native auth.** Native-auth confirmation, password-reset,
   and account-deletion emails are now actually *sent* when Postmark is configured — previously the only
   `EmailSender` was the dev `ConsoleEmailSender`, which merely logged the confirm link (so a native-auth
@@ -19,6 +30,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and `AUTH_EMAIL_LINK_BASE` (front-end origin for the emailed links; now validated in the env schema
   instead of read ad hoc). Documented in all three `.env.*.example` templates and `docs/SELF-HOSTING.md`.
   Supabase-backed projects are unaffected (Supabase Auth sends its own emails).
+- **Per-front-end email links for native auth (multi-front-end deploys).** Sign-up, password-reset, and
+  resend-confirmation requests accept an optional `emailRedirectTo` (the client's app origin), so a
+  deployment with several front-ends (e.g. `agora-oss.org` + `demo.agora-oss.org`) sends each user a link
+  back to the site they signed up on. **Security:** the server only builds links to an origin on the new
+  `AUTH_EMAIL_LINK_ALLOWED_ORIGINS` allowlist and rejects a non-allowlisted `emailRedirectTo` with `400`
+  `auth/email-redirect-not-allowed` (open-redirect / phishing guard — a client-supplied link base is never
+  trusted unvalidated). Allowlist unset → feature off, links always use `AUTH_EMAIL_LINK_BASE`. Contract
+  change: optional `emailRedirectTo` on `signUpSchema`/`emailSchema` (Supabase-backed auth ignores it).
 
 ### Changed
 - **`MINIO_UPSTREAM` is now env-configurable in `docker-compose.prod.yml`**

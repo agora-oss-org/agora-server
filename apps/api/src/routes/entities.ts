@@ -9,6 +9,8 @@ import { requireAuth } from "../middleware/auth.js";
 import { db } from "../db/index.js";
 import { logger } from "../lib/logger.js";
 import { indexEntityAsync } from "../lib/embeddings.js";
+import { env } from "../lib/env.js";
+import { collectFileRows, removeMediaAsync } from "../lib/storage-cleanup.js";
 import * as webhooks from "../lib/webhooks.js";
 import { notifyOnEntityMentions, notifyOnReaction } from "../lib/notifications.js";
 import { parseBracketQuery, buildFeedConditions, buildFeedOrder } from "../lib/entity-filters.js";
@@ -273,8 +275,16 @@ export const entityRoutes = new Hono<{ Variables: Variables }>()
   })
   .delete("/:id", requireAuth, async (c) => {
     const row = await ownedEntity(c);
-    await db.update(entities).set({ deletedAt: new Date() }).where(eq(entities.id, row.id));
-    logger.info({ projectId: c.var.projectId, entityId: row.id, userId: row.userId }, "entity: deleted");
+    if (env.CONTENT_DELETE_MODE === "hard") {
+      // Collect files rows (the entity's own + its comments') BEFORE the delete — the FK cascade
+      // takes them with the row, and only the API can reach the storage objects they point at.
+      const fileRows = await collectFileRows(c.var.projectId, { entityId: row.id });
+      await db.delete(entities).where(eq(entities.id, row.id));
+      removeMediaAsync(fileRows, `entity ${row.id}`);
+    } else {
+      await db.update(entities).set({ deletedAt: new Date() }).where(eq(entities.id, row.id));
+    }
+    logger.info({ projectId: c.var.projectId, entityId: row.id, userId: row.userId, mode: env.CONTENT_DELETE_MODE }, "entity: deleted");
     return c.json({ success: true });
   })
   // SDK (usePublishDraft) calls PATCH; POST kept for any legacy caller.

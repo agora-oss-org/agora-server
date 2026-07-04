@@ -12,6 +12,8 @@ import { createEventSchema, updateEventSchema, rsvpSchema, eventUserIdSchema, ev
 import { shapeEvent, shapeEventRsvp, shapeEventInvite, generateShortId, loadUsers, parseInclude } from "../lib/shape.js";
 import { isProjectAdmin } from "../lib/project-roles.js";
 import { removedPolicy, shouldHide } from "../lib/moderation-visibility.js";
+import { env } from "../lib/env.js";
+import { collectFileRows, removeMediaAsync } from "../lib/storage-cleanup.js";
 import { assertCanPostInSpace, assertCanReadSpace } from "../lib/space-access.js";
 import { isEventHost, canViewEvent, canRsvpGoing, wouldOrphanHosts } from "../lib/events-policy.js";
 import { storeImageFromUpload } from "../lib/images.js";
@@ -290,8 +292,15 @@ export const eventRoutes = new Hono<{ Variables: Variables }>()
   .delete("/:eventId", requireAuth, async (c) => {
     const row = await getEventOr404(c, c.req.param("eventId"));
     requireEventManage(c, await loadHostIds(row.id));
-    await db.update(events).set({ deletedAt: new Date() }).where(eq(events.id, row.id));
-    logger.info({ projectId: c.var.projectId, eventId: row.id, userId: c.var.auth!.userId }, "event: deleted");
+    if (env.CONTENT_DELETE_MODE === "hard") {
+      // Collect files rows (cover image) BEFORE the delete — the FK cascade takes them with the row.
+      const fileRows = await collectFileRows(c.var.projectId, { eventId: row.id });
+      await db.delete(events).where(eq(events.id, row.id));
+      removeMediaAsync(fileRows, `event ${row.id}`);
+    } else {
+      await db.update(events).set({ deletedAt: new Date() }).where(eq(events.id, row.id));
+    }
+    logger.info({ projectId: c.var.projectId, eventId: row.id, userId: c.var.auth!.userId, mode: env.CONTENT_DELETE_MODE }, "event: deleted");
     return c.body(null, 204);
   })
   .post("/:eventId/cancel", requireAuth, async (c) => {

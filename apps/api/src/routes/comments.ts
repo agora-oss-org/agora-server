@@ -12,6 +12,8 @@ import { requireAuth } from "../middleware/auth.js";
 import { db } from "../db/index.js";
 import { logger } from "../lib/logger.js";
 import { comments, reactions } from "../db/schema/index.js";
+import { env } from "../lib/env.js";
+import { collectFileRows, removeMediaAsync } from "../lib/storage-cleanup.js";
 import { readPagination, paginate } from "../http/envelope.js";
 import { shapeComment, parseInclude, attachUserReactions, loadUsers } from "../lib/shape.js";
 import {
@@ -207,10 +209,18 @@ export const commentRoutes = new Hono<{ Variables: Variables }>()
   })
   .delete("/:id", requireAuth, async (c) => {
     const row = await ownedComment(c);
-    // Reddit-style soft delete: keep the row (preserves thread), blank via user_deleted_at.
-    const now = new Date();
-    await db.update(comments).set({ deletedAt: now, userDeletedAt: now }).where(eq(comments.id, row.id));
-    logger.info({ projectId: c.var.projectId, commentId: row.id, userId: row.userId }, "comment: deleted");
+    if (env.CONTENT_DELETE_MODE === "hard") {
+      // Collect the reply subtree's files BEFORE the delete — the parent_id cascade takes every
+      // descendant comment (and their files rows) with this row.
+      const fileRows = await collectFileRows(c.var.projectId, { commentId: row.id });
+      await db.delete(comments).where(eq(comments.id, row.id));
+      removeMediaAsync(fileRows, `comment ${row.id}`);
+    } else {
+      // Reddit-style soft delete: keep the row (preserves thread), blank via user_deleted_at.
+      const now = new Date();
+      await db.update(comments).set({ deletedAt: now, userDeletedAt: now }).where(eq(comments.id, row.id));
+    }
+    logger.info({ projectId: c.var.projectId, commentId: row.id, userId: row.userId, mode: env.CONTENT_DELETE_MODE }, "comment: deleted");
     return c.json({ success: true });
   })
   // SDK (useFetchCommentReactions) — paginated list of who reacted, gated by comment read access.

@@ -12,6 +12,8 @@ import {
 } from "../db/schema/index.js";
 import { shapeConversation, shapeConversationMember, shapeChatMessage, shapeFile, shapeUser, loadMessageFiles, shapeConversationPreview, pickOtherMembers } from "../lib/shape.js";
 import { storeUpload } from "../lib/images.js";
+import { env } from "../lib/env.js";
+import { collectFileRows, removeMediaAsync } from "../lib/storage-cleanup.js";
 import {
   parseBody, createConversationSchema, directConversationSchema, updateConversationSchema,
   sendMessageSchema, editMessageSchema, messageReactionSchema, reportMessageSchema,
@@ -420,7 +422,15 @@ export const chatRoutes = new Hono<{ Variables: Variables }>()
     if (!msg) throw Errors.notFound("chat/message-not-found", "Message not found");
     if (msg.userId !== c.var.auth!.userId) throw Errors.forbidden("chat/not-author", "Not the message author");
     const now = new Date();
-    await db.update(chatMessages).set({ userDeletedAt: now }).where(eq(chatMessages.id, msg.id));
+    if (env.CONTENT_DELETE_MODE === "hard") {
+      // Collect files rows BEFORE the delete — the FK cascade takes them with the message row.
+      const fileRows = await collectFileRows(c.var.projectId, { chatMessageId: msg.id });
+      await db.delete(chatMessages).where(eq(chatMessages.id, msg.id));
+      removeMediaAsync(fileRows, `chat message ${msg.id}`);
+    } else {
+      await db.update(chatMessages).set({ userDeletedAt: now }).where(eq(chatMessages.id, msg.id));
+    }
+    // Same socket event in both modes — clients drop the message from view either way.
     emitToConversation(convo.id, "message:deleted", { messageId: msg.id, conversationId: convo.id, userDeletedAt: now });
     return c.json({ success: true });
   })
