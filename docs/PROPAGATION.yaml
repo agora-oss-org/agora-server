@@ -1,0 +1,58 @@
+# What mirrors what — the propagation map consumed by the /propagate skill and
+# `pnpm --filter @agora/api check:propagation` (apps/api/scripts/check-propagation.ts).
+# Design: docs/superpowers/specs/2026-07-03-propagate-doc-sync-design.md
+#
+# Obligations derived from this map are ADVISORY: not every subject belongs in every
+# target (secrets get no compose default; dev-only vars skip prod). The /propagate
+# checklist marks unresolved obligations "intentionally skipped?" for the user to rule
+# on; recurring rulings get recorded under `exceptions:` so they stop resurfacing.
+
+env-var:
+  detect:
+    - packages/core/src/lib/env.ts
+  mechanical:
+    - .env.dev.example
+    - .env.selfhost.example
+    - .env.prod.example
+    - docker-compose.dev.yml
+    - docker-compose.yml
+    - docker-compose.prod.yml
+  prose:
+    - docs/SELF-HOSTING.md
+    - README.md
+    - CLAUDE.md
+    - wiki/Deployment.md
+
+endpoint:
+  detect:
+    - apps/api/src/routes/**
+    - apps/secure-chat/src/routes/**
+  prose:
+    - docs/MANIFEST.md
+    - docs/MODELS.md
+    - wiki/API-Contract.md
+
+compose:
+  detect:
+    - docker-compose.dev.yml
+    - docker-compose.yml
+    - docker-compose.prod.yml
+    - deploy/**
+  prose:
+    - docs/SELF-HOSTING.md
+    - README.md
+    - wiki/Deployment.md
+
+catch-all:
+  detect:
+    - apps/**
+    - packages/**
+    - services/**
+  prose:
+    - CHANGELOG.md
+
+exceptions: []
+# Example entry (grows over time as the user rules on skipped obligations):
+#   - subject: RATE_LIMIT_WINDOW_SECONDS
+#     target: docker-compose.prod.yml
+#     reason: tuned via .env only; compose never overrides it
