@@ -156,8 +156,17 @@ process.exit(0);
 function safeHost(url) {
   try { return new URL(url).host; } catch { return "(unparseable DATABASE_URL)"; }
 }
+// `host/dbname` — the local-db confirm token, so the operator disambiguates WHICH database on a host
+// that may serve several (e.g. `localhost:5432/postgres` vs `.../agora_test`).
+function safeHostDb(url) {
+  try {
+    const u = new URL(url);
+    const db = decodeURIComponent(u.pathname).replace(/^\//, "");
+    return db ? `${u.host}/${db}` : u.host;
+  } catch { return "(unparseable DATABASE_URL)"; }
+}
 // Supabase pooler users are `postgres.<projectref>`; fall back to SUPABASE_URL's first host label,
-// then the DB host — whatever yields a stable string for the type-to-confirm gate.
+// then the DB host/dbname — whatever yields a stable string for the type-to-confirm gate.
 function projectRef(url) {
   try {
     const u = new URL(url);
@@ -167,7 +176,7 @@ function projectRef(url) {
   if (process.env.SUPABASE_URL) {
     try { return new URL(process.env.SUPABASE_URL).host.split(".")[0]; } catch { /* fall through */ }
   }
-  return safeHost(url);
+  return safeHostDb(url);
 }
 function die(msg) {
   console.error(`✗ ${msg}`);

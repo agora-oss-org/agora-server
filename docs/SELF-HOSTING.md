@@ -107,7 +107,12 @@ profile-gated, so a bare `docker compose up` starts nothing.)
    > `docker compose --profile selfhost down -v` (⚠️ wipes local DB + MinIO data) then `up` again.
 
    For a dev box you can instead `node scripts/genesis.mjs` (drop → rebuild → seed); it stamps the seed
-   project's `auth_provider` from `DEFAULT_AUTH_PROVIDER`.
+   project's `auth_provider` from `DEFAULT_AUTH_PROVIDER`. When `NEO4J_URI` is set it also **resets the
+   social graph** (`NEO4J_DATABASE ?? "neo4j"`) so stale `INTERACTED`/`FOLLOWS`/… edges can't outlive the
+   freshly-rebuilt Postgres rows — a **secondary** db is dropped + recreated, the **default/home** db is
+   emptied in place with `DETACH DELETE` (recreating the home db at runtime isn't safe on DozerDB). It
+   **confirms first** (type the `host/db` graph ref; `--force` skips, non-interactive without `--force`
+   refuses), is best-effort (a down Neo4j warns but doesn't fail the run), and is skipped under `--test`.
 
 4. **Bootstrap the first admin.** A virgin DB has no users, and native auth gates sign-in on email
    confirmation. Unless you've configured Postmark (`POSTMARK_SERVER_TOKEN` + a Postmark-verified

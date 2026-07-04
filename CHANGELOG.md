@@ -8,6 +8,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **`drop`/`genesis` type-to-confirm token now includes the database name** for local targets —
+  `localhost:5432/postgres` instead of a bare `localhost:5432` — so the operator disambiguates which
+  database on a host that serves several (dev vs test). Supabase targets are unchanged (they confirm
+  with the project ref). (`apps/api/scripts/drop.mjs`.)
+- **`genesis` now also resets the social graph (Neo4j/DozerDB).** A genesis run rebuilds Postgres
+  from nothing, so leaving stale graph edges (`INTERACTED`/`FOLLOWS`/…) behind would desync `/social/*`
+  from the freshly-reseeded rows. When `NEO4J_URI` is set, the final step resets the database the app
+  reads (`NEO4J_DATABASE ?? "neo4j"`). Strategy is chosen by the database's **role**: a **secondary** db
+  gets a true `DROP DATABASE` + `CREATE DATABASE` (from-nothing — also clears constraints/indexes, which
+  the scorer recreates on startup); the **default/home** db is emptied in place with `DETACH DELETE`
+  (constraints kept), because recreating the home db at runtime on DozerDB strands it in
+  `currentStatus:"unknown"` until a server restart. A non-empty graph is **confirmed first** — type the
+  `host/db` graph ref (same UX as the Postgres `drop.mjs` gate; Neo4j is a separate datastore, often a
+  different host); `--force` skips it, a non-interactive run without `--force` refuses, and declining
+  leaves the graph intact. A missing graph db is a clean no-op (the scorer creates it on startup). It is
+  **dev-only** (skipped under `--test`, whose env has no dedicated graph) and **best-effort** (a
+  down/unreachable Neo4j warns but does not fail the run — the schema rebuild is genesis's core
+  contract). Unset `NEO4J_URI` → skipped. (`apps/api/scripts/genesis.mjs`.)
 - **`CONTENT_DELETE_MODE` now defaults to `hard`** (was `soft`). Out of the box, deleting an
   entity / comment / chat message / event now truly `DELETE`s the row — FK cascades take dependents
   (a comment's reply subtree, an entity's comments/reactions) — and removes its uploaded media from

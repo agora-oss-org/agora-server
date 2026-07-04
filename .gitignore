@@ -8,6 +8,7 @@ dist/
 !.env.*.example
 *.log
 .DS_Store
+.playwright-mcp/
 
 # Neo4j — runtime data (Docker volume) and plugin jars (downloaded on setup, not tracked)
 neo4j/data/

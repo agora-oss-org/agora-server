@@ -198,7 +198,7 @@ function BarSeries({
       ) : (
         <div className="mt-4 flex h-40 items-end gap-1">
           {data.map((d) => (
-            <div key={d.date} className="group flex min-w-0 flex-1 flex-col items-center justify-end">
+            <div key={d.date} className="group flex h-full min-w-0 flex-1 flex-col items-center justify-end">
               <div
                 className="w-full rounded-t bg-primary/70 transition-colors group-hover:bg-primary"
                 style={{ height: `${(d.value / max) * 100}%` }}
@@ -299,7 +299,7 @@ function ModerationChart({ series, days }: { series: { hour: string; opened: num
         <>
           <div className="mt-4 flex h-32 items-end gap-1">
             {opened.map((d) => (
-              <div key={d.date} className="group flex min-w-0 flex-1 items-end justify-center gap-0.5">
+              <div key={d.date} className="group flex h-full min-w-0 flex-1 items-end justify-center gap-0.5">
                 <div className="w-1/2 rounded-t bg-primary/70 transition-colors group-hover:bg-primary"
                   style={{ height: `${(d.value / max) * 100}%` }} title={`${dayLabel(d.date)}: ${d.value} opened`} />
                 <div className="w-1/2 rounded-t bg-faint/50 transition-colors group-hover:bg-faint"
