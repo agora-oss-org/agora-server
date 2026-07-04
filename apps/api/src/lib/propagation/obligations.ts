@@ -70,8 +70,15 @@ export function deriveEnvObligations(input: EnvObligationInput): Obligation[] {
   for (const key of input.removedKeys) {
     for (const { t, kind } of targets) {
       const content = input.targets[t];
-      if (content == null) continue; // unreadable targets already surface via addedKeys or the CLI
-      const still = kind === "mechanical" ? mechanicalHas(t, content, key) ?? false : mentions(content, key);
+      if (content == null) {
+        out.push({ cls: "env-var", subject: key, kind, target: t, status: "unparseable", note: "target unreadable — removed-var stale check skipped" });
+        continue;
+      }
+      const still = kind === "mechanical" ? mechanicalHas(t, content, key) : mentions(content, key);
+      if (still == null) {
+        out.push({ cls: "env-var", subject: key, kind, target: t, status: "unparseable", note: "no extractor for this target type — removed-var stale check skipped" });
+        continue;
+      }
       if (still) {
         out.push({ cls: "env-var", subject: key, kind, target: t, status: "missing", note: "stale reference to removed var — scrub it" });
       }

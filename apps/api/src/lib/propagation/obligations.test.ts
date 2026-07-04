@@ -54,6 +54,24 @@ describe("deriveEnvObligations", () => {
     expect(obs).toHaveLength(2); // only the two targets still referencing it
     expect(obs.every((o) => o.status === "missing" && /stale/.test(o.note ?? ""))).toBe(true);
   });
+
+  it("never silently drops an unreadable target on a pure-removal diff", () => {
+    const obs = deriveEnvObligations({
+      addedKeys: [],
+      removedKeys: ["OLD_VAR"],
+      targets: {
+        ".env.dev.example": null,
+        "docker-compose.yml": "services: {}\n",
+        "docs/SELF-HOSTING.md": "nothing to see here\n",
+      },
+      cls: ENV_CLS,
+      exceptions: [],
+    });
+    expect(obs.find((o) => o.target === ".env.dev.example")?.status).toBe("unparseable");
+    // readable targets that genuinely no longer mention the removed key emit no row
+    expect(obs.find((o) => o.target === "docker-compose.yml")).toBeUndefined();
+    expect(obs.find((o) => o.target === "docs/SELF-HOSTING.md")).toBeUndefined();
+  });
 });
 
 describe("deriveEndpointObligations", () => {
