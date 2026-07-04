@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Logs + traces now report the ACTUAL running version, not a stale `0.14.0`.** The wonder-logger YAML
+  hardcoded `version: ${SERVICE_VERSION:-0.14.0}`, and nothing ever set `SERVICE_VERSION`, so every
+  service logged `version:"0.14.0"` regardless of the deployed code — a misleading footgun when
+  diagnosing "is the new build live?". The version is now injected **programmatically at runtime** from
+  `@agora/core`'s `package.json` (`lib/version.ts`, bumped in lockstep with the whole monorepo by
+  `scripts/release.sh`) via the new wonder-logger `overrides.version` / `overrides.serviceVersion`
+  (requires `@jenova-marie/wonder-logger@^2.1.0`). The `version` line was removed from both
+  `wonder-logger.yaml`s — no placeholder to go stale, no `SERVICE_VERSION` env to set.
+
 ### Added
 - **Per-front-end native-auth email links (`emailRedirectTo`)**: `sign-up`, `request-password-reset`,
   and `send-verification-email` now accept an optional `emailRedirectTo` (client app origin) so a

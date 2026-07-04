@@ -6,6 +6,7 @@
 // This is the ops-observability layer; it is deliberately independent of lib/metrics.ts / api_usage,
 // which remains the per-project PRODUCT metering behind the admin dashboard.
 import { createTelemetryFromConfig } from "@jenova-marie/wonder-logger";
+import { serviceVersion } from "@agora/core/lib/version";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 
@@ -13,4 +14,6 @@ import { dirname, resolve } from "node:path";
 const configPath = resolve(dirname(fileURLToPath(import.meta.url)), "../wonder-logger.yaml");
 
 // Honors otel.enabled in the YAML + the standard OTEL_SDK_DISABLED env var. Shutdown is auto-registered.
-export const sdk = createTelemetryFromConfig({ configPath, required: true });
+// `overrides.serviceVersion` stamps the RUNNING code version into the trace/metric resource (in lockstep
+// with the logger's version override); the YAML no longer carries a version. See @agora/core/lib/version.
+export const sdk = createTelemetryFromConfig({ configPath, required: true, overrides: { serviceVersion } });

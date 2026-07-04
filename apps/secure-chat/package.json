@@ -20,7 +20,7 @@
     "@agora-server/contract": "workspace:*",
     "@agora/core": "workspace:*",
     "@hono/node-server": "^1.19.14",
-    "@jenova-marie/wonder-logger": "^2.0.18",
+    "@jenova-marie/wonder-logger": "^2.1.0",
     "dotenv": "^17.4.2",
     "drizzle-orm": "^0.45.2",
     "hono": "^4.12.23",

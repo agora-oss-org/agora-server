@@ -32,7 +32,7 @@
   },
   "dependencies": {
     "@agora-server/contract": "workspace:*",
-    "@jenova-marie/wonder-logger": "^2.0.18",
+    "@jenova-marie/wonder-logger": "^2.1.0",
     "drizzle-orm": "^0.45.2",
     "hono": "^4.12.23",
     "ioredis": "^5.11.1",

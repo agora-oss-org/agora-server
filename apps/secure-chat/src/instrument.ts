@@ -11,6 +11,7 @@
 // → sdk.shutdown()) is auto-registered by wonder-logger.
 import { createTelemetryFromConfig } from "@jenova-marie/wonder-logger";
 import { wonderLoggerConfigPath } from "@agora/core/lib/wonder-logger-config";
+import { serviceVersion } from "@agora/core/lib/version";
 
 // Default this process to a distinct service name BEFORE the YAML is read (here and, later in index.ts,
 // by the @agora/core logger — imported after this module). The shared core YAML defaults service.name to
@@ -18,4 +19,6 @@ import { wonderLoggerConfigPath } from "@agora/core/lib/wonder-logger-config";
 // An explicit SERVICE_NAME in the environment still wins.
 if (!process.env.SERVICE_NAME) process.env.SERVICE_NAME = "agora-secure-chat";
 
-export const sdk = createTelemetryFromConfig({ configPath: wonderLoggerConfigPath, required: true });
+// `overrides.serviceVersion` stamps the RUNNING code version into the trace/metric resource (in lockstep
+// with the shared core logger's version override); the YAML no longer carries a version.
+export const sdk = createTelemetryFromConfig({ configPath: wonderLoggerConfigPath, required: true, overrides: { serviceVersion } });
