@@ -92,12 +92,12 @@ const schema = z.object({
     if (typeof v === "string") return !["false", "0", "no", "off"].includes(v.toLowerCase());
     return v;
   }, z.boolean()),
-  // Content deletion semantics, deployment-wide. soft (default) = tombstone the row
-  // (deleted_at / user_deleted_at), hide it from reads, and KEEP its media in storage (the content is
-  // conceptually recoverable, so its objects must survive). hard = truly DELETE the row (FK cascades
+  // Content deletion semantics, deployment-wide. hard (default) = truly DELETE the row (FK cascades
   // take dependents: a comment's reply subtree, an entity's comments/reactions/files rows) AND delete
   // the media objects from storage (collected before the row delete; removal is async best-effort).
-  CONTENT_DELETE_MODE: z.preprocess((v) => (v === "" ? undefined : v), z.enum(["soft", "hard"]).default("soft")),
+  // soft = tombstone the row (deleted_at / user_deleted_at), hide it from reads, and KEEP its media in
+  // storage (the content is conceptually recoverable, so its objects survive).
+  CONTENT_DELETE_MODE: z.preprocess((v) => (v === "" ? undefined : v), z.enum(["soft", "hard"]).default("hard")),
   // Web push (VAPID) — optional until push notifications are enabled. The public key is published to clients;
   // the private key and subject are used to sign the server's VAPID JWT with push service subscriptions.
   VAPID_PUBLIC_KEY: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),

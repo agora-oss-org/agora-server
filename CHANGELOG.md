@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **`CONTENT_DELETE_MODE` now defaults to `hard`** (was `soft`). Out of the box, deleting an
+  entity / comment / chat message / event now truly `DELETE`s the row — FK cascades take dependents
+  (a comment's reply subtree, an entity's comments/reactions) — and removes its uploaded media from
+  storage, rather than tombstoning the row and leaving the objects orphaned in the bucket. Set
+  `CONTENT_DELETE_MODE=soft` to keep the previous recoverable-tombstone behavior. Applied to the
+  code default (`packages/core/src/lib/env.ts`), all three `.env.*.example` templates, and the
+  `docker-compose.yml` / `docker-compose.prod.yml` interpolation defaults.
+
+### Fixed
+- **Admin Community dashboard: Growth (and Moderation-pressure) bar charts rendered empty despite
+  showing a non-zero total.** The per-day bars set a *percentage* height (`height: X%`), but their
+  flex-column wrappers had no definite height (the row is `items-end`, so columns sized to content
+  instead of stretching to the `h-40`/`h-32` row) — so every bar's percentage resolved against a 0px
+  parent and collapsed to 0px. The header total still read straight from the data, giving the
+  "count shows but chart is blank" symptom. Fixed by giving each column wrapper a definite height
+  (`h-full`) in `apps/admin/src/routes/CommunityPage.tsx` (`BarSeries` + `ModerationChart`).
+
 ## [0.16.4] - 2026-07-04
 
 ### Fixed

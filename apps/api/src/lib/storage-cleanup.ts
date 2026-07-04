@@ -1,8 +1,8 @@
 // Hard-delete media cleanup (CONTENT_DELETE_MODE=hard). A hard content delete removes DB rows via FK
 // cascades, but no cascade can reach MinIO/Supabase Storage — so the delete handlers collect the files
 // rows FIRST (collectFileRows), hard-delete the parent row, then remove the objects asynchronously
-// (removeMediaAsync, best-effort). Soft mode (the default) never calls into this module: tombstoned
-// content is conceptually recoverable, so its media must survive.
+// (removeMediaAsync, best-effort). Soft mode never calls into this module: tombstoned content is
+// conceptually recoverable, so its media must survive.
 import { and, eq, inArray, or, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { comments, files } from "../db/schema/index.js";

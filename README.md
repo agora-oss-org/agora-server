@@ -326,7 +326,7 @@ complete** — no stubbed endpoints remain.
 | Domain | Highlights |
 |---|---|
 | **entities** | feed with full filter grammar + **pluggable ranking** (`createdAt`/`hot`/`top`/`controversial`/`decay`/`gravity`/`wilson`/`bayesian`, per-project + per-request tunable, `sortDir`), CRUD, drafts, foreign/short-id lookup, reactions, saved state |
-| **comments** | threaded (adjacency list + recursive CTE full-tree endpoint), reactions, Reddit-style soft delete, `sortBy` (`createdAt`/`top`/`controversial` + `sortDir`; `new`/`old` kept as RFC 8594-deprecated aliases) |
+| **comments** | threaded (adjacency list + recursive CTE full-tree endpoint), reactions, configurable delete (`CONTENT_DELETE_MODE`: `hard` default = row + media removed; `soft` = Reddit-style tombstone), `sortBy` (`createdAt`/`top`/`controversial` + `sortDir`; `new`/`old` kept as RFC 8594-deprecated aliases) |
 | **users / follows** | profiles, follow graph + counts, suggestions |
 | **connections** | bidirectional friend-request state machine (none → pending → connected/declined) with directional status |
 | **spaces** | nested spaces (depth cap + cycle guard), membership (join/approve/ban/roles), rules, moderation queues, **digest config** |

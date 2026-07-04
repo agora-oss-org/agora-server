@@ -38,9 +38,9 @@ services:
       # for host-side dev, which inside a container is the container itself. The API reads NEO4J_URI
       # for the /social/* surfaces. Override via NEO4J_URI_DOCKER if Neo4j lives elsewhere.
       NEO4J_URI: ${NEO4J_URI_DOCKER:-bolt://neo4j:7687}
-      # Content deletion semantics: soft (default — tombstone rows, keep media) | hard (truly DELETE
-      # rows AND remove their media objects from storage). See .env.*.example for the full contract.
-      CONTENT_DELETE_MODE: ${CONTENT_DELETE_MODE:-soft}
+      # Content deletion semantics: hard (default — truly DELETE rows AND remove their media objects
+      # from storage) | soft (tombstone rows, keep media). See .env.*.example for the full contract.
+      CONTENT_DELETE_MODE: ${CONTENT_DELETE_MODE:-hard}
       # OpenTelemetry — OFF by default (bare deploys stay dark, no export warnings). The OTLP endpoints
       # are pre-wired to the `observability` profile's Alloy collector, so turning telemetry on is a
       # single flag: set OTEL_SDK_DISABLED=false in .env and bring up `--profile observability`.
