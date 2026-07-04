@@ -16,21 +16,36 @@ export function extractEnvSchemaKeys(source: string): string[] {
 
 // A var is "documented in a template" when it appears as an assignment — active
 // (`KEY=`) or a commented switch (`# KEY=`), the templates' LOCAL/CLOUD convention.
-const EXAMPLE_KEY = /^#?\s*([A-Z][A-Z0-9_]*)=/;
+// Group 1 = comment marker (or empty), group 2 = key, group 3 = the rest of the line
+// after `=` (needed below to tell a genuine switch from a shell-command example).
+const EXAMPLE_KEY = /^(#?)\s*([A-Z][A-Z0-9_]*)=(.*)$/;
 export function extractEnvExampleKeys(source: string): Set<string> {
   const keys = new Set<string>();
   for (const line of source.split("\n")) {
     const m = EXAMPLE_KEY.exec(line);
-    if (m && m[1]) keys.add(m[1]);
+    if (!m || !m[2]) continue;
+    const commented = m[1] === "#";
+    if (commented) {
+      // A commented line is either a real "uncomment to switch on" template value, or
+      // prose showing a shell command (e.g. `# AGORA_TAG=vX.Y.Z docker compose … up -d`).
+      // Genuine switch values only ever contain whitespace INSIDE a `<…>` placeholder
+      // span (e.g. `<Supabase → Settings → API → anon / publishable>`), so strip those
+      // spans first — any whitespace remaining means this is prose, not a switch.
+      const valueSansPlaceholders = (m[3] ?? "").replace(/<[^>]*>/g, "");
+      if (/\s/.test(valueSansPlaceholders)) continue;
+    }
+    keys.add(m[2]);
   }
   return keys;
 }
 
 // A var is "surfaced in compose" when a service sets it (`KEY:` under environment:)
-// or the file interpolates it from .env (`${KEY}` / `${KEY:-default}`). The
-// uppercase-only pattern filters out yaml config keys (image:, ports:, …).
+// or the file interpolates it from .env (`${KEY}` / `${KEY:-default}` / `${KEY:?msg}` /
+// `${KEY:+alt}`). The uppercase-only pattern filters out yaml config keys (image:, ports:, …).
 const COMPOSE_ENV_KEY = /^\s+([A-Z][A-Z0-9_]*):/;
-const COMPOSE_VAR_REF = /\$\{([A-Z][A-Z0-9_]*)(?::?-[^}]*)?\}/g;
+// Matches any `${VAR…}` expansion regardless of modifier (default `-`/`:-`, required
+// `?`/`:?`, alt `+`/`:+`, or none) — the name right after `${` is all we need.
+const COMPOSE_VAR_REF = /\$\{([A-Z][A-Z0-9_]*)/g;
 export function extractComposeKeys(source: string): Set<string> {
   const keys = new Set<string>();
   for (const line of source.split("\n")) {
