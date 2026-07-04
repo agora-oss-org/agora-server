@@ -12,6 +12,7 @@ import { requireAuth, optionalAuth } from "../middleware/auth.js";
 import { db } from "../db/index.js";
 import { profiles, userSuspensions, projects } from "../db/schema/index.js";
 import { getAuthProvider } from "../lib/auth/index.js";
+import { resolveEmailLinkBase } from "../lib/auth/email/sender.js";
 import { defaultUsername } from "../lib/profiles.js";
 import { mintSession, rotateRefreshToken, revokeRefreshToken, revokeAllForProfile } from "../lib/tokens.js";
 import { requestAccountDeletion, verifyAccountDeletionCode, resolveDeletionMode } from "../lib/account-deletion.js";
@@ -27,6 +28,18 @@ import {
 } from "../lib/validation.js";
 
 type ProfileRow = typeof profiles.$inferSelect;
+
+// Resolve + validate the client's requested email link base (native auth, multi-front-end). Returns the
+// allowlisted origin to build emailed links on, or 400s when a non-allowlisted origin was requested —
+// the open-redirect / phishing guard. Falls back to AUTH_EMAIL_LINK_BASE when the allowlist is off or no
+// value was sent. Called BEFORE any account/token mutation so a bad redirect fails closed and early.
+function requireEmailLinkBase(requested: string | undefined): string {
+  const base = resolveEmailLinkBase(requested);
+  if (base === null) {
+    throw Errors.badRequest("auth/email-redirect-not-allowed", "emailRedirectTo is not an allowed origin", "emailRedirectTo");
+  }
+  return base;
+}
 
 // Find a project's profile for a Supabase auth user.
 async function profileByAuthUser(projectId: string, authUserId: string): Promise<ProfileRow | null> {
@@ -72,13 +85,14 @@ export const authRoutes = new Hono<{ Variables: Variables }>()
   .post("/sign-up", async (c) => {
     const projectId = c.var.projectId;
     const body = parseBody(signUpSchema, await c.req.json().catch(() => ({})), "auth");
+    const linkBase = requireEmailLinkBase(body.emailRedirectTo);
     const check = await webhooks.validate(projectId, "user.created", { email: body.email, name: body.name, username: body.username });
     if (!check.valid) {
       logger.info({ projectId }, "auth: sign-up rejected by validation webhook");
       throw Errors.forbidden("auth/rejected", check.message ?? "Sign-up rejected by validation webhook");
     }
     const provider = await getAuthProvider(projectId);
-    const result = await provider.signUp(projectId, body.email, body.password);
+    const result = await provider.signUp(projectId, body.email, body.password, linkBase);
     if (result.status === "confirmation_required") {
       logger.info({ projectId }, "auth: sign-up pending email confirmation");
       return c.json({ status: "confirmation_required", email: body.email }, 200);
@@ -150,8 +164,9 @@ export const authRoutes = new Hono<{ Variables: Variables }>()
   })
   .post("/request-password-reset", async (c) => {
     const body = parseBody(emailSchema, await c.req.json().catch(() => ({})), "auth");
+    const linkBase = requireEmailLinkBase(body.emailRedirectTo);
     const provider = await getAuthProvider(c.var.projectId);
-    await provider.startPasswordReset(c.var.projectId, body.email);
+    await provider.startPasswordReset(c.var.projectId, body.email, linkBase);
     return c.json({ success: true });
   })
   .post("/reset-password", async (c) => {
@@ -176,8 +191,9 @@ export const authRoutes = new Hono<{ Variables: Variables }>()
   })
   .post("/send-verification-email", async (c) => {
     const body = parseBody(emailSchema, await c.req.json().catch(() => ({})), "auth");
+    const linkBase = requireEmailLinkBase(body.emailRedirectTo);
     const provider = await getAuthProvider(c.var.projectId);
-    await provider.resendConfirmation(c.var.projectId, body.email);
+    await provider.resendConfirmation(c.var.projectId, body.email, linkBase);
     return c.json({ success: true });
   })
   // Self-service account deletion (SDK useRequestAccountDeletion / confirmAccountDeletion). Step 1

@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Per-front-end native-auth email links (`emailRedirectTo`)**: `sign-up`, `request-password-reset`,
+  and `send-verification-email` now accept an optional `emailRedirectTo` (client app origin) so a
+  multi-front-end deployment (e.g. a marketing site + a demo) sends each user's confirm/reset link back
+  to the site they signed up on, instead of one server-wide `AUTH_EMAIL_LINK_BASE`. The requested origin
+  is validated against `AUTH_EMAIL_LINK_ALLOWED_ORIGINS`; a non-allowlisted origin 400s
+  (`auth/email-redirect-not-allowed`) rather than silently building a link on it (open-redirect guard).
+  Omitted, or the allowlist unset, falls back to `AUTH_EMAIL_LINK_BASE` as before. Supabase-backed auth
+  ignores the field (Supabase Auth sends its own emails). See `docs/SDK-EMAIL-REDIRECT-TO-SPEC.md` for
+  the SDK-side contract this unblocks.
 - **`/propagate` doc & config propagation system**: `docs/PROPAGATION.yaml` (the map of what
   mirrors what), a `check:propagation` drift-checker CLI in `@agora/api` (`--diff <base>` /
   full-scan, `--json`) that derives typed obligations from the branch diff, and the

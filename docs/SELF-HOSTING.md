@@ -285,9 +285,16 @@ full self-hosted auth surface.
 project-wide admin with no DB grant. So "the admin" is simply a user whose email is in `OPERATOR_EMAILS`;
 that's why bootstrapping is *create a native user* (step 4) *+ add its email to the allowlist*, not a
 migration. (Within-project owner/admin/steward grants are separate DB roles in `project_roles` — see
-`CLAUDE.md`.) There is no native-mode confirmation email transport by default: the `ConsoleEmailSender`
-logs confirm/reset links at `debug`, so either run `helpers/seed-native-auth-admin.mjs` (pre-confirmed) or
-read the link out of the server log.
+`CLAUDE.md`.) **Native-auth email transport:** confirmation / password-reset / resend mail is sent via
+**Postmark** when `POSTMARK_SERVER_TOKEN` is set (`AUTH_EMAIL_FROM` must be a Postmark-verified sender;
+`AUTH_EMAIL_LINK_BASE` is the front-end origin the emailed links point at). Without a token the default
+`ConsoleEmailSender` only *logs* confirm/reset links at `debug` — so for the first admin either run
+`helpers/seed-native-auth-admin.mjs` (pre-confirmed, no email round-trip) or read the link out of the
+server log. **Multiple front-ends** (e.g. `agora-oss.org` + `demo.agora-oss.org` on one API): set
+`AUTH_EMAIL_LINK_ALLOWED_ORIGINS` to the comma-separated list of allowed origins; each client sends its
+own origin as `emailRedirectTo` on sign-up/reset/resend, the server validates it against that allowlist
+(a non-allowlisted value is rejected `400 auth/email-redirect-not-allowed` — the open-redirect guard) and
+builds the link on it. Unset → links always use `AUTH_EMAIL_LINK_BASE`.
 
 ### Database (`DATABASE_URL`)
 

@@ -250,6 +250,12 @@ export const signUpSchema = z.object({
   password: z.string().min(8).max(128),
   name: z.string().max(120).optional(),
   username: z.string().min(1).max(60).optional(),
+  // NATIVE auth only: the client's app origin/base URL the emailed confirm link should point at (e.g.
+  // "https://demo.agora-oss.org"), so a multi-front-end deploy sends each user back to the site they
+  // signed up on. The server validates its origin against AUTH_EMAIL_LINK_ALLOWED_ORIGINS and 400s if it
+  // isn't allowlisted (open-redirect / phishing guard). Omitted/allowlist-unset → AUTH_EMAIL_LINK_BASE.
+  // Ignored by Supabase-backed auth (Supabase Auth sends its own emails).
+  emailRedirectTo: z.string().min(1).max(2048).optional(),
 });
 
 export const signInSchema = z.object({
@@ -286,6 +292,9 @@ export const changePasswordSchema = z
 
 export const emailSchema = z.object({
   email: z.string().email().max(254),
+  // See signUpSchema.emailRedirectTo — the same per-origin link base, for the password-reset and
+  // resend-confirmation links (native auth only; validated against AUTH_EMAIL_LINK_ALLOWED_ORIGINS).
+  emailRedirectTo: z.string().min(1).max(2048).optional(),
 });
 
 // SDK (confirmAccountDeletionThunk) posts the emailed deletion code.

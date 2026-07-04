@@ -67,9 +67,52 @@ export function resolveEmailSender(): EmailSender {
 function linkBase(): string {
   return env.AUTH_EMAIL_LINK_BASE;
 }
-export function confirmLink(projectId: string, rawToken: string): string {
-  return `${linkBase()}/auth/verify-email?projectId=${projectId}&token=${encodeURIComponent(rawToken)}`;
+// `base` is the resolved, already-allowlist-validated front-end origin (see resolveEmailLinkBase). When
+// omitted it falls back to the deployment default — the single-front-end / feature-off path.
+export function confirmLink(projectId: string, rawToken: string, base: string = linkBase()): string {
+  return `${base}/auth/verify-email?projectId=${projectId}&token=${encodeURIComponent(rawToken)}`;
 }
-export function resetLink(projectId: string, rawToken: string): string {
-  return `${linkBase()}/auth/reset-password?projectId=${projectId}&token=${encodeURIComponent(rawToken)}`;
+export function resetLink(projectId: string, rawToken: string, base: string = linkBase()): string {
+  return `${base}/auth/reset-password?projectId=${projectId}&token=${encodeURIComponent(rawToken)}`;
+}
+
+/** Canonical origin (`scheme://host[:port]`, lowercased) of a URL/base string, or "" if unparseable. */
+export function normalizeOrigin(input: string): string {
+  try {
+    return new URL(input.trim()).origin.toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
+let _allowCache: Set<string> | null = null;
+/** The configured allowlist of front-end origins (normalized). Empty ⇒ per-origin selection is off. */
+export function allowedEmailOrigins(): Set<string> {
+  if (_allowCache) return _allowCache;
+  _allowCache = new Set(
+    (env.AUTH_EMAIL_LINK_ALLOWED_ORIGINS ?? "").split(",").map(normalizeOrigin).filter(Boolean),
+  );
+  return _allowCache;
+}
+
+/** Pure link-base selector (extracted for testability). Security core of the multi-front-end feature:
+ *  - allowlist empty        → feature off → default base (client value IGNORED — never trust unvalidated)
+ *  - requested absent       → default base (canonical)
+ *  - requested ∈ allowlist  → that origin
+ *  - requested ∉ allowlist  → null  (caller MUST reject with 400 — do not fall back to it) */
+export function selectEmailLinkBase(
+  requested: string | null | undefined,
+  allowlist: Set<string>,
+  defaultBase: string,
+): string | null {
+  if (allowlist.size === 0) return defaultBase;
+  if (!requested) return defaultBase;
+  const origin = normalizeOrigin(requested);
+  return origin && allowlist.has(origin) ? origin : null;
+}
+
+/** Resolve the emailed-link base for a request's `emailRedirectTo`. Returns null when the client sent a
+ *  non-allowlisted origin (route returns 400). Reads the live env allowlist + default. */
+export function resolveEmailLinkBase(requested: string | null | undefined): string | null {
+  return selectEmailLinkBase(requested, allowedEmailOrigins(), env.AUTH_EMAIL_LINK_BASE);
 }

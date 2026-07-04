@@ -20,7 +20,7 @@ function normalizeEmail(email: string): string {
 export class NativeAuthProvider implements AuthProvider {
   constructor(private readonly email: EmailSender) {}
 
-  async signUp(projectId: string, emailRaw: string, password: string): Promise<SignUpResult> {
+  async signUp(projectId: string, emailRaw: string, password: string, linkBase?: string): Promise<SignUpResult> {
     const email = normalizeEmail(emailRaw);
     const [existing] = await db.select({ id: authCredentials.id }).from(authCredentials)
       .where(and(eq(authCredentials.projectId, projectId), eq(authCredentials.email, email))).limit(1);
@@ -32,7 +32,7 @@ export class NativeAuthProvider implements AuthProvider {
     }
     const passwordHash = await hashPassword(password);
     const [cred] = await db.insert(authCredentials).values({ projectId, email, passwordHash }).returning({ id: authCredentials.id });
-    await this.sendConfirm(projectId, cred!.id, email);
+    await this.sendConfirm(projectId, cred!.id, email, linkBase);
     return { status: "confirmation_required" };
   }
 
@@ -53,7 +53,7 @@ export class NativeAuthProvider implements AuthProvider {
     await db.update(authCredentials).set({ passwordHash: await hashPassword(next), updatedAt: new Date() }).where(eq(authCredentials.id, authUserId));
   }
 
-  async startPasswordReset(projectId: string, emailRaw: string): Promise<void> {
+  async startPasswordReset(projectId: string, emailRaw: string, linkBase?: string): Promise<void> {
     const email = normalizeEmail(emailRaw);
     const [cred] = await db.select({ id: authCredentials.id }).from(authCredentials)
       .where(and(eq(authCredentials.projectId, projectId), eq(authCredentials.email, email))).limit(1);
@@ -64,7 +64,7 @@ export class NativeAuthProvider implements AuthProvider {
       .where(and(eq(authEmailTokens.credentialId, cred.id), eq(authEmailTokens.kind, "reset"), isNull(authEmailTokens.consumedAt)));
     const { raw, hash } = generateEmailToken();
     await db.insert(authEmailTokens).values({ credentialId: cred.id, kind: "reset", tokenHash: hash, expiresAt: new Date(Date.now() + RESET_TTL_MS) });
-    await this.email.sendPasswordReset(email, resetLink(projectId, raw));
+    await this.email.sendPasswordReset(email, resetLink(projectId, raw, linkBase));
   }
 
   async confirmPasswordReset(projectId: string, token: string, newPassword: string) {
@@ -81,12 +81,12 @@ export class NativeAuthProvider implements AuthProvider {
     return { authUserId: row.credentialId };
   }
 
-  async resendConfirmation(projectId: string, emailRaw: string): Promise<void> {
+  async resendConfirmation(projectId: string, emailRaw: string, linkBase?: string): Promise<void> {
     const email = normalizeEmail(emailRaw);
     const [cred] = await db.select().from(authCredentials)
       .where(and(eq(authCredentials.projectId, projectId), eq(authCredentials.email, email))).limit(1);
     if (!cred || cred.emailConfirmedAt) return; // nothing to do / already confirmed — silent
-    await this.sendConfirm(projectId, cred.id, email);
+    await this.sendConfirm(projectId, cred.id, email, linkBase);
   }
 
   async deleteUser(authUserId: string, mode: AccountDeletionMode): Promise<void> {
@@ -99,13 +99,13 @@ export class NativeAuthProvider implements AuthProvider {
       .where(eq(authCredentials.id, authUserId));
   }
 
-  private async sendConfirm(projectId: string, credentialId: string, email: string): Promise<void> {
+  private async sendConfirm(projectId: string, credentialId: string, email: string, linkBase?: string): Promise<void> {
     // Invalidate prior pending confirm tokens before issuing a fresh one (token hygiene).
     await db.delete(authEmailTokens)
       .where(and(eq(authEmailTokens.credentialId, credentialId), eq(authEmailTokens.kind, "confirm"), isNull(authEmailTokens.consumedAt)));
     const { raw, hash } = generateEmailToken();
     await db.insert(authEmailTokens).values({ credentialId, kind: "confirm", tokenHash: hash, expiresAt: new Date(Date.now() + CONFIRM_TTL_MS) });
-    await this.email.sendConfirmation(email, confirmLink(projectId, raw));
+    await this.email.sendConfirmation(email, confirmLink(projectId, raw, linkBase));
   }
 
   // Hash the presented token, find a live token of the right kind whose credential is in

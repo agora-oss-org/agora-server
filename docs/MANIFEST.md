@@ -98,6 +98,13 @@ unknown `sortBy` to `createdAt` rather than 400-ing (forward-compat).
 | POST | `/auth/confirm-account-deletion` (auth; body `{ code }`; applies `projects.account_deletion_mode` ∈ hard/soft/ban — hard deletes the profile + identity and keeps content authorless, soft/ban deactivate + disable) | ✅ |
 | POST | `/auth/verify-external-user` (body `{ userJwt }`; legacy `{ token }` also accepted) | ✅ |
 
+**Native-auth email links (`sign-up` / `request-password-reset` / `send-verification-email`).** These
+accept an optional `emailRedirectTo` (the client's app origin, e.g. `https://demo.agora-oss.org`) that
+sets the base of the emailed confirm/reset link — so a multi-front-end deploy returns each user to the
+site they signed up on. The server validates it against `AUTH_EMAIL_LINK_ALLOWED_ORIGINS` and rejects a
+non-allowlisted origin with `400 auth/email-redirect-not-allowed`; when the allowlist is unset the field
+is ignored and links use `AUTH_EMAIL_LINK_BASE`. Supabase-backed auth ignores it (it emails its own).
+
 ### oauth
 Sign-in/link use Supabase as the OAuth broker (code + PKCE). `authorize`/`link` return
 `{ authorizationUrl }`; the provider redirects the browser to `callback`, which exchanges the code,
