@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.5] - 2026-07-04
+
 ### Changed
 - **`drop`/`genesis` type-to-confirm token now includes the database name** for local targets —
   `localhost:5432/postgres` instead of a bare `localhost:5432` — so the operator disambiguates which
@@ -1962,7 +1964,8 @@ cloud Supabase — no stubbed endpoints remain.
   (`@agora/*`), a repointed fork of `@replyke/core`.
 - Backlog: rate limiting, refresh-token cleanup sweep, RLS write policies, turnkey deploy guide.
 
-[Unreleased]: https://github.com/jenova-marie/agora/compare/v0.16.4...HEAD
+[Unreleased]: https://github.com/jenova-marie/agora/compare/v0.16.5...HEAD
+[0.16.5]: https://github.com/jenova-marie/agora/compare/v0.16.4...v0.16.5
 [0.16.4]: https://github.com/jenova-marie/agora/compare/v0.16.3...v0.16.4
 [0.16.3]: https://github.com/jenova-marie/agora/compare/v0.16.2...v0.16.3
 [0.16.2]: https://github.com/jenova-marie/agora/compare/v0.16.1...v0.16.2
