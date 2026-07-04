@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.4] - 2026-07-04
+
 ### Fixed
 - **Logs + traces now report the ACTUAL running version, not a stale `0.14.0`.** The wonder-logger YAML
   hardcoded `version: ${SERVICE_VERSION:-0.14.0}`, and nothing ever set `SERVICE_VERSION`, so every
@@ -1924,7 +1926,8 @@ cloud Supabase — no stubbed endpoints remain.
   (`@agora/*`), a repointed fork of `@replyke/core`.
 - Backlog: rate limiting, refresh-token cleanup sweep, RLS write policies, turnkey deploy guide.
 
-[Unreleased]: https://github.com/jenova-marie/agora/compare/v0.16.3...HEAD
+[Unreleased]: https://github.com/jenova-marie/agora/compare/v0.16.4...HEAD
+[0.16.4]: https://github.com/jenova-marie/agora/compare/v0.16.3...v0.16.4
 [0.16.3]: https://github.com/jenova-marie/agora/compare/v0.16.2...v0.16.3
 [0.16.2]: https://github.com/jenova-marie/agora/compare/v0.16.1...v0.16.2
 [0.16.1]: https://github.com/jenova-marie/agora/compare/v0.16.0...v0.16.1
