@@ -16,6 +16,9 @@ export default defineConfig({
       // Hermetic, mirroring vitest.integration.config.ts: a developer's .env may point NEO4J_URI
       // at a live DozerDB; unit tests must never construct a real driver.
       NEO4J_URI: "",
+      // Same hermeticity: a developer's selfhost .env sets STORAGE_PROVIDER=s3, which flips
+      // storage/index.test.ts's "defaults to Supabase" baseline. Empty = unset → schema default.
+      STORAGE_PROVIDER: "",
     },
     coverage: {
       provider: "v8",
