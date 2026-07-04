@@ -22,6 +22,7 @@
     "db:drop": "node scripts/drop.mjs",
     "genesis": "node scripts/genesis.mjs",
     "genesis:test": "node scripts/genesis.mjs --test",
+    "check:propagation": "tsx scripts/check-propagation.ts",
     "seed": "node scripts/seeds/seed.mjs",
     "perf:seed": "node perf/seed-perf-data.mjs",
     "perf:baseline": "node perf/run.mjs"
