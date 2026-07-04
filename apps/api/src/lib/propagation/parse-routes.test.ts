@@ -17,9 +17,9 @@ const app = new Hono()
 `;
 
 const INDEX = `
-import authRoutes from "./auth";
-import entityRoutes from "./entities";
-import connectionRoutes from "./connections";
+import { authRoutes } from "./auth.js";
+import { entityRoutes } from "./entities.js";
+import { connectionRoutes } from "./connections.js";
 import miscRoutes from "./misc";
 export function mountRoutes() {
   project.route("/auth", authRoutes);

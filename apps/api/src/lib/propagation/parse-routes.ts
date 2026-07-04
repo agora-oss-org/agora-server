@@ -21,7 +21,9 @@ export function extractRoutePaths(routeSource: string): RouteRef[] {
 // the /v7 root). Returns { <module basename>: <mount prefix> }.
 export function extractRouteMounts(indexSource: string): Record<string, string> {
   const moduleByIdent: Record<string, string> = {};
-  for (const m of indexSource.matchAll(/import\s+(\w+)\s+from\s+"\.\/([\w./-]+)"/g)) {
+  for (const m of indexSource.matchAll(
+    /import\s+(?:\{\s*)?(\w+)(?:\s*\})?\s+from\s+"\.\/([\w./-]+)"/g,
+  )) {
     if (!m[1] || !m[2]) continue;
     const base = m[2].split("/").pop() ?? m[2];
     moduleByIdent[m[1]] = base.replace(/\.[jt]sx?$/, "");
