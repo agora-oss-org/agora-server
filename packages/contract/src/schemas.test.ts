@@ -12,6 +12,7 @@ import {
   stewardConfigSchema,
   createConversationSchema,
   moderationAnalyzeSchema,
+  moderatorConfigSchema,
 } from "./schemas.js";
 
 const UUID = "11111111-1111-1111-1111-111111111111";
@@ -150,5 +151,31 @@ describe("moderationAnalyzeSchema", () => {
   });
   it("requires non-empty text within the cap", () => {
     expect(moderationAnalyzeSchema.safeParse({ targetType: "entity", targetId: UUID, text: "" }).success).toBe(false);
+  });
+});
+
+describe("moderatorConfigSchema — scorer cascade knobs", () => {
+  it("accepts the new gray-zone + co-participates fields", () => {
+    const r = moderatorConfigSchema.safeParse({
+      grayzoneLow: 0.2, grayzoneHigh: 0.7,
+      coParticipatesLookbackDays: 14, coParticipatesMaxParticipants: 100, coParticipatesMaxWeight: 5,
+    });
+    expect(r.success).toBe(true);
+  });
+  it("rejects gray-zone values out of [0,1]", () => {
+    expect(moderatorConfigSchema.safeParse({ grayzoneHigh: 1.5 }).success).toBe(false);
+    expect(moderatorConfigSchema.safeParse({ grayzoneLow: -0.1 }).success).toBe(false);
+  });
+  it("rejects grayzoneLow > grayzoneHigh when both present", () => {
+    expect(moderatorConfigSchema.safeParse({ grayzoneLow: 0.8, grayzoneHigh: 0.3 }).success).toBe(false);
+  });
+  it("allows a partial patch of only grayzoneLow (ordering checked server-side vs stored)", () => {
+    expect(moderatorConfigSchema.safeParse({ grayzoneLow: 0.9 }).success).toBe(true);
+  });
+  it("enforces the co-participates hard ceilings", () => {
+    expect(moderatorConfigSchema.safeParse({ coParticipatesMaxParticipants: 501 }).success).toBe(false);
+    expect(moderatorConfigSchema.safeParse({ coParticipatesMaxParticipants: 0 }).success).toBe(false);
+    expect(moderatorConfigSchema.safeParse({ coParticipatesLookbackDays: 366 }).success).toBe(false);
+    expect(moderatorConfigSchema.safeParse({ coParticipatesMaxWeight: 0 }).success).toBe(false);
   });
 });
