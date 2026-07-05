@@ -43,15 +43,35 @@ Operator-only "Deployment status" view sourced from the scorer's existing `/conf
 `SCORER_POLL_INTERVAL_MS`, `SCORER_VISIBILITY_TIMEOUT_S`, `NEO4J_URI` (host) + `NEO4J_AUTH` (set?)
 + `NEO4J_DATABASE`. Labeled "env-owned · restart to change."
 
+### In scope — per-project Haiku/LLM adjudication (corporate)
+
+Wire the scorer to actually honor per-project LLM config (closing the pre-existing drift where the
+panel stored `llm*` but `resolve()`/`haiku.py` ignored them). A corporate project can bring its own
+provider + key + model:
+
+| Field | Env fallback | Consumed how |
+|---|---|---|
+| `llmProvider` (`anthropic` \| `openai`) | `"anthropic"` (env is Anthropic-only) | picks the fixed provider host + request shape |
+| `llmApiKey` (secret) | `settings.anthropic_api_key` **only when effective provider is `anthropic`**, else `None` | request auth; never logged |
+| `llmModel` | `settings.haiku_model` | request model |
+| `llmMaxTokens` | `settings.haiku_max_tokens` | request cap |
+
+- **Base URL is NOT per-project** — fixed per provider (`api.anthropic.com` / `api.openai.com`), so no
+  admin-controlled outbound URL (no SSRF / key-exfil vector). `llmBaseUrl` is dropped from the admin
+  surface (schema field left dormant for backward-compat).
+- **Enablement is per-project:** `llm_enabled = bool(resolved apiKey)`. A project with its own key gets
+  Haiku even if the env key is unset; a project selecting `openai` with no own key is **disabled**
+  (never sent the Anthropic env key). Disabled → the existing "borderline → human review" path.
+- The scorer's `haiku.py` generalizes to a provider-branching LLM adapter (anthropic messages API /
+  openai chat-completions), reusing the same `policy` prompts + `verdict` parser — the verdict contract
+  is unchanged.
+
 ### Out of scope (explicitly)
 
 - **Editing** any Bucket B infra/secret (would write secrets to the DB, allow cross-project wiring
   rewrite, and not take effect without a restart — contradicts `SECURITY.md`).
-- **Haiku / per-project LLM provider** — not wired. See "Haiku section" below.
-- Wiring per-project `llmModel` / `llmMaxTokens` / `llmProvider` / `llmBaseUrl` / `llmApiKey` into
-  the scorer. That pre-existing drift (panel stores them; scorer's `resolve()` drops them; `haiku.py`
-  reads env only) is documented here as a **known gap**, not fixed. Removing the editable inputs
-  (below) stops it being a *misleading* surface without changing stored data.
+- **Per-project `llmBaseUrl`** — deliberately env/provider-default only (the SSRF boundary above);
+  removed from the admin surface, ignored by the scorer.
 
 ## Architecture & data flow
 
@@ -94,11 +114,25 @@ apps/admin ModeratorPanel  ──GET /moderation/config──▶  scorer admin_a
    co-participates trio, re-applying the same ceilings server-side — never trust the stored jsonb).
    Enforce `low ≤ high` here too (if inverted, fall back to env defaults — fail safe, never an empty
    band).
+   Also add the per-project LLM fields: `llm_provider` (`"anthropic"`|`"openai"`, default `"anthropic"`),
+   `llm_model` (default `settings.haiku_model`), `llm_max_tokens` (default `settings.haiku_max_tokens`),
+   `llm_api_key` (`cfg.llmApiKey` else `settings.anthropic_api_key` **only if effective provider is
+   `anthropic`**, else `None`). Add `llm_enabled()` on the resolved object = `bool(llm_api_key)`.
+
+3b. **`services/scorer/scorer/haiku.py` — generalize to a provider-branching LLM adapter**
+   `assess()` takes the resolved LLM config (provider/model/max_tokens/api_key) instead of reading
+   `settings.*`. Branch on provider: `anthropic` → `POST https://api.anthropic.com/v1/messages`
+   (current headers/body); `openai` → `POST https://api.openai.com/v1/chat/completions` (Bearer auth,
+   `messages` with a system role, parse `choices[0].message.content`). Reuse `policy.build_system_prompt`
+   / `build_user_prompt` / `verdict.parse_verdict`. Returns `None` when disabled (no key) or on any error
+   (→ human review), unchanged. **The API key and request body are never logged** (status/verdict only).
 
 4. **`services/scorer/worker/pipeline.py`**
    Read `cfg.grayzone_low` / `cfg.grayzone_high` (from the already-fetched `cfg`) instead of
    `settings.grayzone_low/high`. Pass the resolved co-participates values into
-   `resolve_co_participants` (signature gains the three params, or takes `cfg`).
+   `resolve_co_participants` (signature gains the three params, or takes `cfg`). Change the gray-zone
+   escalation to call the generalized adapter with the resolved LLM config and gate on `cfg.llm_enabled()`
+   (per-project) instead of `settings.haiku_enabled()`.
 
 5. **`services/scorer/scorer/db.py` — `resolve_co_participants`**
    Take the resolved lookback/max-participants/max-weight from `cfg` rather than `settings`.
@@ -120,12 +154,12 @@ apps/admin ModeratorPanel  ──GET /moderation/config──▶  scorer admin_a
       `reviewAutoActionThreshold`. A small inline legend: `allow < LOW ≤ escalate < HIGH ≤ block`,
       and a live inline warning when `LOW ≥ HIGH`.
    3. **Social-graph tuning** (new): the three co-participates knobs.
-   4. **Haiku adjudication — Disabled** (replaces the editable LLM inputs): a greyed read-only block
-      driven by running-config `defaults.llm.enabled` / `apiKeySet`. Copy: "Haiku is off —
-      gray-zone items route to human review. Re-enable via `ANTHROPIC_API_KEY` (env, operator)."
-      When Haiku *is* enabled, show its effective model/max-tokens read-only (from running config)
-      plus a one-line note that per-project LLM overrides are not currently consumed by the scorer
-      (the known gap). No editable provider/key/model/maxTokens inputs remain.
+   4. **Haiku adjudication** (kept editable, per-project — for corporate users): the existing
+      **provider / API key / model / max-tokens** inputs stay. **Remove only the base-url input**
+      (now env/provider-default only — the SSRF boundary). API key stays write-only (`hasLlmApiKey`).
+      A hint notes: blank fields fall back to the scorer's env Haiku config; a project can bring its own
+      provider + key. No "disabled" block — enablement is now per-project (own key works even if the
+      env key is unset).
    5. **Deployment status** (new, operator-only, read-only): Bucket B table from
       `running.config.deployment`; hidden entirely if running-config is unavailable.
    6. *Moderation categories* editor (existing, unchanged).
@@ -142,13 +176,23 @@ apps/admin ModeratorPanel  ──GET /moderation/config──▶  scorer admin_a
   `/config` status stays operator-only (`require_operator`). No new route, no new gate to get wrong.
 - **No secret ever valued.** Deployment status shows secrets as `set`/`not set` only — reuses the
   existing `bool(...)`-projection pattern in `/config`.
+- **Per-project LLM key handling.** The resolved `llm_api_key` is a secret: in-memory only, **never
+  logged** (adapter logs status/verdict, never the key/headers/request body — honors the info/error
+  message-only rule). `moderatorView` keeps redacting it to `hasLlmApiKey`; `/config` shows `apiKeySet`
+  only. Provider-aware fallback prevents leaking the Anthropic env key to an `openai` project (that
+  project is simply disabled without its own key).
+- **No admin-controlled outbound URL.** `llmBaseUrl` is not consumed — the adapter uses the fixed
+  provider host, so there is no per-project SSRF / key-exfil surface.
 
 ## Testing
 
 - **Scorer (pytest, pure):** extend `tests/test_config.py` — `resolve()` override/default/clamp for
-  all five fields; ceiling enforcement; `low > high` → safe fallback. Add a `tests/test_pipeline.py`
-  case: a per-project `grayzoneHigh` override moves the block boundary for a fixed toxicity score
-  (assert verdict flips from `block` to `allow`/escalate at the new edge).
+  all five cascade/co-participates fields; ceiling enforcement; `low > high` → safe fallback; **the LLM
+  resolution matrix** (per-project provider/model/max-tokens/key; env fallback; `openai`-without-key →
+  `llm_enabled()` False and no Anthropic-key leak). Add a `tests/test_pipeline.py` case: a per-project
+  `grayzoneHigh` override moves the block boundary. Extend `tests/test_haiku.py`: the adapter builds the
+  correct anthropic vs openai request (URL/headers/body) from the resolved config, parses each response,
+  and returns `None` when disabled; assert the API key never appears in any log output.
 - **Contract/API:** unit-test `moderatorConfigSchema` rejects out-of-range values and `low > high`.
   Integration test: PATCH persists the five fields to `moderator_config`; GET round-trips them;
   clearing (null) reverts to env default in the view.
@@ -159,11 +203,12 @@ inverted band rejected, ceiling clamps).
 
 ## Docs / changelog / propagation
 
-- `CHANGELOG.md` → `Added` (new per-project scorer overrides + admin section) and `Changed`
-  (LLM/Haiku editing removed from the panel).
+- `CHANGELOG.md` → `Added` (new per-project scorer overrides + admin section; per-project Haiku/LLM
+  now honored incl. `openai` provider) and `Changed` (base-url dropped from the panel; Haiku enablement
+  is now per-project).
 - `docs/SCORER.md`, `docs/CHEAT-SHEET.md`, and the moderator-config doc: note the gray-zone +
-  co-participates env vars are now per-project overridable, and that per-project LLM provider config
-  is a known unconsumed gap.
+  co-participates env vars are now per-project overridable, and that per-project LLM provider/key/model
+  is now consumed (env is the fallback; base-url stays env-only).
 - Run `/propagate` on the branch diff to catch mirrors (the env vars already exist in the three
   `.env.*.example` files; they gain an "also per-project override" note).
 
@@ -171,6 +216,8 @@ inverted band rejected, ceiling clamps).
 
 None — scope locked with the operator:
 - Bucket B → read-only status (not editable).
-- Optionals → co-participates **in**, deployment status **in**, Haiku model/max-tokens wiring **out**.
-- Haiku section → **disabled** by removing the editable LLM inputs (stored values untouched).
+- Optionals → co-participates **in**, deployment status **in**.
+- Haiku section → **kept editable and wired per-project** (corporate users): provider + key + model +
+  max-tokens consumed per-project with env fallback; `openai` + `anthropic` supported.
+- Per-project `llmBaseUrl` → **out** (env/provider-default only — SSRF boundary); input removed from the panel.
 - Co-participates → same panel, separate section.
