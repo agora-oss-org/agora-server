@@ -117,11 +117,40 @@ class ResolvedModeratorConfig:
     block_auto_action_threshold: float
     review_auto_action_threshold: float
     categories: list[str]
+    # Runtime-tunable cascade + graph knobs (defaults mirror the env defaults so test/fake
+    # constructors that omit them stay valid).
+    grayzone_low: float = 0.30
+    grayzone_high: float = 0.80
+    co_participates_lookback_days: int = 7
+    co_participates_max_participants: int = 50
+    co_participates_max_weight: float = 10.0
+    # Per-project LLM adjudication (corporate). llm_api_key is a SECRET — never log it.
+    llm_provider: str = "anthropic"
+    llm_model: str = "claude-haiku-4-5"
+    llm_max_tokens: int = 512
+    llm_api_key: str | None = None
+
+    def llm_enabled(self) -> bool:
+        return bool(self.llm_api_key)
 
 
 def _clamp01(v: object, fallback: float) -> float:
     if isinstance(v, (int, float)) and not isinstance(v, bool):
         return min(1.0, max(0.0, float(v)))
+    return fallback
+
+
+def _clamp_int(v: object, fallback: int, lo: int, hi: int) -> int:
+    if isinstance(v, bool):
+        return fallback
+    if isinstance(v, (int, float)):
+        return max(lo, min(hi, int(v)))
+    return fallback
+
+
+def _clamp_float(v: object, fallback: float, lo: float, hi: float) -> float:
+    if isinstance(v, (int, float)) and not isinstance(v, bool):
+        return max(lo, min(hi, float(v)))
     return fallback
 
 
@@ -136,10 +165,34 @@ def _resolve_categories(raw: object) -> list[str]:
 def resolve(raw: object, settings: Settings) -> ResolvedModeratorConfig:
     """PURE: overlay a project's moderator_config jsonb over env defaults (override-or-env)."""
     cfg = raw if isinstance(raw, dict) else {}
+    gl = _clamp01(cfg.get("grayzoneLow"), settings.grayzone_low)
+    gh = _clamp01(cfg.get("grayzoneHigh"), settings.grayzone_high)
+    if gl > gh:  # inverted/empty band → fail safe to env defaults, never an empty escalation band
+        gl, gh = settings.grayzone_low, settings.grayzone_high
+    # Per-project LLM: provider decides the key fallback. The Anthropic env key is ONLY inherited by an
+    # anthropic project — never handed to an openai project (which is simply disabled without its own key).
+    provider_raw = cfg.get("llmProvider")
+    provider: str = provider_raw if provider_raw in ("anthropic", "openai") else "anthropic"
+    cfg_key_raw = cfg.get("llmApiKey")
+    cfg_key: str | None = cfg_key_raw if isinstance(cfg_key_raw, str) and cfg_key_raw else None
+    env_key: str | None = settings.anthropic_api_key if provider == "anthropic" else None
+    api_key: str | None = cfg_key or env_key
+    model_raw = cfg.get("llmModel")
+    model: str = model_raw if isinstance(model_raw, str) and model_raw else settings.haiku_model
+    max_tokens = _clamp_int(cfg.get("llmMaxTokens"), settings.haiku_max_tokens, 1, 8192)
     return ResolvedModeratorConfig(
         block_auto_action_threshold=_clamp01(cfg.get("blockAutoActionThreshold"), settings.block_auto_action_threshold),
         review_auto_action_threshold=_clamp01(cfg.get("reviewAutoActionThreshold"), settings.review_auto_action_threshold),
         categories=_resolve_categories(cfg.get("categories")),
+        grayzone_low=gl,
+        grayzone_high=gh,
+        co_participates_lookback_days=_clamp_int(cfg.get("coParticipatesLookbackDays"), settings.co_participates_lookback_days, 0, 365),
+        co_participates_max_participants=_clamp_int(cfg.get("coParticipatesMaxParticipants"), settings.co_participates_max_participants, 1, 500),
+        co_participates_max_weight=_clamp_float(cfg.get("coParticipatesMaxWeight"), settings.co_participates_max_weight, 1.0, 1000.0),
+        llm_provider=provider,
+        llm_model=model,
+        llm_max_tokens=max_tokens,
+        llm_api_key=api_key,
     )
 
 
