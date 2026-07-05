@@ -81,8 +81,12 @@ function ModeratorForm({
   const toast = useToast();
   const [blockThreshold, setBlockThreshold] = useState(str(initial.blockAutoActionThreshold));
   const [reviewThreshold, setReviewThreshold] = useState(str(initial.reviewAutoActionThreshold));
+  const [grayLow, setGrayLow] = useState(str(initial.grayzoneLow));
+  const [grayHigh, setGrayHigh] = useState(str(initial.grayzoneHigh));
+  const [cpLookback, setCpLookback] = useState(str(initial.coParticipatesLookbackDays));
+  const [cpMaxParticipants, setCpMaxParticipants] = useState(str(initial.coParticipatesMaxParticipants));
+  const [cpMaxWeight, setCpMaxWeight] = useState(str(initial.coParticipatesMaxWeight));
   const [provider, setProvider] = useState<"" | LlmProvider>(initial.llmProvider ?? "");
-  const [baseUrl, setBaseUrl] = useState(initial.llmBaseUrl ?? "");
   const [apiKey, setApiKey] = useState(""); // write-only; blank = unchanged
   const [hasLlmApiKey, setHasLlmApiKey] = useState(initial.hasLlmApiKey);
   const [model, setModel] = useState(initial.llmModel ?? "");
@@ -96,8 +100,12 @@ function ModeratorForm({
       // Re-sync every field to the server's resolved view so the unsaved banner clears after a save.
       setBlockThreshold(str(view.blockAutoActionThreshold));
       setReviewThreshold(str(view.reviewAutoActionThreshold));
+      setGrayLow(str(view.grayzoneLow));
+      setGrayHigh(str(view.grayzoneHigh));
+      setCpLookback(str(view.coParticipatesLookbackDays));
+      setCpMaxParticipants(str(view.coParticipatesMaxParticipants));
+      setCpMaxWeight(str(view.coParticipatesMaxWeight));
       setProvider(view.llmProvider ?? "");
-      setBaseUrl(view.llmBaseUrl ?? "");
       setModel(view.llmModel ?? "");
       setMaxTokens(str(view.llmMaxTokens));
       setCategories(view.categories ?? []);
@@ -116,11 +124,16 @@ function ModeratorForm({
     const bt = blockThreshold.trim();
     const rt = reviewThreshold.trim();
     const mt = maxTokens.trim();
+    const numOrNull = (s: string) => (s.trim() === "" ? null : Number(s));
     const patch: ModeratorConfigPatch = {
       blockAutoActionThreshold: bt === "" ? null : Number(bt),
       reviewAutoActionThreshold: rt === "" ? null : Number(rt),
+      grayzoneLow: numOrNull(grayLow),
+      grayzoneHigh: numOrNull(grayHigh),
+      coParticipatesLookbackDays: numOrNull(cpLookback),
+      coParticipatesMaxParticipants: numOrNull(cpMaxParticipants),
+      coParticipatesMaxWeight: numOrNull(cpMaxWeight),
       llmProvider: provider || null,                // "" → use env default
-      llmBaseUrl: orNull(baseUrl),
       llmModel: orNull(model),
       llmMaxTokens: mt === "" ? null : Number(mt),
       categories,                                   // [] resets to the seed defaults server-side
@@ -149,8 +162,9 @@ function ModeratorForm({
   const eff = {
     blockThreshold: dv(blockThreshold, defaults?.blockAutoActionThreshold ?? null),
     reviewThreshold: dv(reviewThreshold, defaults?.reviewAutoActionThreshold ?? null),
+    grayLow: dv(grayLow, defaults?.grayzoneLow ?? null),
+    grayHigh: dv(grayHigh, defaults?.grayzoneHigh ?? null),
     provider: dv(provider, defaults?.llm.provider ?? null),
-    baseUrl: dv(baseUrl, defaults?.llm.baseUrl ?? (defaults ? "provider default" : null)),
     model: dv(model, defaults?.llm.model ?? null),
     maxTokens: dv(maxTokens, defaults?.llm.maxTokens ?? null),
   };
@@ -170,13 +184,19 @@ function ModeratorForm({
   const dirty = isDirty(
     {
       blockThreshold: blockThreshold.trim(), reviewThreshold: reviewThreshold.trim(),
-      provider, baseUrl: baseUrl.trim(), model: model.trim(), maxTokens: maxTokens.trim(),
+      grayLow: grayLow.trim(), grayHigh: grayHigh.trim(),
+      cpLookback: cpLookback.trim(), cpMaxParticipants: cpMaxParticipants.trim(), cpMaxWeight: cpMaxWeight.trim(),
+      provider, model: model.trim(), maxTokens: maxTokens.trim(),
       categories: [...categories].sort(), apiKeyDirty: apiKey.trim() !== "",
     },
     {
       blockThreshold: str(initial.blockAutoActionThreshold).trim(),
       reviewThreshold: str(initial.reviewAutoActionThreshold).trim(),
-      provider: initial.llmProvider ?? "", baseUrl: (initial.llmBaseUrl ?? "").trim(),
+      grayLow: str(initial.grayzoneLow).trim(), grayHigh: str(initial.grayzoneHigh).trim(),
+      cpLookback: str(initial.coParticipatesLookbackDays).trim(),
+      cpMaxParticipants: str(initial.coParticipatesMaxParticipants).trim(),
+      cpMaxWeight: str(initial.coParticipatesMaxWeight).trim(),
+      provider: initial.llmProvider ?? "",
       model: (initial.llmModel ?? "").trim(), maxTokens: str(initial.llmMaxTokens).trim(),
       categories: [...(initial.categories ?? [])].sort(), apiKeyDirty: false,
     },
@@ -200,28 +220,51 @@ function ModeratorForm({
         <CardContent className="grid gap-4">
           <EffectiveSummary running={running} runningFailed={runningFailed} eff={eff} apiKeyEff={apiKeyEff} />
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field
-              label="Block auto-action threshold"
-              hint="0–1 confidence to auto-remove a “block” verdict. 0 disables it (blocks queue for a human). Blank = server default."
-            >
-              <Input type="number" min={0} max={1} step={0.01} placeholder={ph(defaults?.blockAutoActionThreshold, "0.85 (default)")} value={blockThreshold} onChange={(e) => setBlockThreshold(e.target.value)} />
-            </Field>
-            <Field
-              label="Review auto-action threshold"
-              hint="0–1 confidence to auto-remove a “review” verdict. 0 (default) keeps reviews queuing for a human — raise it to auto-act on high-confidence reviews. Blank = server default."
-            >
-              <Input type="number" min={0} max={1} step={0.01} placeholder={ph(defaults?.reviewAutoActionThreshold, "0 (default)")} value={reviewThreshold} onChange={(e) => setReviewThreshold(e.target.value)} />
-            </Field>
-            <Field label="Provider" hint="Blank = server default.">
+          <div className="space-y-3">
+            <Label>Cascade thresholds</Label>
+            <p className="text-xs text-faint">Toxicity gate: <code>allow &lt; low ≤ escalate &lt; high ≤ block</code>. Blank = server default.</p>
+            {grayLow.trim() !== "" && grayHigh.trim() !== "" && Number(grayLow) > Number(grayHigh) && (
+              <p className="text-xs text-danger">Gray-zone low must be ≤ high.</p>
+            )}
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Gray-zone low" hint="P(toxic) below this → allow (no LLM). Blank = server default.">
+                <Input type="number" min={0} max={1} step={0.01} placeholder={ph(defaults?.grayzoneLow, "0.30 (default)")} value={grayLow} onChange={(e) => setGrayLow(e.target.value)} />
+              </Field>
+              <Field label="Gray-zone high" hint="P(toxic) at/above this → block (no LLM). Blank = server default.">
+                <Input type="number" min={0} max={1} step={0.01} placeholder={ph(defaults?.grayzoneHigh, "0.80 (default)")} value={grayHigh} onChange={(e) => setGrayHigh(e.target.value)} />
+              </Field>
+              <Field label="Block auto-action threshold" hint="0–1 confidence to auto-remove a “block”. 0 disables (queues for a human). Blank = server default.">
+                <Input type="number" min={0} max={1} step={0.01} placeholder={ph(defaults?.blockAutoActionThreshold, "0.85 (default)")} value={blockThreshold} onChange={(e) => setBlockThreshold(e.target.value)} />
+              </Field>
+              <Field label="Review auto-action threshold" hint="0 (default) keeps reviews queuing for a human. Blank = server default.">
+                <Input type="number" min={0} max={1} step={0.01} placeholder={ph(defaults?.reviewAutoActionThreshold, "0 (default)")} value={reviewThreshold} onChange={(e) => setReviewThreshold(e.target.value)} />
+              </Field>
+            </div>
+          </div>
+
+          <div className="space-y-3 border-t border-border pt-4">
+            <Label>Social-graph tuning (co-participates)</Label>
+            <p className="text-xs text-faint">Bounds the co-commenter edges written to the graph. Blank = server default.</p>
+            <div className="grid gap-4 sm:grid-cols-3">
+              <Field label="Lookback (days)" hint="0–365">
+                <Input type="number" min={0} max={365} step={1} placeholder={ph(defaults?.coParticipates?.lookbackDays, "7 (default)")} value={cpLookback} onChange={(e) => setCpLookback(e.target.value)} />
+              </Field>
+              <Field label="Max participants" hint="1–500 (query cap)">
+                <Input type="number" min={1} max={500} step={1} placeholder={ph(defaults?.coParticipates?.maxParticipants, "50 (default)")} value={cpMaxParticipants} onChange={(e) => setCpMaxParticipants(e.target.value)} />
+              </Field>
+              <Field label="Max edge weight" hint="1–1000">
+                <Input type="number" min={1} max={1000} step={1} placeholder={ph(defaults?.coParticipates?.maxWeight, "10 (default)")} value={cpMaxWeight} onChange={(e) => setCpMaxWeight(e.target.value)} />
+              </Field>
+            </div>
+          </div>
+
+          <div className="grid gap-4 border-t border-border pt-4 sm:grid-cols-2">
+            <Field label="Provider" hint="Blank = the scorer's env Haiku config. A project can bring its own provider + key (OpenAI-compatible or Anthropic).">
               <select className={selectCls} value={provider} onChange={(e) => setProvider(e.target.value as "" | LlmProvider)}>
                 <option value="">{defaults ? `Server default (${defaults.llm.provider})` : "Server default"}</option>
                 <option value="openai">openai (OpenAI-compatible)</option>
                 <option value="anthropic">anthropic</option>
               </select>
-            </Field>
-            <Field label="API base URL" hint="OpenAI-compatible host (Groq, Together, Ollama, …). Blank = provider default.">
-              <Input type="url" placeholder={ph(defaults?.llm.baseUrl, "https://api.openai.com/v1")} value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} />
             </Field>
             <Field
               label="API key"
@@ -242,6 +285,23 @@ function ModeratorForm({
               <Input type="number" min={1} step={1} placeholder={ph(defaults?.llm.maxTokens, "512")} value={maxTokens} onChange={(e) => setMaxTokens(e.target.value)} />
             </Field>
           </div>
+
+          {running?.config.deployment && (
+            <div className="space-y-2 border-t border-border pt-4">
+              <Label>Deployment status</Label>
+              <p className="text-xs text-faint">Env-owned · restart to change.</p>
+              <div className="grid gap-1.5 sm:grid-cols-2">
+                <EffRow label="Toxicity server" eff={{ value: running.config.deployment.toxicityUrl, source: "default" }} />
+                <EffRow label="Relationship server" eff={{ value: running.config.deployment.relationshipUrl, source: "default" }} />
+                <EffRow label="Queue" eff={{ value: running.config.deployment.queue, source: "default" }} />
+                <EffRow label="Poll interval (ms)" eff={{ value: String(running.config.deployment.pollIntervalMs), source: "default" }} />
+                <EffRow label="Visibility timeout (s)" eff={{ value: String(running.config.deployment.visibilityTimeoutS), source: "default" }} />
+                <EffRow label="Anthropic key" eff={{ value: running.config.deployment.anthropicApiKeySet ? "set" : "not set", source: running.config.deployment.anthropicApiKeySet ? "default" : "unset" }} />
+                <EffRow label="Listen DB (NOTIFY)" eff={{ value: running.config.deployment.listenDatabaseUrlSet ? "set" : "not set", source: running.config.deployment.listenDatabaseUrlSet ? "default" : "unset" }} />
+                <EffRow label="Neo4j" eff={{ value: running.config.deployment.neo4j.enabled ? `on · ${running.config.deployment.neo4j.database}` : "off", source: running.config.deployment.neo4j.enabled ? "default" : "unset" }} />
+              </div>
+            </div>
+          )}
 
           <div className="space-y-2 border-t border-border pt-4">
             <Label>Moderation categories</Label>
@@ -336,7 +396,7 @@ function EffectiveSummary({
 }: {
   running: ModeratorRunningConfig | null;
   runningFailed: boolean;
-  eff: Record<"blockThreshold" | "reviewThreshold" | "provider" | "baseUrl" | "model" | "maxTokens", Effective>;
+  eff: Record<"blockThreshold" | "reviewThreshold" | "grayLow" | "grayHigh" | "provider" | "model" | "maxTokens", Effective>;
   apiKeyEff: Effective;
 }) {
   const writeBack = running?.config.writeBack;
@@ -357,8 +417,9 @@ function EffectiveSummary({
         <EffRow label="Model" eff={eff.model} />
         <EffRow label="Block auto-action" eff={eff.blockThreshold} />
         <EffRow label="Review auto-action" eff={eff.reviewThreshold} />
+        <EffRow label="Gray-zone low" eff={eff.grayLow} />
+        <EffRow label="Gray-zone high" eff={eff.grayHigh} />
         <EffRow label="Max tokens" eff={eff.maxTokens} />
-        <EffRow label="API base URL" eff={eff.baseUrl} />
         <EffRow label="API key" eff={apiKeyEff} />
       </div>
     </div>
