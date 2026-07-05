@@ -115,7 +115,7 @@ dashboard + backups*, with `ops` kept intentionally thin.
 
 | Module | v1 commands | Notes |
 |---|---|---|
-| **`doctor`** ⭐ | `agora doctor` | The flagship preflight. Checks: docker/compose present + versions; which Compose profiles are up; per-container health; API `/health` reachable; DB reachable; host mem/disk/cpu headroom. Optional `agora doctor contract` smokes the API response shapes against the hand-modeled structs (drift guard). Pretty pass/fail report. |
+| **`doctor`** ⭐ | `agora doctor` | The flagship preflight. Checks: docker/compose present + versions; which Compose profiles are up; per-container health; API `/health` reachable; DB reachable; host mem/disk/cpu headroom; **unapplied DB migrations** (drizzle journal vs what's applied — see below). Optional `agora doctor contract` smokes the API response shapes against the hand-modeled structs (drift guard). Pretty pass/fail report. |
 | **`dashboard`** ⭐ | bare `agora`, or `agora dashboard` | The centerpiece. Live Bubbletea TUI: container health & `stats`, host resources (sparklines), API health, a tail of recent logs. |
 | **`host`** | `host ps`, `host stats`, `host logs <svc>`, `host up/down/restart [--profile]` | Thin, pretty wrapper over the `containerDriver` (Compose). Lifecycle commands respect the two-axis profile model. |
 | **`db`** (fenced) | `db backup`, `db migrate`, `db seed`, `db genesis` | **Fenced & confirm-gated** — this tier bypasses the server. `backup` = `pg_dump` (+ optional storage/MinIO bucket) to a local destination. `migrate`/`seed`/`genesis` **shell out to the existing `apps/api/scripts/*.mjs`**. |
@@ -126,6 +126,24 @@ dashboard + backups*, with `ops` kept intentionally thin.
 `agora db backup` is in v1 (self-host need). It runs `pg_dump` against the local `DATABASE_URL` and,
 optionally, snapshots the storage bucket (MinIO/S3) when `STORAGE_PROVIDER=s3`. Destination is a local
 path in v1; remote/scheduled backups are a future enhancement (not v1).
+
+### Migrations are a *manual* step (why `doctor` checks for drift)
+
+Migrations do **not** run on API startup. The `agora` service's container command is just
+`node dist/index.js` (`apps/api/Dockerfile`) — there is no migrate-on-boot in `src/index.ts`. Applying
+migrations is an explicit, separate step, documented only as a comment in the compose files:
+
+```bash
+docker compose run --rm agora node scripts/migrate.mjs   # migrations (self-host / every deploy)
+```
+
+The consequence: a code deploy can **outrun the schema**. If you pull a new image but forget to run
+`migrate.mjs`, new code that reads a not-yet-added column will `500` (e.g. a `select *` row missing a
+column the shaper reads → `KeyError` → bare `Internal Server Error`), and **restarting the API does not
+fix it** — restart re-runs the same unmigrated schema. This is precisely why `agora doctor` flags
+pending migrations (drizzle journal vs applied) and why `agora db migrate` exists as a first-class,
+one-command wrapper: catch the drift in preflight, apply it without hunting for the buried compose
+comment.
 
 ### Fencing the `db` tier
 
