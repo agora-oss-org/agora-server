@@ -64,7 +64,7 @@ async def assess_and_record(
     if tox >= cfg.grayzone_high:
         verdict, confidence, reason = "block", tox, "High toxicity score"
     elif tox >= cfg.grayzone_low:
-        result = await haiku_assess(settings, text, cfg.categories, context) if settings.haiku_enabled() else None
+        result = await haiku_assess(cfg, text, cfg.categories, context) if cfg.llm_enabled() else None
         if result is not None:
             verdict, categories, confidence, reason = result.verdict, result.categories, result.confidence, result.reason
             model = result.model
