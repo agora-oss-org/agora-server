@@ -148,7 +148,21 @@ The toxicity RoBERTa runs on **everything** and its score drives a gray-zone gat
 The verdict then flows through the **salvaged** `auto_action.decide_auto_action` against the project's
 two confidence floors (block/review), and — for `entity`/`comment` (the only scored types) — a
 triggered removal is applied via the API write-back. Every assessment records one `moderation_analyses`
-row (the admin queue). The **relationship** RoBERTa score is written to the Neo4j graph in parallel.
+row (the admin queue) — stamped with both **raw classifier signals** (`toxicity_score` = P(toxic),
+`relationship_score` = the signed sentiment quality), on every verdict **including `allow`**, so a
+human reviewer sees what the models measured and future threshold ideas can be validated against
+real traffic instead of guesses. The **relationship** RoBERTa score is written to the Neo4j graph in parallel.
+
+### Future addition (documented, NOT implemented): disagreement routing
+
+When `P(toxic) ≥ grayzone_high` **but** the relationship score is strongly positive, the two models
+disagree — a pattern typical of sarcasm, quoted lyrics, or in-group banter. A future gate could route
+that combination to `review` (the human queue) instead of auto-blocking. What makes it acceptable to
+consider: it only ever moves content **toward** humans (fail-closed — it can never cause a removal),
+and the "strongly positive" threshold must be validated against the accumulated analysis rows (which
+now record both signals on every verdict, `allow` included) — not guessed. The relationship score is
+deliberately NOT a moderation gate today: sentiment ≠ toxicity (grief/venting read negative but are
+fine; polite harassment reads positive but isn't). See `services/scorer/README.md` → "The cascade".
 
 ## The relationship graph
 

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Raw classifier signals on moderation analyses.** Every scorer assessment now records the two
+  RoBERTa outputs on its `moderation_analyses` row — `toxicity_score` (P(toxic), 0..1) and
+  `relationship_score` (signed sentiment, −1..1) — on every verdict including `allow`, and the admin
+  AI-flag dialog shows them to human reviewers (migration `0056`, additive contract fields on
+  `ModerationAnalysis`). Audit context only — no decision-logic change; the "disagreement routing"
+  idea is documented as a future addition in `docs/SCORER.md`.
+
 ### Changed
 - **`docker-publish` now moves `latest` on a manual `workflow_dispatch` run.** Previously the `latest`
   tag (and all version tags) were derived purely from a `v*` tag push, so a hand-triggered rebuild off a
