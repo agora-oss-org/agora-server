@@ -1,6 +1,6 @@
 {
   "name": "@agora/api",
-  "version": "0.16.5",
+  "version": "0.17.0",
   "private": true,
   "type": "module",
   "description": "Replyke-compatible community backend API (Hono + Supabase + socket.io)",
