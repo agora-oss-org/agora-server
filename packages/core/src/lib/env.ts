@@ -160,12 +160,13 @@ const schema = z.object({
   // Unset → http://localhost:5173 (dev). Set to your public app origin in production or the links 404.
   // This is the DEFAULT/fallback base; per-front-end selection is layered on via the allowlist below.
   AUTH_EMAIL_LINK_BASE: z.preprocess((v) => (v === "" ? undefined : v), z.string().url().default("http://localhost:5173")),
-  // Native-auth link-base ALLOWLIST for multi-front-end deploys. Comma-separated app origins a client
-  // may request via the sign-up/reset/resend `emailRedirectTo` field (e.g.
-  // https://agora-oss.org,https://demo.agora-oss.org). The server ONLY builds emailed links to an
-  // allowlisted origin (open-redirect / phishing guard) and 400s a non-allowlisted emailRedirectTo.
-  // Unset → feature off: emailRedirectTo is ignored and links always use AUTH_EMAIL_LINK_BASE. Never
-  // trust an un-allowlisted client value. Empty=unset.
+  // Native-auth link-base ALLOWLIST. Comma-separated app origins a client may request via the
+  // sign-up/reset/resend `emailRedirectTo` field (e.g. https://agora-oss.org,https://demo.agora-oss.org).
+  // The server ONLY builds emailed links to an allowlisted origin (open-redirect / phishing guard) and
+  // 400s a non-allowlisted emailRedirectTo. REQUIRED for native-auth email: unset → the confirm/reset/
+  // resend paths fail closed (503 auth/email-not-configured + a warning log) rather than trust an
+  // unvalidated client value or a possibly-wrong default. Supabase-backed projects ignore this (they
+  // broker their own emails + redirect validation). Empty=unset.
   AUTH_EMAIL_LINK_ALLOWED_ORIGINS: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
 });
 

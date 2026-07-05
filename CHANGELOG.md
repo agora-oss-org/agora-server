@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Native-auth emailed links no longer silently ignore `emailRedirectTo`.** When
+  `AUTH_EMAIL_LINK_ALLOWED_ORIGINS` was unset, the link selector fell back to `AUTH_EMAIL_LINK_BASE`
+  and dropped the client's requested origin — so a front-end that correctly sent
+  `emailRedirectTo: https://demo.example.com` still received a reset/confirm link pointing at the
+  default domain. (`lib/auth/email/sender.ts`.)
+
+### Changed
+- **Native-auth email now REQUIRES `AUTH_EMAIL_LINK_ALLOWED_ORIGINS`.** Without a configured allowlist
+  there is no way to validate a client-supplied `emailRedirectTo`, so the confirm/reset/resend paths now
+  **fail closed**: they log a warning and return `503 auth/email-not-configured` (pointing the operator
+  at the env var) instead of emailing a link built from an unvalidated value or the possibly-wrong
+  default base. The link-base gate is now scoped to providers that build their own links
+  (`AuthProvider.usesEmailLinks` — native `true`, Supabase `false`), so Supabase-backed projects — which
+  broker their own emails + redirect validation — are unaffected and never hit the new gate.
+  (`routes/auth.ts`, `lib/auth/{provider,native-provider,supabase-provider}.ts`,
+  `lib/auth/email/sender.ts`.)
+
 ## [0.16.5] - 2026-07-04
 
 ### Changed

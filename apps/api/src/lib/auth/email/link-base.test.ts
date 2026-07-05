@@ -19,8 +19,13 @@ describe("normalizeOrigin", () => {
 });
 
 describe("selectEmailLinkBase", () => {
-  it("returns the default and IGNORES the client value when the allowlist is empty (feature off)", () => {
-    expect(selectEmailLinkBase("https://evil.com", new Set(), DEFAULT)).toBe(DEFAULT);
+  it("returns null when the allowlist is empty — native email REQUIRES a configured allowlist (fail closed)", () => {
+    // No allowlist means we can't validate any origin, so we never fall back to a base built from an
+    // unvalidated client value — nor to a default that may be the wrong front-end. Caller 503s + warns.
+    expect(selectEmailLinkBase("https://evil.com", new Set(), DEFAULT)).toBeNull();
+    expect(selectEmailLinkBase("https://demo.agora-oss.org", new Set(), DEFAULT)).toBeNull();
+    expect(selectEmailLinkBase(undefined, new Set(), DEFAULT)).toBeNull();
+    expect(selectEmailLinkBase(null, new Set(), DEFAULT)).toBeNull();
   });
 
   it("returns the default when the client sent nothing", () => {

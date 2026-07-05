@@ -4,6 +4,7 @@ import { Errors } from "../../http/errors.js";
 import type { AuthProvider, SignUpResult, AccountDeletionMode } from "./provider.js";
 
 export class SupabaseAuthProvider implements AuthProvider {
+  readonly usesEmailLinks = false; // Supabase Auth sends its own emails + validates redirects itself
   async signUp(_projectId: string, email: string, password: string): Promise<SignUpResult> {
     const { data, error } = await getSupabaseAnon().auth.signUp({ email, password });
     if (error) throw Errors.badRequest("auth/sign-up-failed", error.message);

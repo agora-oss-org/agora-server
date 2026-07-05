@@ -12,7 +12,7 @@ import { requireAuth, optionalAuth } from "../middleware/auth.js";
 import { db } from "../db/index.js";
 import { profiles, userSuspensions, projects } from "../db/schema/index.js";
 import { getAuthProvider } from "../lib/auth/index.js";
-import { resolveEmailLinkBase } from "../lib/auth/email/sender.js";
+import { resolveEmailLinkBase, allowedEmailOrigins } from "../lib/auth/email/sender.js";
 import { defaultUsername } from "../lib/profiles.js";
 import { mintSession, rotateRefreshToken, revokeRefreshToken, revokeAllForProfile } from "../lib/tokens.js";
 import { requestAccountDeletion, verifyAccountDeletionCode, resolveDeletionMode } from "../lib/account-deletion.js";
@@ -29,11 +29,21 @@ import {
 
 type ProfileRow = typeof profiles.$inferSelect;
 
-// Resolve + validate the client's requested email link base (native auth, multi-front-end). Returns the
-// allowlisted origin to build emailed links on, or 400s when a non-allowlisted origin was requested —
-// the open-redirect / phishing guard. Falls back to AUTH_EMAIL_LINK_BASE when the allowlist is off or no
-// value was sent. Called BEFORE any account/token mutation so a bad redirect fails closed and early.
+// Resolve + validate the client's requested email link base for NATIVE auth (multi-front-end). Returns
+// the allowlisted origin to build emailed links on. Called (native providers only — see usesEmailLinks)
+// BEFORE any account/token mutation so a bad/misconfigured redirect fails closed and early:
+//   - allowlist unset  → 503 auth/email-not-configured (+ warn): native email REQUIRES
+//     AUTH_EMAIL_LINK_ALLOWED_ORIGINS. We never fall back to an unvalidated client value or a base that
+//     may be the wrong front-end — that's the open-redirect / phishing hole this guards.
+//   - non-allowlisted  → 400 auth/email-redirect-not-allowed (the phishing guard).
 function requireEmailLinkBase(requested: string | undefined): string {
+  if (allowedEmailOrigins().size === 0) {
+    logger.warn("auth: native email link requested but AUTH_EMAIL_LINK_ALLOWED_ORIGINS is not configured");
+    throw Errors.unavailable(
+      "auth/email-not-configured",
+      "Native-auth email is not configured: set AUTH_EMAIL_LINK_ALLOWED_ORIGINS to your front-end origin(s)",
+    );
+  }
   const base = resolveEmailLinkBase(requested);
   if (base === null) {
     throw Errors.badRequest("auth/email-redirect-not-allowed", "emailRedirectTo is not an allowed origin", "emailRedirectTo");
@@ -85,13 +95,13 @@ export const authRoutes = new Hono<{ Variables: Variables }>()
   .post("/sign-up", async (c) => {
     const projectId = c.var.projectId;
     const body = parseBody(signUpSchema, await c.req.json().catch(() => ({})), "auth");
-    const linkBase = requireEmailLinkBase(body.emailRedirectTo);
+    const provider = await getAuthProvider(projectId);
+    const linkBase = provider.usesEmailLinks ? requireEmailLinkBase(body.emailRedirectTo) : undefined;
     const check = await webhooks.validate(projectId, "user.created", { email: body.email, name: body.name, username: body.username });
     if (!check.valid) {
       logger.info({ projectId }, "auth: sign-up rejected by validation webhook");
       throw Errors.forbidden("auth/rejected", check.message ?? "Sign-up rejected by validation webhook");
     }
-    const provider = await getAuthProvider(projectId);
     const result = await provider.signUp(projectId, body.email, body.password, linkBase);
     if (result.status === "confirmation_required") {
       logger.info({ projectId }, "auth: sign-up pending email confirmation");
@@ -164,8 +174,8 @@ export const authRoutes = new Hono<{ Variables: Variables }>()
   })
   .post("/request-password-reset", async (c) => {
     const body = parseBody(emailSchema, await c.req.json().catch(() => ({})), "auth");
-    const linkBase = requireEmailLinkBase(body.emailRedirectTo);
     const provider = await getAuthProvider(c.var.projectId);
+    const linkBase = provider.usesEmailLinks ? requireEmailLinkBase(body.emailRedirectTo) : undefined;
     await provider.startPasswordReset(c.var.projectId, body.email, linkBase);
     return c.json({ success: true });
   })
@@ -191,8 +201,8 @@ export const authRoutes = new Hono<{ Variables: Variables }>()
   })
   .post("/send-verification-email", async (c) => {
     const body = parseBody(emailSchema, await c.req.json().catch(() => ({})), "auth");
-    const linkBase = requireEmailLinkBase(body.emailRedirectTo);
     const provider = await getAuthProvider(c.var.projectId);
+    const linkBase = provider.usesEmailLinks ? requireEmailLinkBase(body.emailRedirectTo) : undefined;
     await provider.resendConfirmation(c.var.projectId, body.email, linkBase);
     return c.json({ success: true });
   })

@@ -18,6 +18,7 @@ function normalizeEmail(email: string): string {
 }
 
 export class NativeAuthProvider implements AuthProvider {
+  readonly usesEmailLinks = true; // builds + sends its own confirm/reset links → needs a validated link base
   constructor(private readonly email: EmailSender) {}
 
   async signUp(projectId: string, emailRaw: string, password: string, linkBase?: string): Promise<SignUpResult> {

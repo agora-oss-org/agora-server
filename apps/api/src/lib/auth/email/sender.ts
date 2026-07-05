@@ -95,9 +95,13 @@ export function allowedEmailOrigins(): Set<string> {
   return _allowCache;
 }
 
-/** Pure link-base selector (extracted for testability). Security core of the multi-front-end feature:
- *  - allowlist empty        → feature off → default base (client value IGNORED — never trust unvalidated)
- *  - requested absent       → default base (canonical)
+/** Pure link-base selector (extracted for testability). Security core of native-auth emailed links (only
+ *  native builds server-side links — Supabase brokers its own). A configured allowlist is REQUIRED to send
+ *  native-auth email: without it we can't validate the front-end origin, so we fail CLOSED rather than
+ *  emailing a link built from an unvalidated client value (open-redirect / phishing) or silently falling
+ *  back to a base that may be the wrong front-end. Cases:
+ *  - allowlist empty        → null  (misconfiguration — caller 503s + warns; NEVER falls back)
+ *  - requested absent       → default base (canonical single front-end within a configured allowlist)
  *  - requested ∈ allowlist  → that origin
  *  - requested ∉ allowlist  → null  (caller MUST reject with 400 — do not fall back to it) */
 export function selectEmailLinkBase(
@@ -105,7 +109,7 @@ export function selectEmailLinkBase(
   allowlist: Set<string>,
   defaultBase: string,
 ): string | null {
-  if (allowlist.size === 0) return defaultBase;
+  if (allowlist.size === 0) return null; // native email requires a configured allowlist — fail closed
   if (!requested) return defaultBase;
   const origin = normalizeOrigin(requested);
   return origin && allowlist.has(origin) ? origin : null;

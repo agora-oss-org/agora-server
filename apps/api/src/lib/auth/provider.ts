@@ -13,6 +13,10 @@ export type SignUpResult =
 export type AccountDeletionMode = "hard" | "soft" | "ban";
 
 export interface AuthProvider {
+  /** Whether this provider builds+sends its OWN emails with server-constructed links (native), and so
+   *  needs a validated front-end link base per request. Supabase brokers its own emails + redirect
+   *  validation, so it's false there — the handler skips the link-base gate entirely for it. */
+  readonly usesEmailLinks: boolean;
   /** Create an account. Returns confirmed (mint a session now) or confirmation_required (email sent).
    *  `linkBase` (native auth) is the already-validated front-end origin for the emailed confirm link. */
   signUp(projectId: string, email: string, password: string, linkBase?: string): Promise<SignUpResult>;
