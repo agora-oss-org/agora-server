@@ -187,10 +187,13 @@ signs an RS256 JWT (issuer=projectId, aud="replyke.com", sub=userData.id, claim 
 | GET | `/follows/following-count` | ✅ |
 
 ### connections (state machine: none → pending → connected/declined)
-> ⚠️ Endpoints not fully visible in axios sweep (likely RTK-Query layer / different prefix).
-> Confirm exact paths from OpenAPI. Response shapes are in `interfaces/models/Connection.ts`.
-> Operations the SDK exposes: send request, accept, decline, withdraw, disconnect,
-> list connections, list pending (received/sent), connection status, connection count.
+> Fully implemented in `routes/connections.ts` (mounted at the `/v7` root, not under `/:projectId` — the
+> project is derived from the caller's profile). Response shapes are in `interfaces/models/Connection.ts`;
+> connections pagination uses its own envelope (`{ currentPage, totalPages, totalCount, hasNextPage,
+> hasPreviousPage, limit }` — see §1/§3). Operations the SDK exposes: send request, accept, decline,
+> withdraw, disconnect, list connections (own + `GET /users/:userId/connections`), list pending
+> (received/sent), connection status, connection count. Request/accept fan out over `notification:created`
+> (types `connection-request` / `connection-accepted`); non-UUID path params are rejected with `400`.
 
 ### spaces
 | Method | Path | Status |
@@ -204,6 +207,7 @@ signs an RS256 JWT (issuer=projectId, aud="replyke.com", sub=userData.id, claim 
 | GET | `/spaces/by-slug?slug=` | ✅ |
 | GET | `/spaces/check-slug?slug=` | ✅ |
 | GET | `/spaces/user-spaces` | ✅ |
+| GET | `/spaces/mutual/:userId` (spaces where both caller + `:userId` are active members; `useFetchMutualSpaces`. Static `mutual` segment declared above `/:id`) | ✅ |
 | GET | `/spaces/:id/breadcrumb` | ✅ |
 | GET | `/spaces/:id/children?page=&limit=` | ✅ |
 | POST | `/spaces/:id/join` | ✅ |
@@ -268,6 +272,7 @@ lock). Removing the last host is rejected (`400 events/last-host`); a hidden gue
 | POST | `/chat/conversations/direct` | ✅ |
 | GET | `/chat/conversations/:id` | ✅ |
 | GET | `/chat/conversations/:id/preview` | ✅ |
+| GET | `/chat/conversations/unread-count` (authoritative badge source → `{ totalUnread, unreadConversationCount }` aggregated across all member conversations; declared above `/:id` so the static segment wins) | ✅ |
 | PATCH | `/chat/conversations/:id` | ✅ |
 | DELETE | `/chat/conversations/:id` | ✅ |
 | DELETE | `/chat/conversations/:id/leave` | ✅ |

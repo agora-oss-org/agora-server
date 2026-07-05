@@ -113,8 +113,11 @@ output is empty) so series are never double-counted; the scorer skips the OTLP m
 (scrape-only from the start — see the note above) to avoid the same 404s. The scorer has no *custom*
 metrics yet, so its scraped series are auto-instrumentation RED metrics only.
 
-> **Internal by design.** The `:9464` endpoints and the LGTM backends are reachable only on the compose
-> network, **never** through the public Caddy front door (a Prometheus endpoint must not be public).
+> **Internal by design.** The `:9464` scrape endpoints and Tempo / Mimir / Loki are reachable only on
+> the compose network, **never** through the public Caddy front door (a Prometheus endpoint must not be
+> public). **Grafana** is the one exception — the front door routes `/grafana/*` to it (`GRAFANA_UPSTREAM`
+> + `GF_SERVER_SERVE_FROM_SUB_PATH`), and in prod its direct `:3000` host port is dropped so it's reached
+> **only** via `/grafana/` (behind a login). The `:9464`/Tempo/Mimir/Loki internal rule is unchanged.
 
 ### Bundled dashboards
 
@@ -157,8 +160,11 @@ the scorer.
 
 ### 3. Verify in Grafana
 
-Open **http://localhost:3000** (anonymous admin, local convenience). The **Agora** dashboard folder is
-pre-loaded — open **Agora — Overview** and **Agora — Logs** for the curated views. To poke around raw:
+Open Grafana at **`/grafana/`** behind the Caddy front door (e.g. `https://localhost/grafana/`); in dev
+the container also publishes the direct port **http://localhost:3000** (anonymous admin, local
+convenience) — in prod that host port is dropped, so `/grafana/` is the only way in. The **Agora**
+dashboard folder is pre-loaded — open **Agora — Overview** and **Agora — Logs** for the curated views.
+To poke around raw:
 
 - **Explore → Tempo** — search by service; you should see `agora-api`, `agora-secure-chat`, and the
   `agora-scorer-*` trio. A socket `join` and a Voyage embed produce spans.
@@ -194,7 +200,9 @@ The Node telemetry is declared in YAML, not code — both apps load
 ```yaml
 service:
   name: ${SERVICE_NAME:-agora-api}        # secure-chat overrides this to agora-secure-chat
-  version: ${SERVICE_VERSION:-0.14.0}
+  # version is NOT set here — it's injected programmatically at runtime from @agora/core's
+  # package.json (lib/version.ts → createTelemetryFromConfig `overrides.serviceVersion`), so a
+  # YAML placeholder can't go stale (SERVICE_VERSION/npm_package_version aren't set under `node dist`).
   environment: ${NODE_ENV:-development}
 
 logger:
@@ -250,7 +258,6 @@ local collector at `localhost:4318`.
 |---|---|---|
 | `OTEL_SDK_DISABLED` | `true` (compose) | The master switch. `false` turns telemetry on. Logging is unaffected. |
 | `SERVICE_NAME` | `agora-api` | `service.name` (Node). secure-chat overrides via `SECURE_CHAT_SERVICE_NAME`. |
-| `SERVICE_VERSION` | `0.14.0` | `service.version`. |
 | `NODE_ENV` | `development` | `deployment.environment`. |
 | `LOG_LEVEL` | `debug` | `trace`\|`debug`\|`info`\|`warn`\|`error`\|`fatal`\|`silent`. Use `info` in prod. |
 | `LOG_CONSOLE` | `aligned` | `aligned` (dev) or `json` (prod). |

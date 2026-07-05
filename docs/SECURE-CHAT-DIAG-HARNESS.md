@@ -31,8 +31,9 @@ server — and to keep it around for load testing and regression knowledge.
   pass/fail test against a throwaway DB. It is **not** two independently-invocable, persistent,
   handle-addressable client processes. It proves the protocol works *in vitro*; it is not an
   operable two-terminal harness.
-- **`apps/api/test/integration/secure-chat-*.test.ts`** (devices / flow / membership / realtime /
-  backup) prove the **server API contract** with `MockSecureChatCrypto`. Green.
+- **`apps/secure-chat/test/integration/secure-chat-*.test.ts`** (devices / flow / membership / realtime /
+  backup) prove the **server API contract** with `MockSecureChatCrypto`. Green. *(These moved with the
+  service split — none remain under `apps/api`.)*
 - **Gap:** nothing exercises the **persistence / reload seam** the browser bug actually lives in —
   the `SecureChatRepository` + store + device-rehydrate cycle ("save device → simulate reload →
   `loadDevice` should rehydrate, NOT re-register"). The e2e holds group handles in local vars; it

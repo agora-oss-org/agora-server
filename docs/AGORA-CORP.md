@@ -1,11 +1,12 @@
 # Agora Corp — the corporate deployment profile 🏢✨
 
-> **Status: CONFIG LAYER IMPLEMENTED; ANALYTICS PROPOSED.** The `corporate` privacy tier, its
+> **Status: CONFIG LAYER + ANALYTICS SHIPPED.** The `corporate` privacy tier, its
 > per-tier flag defaults, the two-point enforcement (§4), and the mandatory member-transparency
 > endpoint (§4.5) shipped in **PR 1** (`packages/contract/src/social.ts`, `GET /social/transparency`).
-> The analytics **computation** the tier unlocks (§2/§6 — influence/silo/engagement scores via
-> PageRank/Louvain/OpenGDS) is **not yet built**: PR 1 ships the *flags* that gate it, not the graph
-> algorithms behind them. The corporate-installation counterpart to
+> The analytics **computation** the tier unlocks (§2/§6 — influence/silo/engagement scores via GDS
+> PageRank/betweenness/Louvain over OpenGDS) **shipped in PR 6** (the operator-only `/admin/social/*`
+> report API), with the operator React dashboards in **PR 7** and per-space read receipts in **PR 8** —
+> see the ✅ markers in §2 and §8. The corporate-installation counterpart to
 > [`AGORA-SOCIAL.md`](AGORA-SOCIAL.md) (the community design, condensed) and
 > [`SOCIAL-GRAPH.md`](SOCIAL-GRAPH.md) (the graph consolidation + `social_config` plan).
 > This doc specifies what an **internal corporate social platform** deployment of Agora
@@ -236,7 +237,8 @@ the `corporate` tier config ships with **Phase 1** (it's just the jsonb + clamps
 Weather with Phase 1–2, read receipts + the OpenGDS analytics suite are **Phase 4**. ✅ The
 **analytics API** (influence / silos / engagement reports + operator forced-recompute) shipped
 in **PR 6** — see §2 flagship — and the operator React dashboards (a tabbed, operator-only **Social**
-page in `apps/admin`) shipped in **PR 7**; per-space read receipts remain.
+page in `apps/admin`) shipped in **PR 7**; per-space read receipts shipped in **PR 8** (§4.5). **Phase 4
+is complete.**
 
 Open questions:
 

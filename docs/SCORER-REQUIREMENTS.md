@@ -188,7 +188,7 @@ The worker is a single consumer group and can only be scaled to multiple replica
 **Option 1: Disable Neo4j relationship writes**
 - Unset `NEO4J_*` in `.env`
 - Saves ~150 MB in the worker (driver won't load)
-- Trade-off: relationship graph not populated (v1 data loss, but v2 is deferred anyway)
+- Trade-off: the relationship graph (v1 author→content **and** the LIVE v2 user→user interaction graph) is not populated — disabling `NEO4J_*` turns off all relationship-edge writes
 
 **Option 2: Use smaller models**
 - Swap `SCORER_TOXICITY_MODEL` / `SCORER_RELATIONSHIP_MODEL` to distilled variants:
@@ -466,9 +466,9 @@ Peak memory should stabilize within the `mem_limit` boundaries. If not, adjust l
 
 A: Yes, that's the baseline! Pin toxicity to core 0, relationship to core 1, and let the worker float. The models are memory-bound, not CPU-bound, so 1 core per model is enough. The worker is I/O-bound, so it doesn't need dedicated cores. Memory is tight (1.5 GB limit per model), so monitor and be prepared to scale up on spikes.
 
-**Q: What if I don't need the relationship graph (v2 is future)?**
+**Q: What if I don't need the relationship graph?**
 
-A: Set `unset NEO4J_*` in `.env`. The relationship edge writes become a no-op (logged), saving ~150 MB in the worker. The Neo4j container can stay off entirely.
+A: Set `unset NEO4J_*` in `.env`. All relationship edge writes — v1 author→content and the LIVE v2 user→user interaction graph — become a no-op (logged), saving ~150 MB in the worker. The Neo4j container can stay off entirely.
 
 **Q: Can I run scorer on ARM (Apple Silicon, Graviton)?**
 

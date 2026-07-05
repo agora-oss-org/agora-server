@@ -42,8 +42,11 @@ Three endpoints accept an **optional** `emailRedirectTo` field in the JSON body:
 
 **Server behavior**
 
-1. If the deployment's allowlist (`AUTH_EMAIL_LINK_ALLOWED_ORIGINS`) is **unset** → the field is
-   **ignored**; links use the server default `AUTH_EMAIL_LINK_BASE`. (Single-front-end / dev.)
+1. **Native auth requires the allowlist.** If `AUTH_EMAIL_LINK_ALLOWED_ORIGINS` is **unset**, native-auth
+   confirm/reset/resend now **fail closed** — the server returns **`503 auth/email-not-configured`** (there
+   is no trusted way to validate a client-supplied origin, so it won't build a link on an unvalidated value
+   or a possibly-wrong default). Set the allowlist to enable these flows. (Supabase-backed projects are
+   unaffected — they broker their own emails and never hit this gate.)
 2. If the allowlist **is set**:
    - `emailRedirectTo` **omitted** → server uses `AUTH_EMAIL_LINK_BASE` (canonical default).
    - `emailRedirectTo` **origin ∈ allowlist** → server uses that origin. ✅

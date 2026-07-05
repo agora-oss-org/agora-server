@@ -160,6 +160,7 @@ the `auth` roles. So "self-hosted" drops the Supabase *service*, not the Supabas
 | RAG `/search/ask` | `ANTHROPIC_API_KEY` | ◻️ | [console.anthropic.com](https://console.anthropic.com). |
 | Operators (god-view) | `OPERATOR_EMAILS` / `OPERATOR_USER_IDS` | ◻️ | **You choose** — your admin email(s) / profile UUID(s), comma-separated. Unset → no operators. |
 | Cron jobs | `CRON_SECRET` | ◻️ | Gates `POST /internal/cron/*` (503 until set). `openssl rand -base64 32`. |
+| Content-delete semantics | `CONTENT_DELETE_MODE` | ◻️ | `hard` (default) → deleting an entity/comment/message/event truly `DELETE`s the row (FK cascade) **and** removes its media from storage. `soft` → recoverable tombstone, media kept. |
 | OAuth callbacks behind a proxy | `PUBLIC_BASE_URL` | ◻️ | Your public origin, e.g. `https://api.example.com` — used to build absolute OAuth callback URLs. |
 | Tracing/metrics (bundled LGTM) | `OTEL_SDK_DISABLED`, `OTEL_*_ENDPOINT` | ◻️ | `--profile observability` brings up Alloy + Tempo/Mimir/Loki/Grafana; the apps already point their OTLP at `alloy`, so just set `OTEL_SDK_DISABLED=false`. Or point `OTEL_*_ENDPOINT` at your own collector. Off by default. |
 | Grafana login (prod) | `GRAFANA_ADMIN_PASSWORD` | ◻️ | Served at **`/grafana/`** via the front door. In **prod** anonymous is disabled → set this (with `GRAFANA_ADMIN_USER`, `GRAFANA_ROOT_URL=https://<host>/grafana/`). Dev keeps anonymous-admin on `localhost`. |
@@ -174,6 +175,7 @@ Only `VITE_`-prefixed vars reach the browser; they're baked at build. See
 | `VITE_API_BASE_URL` | ◻️ | API base. Default `/v7` (same-origin via the Caddy front door). Override only for a cross-origin API. |
 | `VITE_MODERATOR_BASE_URL` | ◻️ | Scorer base. Default `/moderator` (same-origin). |
 | `VITE_SETTINGS_READ_ONLY` | ◻️ | `true` → Settings page view-only (UI guard, not a security boundary). |
+| `VITE_SOCIAL_GRAPH_ENABLED` | ◻️ | `true` → surface the admin **Social** tab + Community Weather card (still operator-gated + needs `NEO4J_URI` on the API). Baked at build — set it before building/publishing the proxy image. |
 
 ---
 

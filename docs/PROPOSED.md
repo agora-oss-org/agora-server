@@ -2,7 +2,8 @@
 
 Forward-looking proposals that surfaced while building the **`agora-demo`** compatibility harness.
 Each item is something the demo currently **works around client-side**, or a latent gap worth
-closing. None are implemented yet — this is a design backlog.
+closing. Several have **since shipped** — see the per-section ✅-SHIPPED status banners (§2, §3, and §5
+landed 2026-06-30; §1 is partially shipped); the rest remain a design backlog.
 
 Every item is tagged by its contract impact, because that's the constraint that governs Agora:
 

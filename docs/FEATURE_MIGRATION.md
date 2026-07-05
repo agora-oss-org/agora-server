@@ -1,9 +1,18 @@
 # Feature Migration — SDK v7.6.2 → Agora server
 
+> ✅ **SHIPPED (0.16.0) — retained as historical record.** All five server-facing features described
+> below (§1 Push notifications, §2 Events, §3 Comment sorting, §4 Entity feed sorting, §5 Live
+> conversation list) have since been implemented and released in **0.16.0** (see `CHANGELOG.md`; events
+> in migration 0053, push devices in 0055). This document is kept as the historical **implementation
+> plan** that drove that work — the endpoint/table/socket details are accurate to what was built, but
+> the "must implement" framing, effort estimates, and open questions are answered. For the live
+> contract, read `docs/MANIFEST.md` + `docs/MODELS.md`.
+
 **Audience:** Agora server team
 **From:** Agora SDK (`@agora-sdk/*`)
-**Status:** Proposed — the **SDK side is already built and shipped** (v1.4.0). This document describes
-what the **server** must implement so the new client features actually work end-to-end.
+**Status:** ✅ Shipped in 0.16.0 (originally authored as a proposal — the **SDK side** was already built
+and shipped as v1.4.0). This document described what the **server** had to implement so the new client
+features work end-to-end; that server work is now done.
 
 > Filename note: created as `FEATURE_MIGRATION.md` (the request said `FETURE_`; assumed a typo —
 > rename if you genuinely want the original spelling).

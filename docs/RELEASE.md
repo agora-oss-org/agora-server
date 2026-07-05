@@ -16,37 +16,28 @@ git pull
 ./scripts/release.sh 0.12.1
 ```
 
+> **Precondition: a clean working tree.** The script owns every file it touches (version bumps +
+> `CHANGELOG.md`), so it refuses to run with uncommitted or staged changes — commit or stash first.
+
 The script will:
 1. ✅ Validate the version (semantic versioning: X.Y.Z)
-2. ✅ Bump `version` in: `package.json`, `packages/contract/package.json`, `apps/api/package.json`, `apps/admin/package.json`
-3. ⏸️  **Pause** — wait for you to update `CHANGELOG.md` manually
+2. ✅ **Roll `CHANGELOG.md` automatically** (done *first*, before the version bumps): move the
+   `[Unreleased]` section to `[0.12.1] - <today>` (today's date, YYYY-MM-DD), repoint the `[Unreleased]`
+   compare link to the new tag, and add the `[0.12.1]` compare link beneath it — deriving the repo URL +
+   previous version from the existing footer link (nothing hardcoded). It **aborts if `[Unreleased]` is
+   empty** (won't cut an empty release).
+3. ✅ Bump `version` in all six packages: `package.json`, `packages/contract/package.json`,
+   `packages/core/package.json`, `apps/api/package.json`, `apps/admin/package.json`,
+   `apps/secure-chat/package.json` (`packages/core` matters — the runtime/log service version is read
+   from its `package.json` via `lib/version.ts`)
 4. ✅ Create a commit `chore(release): v0.12.1`
 5. ✅ Create a git tag `v0.12.1`
 
-### Step 3: Update CHANGELOG.md (during the pause)
-The script pauses and asks you to update `CHANGELOG.md`:
+There is **no manual CHANGELOG pause** — the script does the roll for you. Just keep the `[Unreleased]`
+section current as you merge work (per [Keep a Changelog](https://keepachangelog.com)); the release
+turns it into the versioned section. See [`CHANGELOG.md`](../CHANGELOG.md) for the format.
 
-1. **Find the `[Unreleased]` section** at the top
-2. **Rename it to `[v0.12.1] - 2026-06-16`** (use today's date, YYYY-MM-DD format)
-3. **Update the compare links** at the bottom of the file:
-   ```markdown
-   [v0.12.1]: https://github.com/jenova-marie/agora-server/compare/v0.12.0...v0.12.1
-   [v0.12.0]: https://github.com/jenova-marie/agora-server/compare/v0.11.0...v0.12.0
-   ```
-4. **Create a new `[Unreleased]` section** for future work:
-   ```markdown
-   ## [Unreleased]
-
-   ### Added
-   ### Changed
-   ### Fixed
-   ### Removed
-   ```
-5. **Save the file** and return to the script (press Enter)
-
-See [`CHANGELOG.md`](../CHANGELOG.md) and [Keep a Changelog](https://keepachangelog.com) for format details.
-
-### Step 4: Push and publish
+### Step 3: Push and publish
 Once the script completes:
 ```bash
 git push  # push the release commit
@@ -56,7 +47,7 @@ git push --tags  # push the v0.12.1 tag
 **GitHub Actions will automatically:**
 - Build `@agora-server/contract@0.12.1`
 - Publish it to npm (if not already published)
-- Docker images are built on release tags too (if configured)
+- Build + push the Docker images on the release tag (`docker-publish.yml`)
 
 > The npm-publish workflow (`npm-publish.yml`) runs on `v*` tags. It reads the package version from `packages/contract/package.json`, so the version bump MUST land in the release commit — it's gated by the npm-publish workflow's check: `if npm view @agora-server/contract@X.Y.Z exists, skip`.
 
@@ -65,7 +56,7 @@ git push --tags  # push the v0.12.1 tag
 - **`@agora-server/contract@X.Y.Z`** — the shared API contract (Apache-2.0, public)
 - **`@agora/api`** — marked `private: true`, never published
 - **`@agora/admin`** — marked `private: true`, never published
-- **Docker images** — `agora-api`, `agora-scorer-worker`, etc. (if docker-publish.yml is configured)
+- **Docker images** — `agora-api`, `agora-scorer-worker`, etc. (built + pushed by `docker-publish.yml`)
 
 ## Troubleshooting
 

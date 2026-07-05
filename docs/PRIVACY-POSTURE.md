@@ -6,7 +6,7 @@
 > hardening + the trust-boundary model) and [`SECURE_CHAT.md`](./SECURE_CHAT.md) (the blind MLS
 > delivery service).
 >
-> **Claims in this doc were verified against the code on 2026-06-29** — secure-chat blindness +
+> **Claims in this doc were verified against the code on 2026-07-05** — secure-chat blindness +
 > crypto maturity, social-graph k-anonymity/dyadic surfaces, at-rest plaintext + deletion-cascade
 > behavior, and logging discipline. Where reality differs from the banner (secure-chat client crypto
 > is Phase 2/3; deletion of derived data is incomplete), this doc states the *as-built* truth.
@@ -142,11 +142,15 @@ square can be" goes from aspiration to defensible fact.
 - [ ] **Encryption at rest** for square content + derived stores (Postgres, Neo4j), so seizure or
       live compromise ≠ operator-trust. (Disk-level encryption helps cold theft; app/column-level is
       stronger against a live breach.)
-- [ ] **Retention limits + true deletion of derived data.** *Verified gap:* entity deletion is a
-      **soft delete** (`deletedAt`), so the plaintext content row persists; `entity_embeddings`
-      cascades, but **`content_embeddings` and `moderation_analyses` do not** (no FK to the content
-      row — they orphan), and **Neo4j graph edges get no cleanup** on content/account deletion.
-      "Delete means gone" requires propagating deletion to all derived stores.
+- [ ] **Retention limits + true deletion of derived data.** *Verified gap:* the primary content row is
+      handled — `CONTENT_DELETE_MODE` now defaults to **`hard`**, so by default deleting an
+      entity/comment truly `DELETE`s the row, FK-cascades its dependents, and removes its uploaded media
+      from storage (`soft` keeps the recoverable `deletedAt` tombstone). But the **derived stores still
+      orphan**: `content_embeddings` and `moderation_analyses` have **no FK to the content row** (only to
+      `projects`/`spaces`) and the delete handlers don't touch them, and **Neo4j graph edges get no
+      cleanup** on content/account deletion — so a hard delete removes the plaintext row while its
+      embedding, moderation analysis, and graph edges persist. "Delete means gone" requires propagating
+      deletion to all derived stores.
 - [ ] **Operator least-privilege** — scope DB-admin roles, lock down backups, audit that **logs never
       carry content**. (Agora's logging discipline already enforces this: `info`/`error` are
       message-only, raw payloads only on `debug` which is off in production — see `CLAUDE.md` →

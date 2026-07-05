@@ -33,9 +33,9 @@ The old moderator blocked on a synchronous webhook → single-LLM call per item.
 
 | Container | Role | Port | CPUs | Image |
 |---|---|---|---|---|
-| `scorer-toxicity` | RoBERTa **toxicity** classifier, model warm in RAM | 8001 | pinned `0,1` | `Dockerfile.model-server` |
-| `scorer-relationship` | RoBERTa **relationship-quality** (sentiment) classifier | 8002 | pinned `2,3` | `Dockerfile.model-server` |
-| `scorer-worker` | pgmq consumer + cascade + write-back + Neo4j + admin API | 4001 | `4` | `Dockerfile.worker` |
+| `scorer-toxicity` | RoBERTa **toxicity** classifier, model warm in RAM | 8001 | pinned `0` | `Dockerfile.model-server` |
+| `scorer-relationship` | RoBERTa **relationship-quality** (sentiment) classifier | 8002 | pinned `1` | `Dockerfile.model-server` |
+| `scorer-worker` | pgmq consumer + cascade + write-back + Neo4j + admin API | 4001 | floating (no `cpuset`) | `Dockerfile.worker` |
 
 The two model servers are the **same image**, differentiated only by `SCORER_MODEL` / `SCORER_MODEL_KIND`
 / `SCORER_PORT`. They're pinned to **disjoint CPU cores** (compose `cpuset` + `OMP_NUM_THREADS`) so the

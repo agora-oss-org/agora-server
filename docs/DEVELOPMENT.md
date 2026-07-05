@@ -135,7 +135,7 @@ pnpm seed
 email + password → seeds the project's configured `auth_provider` backend; press Enter for the demo
 default `agora-admin@gmail.com` / `DemoPass123!`) → `01-confirm-demo-data` (a **gate** — answer "no"
 and it stops cleanly) → the demo content seeders. Re-running is safe (idempotent), **except** the graph
-world (`pnpm seed:graph` / `03-seed-engine.mjs`) which is not — wipe first.
+world (`03-seed-engine.mjs`, run inside `pnpm seed`) which is not — wipe first.
 
 Non-interactive (CI): `ADMIN_EMAIL=… ADMIN_PASSWORD=… SEED_DEMO_DATA=1 pnpm seed`.
 

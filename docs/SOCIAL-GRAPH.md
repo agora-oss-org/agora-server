@@ -6,9 +6,12 @@
 > **Neighborhood** read surface (§3 `GET /social/neighborhood` — dyadic self-view) shipped in **PR 4**, and
 > the **Constellation** (§3 `GET /social/constellation` — GDS-Louvain k-anonymized blobs, seasonally
 > cron-materialized) shipped in **PR 5**, completing the member-facing **Garden** — see the ✅ markers on
-> those sections. The **`CO_PARTICIPATES`** edge (§7 Phase 2) shipped in **PR 9** — see the ✅ marker there. The rest of Layer 2 (the `block`/`mute` friction source — which
-> has no feature/table yet), the **admin analytics** endpoints, and the corporate OpenGDS algorithm tier
-> (§6 — OpenGDS is now installed; PageRank/silo reports remain) stay **proposed**. This is the consolidation plan for the social-graph layer: what `../agora-social`
+> those sections. The **`CO_PARTICIPATES`** edge (§7 Phase 2) shipped in **PR 9** — see the ✅ marker there.
+> The **admin analytics** endpoints and the corporate OpenGDS algorithm tier (§6 — OpenGDS installed;
+> GDS PageRank/betweenness/Louvain powering influence/silo/engagement reports) **shipped in PR 6**, with
+> the operator React dashboards in **PR 7** and per-space read receipts in **PR 8** — see the ✅ markers
+> in §3 and §7 Phase 4 ("complete"). The only Layer 2 remainder is the `block`/`mute` friction source,
+> which has no feature/table yet and stays **proposed**. This is the consolidation plan for the social-graph layer: what `../agora-social`
 > designed, what `services/scorer` already built, how the two become **one system**, and the
 > per-project configuration that lets each deployment decide what it extracts from its own graph.
 > Companion to `docs/SCORER.md` (the live Layer 1 writer) and the `../agora-social/docs/` design
@@ -146,7 +149,8 @@ Graph reads are normal Hono handlers with normal gates (`requireAuth`, operator/
 |---|---|---|
 | `GET /social/weather` ✅ (PR 2) | members | mean S_p over project — single scalar + trend (per-space deferred — see §7 Phase 1) |
 | `GET /social/neighborhood` ✅ (PR 4) | the member themself | dyadic B(me, friend) per tie — own ties ONLY. Default = follows ∪ connections; interactions opt-in via `neighborhoodIncludeInteractions` (project default) or `?includeInteractions=` (per-member override). Friction dims, never creates a tie. |
-| `GET /social/constellation` ✅ (PR 5) | members | k-anonymized cluster blobs (k ≥ 5), warmth tint only — GDS Louvain (by-space fallback), seasonally cron-materialized (§12), suppress sub-k-floor |
+| `GET /social/constellation` ✅ (PR 5) | members | k-anonymized cluster blobs (adaptive k-floor, hard floor 2), warmth tint only — GDS Louvain (by-space fallback), seasonally cron-materialized (§12), suppress sub-k-floor |
+| `POST /admin/social/constellation/recompute` ✅ | project-admin | force-rematerialize the Constellation on demand (bypasses the ~6-week epoch gate); config-companion to `PATCH /settings/social` |
 | `GET /admin/social/influence` ✅ (PR 6) | operator, corporate-tier | named informal leaders (GDS PageRank) + bridge people (GDS betweenness), one shared projection; weekly cron-materialized, operator force-recompute |
 | `GET /admin/social/silos` ✅ (PR 6) | operator, corporate-tier | named GDS Louvain clusters mapped to their dominant spaces — the receipts form of the Constellation (NO k-anon; the operator is the accountable employer) |
 | `GET /admin/social/engagement` ✅ (PR 6) | operator, corporate-tier | per-person warmth-received S_p (reuses the Weather math) + a churn-risk band from the trailing weekly S_p series |
@@ -191,7 +195,9 @@ Graph**, defaulted by tier, **enforced in the data-access layer, not the UI** (l
   // member-facing garden
   "weather_enabled": true,
   "constellation_enabled": true,
-  "constellation_k_floor": 5,         // k-anonymity floor; clamp: can be raised, never lowered below 5
+  "constellation_k_floor": null,      // k-anonymity floor; null (default) = ADAPTIVE — resolved at
+                                      // materialization by adaptiveConstellationFloor(N) to 2/3/4/5 by
+                                      // community size. A fixed override is clamped to ≥2 (platform hard floor)
   "neighborhood_enabled": true,
   "neighborhood_include_interactions": false,  // default tie set is follows+connections; opt in to add interaction-only ties (per-member ?includeInteractions= overrides)
 
@@ -217,7 +223,7 @@ Graph**, defaulted by tier, **enforced in the data-access layer, not the UI** (l
 | Setting | 🌱 `community` | 🏢 `corporate` |
 |---|---|---|
 | weather / constellation / neighborhood | ✅ / ✅ / ✅ | ✅ / ✅ / ✅ |
-| `constellation_k_floor` | 5 (hard floor) | 5 (hard floor — k-anonymity is not tier-relaxable) |
+| `constellation_k_floor` | `null` = adaptive (2–5 by size; hard floor 2) | `null` = adaptive (2–5 by size; hard floor 2 — k-anonymity is not tier-relaxable) |
 | `influence_scores_enabled` | ❌ | ✅ |
 | `silo_detection_enabled` | ❌ | ✅ |
 | `engagement_scores_enabled` | ❌ | ✅ |
@@ -230,7 +236,9 @@ Graph**, defaulted by tier, **enforced in the data-access layer, not the UI** (l
 
 These are platform guarantees, not settings — no tier, flag, or operator can switch them off:
 
-1. **k-anonymity floor of 5** in any member-facing graph rendering (configurable upward only).
+1. **k-anonymity floor** in any member-facing graph rendering — an **adaptive 2–5 by community size**
+   (default; resolved by `adaptiveConstellationFloor(N)`), with a **platform hard floor of 2** that no
+   tier, flag, or operator override can go below (a fixed override is clamped to ≥2).
 2. **Read affinity never becomes graph data** — it lives in Postgres, scoped to the viewer's own
    feed ranking; there is no code path from `user_affinities` to Neo4j or to any operator view.
 3. **Steward friction access is in-context and audited** (logged inspections, revocable grants —

@@ -84,9 +84,9 @@ interface directly.
 - **`ACCESS_TOKEN_SECRET`** signs every access JWT (HS256). Use **≥ 32 bytes** of randomness:
   `openssl rand -base64 48`. Rotating it invalidates all live access tokens (refresh still works) — a
   useful emergency lever.
-- **`CRON_SECRET`**, **`MODERATION_SERVICE_SECRET`**, **`MODERATION_WEBHOOK_SECRET`**, project
-  **`webhook_secret`** — random, high-entropy, unique per deployment. These gate internal/cron routes and
-  sign webhooks (all compared in constant time).
+- **`CRON_SECRET`**, **`MODERATION_SERVICE_SECRET`**, project **`webhook_secret`** — random,
+  high-entropy, unique per deployment. These gate internal/cron routes and sign webhooks (all compared
+  in constant time).
 - **`SUPABASE_SERVICE_ROLE_KEY`** is god-mode over your Supabase project. Agora confines it to Auth +
   Storage only (lazy client) — keep it **server-side only**, never in any client bundle or the admin app.
   The admin/SDK use the **anon/publishable** key.
@@ -101,8 +101,9 @@ requests is a cross-origin risk.
 ### 6. Turn on rate limiting
 Edge rate limiting is **off unless configured**. Set **`RATE_LIMIT_MAX`** (per-IP per window) and the
 stricter **`RATE_LIMIT_AUTH_MAX`** for `/auth/*`, with **`RATE_LIMIT_WINDOW_SECONDS`** (default 60). Note
-it is **in-memory per process** — see [known limitations](#-known-limitations--hardening-roadmap); pair it
-with proxy/WAF/CDN rate limiting for real quota enforcement, especially across multiple replicas.
+it is **in-memory per process** by default — see [known limitations](#-known-limitations--hardening-roadmap).
+Set **`REDIS_URL`** to hold the cap in a shared **Redis** store across replicas (fail-open to in-memory if
+Redis is down); either way, pair it with proxy/WAF/CDN rate limiting for real quota enforcement.
 
 ### 7. Cap request and upload sizes at the proxy
 The app does not currently enforce a global body-size limit (see roadmap). The bundled Caddy edge caps it
@@ -153,7 +154,12 @@ How Agora is *designed* to be secure — useful context for both operators and r
   ~30 min) plus **rotating refresh tokens** with **reuse-detection** (a replayed token revokes the whole
   family), a 30-second grace window for racing tabs, SHA-256-hashed storage, and a cron that purges
   expired tokens. External identity (`verify-external-user`) uses **RS256 with per-project public keys**
-  and pinned audience + issuer.
+  and pinned audience + issuer. **Native-auth email links fail closed:** the confirm/reset/resend paths
+  require **`AUTH_EMAIL_LINK_ALLOWED_ORIGINS`** (there's no way to validate a client-supplied
+  `emailRedirectTo` without it) — unset, they return **`503 auth/email-not-configured`** rather than email
+  a link built from an unvalidated origin; a supplied `emailRedirectTo` is checked against that allowlist
+  (**open-redirect guard**, else **`400 auth/email-redirect-not-allowed`**). Supabase-backed auth brokers
+  its own emails and is unaffected.
 - **Authorization tiers.** A hierarchy `operator ⊇ owner ⊇ admin ⊇ steward ⊇ member`. The deployment
   **platform-operator** (env allowlist, cross-tenant) plus DB-granted **per-project** `owner`/`admin`/`steward`
   (`project_roles`) are stamped into the JWT (`operator`/`powner`/`padmin`/`steward` claims) and read back
@@ -188,7 +194,7 @@ the areas we're actively looking into; contributions welcome.
 | **Upload size / image bounds** | ✅ **Fixed.** App-layer cap `MAX_UPLOAD_BYTES` (default 25 MiB, `413`) on every upload path + a 50 MP image limit (`sharp limitInputPixels` + a metadata pre-check), in addition to the proxy's body cap. | — |
 | **Public storage bucket** | ✅ **Accepted (documented).** The `agora` bucket is public by design (most media is public); paths are unguessable v4-UUIDs so there's no enumeration — only leaked-URL exposure. Signing every URL would tax all media reads + break caching to protect mostly-public content (poor trade). | Residual: a leaked URL to a private attachment is world-readable — don't upload secrets; gate private uploads yourself if needed (see deploy checklist §8). |
 | **`ACCESS_TOKEN_SECRET` strength** | ✅ **Fixed.** Env validation now requires `min(32)` (was `min(1)`); `openssl rand -base64 48` documented above. | — |
-| **JWT verify algorithm pinning** | ✅ **Fixed.** `algorithms: ["HS256"]` pinned on the access-token + socket.io verifies (and the moderator's); the external-auth verify pins `["RS256"]`. | — |
+| **JWT verify algorithm pinning** | ✅ **Fixed.** `algorithms: ["HS256"]` pinned on the access-token + socket.io verifies (and the `services/scorer` write-back); the external-auth verify pins `["RS256"]`. | — |
 | **Security headers** | ✅ **Addressed at the edge.** The bundled Caddy proxy sends HSTS + `X-Content-Type-Options` + `Referrer-Policy` + `X-Frame-Options` (and strips `Server`). The API itself still sets none. | Bring-your-own proxy must add them; a strict app-specific CSP is the remaining tuning (commented starting point in the Caddyfile). |
 | **Role/privilege revocation latency** | ⚠️ **Known gap.** Authorization tiers (operator/owner/admin/steward) are stamped into the short-lived access JWT and read per request with **no DB hit** (by design — fast, stateless). Revoking a role deletes the grant and drops it on the user's next token **refresh**, but an **already-minted access token keeps its elevated claims until it expires — up to ~30 min** (`ACCESS_TOKEN` TTL). So a **revoked admin/owner retains access for that window**; for `owner` it also includes suspension-immunity. The cross-replica role cache adds ≤30s on top (it's in-process, not the shared Redis — which today serves only rate limiting). This is the same tradeoff already accepted for the `operator`/`steward` flags, but more consequential for admin/owner. **No store is consulted on the request hot path**, so neither the cache nor Redis is the dominant factor — the live JWT is. | Make revoke bite immediately: **(a)** `revokeAllForProfile()` on owner/admin revoke (kills refresh-extension; cheap, no infra, ~90% of the value), and/or **(b)** a per-request token-version / `roles_epoch` check (true immediate revocation — the one place a shared fast store like Redis would earn its keep on the auth path). Interim mitigation: shorten `ACCESS_TOKEN` TTL. Tracked for the managed-hosting **isolation-hardening** pass (sub-project G). |
 | **CORS default** | Defaults to `*` if unset. | Documented; consider failing/​warning loudly on a wildcard in production mode. |
