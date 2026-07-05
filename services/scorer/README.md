@@ -24,6 +24,47 @@ nuanced verdict, writes removals back through the API (the trust boundary), reco
 The two model servers are the **same image** (`Dockerfile.model-server`), differentiated by
 `SCORER_MODEL` / `SCORER_MODEL_KIND` env. The worker is `Dockerfile.worker`.
 
+## The cascade (how a verdict is reached)
+
+Both RoBERTas score **in parallel** (`asyncio.gather`), but they do different jobs: **only the
+toxicity model gates moderation.** The relationship (sentiment) model's score is written to the Neo4j
+graph as signed edge quality — it does **not** influence the removal decision. So "two classifiers"
+means one gate + one graph signal, not two moderation votes.
+
+The gate is on **P(toxic)** (`toxicity.scores["toxic"]`), against two thresholds:
+
+| P(toxic) | Verdict | Claude Haiku called? |
+|---|---|---|
+| `< SCORER_GRAYZONE_LOW` (default `0.30`) | `allow` | ❌ no |
+| `≥ SCORER_GRAYZONE_HIGH` (default `0.80`) | `block` (confidence = P(toxic)) | ❌ no |
+| in the **gray zone** `[LOW, HIGH)` | escalate → Haiku decides `allow`/`block`/`review` | ✅ yes |
+
+Haiku (`claude-haiku-4-5`, `temperature 0`) only adjudicates the ambiguous middle band — the cheap
+classifier handles the confident ends. That's the cost-control design.
+
+### When Haiku is disabled (`ANTHROPIC_API_KEY` unset)
+
+`haiku.assess()` also returns `None` on **any** error (network / non-2xx / unparseable), not just when
+the key is missing — a failed adjudication never fails/redelivers the whole job. In every "Haiku didn't
+decide" case the gray-zone item falls to verdict **`review`** with `confidence = P(toxic)`.
+
+What happens to a `review` item is then decided by `auto_action.decide_auto_action` against the
+project's **review floor** (`MODERATION_REVIEW_AUTO_ACTION_THRESHOLD`):
+
+- **Default `0.0` → the review path is disabled → every gray-zone item goes to the human AI-flag
+  queue** (`/v1/:projectId/moderation/*`, admin AI tab). This is the out-of-the-box behavior: **disable
+  Haiku and the entire gray zone routes to human review.**
+- **⚠️ If an operator raised the review floor above `0`**, a `review` item whose `confidence` (= raw
+  P(toxic), always in `[0.30, 0.80)`) meets that floor is **auto-removed on the toxicity score alone** —
+  no human, no LLM. So with Haiku off, a nonzero review floor silently turns the upper part of the gray
+  band into auto-removals. Check this setting before turning Haiku off if you want "gray → human" to hold.
+
+The two ends are unaffected either way: `≥ 0.80` still auto-`block`s (if `confidence ≥
+MODERATION_BLOCK_AUTO_ACTION_THRESHOLD`, default `0.85`), and `< 0.30` still `allow`s. A floor of `0`
+disables its path entirely; only `entity`/`comment` are removable (chat is E2E — never scored). All
+thresholds are per-project overridable via `projects.moderator_config` (admin **Settings → Moderator**),
+overlaid on these env defaults.
+
 ## Layout
 
 - `model_server/` — shared RoBERTa HTTP server (`POST /score`, `GET /health|/info`).

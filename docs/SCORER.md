@@ -282,7 +282,10 @@ All via the root `.env` (see the per-mode templates `.env.dev/selfhost/prod.exam
 `API_BASE_URL`, `MODERATION_SERVICE_SECRET`, `MODERATION_BLOCK/REVIEW_AUTO_ACTION_THRESHOLD`. New:
 `SCORER_*` (models, URLs, gray-zone, Haiku, queue/poll) and `NEO4J_*`. Feature gates:
 
-- no `ANTHROPIC_API_KEY` → cascade records the RoBERTa score but never escalates (borderline → human queue);
+- no `ANTHROPIC_API_KEY` → cascade records the RoBERTa score but never escalates: the gray-zone item
+  becomes `review`, routing to the human queue **only while `MODERATION_REVIEW_AUTO_ACTION_THRESHOLD=0`
+  (the default)**. A nonzero review floor instead auto-removes any gray-zone item whose P(toxic) meets it
+  — with Haiku off that's a removal on the toxicity score alone. See `services/scorer/README.md` → "The cascade";
 - no `NEO4J_*` → the relationship-edge write is a logged no-op;
 - no `MODERATION_SERVICE_SECRET`/`API_BASE_URL` → write-back disabled; verdicts still persist + queue.
 
