@@ -145,6 +145,11 @@ The toxicity RoBERTa runs on **everything** and its score drives a gray-zone gat
 - in the band → **escalate to Claude Haiku**, which returns the full `{verdict, categories, confidence,
   reason}` using the **salvaged** `policy.build_system_prompt` + the tolerant `verdict.parse_verdict`.
 
+> **Per-project override.** `SCORER_GRAYZONE_LOW`/`SCORER_GRAYZONE_HIGH` (and the co-participates graph
+> bounds `SCORER_CO_PARTICIPATES_*` — lookback days / max participants / max weight, below) are now
+> **per-project overridable** via `projects.moderator_config`, editable in the admin at
+> **Settings → Agent moderation**; the env value remains the default for projects with no override set.
+
 The verdict then flows through the **salvaged** `auto_action.decide_auto_action` against the project's
 two confidence floors (block/review), and — for `entity`/`comment` (the only scored types) — a
 triggered removal is applied via the API write-back. Every assessment records one `moderation_analyses`
@@ -288,6 +293,14 @@ All via the root `.env` (see the per-mode templates `.env.dev/selfhost/prod.exam
   — with Haiku off that's a removal on the toxicity score alone. See `services/scorer/README.md` → "The cascade";
 - no `NEO4J_*` → the relationship-edge write is a logged no-op;
 - no `MODERATION_SERVICE_SECRET`/`API_BASE_URL` → write-back disabled; verdicts still persist + queue.
+
+**Per-project overrides (`projects.moderator_config`, admin Settings → Agent moderation):**
+`SCORER_GRAYZONE_LOW`/`HIGH` and `SCORER_CO_PARTICIPATES_*` (lookback days / max participants / max
+weight) are now resolved per-project, env value as the default. Per-project LLM provider/key/model are
+now **consumed** too — `llmProvider` (`anthropic`|`openai`-compatible), `llmApiKey`, `llmModel`,
+`llmMaxTokens`, falling back to the scorer's env Haiku config per field; the **base URL stays env-only**
+(fixed provider host per provider — a per-project outbound URL is deliberately unsupported, an SSRF
+boundary).
 
 > **Postgres pooler note:** `DATABASE_URL` is the Supabase transaction pooler (`:6543`, `prepare:false`),
 > which doesn't support prepared statements — the Python client uses asyncpg with `statement_cache_size=0`.

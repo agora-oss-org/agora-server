@@ -7,7 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Per-project scorer cascade tuning in the admin.** Settings → Agent moderation now exposes the
+  RoBERTa gray-zone gate (`grayzoneLow`/`grayzoneHigh`), the block/review auto-action floors, and the
+  co-participates graph bounds (`coParticipatesLookbackDays`/`MaxParticipants`/`MaxWeight`) as
+  per-project overrides on `moderator_config` (env values remain the default). Adds a read-only,
+  operator-only **Deployment status** view (model-server URLs, queue, poll/visibility, Neo4j, secret
+  present/absent). (`packages/contract`, `apps/api/src/routes/misc.ts`, `services/scorer`, `apps/admin`.)
+- **Per-project Haiku/LLM adjudication.** The scorer now honors a project's `moderator_config` LLM
+  settings — `llmProvider` (`anthropic` or `openai`-compatible), `llmApiKey`, `llmModel`, `llmMaxTokens` —
+  falling back to the scorer's env Haiku config per field. A corporate project can bring its own provider
+  + key; enablement is per-project (`llm_enabled` = a resolved key exists). (`services/scorer`.)
+
 ### Changed
+- **The moderator panel's LLM base-url input is removed.** The scorer uses the fixed provider host
+  (`api.anthropic.com` / `api.openai.com`); a per-project outbound URL is deliberately not supported
+  (SSRF boundary). Provider/key/model/max-tokens stay editable and are now consumed. (`apps/admin`, `services/scorer`.)
 - **`docker-publish` now moves `latest` on a manual `workflow_dispatch` run.** Previously the `latest`
   tag (and all version tags) were derived purely from a `v*` tag push, so a hand-triggered rebuild off a
   branch published only a `sha-` tag and never updated `latest`. A temporary `type=raw,value=latest`
