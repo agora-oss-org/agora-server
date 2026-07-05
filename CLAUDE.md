@@ -236,6 +236,12 @@ pnpm install                 # install all workspaces
 pnpm -r build                # build every package (contract first, topologically)
 pnpm -r typecheck            # ALWAYS run before considering work done
 pnpm --filter @agora-server/contract build   # rebuild the shared contract after editing it
+pnpm dev:api                 # run the backend from the root (also dev:secure-chat / dev:admin / dev:core)
+pnpm dev:api:log             # same, with LOG_LEVEL=trace teed to /tmp/agora-api.log (diag capture)
+pnpm db:migrate              # ROOT alias → apps/api `db:migrate:run` (safe; the root name differs from api's)
+pnpm genesis                 # DESTRUCTIVE from-nothing rebuild: drop schema → migrations → seed.sql →
+                             # Neo4j graph reset → `pnpm seed` (typed-ref confirm guards protected targets)
+pnpm release                 # scripts/release.sh (version bump + changelog roll + tag)
 
 cd apps/api                  # the backend lives here
 pnpm dev             # tsx watch -> http://localhost:4000/v7  (loads .env via dotenv)
@@ -259,8 +265,13 @@ url=$(grep '^DATABASE_URL=' .env | cut -d= -f2-); psql "$url" -v ON_ERROR_STOP=1
 #   native pw) → 01-confirm-demo-data (gate: "no" cleanly STOPS via exit-78) → demo content seeders.
 #   Non-interactive: ADMIN_EMAIL/ADMIN_PASSWORD + SEED_DEMO_DATA=1|0. helpers/ holds the per-backend
 #   seeders (not auto-discovered). See apps/api/README.md → "Seeding".
-pnpm seed
-pnpm seed:graph      # standalone manifest graph world (03-seed-engine.mjs) — NOT idempotent
+pnpm seed            # the manifest graph world (03-seed-engine.mjs, NOT idempotent) runs inside it,
+                     # gated by the same 01-confirm-demo-data prompt (the old `seed:graph` script is gone)
+
+pnpm genesis         # (also at root) DESTRUCTIVE: drop → rebuild from migrations → seed.sql → Neo4j reset
+pnpm genesis:test    # same against TEST_DATABASE_URL (disposable test project; non-interactive/CI-safe)
+
+pnpm perf:seed && pnpm perf:baseline   # perf harness (apps/api/perf/ — seeded scenario + baseline run)
 
 pnpm check:propagation           # (in apps/api) propagation drift checker — see docs/PROPAGATION.yaml
 pnpm check:propagation --diff X  # obligations arising from the diff vs ref X (what /propagate uses)
@@ -285,7 +296,14 @@ are validated as optional: `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` + `SUPAB
 (Auth + Storage), `VOYAGE_API_KEY` (semantic search), `RATE_LIMIT_MAX`/`RATE_LIMIT_AUTH_MAX` (edge
 rate limiting, off unless set), `OPERATOR_USER_IDS`/`OPERATOR_EMAILS` (deployment-operator allowlist),
 `NEO4J_URI`/`NEO4J_AUTH` (social graph — both scorer writes and API reads; unset →
-scorer skips edge writes, `/social/*` endpoints return 503). Empty strings are treated as unset.
+scorer skips edge writes, `/social/*` endpoints return 503),
+`CONTENT_DELETE_MODE` (`hard` default — content deletes truly `DELETE` the row + cascade dependents +
+remove uploaded media from storage; `soft` tombstones), and for **native** auth email links
+`AUTH_EMAIL_LINK_ALLOWED_ORIGINS` (**required** — without it confirm/reset/resend fail closed with
+`503 auth/email-not-configured`; validates client `emailRedirectTo`) + `AUTH_EMAIL_LINK_BASE`
+(default `http://localhost:5173`; Supabase-brokered auth is unaffected),
+`VAPID_PUBLIC_KEY`/`VAPID_PRIVATE_KEY`/`VAPID_SUBJECT` (web push — unset → push dispatch is a no-op).
+Empty strings are treated as unset.
 
 **Operators (deployment god-view).** `OPERATOR_USER_IDS`/`OPERATOR_EMAILS` (comma-separated profile
 UUIDs / case-insensitive emails) are an env allowlist resolved by `lib/operators.ts` `isOperator()`.
@@ -479,8 +497,16 @@ and `CHANGELOG.md` for what each migration did. Only the non-obvious conventions
 
 - ✅ **Foundation validated on cloud Supabase**: migrations applied + idempotent; triggers/RPC
   asserted by `scripts/seeds/seed.sql`; end-to-end HTTP verified.
-- ✅ **Implemented handlers**: `entities`, `comments`, `users`, `follows`, `collections`,
-  `notifications`, `reports`, `spaces`, `auth`.
+- ✅ **Implemented handlers**: `entities`, `comments`, `users`, `follows`, `connections`,
+  `collections`, `notifications`, `reports`, `spaces`, `events`, `auth` (plus the bullets below —
+  see `src/routes/` for the full router list).
+- ✅ **Events**: `events.ts` — community events with RSVPs, invites, and co-hosts (migration `0053`),
+  visibility-tiered (`public|members|invite`, per-row gate `403 events/not-visible`); an Agora
+  extension, contract in MANIFEST §events.
+- ✅ **Push notifications**: `push-notifications.ts` — device registry (Web Push/FCM/APNs, migration
+  `0055`; atomic ON CONFLICT upserts) + unauthenticated rate-limited VAPID public-key read; the
+  dispatch layer (`lib/push/`) mirrors a push-worthy allowlist of in-app notifications to background
+  sends. Gated by the `VAPID_*` env trio; an Agora extension, contract in MANIFEST §push-notifications.
 - ✅ **Auth**: Supabase Auth backs identity (passwords + confirmation/reset emails); Agora mints
   its own tokens (`lib/tokens.ts`) with rotation/reuse-detection/30s-grace (`refresh_tokens` table).
   External (RS256) + token rotation are live-validated; Supabase-backed flows need
