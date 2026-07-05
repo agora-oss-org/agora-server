@@ -1,3 +1,4 @@
+import { TriangleAlert } from "lucide-react";
 import { PageHeader } from "../components/ui/PageHeader";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "../components/ui/Tabs";
 import { SETTINGS_READ_ONLY, SOCIAL_GRAPH_ENABLED } from "../config";
@@ -12,7 +13,8 @@ export function SettingsPage() {
     <div className="space-y-6">
       <PageHeader title="Settings" description="Configure how your project ranks and runs." />
       {SETTINGS_READ_ONLY && (
-        <div className="rounded-lg border border-border bg-surface-2 px-4 py-3 text-sm text-muted">
+        <div className="flex items-center gap-2 rounded-lg border border-warning/40 bg-warning/10 px-4 py-3 text-sm text-warning">
+          <TriangleAlert className="size-4 shrink-0" />
           View-only mode — settings changes are disabled on this deployment.
         </div>
       )}

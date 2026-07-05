@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Admin: view-only settings banner now reads as a warning.** The "View-only mode — settings changes
+  are disabled" notice on Settings uses the warning color + `TriangleAlert` icon (matching the
+  unsaved-changes / report-review banners) instead of neutral grey, so the disabled state is obvious.
+  (`apps/admin/src/routes/SettingsPage.tsx`.)
+
 ## [0.17.0] - 2026-07-05
 
 ### Added
