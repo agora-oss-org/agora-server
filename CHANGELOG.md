@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **`docker-publish` now moves `latest` on a manual `workflow_dispatch` run.** Previously the `latest`
+  tag (and all version tags) were derived purely from a `v*` tag push, so a hand-triggered rebuild off a
+  branch published only a `sha-` tag and never updated `latest`. A temporary `type=raw,value=latest`
+  rule (enabled only for `workflow_dispatch`) now republishes `latest` from a manual run. Marked for
+  **removal once the team grows past a single trusted maintainer** — it lets any manual run off any
+  branch clobber `latest`. (`.github/workflows/docker-publish.yml`.)
+
 ### Fixed
 - **Native-auth emailed links no longer silently ignore `emailRedirectTo`.** When
   `AUTH_EMAIL_LINK_ALLOWED_ORIGINS` was unset, the link selector fell back to `AUTH_EMAIL_LINK_BASE`

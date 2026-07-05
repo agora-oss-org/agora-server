@@ -154,6 +154,16 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
             type=sha
+            # TEMPORARY (solo-maintainer convenience): also move `latest` on a manual
+            # workflow_dispatch run. Normally `latest` only follows a `v*` tag push (the
+            # semver rules + `latest=auto` above), so a manual run off a branch would push
+            # ONLY a `sha-` tag and never update `latest`. This raw rule lets a hand-triggered
+            # rebuild republish `latest` without cutting a release tag.
+            # ⚠️ REMOVE once the team grows past a single trusted maintainer: it lets ANY
+            # manual run off ANY branch clobber `latest` (e.g. publishing a WIP branch as
+            # `latest`). Once releases are always tag-driven, drop this line and rely solely
+            # on the tag-push flow so `latest` strictly means "the latest released version."
+            type=raw,value=latest,enable=${{ github.event_name == 'workflow_dispatch' }}
 
       # Assemble the manifest list from the GHCR per-arch digests and push it to every derived tag
       # (on both registries — imagetools copies the platform images to Docker Hub as needed).
