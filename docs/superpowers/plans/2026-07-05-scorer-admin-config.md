@@ -16,7 +16,7 @@
 - Never value a secret in status output — `set`/`not set` booleans only.
 - Follow repo logging policy (`info`/`error` message-only; raw payloads on `debug`) — not expected to be needed here but applies.
 - Build order: `pnpm --filter @agora-server/contract build` before typechecking/using the API or admin.
-- Before "done": `pnpm -r typecheck` and `pnpm test` pass; scorer `ANTHROPIC_API_KEY="" pytest` passes (per memory: direnv key leak).
+- Before "done": `pnpm -r typecheck` and `pnpm test` pass; scorer `NEO4J_URI="" NEO4J_AUTH="" ANTHROPIC_API_KEY="" pytest` passes (per memory: direnv key leak).
 - All commits DCO-signed (`git commit -s`); end message with `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`. Work on branch `root` per repo convention.
 
 ---
@@ -124,7 +124,7 @@ git commit -s -m "feat(contract): scorer gray-zone + co-participates moderator_c
 - Test: `services/scorer/tests/test_config.py`
 
 **Interfaces:**
-- Produces: `ResolvedModeratorConfig` gains `grayzone_low: float`, `grayzone_high: float`, `co_participates_lookback_days: int`, `co_participates_max_participants: int`, `co_participates_max_weight: float` (all with defaults so existing constructors keep working). `resolve()` overlays+clamps them and falls back to env defaults on an inverted band.
+- Produces: `ResolvedModeratorConfig` gains `grayzone_low: float`, `grayzone_high: float`, `co_participates_lookback_days: int`, `co_participates_max_participants: int`, `co_participates_max_weight: float`, plus the per-project LLM fields `llm_provider: str`, `llm_model: str`, `llm_max_tokens: int`, `llm_api_key: str | None` and an `llm_enabled()` method (all with defaults so existing constructors keep working). `resolve()` overlays+clamps them, falls back to env defaults on an inverted band, and resolves the LLM key provider-aware (an `openai` project never inherits the Anthropic env key).
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -172,11 +172,44 @@ def test_resolve_gray_zone_defaults_to_env() -> None:
     assert cfg.grayzone_low == s.grayzone_low
     assert cfg.grayzone_high == s.grayzone_high
     assert cfg.co_participates_max_participants == s.co_participates_max_participants
+
+
+def test_resolve_llm_per_project_overrides() -> None:
+    s = dataclasses.replace(Settings(), anthropic_api_key="env-anthropic-key", haiku_model="claude-haiku-4-5")
+    cfg = resolve(
+        {"llmProvider": "openai", "llmApiKey": "sk-proj-openai", "llmModel": "gpt-4o-mini", "llmMaxTokens": 256},
+        s,
+    )
+    assert cfg.llm_provider == "openai"
+    assert cfg.llm_api_key == "sk-proj-openai"
+    assert cfg.llm_model == "gpt-4o-mini"
+    assert cfg.llm_max_tokens == 256
+    assert cfg.llm_enabled() is True
+
+
+def test_resolve_llm_falls_back_to_env_for_anthropic() -> None:
+    s = dataclasses.replace(Settings(), anthropic_api_key="env-anthropic-key")
+    cfg = resolve({}, s)  # no per-project llm → anthropic + env key + env model
+    assert cfg.llm_provider == "anthropic"
+    assert cfg.llm_api_key == "env-anthropic-key"
+    assert cfg.llm_model == s.haiku_model
+    assert cfg.llm_enabled() is True
+
+
+def test_resolve_openai_without_key_is_disabled_and_never_leaks_env_key() -> None:
+    # The security invariant: an openai project with no own key must NOT inherit the Anthropic env key.
+    s = dataclasses.replace(Settings(), anthropic_api_key="env-anthropic-key")
+    cfg = resolve({"llmProvider": "openai"}, s)
+    assert cfg.llm_provider == "openai"
+    assert cfg.llm_api_key is None
+    assert cfg.llm_enabled() is False
 ```
+
+(`dataclasses` is already imported at the top of `test_config.py`? If not, add `import dataclasses`.)
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `cd services/scorer && ANTHROPIC_API_KEY="" .venv/bin/pytest tests/test_config.py -q`
+Run: `cd services/scorer && NEO4J_URI="" NEO4J_AUTH="" ANTHROPIC_API_KEY="" .venv/bin/pytest tests/test_config.py -q`
 Expected: FAIL (`ResolvedModeratorConfig` has no `grayzone_low`, etc.).
 
 - [ ] **Step 3: Implement config changes**
@@ -196,6 +229,14 @@ class ResolvedModeratorConfig:
     co_participates_lookback_days: int = 7
     co_participates_max_participants: int = 50
     co_participates_max_weight: float = 10.0
+    # Per-project LLM adjudication (corporate). llm_api_key is a SECRET — never log it.
+    llm_provider: str = "anthropic"
+    llm_model: str = "claude-haiku-4-5"
+    llm_max_tokens: int = 512
+    llm_api_key: str | None = None
+
+    def llm_enabled(self) -> bool:
+        return bool(self.llm_api_key)
 ```
 
 Add clamp helpers next to `_clamp01`:
@@ -225,6 +266,14 @@ def resolve(raw: object, settings: Settings) -> ResolvedModeratorConfig:
     gh = _clamp01(cfg.get("grayzoneHigh"), settings.grayzone_high)
     if gl > gh:  # inverted/empty band → fail safe to env defaults, never an empty escalation band
         gl, gh = settings.grayzone_low, settings.grayzone_high
+    # Per-project LLM: provider decides the key fallback. The Anthropic env key is ONLY inherited by an
+    # anthropic project — never handed to an openai project (which is simply disabled without its own key).
+    provider = cfg.get("llmProvider") if cfg.get("llmProvider") in ("anthropic", "openai") else "anthropic"
+    cfg_key = cfg.get("llmApiKey") if isinstance(cfg.get("llmApiKey"), str) and cfg.get("llmApiKey") else None
+    env_key = settings.anthropic_api_key if provider == "anthropic" else None
+    api_key = cfg_key or env_key
+    model = cfg.get("llmModel") if isinstance(cfg.get("llmModel"), str) and cfg.get("llmModel") else settings.haiku_model
+    max_tokens = _clamp_int(cfg.get("llmMaxTokens"), settings.haiku_max_tokens, 1, 8192)
     return ResolvedModeratorConfig(
         block_auto_action_threshold=_clamp01(cfg.get("blockAutoActionThreshold"), settings.block_auto_action_threshold),
         review_auto_action_threshold=_clamp01(cfg.get("reviewAutoActionThreshold"), settings.review_auto_action_threshold),
@@ -234,19 +283,23 @@ def resolve(raw: object, settings: Settings) -> ResolvedModeratorConfig:
         co_participates_lookback_days=_clamp_int(cfg.get("coParticipatesLookbackDays"), settings.co_participates_lookback_days, 0, 365),
         co_participates_max_participants=_clamp_int(cfg.get("coParticipatesMaxParticipants"), settings.co_participates_max_participants, 1, 500),
         co_participates_max_weight=_clamp_float(cfg.get("coParticipatesMaxWeight"), settings.co_participates_max_weight, 1.0, 1000.0),
+        llm_provider=provider,
+        llm_model=model,
+        llm_max_tokens=max_tokens,
+        llm_api_key=api_key,
     )
 ```
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `cd services/scorer && ANTHROPIC_API_KEY="" .venv/bin/pytest tests/test_config.py -q`
+Run: `cd services/scorer && NEO4J_URI="" NEO4J_AUTH="" ANTHROPIC_API_KEY="" .venv/bin/pytest tests/test_config.py -q`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add services/scorer/scorer/config.py services/scorer/tests/test_config.py
-git commit -s -m "feat(scorer): resolve per-project gray-zone + co-participates overrides"
+git commit -s -m "feat(scorer): resolve per-project gray-zone, co-participates + LLM overrides"
 ```
 
 ---
@@ -286,7 +339,7 @@ async def test_per_project_gray_zone_high_moves_the_block_boundary(monkeypatch: 
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `cd services/scorer && ANTHROPIC_API_KEY="" .venv/bin/pytest tests/test_pipeline.py::test_per_project_gray_zone_high_moves_the_block_boundary -q`
+Run: `cd services/scorer && NEO4J_URI="" NEO4J_AUTH="" ANTHROPIC_API_KEY="" .venv/bin/pytest tests/test_pipeline.py::test_per_project_gray_zone_high_moves_the_block_boundary -q`
 Expected: FAIL (pipeline still reads `settings.grayzone_high=0.80` → verdict `allow`, not `block`).
 
 - [ ] **Step 3: Implement the consumer changes**
@@ -336,13 +389,23 @@ and replace the two `settings.co_participates_*` args in the `pool.fetch(...)` c
 
 In `services/scorer/worker/neo4j_writer.py`, change `write_co_participates_edge` to accept `max_weight` and use it (replace `max_weight=float(settings.co_participates_max_weight)` in the `session.run` with `max_weight=float(max_weight)`), updating the signature to `... participant_id: str, max_weight: float)`.
 
-- [ ] **Step 4: Update the neo4j-writer test for the new signature**
+- [ ] **Step 4: Update the shared test mocks for the new signatures**
+
+In `services/scorer/tests/test_pipeline.py`, the `_capture_co_participates` helper mocks `resolve_co_participants` — its `fake_resolve_co` MUST accept the new kwargs or the pipeline call raises `TypeError`. Change its signature to:
+
+```python
+    async def fake_resolve_co(settings, *, comment_id, actor_id, lookback_days, max_participants):  # noqa: ANN001
+```
+
+(`fake_write_co(settings, **kw)` already absorbs the new `max_weight` kwarg — no change needed there.)
 
 In `services/scorer/tests/test_neo4j_writer_co_participates.py`, add `max_weight=10.0` to each `write_co_participates_edge(...)` call.
 
+Note: the local dev shell leaks `NEO4J_URI`/`NEO4J_AUTH` via direnv, so `resolve_co_participants` runs for real (→ UUID error) unless the env is cleared — always use the `NEO4J_URI="" NEO4J_AUTH="" ANTHROPIC_API_KEY=""` prefix from Global Constraints when running the scorer suite.
+
 - [ ] **Step 5: Run the scorer suite to verify green**
 
-Run: `cd services/scorer && ANTHROPIC_API_KEY="" .venv/bin/pytest -q`
+Run: `cd services/scorer && NEO4J_URI="" NEO4J_AUTH="" ANTHROPIC_API_KEY="" .venv/bin/pytest -q`
 Expected: PASS (new pipeline test + existing pipeline/co-participates tests). Then `ruff check . && mypy scorer`.
 
 - [ ] **Step 6: Commit**
@@ -350,6 +413,200 @@ Expected: PASS (new pipeline test + existing pipeline/co-participates tests). Th
 ```bash
 git add services/scorer/worker/pipeline.py services/scorer/scorer/db.py services/scorer/worker/neo4j_writer.py services/scorer/tests/test_pipeline.py services/scorer/tests/test_neo4j_writer_co_participates.py
 git commit -s -m "feat(scorer): pipeline + graph writers honor per-project cascade/co-participates config"
+```
+
+---
+
+### Task 9: Scorer LLM adapter — per-project provider/key/model + pipeline enablement
+
+> **Execution order:** dispatch this AFTER Task 3 and BEFORE Task 4 (it depends on Task 2's resolved LLM fields and re-edits the pipeline's escalation line that Task 3 leaves on `settings.haiku_enabled()`).
+
+**Files:**
+- Modify: `services/scorer/scorer/haiku.py` (generalize `assess`)
+- Modify: `services/scorer/worker/pipeline.py` (the gray-zone escalation call, `assess_and_record` ~line 67)
+- Test: `services/scorer/tests/test_haiku.py` (rewrite the 3 existing tests + add openai + key-never-logged)
+
+**Interfaces:**
+- Consumes: `ResolvedModeratorConfig.llm_provider/llm_model/llm_max_tokens/llm_api_key` + `llm_enabled()` (Task 2).
+- Produces: `assess(cfg: ResolvedModeratorConfig, text: str, categories: list[str], context: str | None = None) -> Optional[AssessResult]` — provider-branching (anthropic messages / openai chat-completions), key never logged.
+
+- [ ] **Step 1: Rewrite the failing tests**
+
+Replace the three existing tests in `services/scorer/tests/test_haiku.py` (they pass `Settings`; the adapter now takes a `ResolvedModeratorConfig`) and add the openai + key-never-logged cases. Full file body below the imports:
+
+```python
+from scorer import haiku
+from scorer.config import ResolvedModeratorConfig
+
+
+def _cfg(**over: Any) -> ResolvedModeratorConfig:
+    base = dict(block_auto_action_threshold=0.85, review_auto_action_threshold=0.0, categories=["harassment"])
+    base.update(over)
+    return ResolvedModeratorConfig(**base)  # type: ignore[arg-type]
+
+
+@respx.mock
+async def test_assess_anthropic_parses_verdict_and_tokens() -> None:
+    cfg = _cfg(llm_provider="anthropic", llm_api_key="k", llm_model="claude-haiku-4-5")
+    route = respx.post("https://api.anthropic.com/v1/messages").mock(
+        return_value=httpx.Response(200, json={
+            "content": [{"type": "text", "text": '{"verdict":"block","categories":["harassment"],"confidence":0.92,"reason":"x"}'}],
+            "usage": {"input_tokens": 30, "output_tokens": 12},
+        })
+    )
+    r = await haiku.assess(cfg, "you are awful", ["harassment"])
+    assert r is not None and r.verdict == "block" and r.model == "anthropic:claude-haiku-4-5"
+    assert (r.prompt_tokens, r.completion_tokens) == (30, 12)
+    # anthropic auth header carries the key, NOT a Bearer token
+    assert route.calls.last.request.headers.get("x-api-key") == "k"
+
+
+@respx.mock
+async def test_assess_openai_parses_verdict_and_tokens() -> None:
+    cfg = _cfg(llm_provider="openai", llm_api_key="sk-openai", llm_model="gpt-4o-mini")
+    route = respx.post("https://api.openai.com/v1/chat/completions").mock(
+        return_value=httpx.Response(200, json={
+            "choices": [{"message": {"content": '{"verdict":"allow","categories":[],"confidence":0.1,"reason":"ok"}'}}],
+            "usage": {"prompt_tokens": 20, "completion_tokens": 5},
+        })
+    )
+    r = await haiku.assess(cfg, "hello", [])
+    assert r is not None and r.verdict == "allow" and r.model == "openai:gpt-4o-mini"
+    assert (r.prompt_tokens, r.completion_tokens) == (20, 5)
+    assert route.calls.last.request.headers.get("authorization") == "Bearer sk-openai"
+
+
+async def test_assess_disabled_returns_none() -> None:
+    assert await haiku.assess(_cfg(llm_api_key=None), "x", []) is None
+
+
+@respx.mock
+async def test_assess_http_error_returns_none() -> None:
+    cfg = _cfg(llm_api_key="k")
+    respx.post("https://api.anthropic.com/v1/messages").mock(return_value=httpx.Response(500, json={}))
+    assert await haiku.assess(cfg, "x", []) is None
+
+
+@respx.mock
+async def test_llm_api_key_never_logged(monkeypatch: Any) -> None:
+    recorded: list = []
+    monkeypatch.setattr(haiku, "log", lambda logger, level, msg, **kw: recorded.append((msg, kw)))
+    cfg = _cfg(llm_provider="anthropic", llm_api_key="sk-super-secret")
+    respx.post("https://api.anthropic.com/v1/messages").mock(return_value=httpx.Response(500, json={}))
+    await haiku.assess(cfg, "x", [])
+    assert "sk-super-secret" not in repr(recorded)
+```
+
+- [ ] **Step 2: Run the tests to verify they fail**
+
+Run: `cd services/scorer && NEO4J_URI="" NEO4J_AUTH="" ANTHROPIC_API_KEY="" .venv/bin/pytest tests/test_haiku.py -q`
+Expected: FAIL (`assess` still takes `Settings`, no openai branch).
+
+- [ ] **Step 3: Generalize `haiku.py`**
+
+Replace the module's URL constant + `assess` with (keep the `AssessResult` dataclass, imports, `_ANTHROPIC_VERSION`, `_TIMEOUT_S`, and add `_OPENAI_URL`; import `ResolvedModeratorConfig`):
+
+```python
+from .config import ResolvedModeratorConfig
+
+_ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
+_OPENAI_URL = "https://api.openai.com/v1/chat/completions"
+
+
+async def assess(
+    cfg: ResolvedModeratorConfig,
+    text: str,
+    categories: list[str],
+    context: Optional[str] = None,
+) -> Optional[AssessResult]:
+    """Adjudicate borderline content via the project's LLM. None → disabled (no key) or errored
+    (→ human queue). The API key is a secret — never logged (status/verdict only)."""
+    if not cfg.llm_enabled():
+        return None
+
+    system = build_system_prompt(categories)
+    user = build_user_prompt(text, context)
+    if cfg.llm_provider == "openai":
+        url = _OPENAI_URL
+        headers = {"authorization": f"Bearer {cfg.llm_api_key}", "content-type": "application/json"}
+        body = {
+            "model": cfg.llm_model,
+            "max_tokens": cfg.llm_max_tokens,
+            "temperature": 0,
+            "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
+        }
+    else:  # anthropic (default)
+        url = _ANTHROPIC_URL
+        headers = {
+            "x-api-key": cfg.llm_api_key or "",
+            "anthropic-version": _ANTHROPIC_VERSION,
+            "content-type": "application/json",
+        }
+        body = {
+            "model": cfg.llm_model,
+            "max_tokens": cfg.llm_max_tokens,
+            "temperature": 0,
+            "system": system,
+            "messages": [{"role": "user", "content": user}],
+        }
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT_S) as client:
+            res = await client.post(url, json=body, headers=headers)
+        if res.status_code >= 400:
+            log(logger, "error", "llm non-2xx", status=res.status_code)  # no key/body/headers logged
+            return None
+        data = res.json()
+        usage = data.get("usage") or {}
+        if cfg.llm_provider == "openai":
+            out_text = (((data.get("choices") or [{}])[0].get("message") or {}).get("content")) or ""
+            prompt_tokens = int(usage.get("prompt_tokens") or 0)
+            completion_tokens = int(usage.get("completion_tokens") or 0)
+        else:
+            out_text = next((b.get("text", "") for b in data.get("content", []) if b.get("type") == "text"), "")
+            prompt_tokens = int(usage.get("input_tokens") or 0)
+            completion_tokens = int(usage.get("output_tokens") or 0)
+        parsed = parse_verdict(out_text)
+        return AssessResult(
+            verdict=parsed.verdict,
+            categories=parsed.categories,
+            confidence=parsed.confidence,
+            reason=parsed.reason,
+            model=f"{cfg.llm_provider}:{cfg.llm_model}",
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+        )
+    except (httpx.HTTPError, ValueError, KeyError) as exc:
+        log(logger, "error", "llm call failed; routing to human review")
+        log(logger, "debug", "llm error detail", err=str(exc))
+        return None
+```
+
+Update the module docstring's first lines to say it adjudicates via the project's configured provider (anthropic messages / openai chat-completions), not "Haiku-specific". Remove the now-unused `from .config import Settings` if nothing else uses it (keep it if other symbols reference it — check the file).
+
+- [ ] **Step 4: Wire the pipeline call to per-project enablement**
+
+In `services/scorer/worker/pipeline.py`, the gray-zone escalation line inside `assess_and_record` currently reads:
+
+```python
+        result = await haiku_assess(settings, text, cfg.categories, context) if settings.haiku_enabled() else None
+```
+
+Change it to gate + call on the resolved per-project config:
+
+```python
+        result = await haiku_assess(cfg, text, cfg.categories, context) if cfg.llm_enabled() else None
+```
+
+- [ ] **Step 5: Run the scorer suite to verify green**
+
+Run: `cd services/scorer && NEO4J_URI="" NEO4J_AUTH="" ANTHROPIC_API_KEY="" .venv/bin/pytest -q`
+Expected: PASS (rewritten haiku tests + all prior). Then `ruff check . && mypy scorer`.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add services/scorer/scorer/haiku.py services/scorer/worker/pipeline.py services/scorer/tests/test_haiku.py
+git commit -s -m "feat(scorer): per-project LLM adjudication (anthropic + openai), key never logged"
 ```
 
 ---
@@ -391,7 +648,7 @@ def test_config_reports_gray_zone_and_deployment() -> None:
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `cd services/scorer && ANTHROPIC_API_KEY="" .venv/bin/pytest tests/test_admin_config.py -q`
+Run: `cd services/scorer && NEO4J_URI="" NEO4J_AUTH="" ANTHROPIC_API_KEY="" .venv/bin/pytest tests/test_admin_config.py -q`
 Expected: FAIL (`KeyError: 'coParticipates'` / `'deployment'`).
 
 - [ ] **Step 3: Implement the endpoint changes**
@@ -439,7 +696,7 @@ In `services/scorer/worker/admin_api.py`, inside `get_config`'s returned `config
 
 - [ ] **Step 4: Run the test to verify it passes**
 
-Run: `cd services/scorer && ANTHROPIC_API_KEY="" .venv/bin/pytest tests/test_admin_config.py -q`
+Run: `cd services/scorer && NEO4J_URI="" NEO4J_AUTH="" ANTHROPIC_API_KEY="" .venv/bin/pytest tests/test_admin_config.py -q`
 Expected: PASS. Then `mypy scorer worker` (or the repo's configured mypy target).
 
 - [ ] **Step 5: Commit**
@@ -636,7 +893,7 @@ git commit -s -m "feat(admin): types for scorer cascade/co-participates + deploy
 
 ---
 
-### Task 7: Admin ModeratorPanel — sections, disabled Haiku, deployment status
+### Task 7: Admin ModeratorPanel — sections, Haiku kept (base-url dropped), deployment status
 
 **Files:**
 - Modify: `apps/admin/src/routes/settings/ModeratorPanel.tsx`
@@ -676,7 +933,7 @@ In `onSubmit`'s `patch` object, add (a small `numOrNull` local: `const numOrNull
       coParticipatesMaxWeight: numOrNull(cpMaxWeight),
 ```
 
-Drop the `llmProvider/llmBaseUrl/llmModel/llmMaxTokens/llmApiKey` fields from the submitted `patch` (stop editing them). Remove the now-unused `provider/baseUrl/apiKey/model/maxTokens` state and their `onSuccess` re-syncs. Extend the `isDirty` current/initial objects with the five new trimmed values and drop the removed LLM fields.
+**Keep** the existing LLM state + submitted `patch` for `llmProvider/llmModel/llmMaxTokens/llmApiKey` (they're now consumed per-project by the scorer — Tasks 2 + 9). **Remove ONLY `llmBaseUrl`**: delete the `baseUrl` state, its `onSuccess` re-sync, its entry in the submitted `patch`, and its `isDirty` current/initial entries (base-url is env/provider-default only now). Extend the `isDirty` current/initial objects with the five new trimmed cascade/co-participates values. Leave `provider/apiKey/model/maxTokens` state + dirty tracking intact.
 
 - [ ] **Step 2: Add the "Cascade thresholds" section**
 
@@ -730,26 +987,9 @@ After the cascade section:
 
 (Add `coParticipates` to the `Defaults` type usage — it flows from the extended `ModeratorRunningConfig` in Task 6, so `defaults?.coParticipates?.…` typechecks.)
 
-- [ ] **Step 4: Replace the LLM inputs with the disabled Haiku section**
+- [ ] **Step 4: Keep the Haiku/LLM inputs; remove ONLY the base-url Field**
 
-Delete the old Provider/API base URL/API key/Model/Max tokens `Field`s. In their place:
-
-```tsx
-          <div className="space-y-2 border-t border-border pt-4">
-            <Label>Haiku adjudication</Label>
-            {defaults?.llm.enabled ? (
-              <div className="rounded-lg border border-border bg-bg/60 p-3 text-xs text-muted">
-                <p>Enabled · model <span className="font-mono text-fg">{defaults.llm.model}</span> · max tokens {defaults.llm.maxTokens}.</p>
-                <p className="mt-1 text-faint">Per-project LLM provider overrides are not currently consumed by the scorer (configured via env).</p>
-              </div>
-            ) : (
-              <div className="rounded-lg border border-border bg-surface-2 p-3 text-xs text-muted opacity-80">
-                <p className="font-medium text-fg">Disabled</p>
-                <p className="mt-1">Gray-zone items route to human review. Re-enable by setting <code>ANTHROPIC_API_KEY</code> in the scorer environment (operator).</p>
-              </div>
-            )}
-          </div>
-```
+Leave the existing **Provider / API key / Model / Max tokens** `Field`s in place (they're consumed per-project now). **Delete only the "API base URL" `Field`** (the one bound to `baseUrl`/`setBaseUrl`). Update the section's `CardDescription`/hint copy so it no longer implies the fields are ignored — e.g. under the provider field: "Blank = the scorer's env Haiku config. A project can bring its own provider + key (OpenAI-compatible or Anthropic)." Everything else in this LLM group is unchanged.
 
 - [ ] **Step 5: Add the operator-only "Deployment status" section**
 
@@ -779,13 +1019,13 @@ Before the categories editor (guarded on `running?.config.deployment`):
 Add gray-zone rows to the `eff` object and `EffectiveSummary` grid (mirror the existing `blockThreshold`/`reviewThreshold` rows using `defaults?.grayzoneLow`/`grayzoneHigh`). Then:
 
 Run: `pnpm --filter @agora/admin typecheck && pnpm --filter @agora/admin build`
-Expected: PASS. Manually verify in the running admin (Settings → Agent moderation): the three new sections render, the inverted-band warning shows when low>high, save persists, and the Haiku block shows "Disabled" when `ANTHROPIC_API_KEY` is unset.
+Expected: PASS. Manually verify in the running admin (Settings → Agent moderation): the new Cascade thresholds / Social-graph / Deployment status sections render, the inverted-band warning shows when low>high, the Haiku/LLM section still has provider/key/model/max-tokens (no base-url), and save persists.
 
 - [ ] **Step 7: Commit**
 
 ```bash
 git add apps/admin/src/routes/settings/ModeratorPanel.tsx
-git commit -s -m "feat(admin): scorer cascade + co-participates sections, disabled Haiku, deployment status"
+git commit -s -m "feat(admin): scorer cascade + co-participates + deployment status; drop LLM base-url input"
 ```
 
 ---
@@ -808,17 +1048,26 @@ Under `## [Unreleased]`, add to `Added`:
   present/absent). (`packages/contract`, `apps/api/src/routes/misc.ts`, `services/scorer`, `apps/admin`.)
 ```
 
+Add a second `Added` bullet for the LLM wiring:
+
+```markdown
+- **Per-project Haiku/LLM adjudication.** The scorer now honors a project's `moderator_config` LLM
+  settings — `llmProvider` (`anthropic` or `openai`-compatible), `llmApiKey`, `llmModel`, `llmMaxTokens` —
+  falling back to the scorer's env Haiku config per field. A corporate project can bring its own provider
+  + key; enablement is per-project (`llm_enabled` = a resolved key exists). (`services/scorer`.)
+```
+
 and to `Changed`:
 
 ```markdown
-- **The moderator panel no longer edits per-project LLM provider config.** Those fields were stored
-  but never consumed by the scorer (Haiku model/key come from env); the editing surface is replaced by
-  a read-only "Haiku adjudication" status block. Stored values are untouched. (`apps/admin`.)
+- **The moderator panel's LLM base-url input is removed.** The scorer uses the fixed provider host
+  (`api.anthropic.com` / `api.openai.com`); a per-project outbound URL is deliberately not supported
+  (SSRF boundary). Provider/key/model/max-tokens stay editable and are now consumed. (`apps/admin`, `services/scorer`.)
 ```
 
 - [ ] **Step 2: Scorer docs**
 
-In `docs/SCORER.md`, near the gray-zone section (~line 141) and the env-gates list, note that `SCORER_GRAYZONE_LOW/HIGH` and `SCORER_CO_PARTICIPATES_*` are now **per-project overridable** via `moderator_config` (admin Settings → Agent moderation), env value is the default; and that per-project LLM provider config remains a known unconsumed field. Mirror a one-line note in `docs/CHEAT-SHEET.md` where the scorer env vars are listed.
+In `docs/SCORER.md`, near the gray-zone section (~line 141) and the env-gates list, note that `SCORER_GRAYZONE_LOW/HIGH` and `SCORER_CO_PARTICIPATES_*` are now **per-project overridable** via `moderator_config` (admin Settings → Agent moderation), env value is the default; and that per-project LLM provider/key/model are now **consumed** (env is the fallback; base-url stays env-only, provider-default host). Mirror a one-line note in `docs/CHEAT-SHEET.md` where the scorer env vars are listed.
 
 - [ ] **Step 3: Run the propagation checker**
 
@@ -830,7 +1079,7 @@ Review output; apply any flagged `.env.*.example` / wiki mirror notes (the env v
 Run from repo root:
 ```bash
 pnpm -r build && pnpm -r typecheck && pnpm test
-cd services/scorer && ANTHROPIC_API_KEY="" .venv/bin/pytest -q && ruff check . && mypy scorer
+cd services/scorer && NEO4J_URI="" NEO4J_AUTH="" ANTHROPIC_API_KEY="" .venv/bin/pytest -q && ruff check . && mypy scorer
 ```
 Expected: all PASS.
 
@@ -845,6 +1094,7 @@ git commit -s -m "docs(scorer): document per-project cascade/co-participates ove
 
 ## Self-Review notes
 
-- **Spec coverage:** gray-zone LOW/HIGH (Tasks 1-3,5-7 ✓), block/review grouping (Task 7 ✓), co-participates ×3 (Tasks 1-3,5-7 ✓), read-only deployment status (Tasks 4,6,7 ✓), disable Haiku section (Task 7 ✓), clamps in both layers (Tasks 1-2 ✓), ordering fail-closed at boundary + safe fallback at read (Tasks 2,5 ✓), maxParticipants ceiling (Tasks 1-2 ✓), secrets-as-booleans (Task 4 ✓), tests incl. negatives (Tasks 1-5 ✓), docs/propagate (Task 8 ✓).
-- **Type consistency:** `ResolvedModeratorConfig` field names (`grayzone_low` etc.) match across config/pipeline/db; contract field names (`grayzoneLow` etc.) match API persist-list, `moderatorView`, admin types, and `/config` defaults keys; `resolve_co_participants`/`write_co_participates_edge` new signatures match their call sites in Task 3.
-- **Known gap (intentional, per spec):** per-project `llmProvider/llmBaseUrl/llmApiKey/llmModel/llmMaxTokens` stay in the schema/DB but are not consumed by the scorer and no longer editable in the panel.
+- **Execution order:** 1 → 2 → 3 → **9** → 4 → 5 → 6 → 7 → 8. Task 9 (LLM adapter) is physically between Tasks 3 and 4 and depends on Task 2's resolved LLM fields.
+- **Spec coverage:** gray-zone LOW/HIGH (Tasks 1-3,5-7 ✓), block/review grouping (Task 7 ✓), co-participates ×3 (Tasks 1-3,5-7 ✓), read-only deployment status (Tasks 4,6,7 ✓), per-project Haiku/LLM wiring incl. openai (Tasks 2,9 ✓; admin kept-editable Task 7 ✓), base-url dropped/SSRF boundary (Tasks 7,9 ✓), provider-aware key fallback + key-never-logged (Tasks 2,9 ✓), clamps in both layers (Tasks 1-2 ✓), ordering fail-closed at boundary + safe fallback at read (Tasks 2,5 ✓), maxParticipants ceiling (Tasks 1-2 ✓), secrets-as-booleans (Task 4 ✓), tests incl. negatives (Tasks 1-5,9 ✓), docs/propagate (Task 8 ✓).
+- **Type consistency:** `ResolvedModeratorConfig` field names (`grayzone_low`, `llm_provider`, `llm_api_key`…) match across config/pipeline/db/haiku; `assess(cfg, …)` signature matches the pipeline call in Task 9; contract field names (`grayzoneLow`, `llmProvider`…) match API persist-list, `moderatorView`, admin types, and `/config` defaults keys; `resolve_co_participants`/`write_co_participates_edge` new signatures match their call sites in Task 3.
+- **Security invariant:** an `openai` project without its own key never inherits the Anthropic env key (Task 2 resolution + test); the LLM key is never logged (Task 9 adapter + test).

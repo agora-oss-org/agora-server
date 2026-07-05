@@ -90,6 +90,13 @@ def get_config(project_id: str, _auth: AuthContext = Depends(require_operator)) 
             "defaults": {
                 "blockAutoActionThreshold": s.block_auto_action_threshold,
                 "reviewAutoActionThreshold": s.review_auto_action_threshold,
+                "grayzoneLow": s.grayzone_low,
+                "grayzoneHigh": s.grayzone_high,
+                "coParticipates": {
+                    "lookbackDays": s.co_participates_lookback_days,
+                    "maxParticipants": s.co_participates_max_participants,
+                    "maxWeight": s.co_participates_max_weight,
+                },
                 # The scorer adjudicates the gray zone with Claude Haiku; report it in the llm slot.
                 "llm": {
                     "provider": "anthropic",
@@ -98,6 +105,22 @@ def get_config(project_id: str, _auth: AuthContext = Depends(require_operator)) 
                     "maxTokens": s.haiku_max_tokens,
                     "apiKeySet": s.haiku_enabled(),
                     "enabled": s.haiku_enabled(),
+                },
+            },
+            # Read-only deployment wiring (env-owned; restart to change). Secrets as booleans only.
+            "deployment": {
+                "listenDatabaseUrlSet": bool(s.listen_database_url),
+                "anthropicApiKeySet": s.haiku_enabled(),
+                "toxicityUrl": s.toxicity_url,
+                "relationshipUrl": s.relationship_url,
+                "queue": s.queue,
+                "pollIntervalMs": s.poll_interval_ms,
+                "visibilityTimeoutS": s.visibility_timeout_s,
+                "neo4j": {
+                    "uriSet": bool(s.neo4j_uri),
+                    "authSet": bool(s.neo4j_auth),
+                    "database": s.neo4j_database,
+                    "enabled": s.neo4j_enabled(),
                 },
             },
         },

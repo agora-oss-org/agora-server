@@ -128,7 +128,7 @@ async def test_entity_content_job_writes_no_interaction_edge(monkeypatch: pytest
 def _capture_co_participates(monkeypatch: pytest.MonkeyPatch, rec: dict, participant_ids: list[str]) -> None:
     rec["co_participates"] = []
 
-    async def fake_resolve_co(settings, *, comment_id, actor_id):  # noqa: ANN001
+    async def fake_resolve_co(settings, *, comment_id, actor_id, lookback_days, max_participants):  # noqa: ANN001
         rec["resolve_co_args"] = {"comment_id": comment_id, "actor_id": actor_id}
         return participant_ids
 
@@ -186,3 +186,19 @@ async def test_raw_signals_recorded_on_allow_too(monkeypatch: pytest.MonkeyPatch
     assert rec["data"].verdict == "allow"
     assert rec["data"].toxicity_score == pytest.approx(0.05)
     assert rec["data"].relationship_score == pytest.approx(0.0)
+
+
+async def test_per_project_gray_zone_high_moves_the_block_boundary(monkeypatch: pytest.MonkeyPatch) -> None:
+    # tox=0.6 is BELOW the default high (0.80) → would escalate/allow. With a per-project high of 0.5,
+    # 0.6 ≥ 0.5 → block. Proves the pipeline reads cfg.grayzone_high, not settings.
+    rec = _patch(monkeypatch, tox_scores={"neutral": 0.4, "toxic": 0.6})
+
+    async def fake_cfg_low_high(settings, pid):  # noqa: ANN001
+        return ResolvedModeratorConfig(
+            block_auto_action_threshold=0.85, review_auto_action_threshold=0.0, categories=["spam"],
+            grayzone_low=0.30, grayzone_high=0.50,
+        )
+
+    monkeypatch.setattr(pipeline, "get_moderator_config", fake_cfg_low_high)
+    await pipeline.process_job(Settings(), _job(), msg_id=99)
+    assert rec["data"].verdict == "block"

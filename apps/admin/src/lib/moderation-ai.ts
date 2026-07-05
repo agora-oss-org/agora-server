@@ -46,6 +46,9 @@ export interface ModeratorRunningConfig {
     defaults: {
       blockAutoActionThreshold: number;
       reviewAutoActionThreshold: number;
+      grayzoneLow: number;
+      grayzoneHigh: number;
+      coParticipates: { lookbackDays: number; maxParticipants: number; maxWeight: number };
       llm: {
         provider: "openai" | "anthropic";
         baseUrl: string | null;
@@ -54,6 +57,16 @@ export interface ModeratorRunningConfig {
         apiKeySet: boolean;
         enabled: boolean;
       };
+    };
+    deployment?: {
+      listenDatabaseUrlSet: boolean;
+      anthropicApiKeySet: boolean;
+      toxicityUrl: string;
+      relationshipUrl: string;
+      queue: string;
+      pollIntervalMs: number;
+      visibilityTimeoutS: number;
+      neo4j: { uriSet: boolean; authSet: boolean; database: string; enabled: boolean };
     };
   };
 }

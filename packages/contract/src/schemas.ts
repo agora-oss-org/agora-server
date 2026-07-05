@@ -368,16 +368,33 @@ export const DEFAULT_MODERATION_CATEGORIES = [
 // (Scoring transport is the scorer's pgmq enqueue — there is no per-project notifier URL/secret.)
 // Every field is nullish: omit to leave unchanged, null to clear (→ the scorer's env default /
 // the seed categories). `llmApiKey` is write-only (GET exposes only hasLlmApiKey).
-export const moderatorConfigSchema = z.object({
-  blockAutoActionThreshold: z.number().min(0).max(1).nullish(),
-  reviewAutoActionThreshold: z.number().min(0).max(1).nullish(),
-  llmProvider: z.enum(["openai", "anthropic"]).nullish(),
-  llmBaseUrl: z.string().url().nullish(),
-  llmApiKey: z.string().min(1).nullish(),
-  llmModel: z.string().min(1).nullish(),
-  llmMaxTokens: z.number().int().positive().nullish(),
-  categories: z.array(z.string().trim().min(1).max(64)).max(100).nullish(),
-});
+export const moderatorConfigSchema = z
+  .object({
+    blockAutoActionThreshold: z.number().min(0).max(1).nullish(),
+    reviewAutoActionThreshold: z.number().min(0).max(1).nullish(),
+    // Gray-zone gate (RoBERTa P(toxic) band): allow < low ≤ escalate < high ≤ block.
+    grayzoneLow: z.number().min(0).max(1).nullish(),
+    grayzoneHigh: z.number().min(0).max(1).nullish(),
+    // CO_PARTICIPATES edge bounds. maxParticipants is a hard ceiling (feeds a SQL LIMIT).
+    coParticipatesLookbackDays: z.number().int().min(0).max(365).nullish(),
+    coParticipatesMaxParticipants: z.number().int().min(1).max(500).nullish(),
+    coParticipatesMaxWeight: z.number().min(1).max(1000).nullish(),
+    llmProvider: z.enum(["openai", "anthropic"]).nullish(),
+    llmBaseUrl: z.string().url().nullish(),
+    llmApiKey: z.string().min(1).nullish(),
+    llmModel: z.string().min(1).nullish(),
+    llmMaxTokens: z.number().int().positive().nullish(),
+    categories: z.array(z.string().trim().min(1).max(64)).max(100).nullish(),
+  })
+  .superRefine((v, ctx) => {
+    if (v.grayzoneLow != null && v.grayzoneHigh != null && v.grayzoneLow > v.grayzoneHigh) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["grayzoneLow"],
+        message: "grayzoneLow must be ≤ grayzoneHigh",
+      });
+    }
+  });
 
 // ─── automated moderation (services/scorer) ────────────────────────────────
 // Body for the moderator's on-demand POST /moderation/analyze (admin "Re-analyze"). The admin

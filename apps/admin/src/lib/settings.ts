@@ -117,6 +117,11 @@ export type LlmProvider = "openai" | "anthropic";
 export interface ModeratorConfigView {
   blockAutoActionThreshold: number | null;
   reviewAutoActionThreshold: number | null;
+  grayzoneLow: number | null;
+  grayzoneHigh: number | null;
+  coParticipatesLookbackDays: number | null;
+  coParticipatesMaxParticipants: number | null;
+  coParticipatesMaxWeight: number | null;
   llmProvider: LlmProvider | null;
   llmBaseUrl: string | null;
   llmModel: string | null;
@@ -130,6 +135,11 @@ export interface ModeratorConfigView {
 export interface ModeratorConfigPatch {
   blockAutoActionThreshold?: number | null;
   reviewAutoActionThreshold?: number | null;
+  grayzoneLow?: number | null;
+  grayzoneHigh?: number | null;
+  coParticipatesLookbackDays?: number | null;
+  coParticipatesMaxParticipants?: number | null;
+  coParticipatesMaxWeight?: number | null;
   llmProvider?: LlmProvider | null;
   llmBaseUrl?: string | null;
   llmApiKey?: string | null;

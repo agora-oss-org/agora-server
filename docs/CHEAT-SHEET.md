@@ -136,6 +136,7 @@ the `auth` roles. So "self-hosted" drops the Supabase *service*, not the Supabas
 | `NEO4J_URI` | *(compose-set)* | `bolt://neo4j:7687` injected via `NEO4J_URI_DOCKER`. Only set for an **external** Neo4j. Unset entirely → `/social/*` returns 503, edge writes no-op. |
 | `API_BASE_URL`, `SCORER_*_URL` | *(compose-set)* | `http://agora:4000` etc. — wired by compose. Override only off-compose. |
 | `MODERATION_BLOCK_AUTO_ACTION_THRESHOLD` | ◻️ | Auto-remove cutoff `0..1` (default `0.85`). Per-project overrides live in admin *Settings → Moderator*. |
+| `SCORER_GRAYZONE_LOW`/`HIGH`, `SCORER_CO_PARTICIPATES_*`, `llmProvider`/`llmApiKey`/`llmModel` | ◻️ | Env values are now just the **default** — all per-project overridable via `projects.moderator_config`, editable in admin *Settings → Agent moderation* (base-url stays env-only; fixed provider host). |
 
 ### 2.5 — Add-on: **secure-chat** (`--profile secure-chat`, also rides `full`)
 

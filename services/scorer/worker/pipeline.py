@@ -65,10 +65,10 @@ async def assess_and_record(
     tox = toxicity.scores.get("toxic", toxicity.score)
     verdict, categories, confidence, reason, model = "allow", [], tox, "", "roberta:toxicity"
     prompt_tokens = completion_tokens = 0
-    if tox >= settings.grayzone_high:
+    if tox >= cfg.grayzone_high:
         verdict, confidence, reason = "block", tox, "High toxicity score"
-    elif tox >= settings.grayzone_low:
-        result = await haiku_assess(settings, text, cfg.categories, context) if settings.haiku_enabled() else None
+    elif tox >= cfg.grayzone_low:
+        result = await haiku_assess(cfg, text, cfg.categories, context) if cfg.llm_enabled() else None
         if result is not None:
             verdict, categories, confidence, reason = result.verdict, result.categories, result.confidence, result.reason
             model = result.model
@@ -142,7 +142,11 @@ async def assess_and_record(
             # runs when the graph is off. Self-pairs / missing ids are dropped by the writer.
             if settings.neo4j_enabled() and ctx.actor_id is not None:
                 participant_ids = await resolve_co_participants(
-                    settings, comment_id=target_id, actor_id=ctx.actor_id
+                    settings,
+                    comment_id=target_id,
+                    actor_id=ctx.actor_id,
+                    lookback_days=cfg.co_participates_lookback_days,
+                    max_participants=cfg.co_participates_max_participants,
                 )
                 for participant_id in participant_ids:
                     await neo4j_writer.write_co_participates_edge(
@@ -150,6 +154,7 @@ async def assess_and_record(
                         project_id=project_id,
                         actor_id=ctx.actor_id,
                         participant_id=participant_id,
+                        max_weight=cfg.co_participates_max_weight,
                     )
 
     log(logger, "info", "assessed", target_id=target_id, verdict=verdict, auto_actioned=auto_actioned)
