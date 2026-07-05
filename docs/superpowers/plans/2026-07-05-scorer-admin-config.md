@@ -16,7 +16,7 @@
 - Never value a secret in status output — `set`/`not set` booleans only.
 - Follow repo logging policy (`info`/`error` message-only; raw payloads on `debug`) — not expected to be needed here but applies.
 - Build order: `pnpm --filter @agora-server/contract build` before typechecking/using the API or admin.
-- Before "done": `pnpm -r typecheck` and `pnpm test` pass; scorer `ANTHROPIC_API_KEY="" pytest` passes (per memory: direnv key leak).
+- Before "done": `pnpm -r typecheck` and `pnpm test` pass; scorer `NEO4J_URI="" NEO4J_AUTH="" ANTHROPIC_API_KEY="" pytest` passes (per memory: direnv key leak).
 - All commits DCO-signed (`git commit -s`); end message with `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`. Work on branch `root` per repo convention.
 
 ---
@@ -176,7 +176,7 @@ def test_resolve_gray_zone_defaults_to_env() -> None:
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `cd services/scorer && ANTHROPIC_API_KEY="" .venv/bin/pytest tests/test_config.py -q`
+Run: `cd services/scorer && NEO4J_URI="" NEO4J_AUTH="" ANTHROPIC_API_KEY="" .venv/bin/pytest tests/test_config.py -q`
 Expected: FAIL (`ResolvedModeratorConfig` has no `grayzone_low`, etc.).
 
 - [ ] **Step 3: Implement config changes**
@@ -239,7 +239,7 @@ def resolve(raw: object, settings: Settings) -> ResolvedModeratorConfig:
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `cd services/scorer && ANTHROPIC_API_KEY="" .venv/bin/pytest tests/test_config.py -q`
+Run: `cd services/scorer && NEO4J_URI="" NEO4J_AUTH="" ANTHROPIC_API_KEY="" .venv/bin/pytest tests/test_config.py -q`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -286,7 +286,7 @@ async def test_per_project_gray_zone_high_moves_the_block_boundary(monkeypatch: 
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `cd services/scorer && ANTHROPIC_API_KEY="" .venv/bin/pytest tests/test_pipeline.py::test_per_project_gray_zone_high_moves_the_block_boundary -q`
+Run: `cd services/scorer && NEO4J_URI="" NEO4J_AUTH="" ANTHROPIC_API_KEY="" .venv/bin/pytest tests/test_pipeline.py::test_per_project_gray_zone_high_moves_the_block_boundary -q`
 Expected: FAIL (pipeline still reads `settings.grayzone_high=0.80` → verdict `allow`, not `block`).
 
 - [ ] **Step 3: Implement the consumer changes**
@@ -336,13 +336,23 @@ and replace the two `settings.co_participates_*` args in the `pool.fetch(...)` c
 
 In `services/scorer/worker/neo4j_writer.py`, change `write_co_participates_edge` to accept `max_weight` and use it (replace `max_weight=float(settings.co_participates_max_weight)` in the `session.run` with `max_weight=float(max_weight)`), updating the signature to `... participant_id: str, max_weight: float)`.
 
-- [ ] **Step 4: Update the neo4j-writer test for the new signature**
+- [ ] **Step 4: Update the shared test mocks for the new signatures**
+
+In `services/scorer/tests/test_pipeline.py`, the `_capture_co_participates` helper mocks `resolve_co_participants` — its `fake_resolve_co` MUST accept the new kwargs or the pipeline call raises `TypeError`. Change its signature to:
+
+```python
+    async def fake_resolve_co(settings, *, comment_id, actor_id, lookback_days, max_participants):  # noqa: ANN001
+```
+
+(`fake_write_co(settings, **kw)` already absorbs the new `max_weight` kwarg — no change needed there.)
 
 In `services/scorer/tests/test_neo4j_writer_co_participates.py`, add `max_weight=10.0` to each `write_co_participates_edge(...)` call.
 
+Note: the local dev shell leaks `NEO4J_URI`/`NEO4J_AUTH` via direnv, so `resolve_co_participants` runs for real (→ UUID error) unless the env is cleared — always use the `NEO4J_URI="" NEO4J_AUTH="" ANTHROPIC_API_KEY=""` prefix from Global Constraints when running the scorer suite.
+
 - [ ] **Step 5: Run the scorer suite to verify green**
 
-Run: `cd services/scorer && ANTHROPIC_API_KEY="" .venv/bin/pytest -q`
+Run: `cd services/scorer && NEO4J_URI="" NEO4J_AUTH="" ANTHROPIC_API_KEY="" .venv/bin/pytest -q`
 Expected: PASS (new pipeline test + existing pipeline/co-participates tests). Then `ruff check . && mypy scorer`.
 
 - [ ] **Step 6: Commit**
@@ -391,7 +401,7 @@ def test_config_reports_gray_zone_and_deployment() -> None:
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `cd services/scorer && ANTHROPIC_API_KEY="" .venv/bin/pytest tests/test_admin_config.py -q`
+Run: `cd services/scorer && NEO4J_URI="" NEO4J_AUTH="" ANTHROPIC_API_KEY="" .venv/bin/pytest tests/test_admin_config.py -q`
 Expected: FAIL (`KeyError: 'coParticipates'` / `'deployment'`).
 
 - [ ] **Step 3: Implement the endpoint changes**
@@ -439,7 +449,7 @@ In `services/scorer/worker/admin_api.py`, inside `get_config`'s returned `config
 
 - [ ] **Step 4: Run the test to verify it passes**
 
-Run: `cd services/scorer && ANTHROPIC_API_KEY="" .venv/bin/pytest tests/test_admin_config.py -q`
+Run: `cd services/scorer && NEO4J_URI="" NEO4J_AUTH="" ANTHROPIC_API_KEY="" .venv/bin/pytest tests/test_admin_config.py -q`
 Expected: PASS. Then `mypy scorer worker` (or the repo's configured mypy target).
 
 - [ ] **Step 5: Commit**
@@ -830,7 +840,7 @@ Review output; apply any flagged `.env.*.example` / wiki mirror notes (the env v
 Run from repo root:
 ```bash
 pnpm -r build && pnpm -r typecheck && pnpm test
-cd services/scorer && ANTHROPIC_API_KEY="" .venv/bin/pytest -q && ruff check . && mypy scorer
+cd services/scorer && NEO4J_URI="" NEO4J_AUTH="" ANTHROPIC_API_KEY="" .venv/bin/pytest -q && ruff check . && mypy scorer
 ```
 Expected: all PASS.
 
