@@ -164,6 +164,10 @@ export interface ModerationAnalysis {
   reason: string; // short LLM rationale
   model: string; // provider/model that produced it, e.g. "openai:gpt-4o-mini"
   autoActioned: boolean; // true when the moderator wrote the removal back to the API itself
+  // Raw classifier signals recorded with the assessment (see docs/SCORER.md). Optional + nullable:
+  // null/absent on rows recorded before the columns existed (or by an older scorer process).
+  toxicityScore?: number | null; // P(toxic) from the toxicity RoBERTa, 0..1
+  relationshipScore?: number | null; // signed sentiment P(positive)−P(negative), −1..1
   humanResolvedAt: string | null; // set once a human dispositions it (clears it from the queue)
   createdAt: string;
   author?: UserSummary | null; // the poster (content author); populated by the AI-flag queue
