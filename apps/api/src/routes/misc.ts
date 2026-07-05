@@ -187,11 +187,18 @@ export const miscRoutes = new Hono<{ Variables: Variables }>()
     const [row] = await db.select({ moderatorConfig: projects.moderatorConfig }).from(projects).where(eq(projects.id, c.var.projectId)).limit(1);
     const current = (row?.moderatorConfig && typeof row.moderatorConfig === "object" ? row.moderatorConfig : {}) as Record<string, any>;
     const next: Record<string, any> = { ...current };
-    for (const k of ["blockAutoActionThreshold", "reviewAutoActionThreshold", "llmProvider", "llmBaseUrl", "llmApiKey", "llmModel", "llmMaxTokens", "categories"] as const) {
+    for (const k of ["blockAutoActionThreshold", "reviewAutoActionThreshold", "grayzoneLow", "grayzoneHigh", "coParticipatesLookbackDays", "coParticipatesMaxParticipants", "coParticipatesMaxWeight", "llmProvider", "llmBaseUrl", "llmApiKey", "llmModel", "llmMaxTokens", "categories"] as const) {
       const v = (body as Record<string, unknown>)[k];
       if (v === undefined) continue;
       if (v === null) delete next[k]; // clear → scorer env default
       else next[k] = v;
+    }
+    // Resulting-state guard: a single PATCH's ordering is caught by the contract schema's
+    // superRefine, but two PATCHes can each be individually valid and still assemble an inverted
+    // band once merged onto the stored config (e.g. PATCH 1 sets grayzoneHigh=0.3, PATCH 2 sets
+    // grayzoneLow=0.8) — check the MERGED result, not just the request body.
+    if (typeof next.grayzoneLow === "number" && typeof next.grayzoneHigh === "number" && next.grayzoneLow > next.grayzoneHigh) {
+      throw Errors.badRequest("moderator/grayzone-order", "grayzoneLow must be ≤ grayzoneHigh");
     }
     await db.update(projects).set({ moderatorConfig: next }).where(eq(projects.id, c.var.projectId));
     return c.json(await moderatorView(c.var.projectId));
@@ -321,6 +328,11 @@ async function moderatorView(projectId: string) {
   return {
     blockAutoActionThreshold: typeof cfg.blockAutoActionThreshold === "number" ? cfg.blockAutoActionThreshold : null,
     reviewAutoActionThreshold: typeof cfg.reviewAutoActionThreshold === "number" ? cfg.reviewAutoActionThreshold : null,
+    grayzoneLow: typeof cfg.grayzoneLow === "number" ? cfg.grayzoneLow : null,
+    grayzoneHigh: typeof cfg.grayzoneHigh === "number" ? cfg.grayzoneHigh : null,
+    coParticipatesLookbackDays: typeof cfg.coParticipatesLookbackDays === "number" ? cfg.coParticipatesLookbackDays : null,
+    coParticipatesMaxParticipants: typeof cfg.coParticipatesMaxParticipants === "number" ? cfg.coParticipatesMaxParticipants : null,
+    coParticipatesMaxWeight: typeof cfg.coParticipatesMaxWeight === "number" ? cfg.coParticipatesMaxWeight : null,
     llmProvider: cfg.llmProvider ?? null,
     llmBaseUrl: cfg.llmBaseUrl ?? null,
     llmModel: cfg.llmModel ?? null,
