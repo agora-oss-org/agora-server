@@ -25,6 +25,10 @@ const VERDICT_BADGE: Record<ModerationVerdict, "success" | "danger" | "warning">
   review: "warning",
 };
 
+// "0.55" / "+0.40" / "−0.90"; em-dash when the row predates signal recording (null or absent).
+const fmtScore = (v: number | null | undefined, signed = false) =>
+  v == null ? "—" : `${signed && v > 0 ? "+" : ""}${v.toFixed(2)}`;
+
 function targetTitle(analysis: ModerationAnalysis, target: Entity | Comment | null): string {
   if (analysis.targetType === "entity") return (target as Entity | null)?.title || "(untitled entity)";
   if (analysis.targetType === "comment") return "Comment";
@@ -130,6 +134,16 @@ export function AiFlagDialog({ analysis, onClose }: { analysis: ModerationAnalys
                         <Badge key={cat} variant="default">{cat}</Badge>
                       ))}
                     </div>
+                    {current.toxicityScore != null || current.relationshipScore != null ? (
+                      <div className="space-y-0.5">
+                        <p className="font-mono text-xs text-muted">
+                          tox {fmtScore(current.toxicityScore)} · sentiment {fmtScore(current.relationshipScore, true)}
+                        </p>
+                        <p className="text-xs text-faint">
+                          Raw classifier signals — negative sentiment ≠ toxic (grief and venting also read negative).
+                        </p>
+                      </div>
+                    ) : null}
                     {current.reason ? <p className="whitespace-pre-wrap break-words text-sm text-muted">{current.reason}</p> : null}
                     <p className="text-xs text-faint">{current.model}</p>
                   </div>
