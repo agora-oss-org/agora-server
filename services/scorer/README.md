@@ -31,6 +31,10 @@ toxicity model gates moderation.** The relationship (sentiment) model's score is
 graph as signed edge quality — it does **not** influence the removal decision. So "two classifiers"
 means one gate + one graph signal, not two moderation votes.
 
+Both raw signals are recorded on every `moderation_analyses` row (`toxicity_score`,
+`relationship_score`) — context for the human queue, and the dataset for validating future threshold
+ideas (see `docs/SCORER.md` → "disagreement routing").
+
 The gate is on **P(toxic)** (`toxicity.scores["toxic"]`), against two thresholds:
 
 | P(toxic) | Verdict | Claude Haiku called? |

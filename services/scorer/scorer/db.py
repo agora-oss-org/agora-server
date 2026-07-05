@@ -221,9 +221,11 @@ async def resolve_co_participants(
 _INSERT_ANALYSIS = """
 insert into moderation_analyses
   (project_id, target_type, target_id, space_id, verdict, categories, confidence, reason,
-   model, auto_actioned, prompt_tokens, completion_tokens, source_msg_id)
+   model, auto_actioned, prompt_tokens, completion_tokens, source_msg_id,
+   toxicity_score, relationship_score)
 values
-  ($1, $2::reaction_target, $3, $4, $5::moderation_verdict, $6, $7, $8, $9, $10, $11, $12, $13)
+  ($1, $2::reaction_target, $3, $4, $5::moderation_verdict, $6, $7, $8, $9, $10, $11, $12, $13,
+   $14, $15)
 -- the dedup index is PARTIAL (migration 0028: `where source_msg_id is not null`), so the ON CONFLICT
 -- arbiter must repeat that predicate to match it. NULL source_msg_id (on-demand /analyze) → no conflict.
 on conflict (source_msg_id) where source_msg_id is not null do nothing
@@ -247,12 +249,15 @@ async def insert_analysis(
     prompt_tokens: int,
     completion_tokens: int,
     source_msg_id: Optional[int],
+    toxicity_score: Optional[float] = None,
+    relationship_score: Optional[float] = None,
 ) -> Optional[asyncpg.Record]:
     """Insert the analysis row, returning it. None on a dedup conflict (redelivered msg already recorded)."""
     pool = await get_pool(settings)
     return await pool.fetchrow(
         _INSERT_ANALYSIS, project_id, target_type, target_id, space_id, verdict, categories,
         confidence, reason, model, auto_actioned, prompt_tokens, completion_tokens, source_msg_id,
+        toxicity_score, relationship_score,
     )
 
 

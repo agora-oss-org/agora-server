@@ -123,6 +123,13 @@ export const moderationAnalyses = pgTable("moderation_analyses", {
   // the admin dashboard's automated-moderation metrics.
   promptTokens: integer("prompt_tokens").notNull().default(0),
   completionTokens: integer("completion_tokens").notNull().default(0),
+  // Raw classifier signals, recorded on EVERY assessment (incl. `allow`): P(toxic) from the toxicity
+  // RoBERTa (0..1) and the signed relationship sentiment P(positive)−P(negative) (−1..1). Nullable, no
+  // default — 0 is a meaningful value; pre-0056 rows genuinely lack the data and must render as "—".
+  // Audit context for human review + the dataset for validating future threshold ideas (SCORER.md
+  // "disagreement routing"). Deliberately NOT a moderation gate: sentiment ≠ toxicity.
+  toxicityScore: doublePrecision("toxicity_score"),
+  relationshipScore: doublePrecision("relationship_score"),
   humanResolvedAt: timestamp("human_resolved_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (t) => [

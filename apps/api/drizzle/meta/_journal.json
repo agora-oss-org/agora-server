@@ -391,6 +391,12 @@
 			"when": 1781934611653,
 			"tag": "0055_push_devices",
 			"breakpoints": true
+		},{
+			"idx": 56,
+			"version": "7",
+			"when": 1781934611654,
+			"tag": "0056_analysis_raw_signals",
+			"breakpoints": true
 		}
 	]
 }

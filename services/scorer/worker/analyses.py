@@ -42,6 +42,9 @@ class AnalysisInput:
     auto_actioned: bool
     prompt_tokens: int = 0
     completion_tokens: int = 0
+    # Raw classifier signals (recorded on every verdict, incl. allow). None when unavailable.
+    toxicity_score: float | None = None
+    relationship_score: float | None = None
     # The pgmq message id this assessment came from; None for on-demand /analyze. Dedup key.
     source_msg_id: int | None = None
 
@@ -63,6 +66,8 @@ async def record_analysis(settings: Settings, data: AnalysisInput) -> Any:
         auto_actioned=data.auto_actioned,
         prompt_tokens=data.prompt_tokens,
         completion_tokens=data.completion_tokens,
+        toxicity_score=data.toxicity_score,
+        relationship_score=data.relationship_score,
         source_msg_id=data.source_msg_id,
     )
 
@@ -95,6 +100,8 @@ def shape_analysis(row: Any, author: UserSummary | None = None) -> ModerationAna
         reason=row["reason"] or "",
         model=row["model"] or "",
         auto_actioned=bool(row["auto_actioned"]),
+        toxicity_score=(float(row["toxicity_score"]) if row["toxicity_score"] is not None else None),
+        relationship_score=(float(row["relationship_score"]) if row["relationship_score"] is not None else None),
         human_resolved_at=_iso(row["human_resolved_at"]),
         created_at=_iso(row["created_at"]) or "",
         author=author,

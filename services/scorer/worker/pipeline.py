@@ -55,6 +55,10 @@ async def assess_and_record(
     comment/reply — off for the on-demand ``/analyze`` path, whose operator-provided text may not match
     the stored row."""
     toxicity, relationship = await model_clients.score_both(settings, text, context)
+    # Signed relationship quality in [-1, 1] (P(positive) - P(negative)); falls back to the top score
+    # for non-sentiment models. Recorded on the analysis row below AND written to the Neo4j edge.
+    rel = relationship.scores
+    rel_quality = (rel.get("positive", 0.0) - rel.get("negative", 0.0)) if rel else relationship.score
     cfg = await get_moderator_config(settings, project_id)
 
     # ── gray-zone cascade (gate on P(toxic), not the top label) ─────────────────
@@ -104,14 +108,13 @@ async def assess_and_record(
             auto_actioned=auto_actioned,
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
+            toxicity_score=tox,
+            relationship_score=rel_quality,
             source_msg_id=source_msg_id,
         ),
     )
 
     # ── relationship edges → Neo4j ─────────────────────────────────────────────
-    # Signed quality in [-1, 1] (P(positive) - P(negative)); fall back to top score for non-sentiment models.
-    rel = relationship.scores
-    rel_quality = (rel.get("positive", 0.0) - rel.get("negative", 0.0)) if rel else relationship.score
     # v1: author → content (every scored item).
     await neo4j_writer.write_relationship_edge(
         settings,

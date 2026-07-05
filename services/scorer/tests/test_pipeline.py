@@ -17,9 +17,14 @@ from worker import analyses, model_clients, neo4j_writer, pipeline, writeback
 from worker.model_clients import ModelScore
 
 
-def _patch(monkeypatch: pytest.MonkeyPatch, *, tox_scores: dict[str, float]) -> dict:
+def _patch(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    tox_scores: dict[str, float],
+    rel_scores: dict[str, float] | None = None,
+) -> dict:
     recorded: dict = {}
-    rel_scores = {"negative": 0.2, "neutral": 0.6, "positive": 0.2}
+    rel_scores = rel_scores or {"negative": 0.2, "neutral": 0.6, "positive": 0.2}
 
     async def fake_fetch_content(settings, tt, tid):  # noqa: ANN001
         return ContentRow(text="hello world", space_id=None, author_id="author-1")
@@ -160,3 +165,24 @@ async def test_comment_job_skips_co_participates_when_graph_disabled(monkeypatch
     job = ScoreJob(target_type="comment", target_id="c1", project_id="p1")
     await pipeline.process_job(Settings(), job, msg_id=13)  # default Settings → neo4j_enabled() is False
     assert rec["co_participates"] == []
+
+
+async def test_raw_signals_recorded_on_analysis(monkeypatch: pytest.MonkeyPatch) -> None:
+    # P(toxic) and the signed relationship quality (positive − negative) land on the audit row.
+    rec = _patch(
+        monkeypatch,
+        tox_scores={"neutral": 0.1, "toxic": 0.9},
+        rel_scores={"negative": 0.7, "neutral": 0.2, "positive": 0.1},
+    )
+    await pipeline.process_job(Settings(), _job(), msg_id=91)
+    assert rec["data"].toxicity_score == pytest.approx(0.9)
+    assert rec["data"].relationship_score == pytest.approx(-0.6)
+
+
+async def test_raw_signals_recorded_on_allow_too(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The dataset property: allow verdicts record signals as well (not just flags/blocks).
+    rec = _patch(monkeypatch, tox_scores={"neutral": 0.95, "toxic": 0.05})
+    await pipeline.process_job(Settings(), _job(), msg_id=92)
+    assert rec["data"].verdict == "allow"
+    assert rec["data"].toxicity_score == pytest.approx(0.05)
+    assert rec["data"].relationship_score == pytest.approx(0.0)
