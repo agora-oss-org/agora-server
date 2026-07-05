@@ -103,6 +103,9 @@ class ModerationAnalysis(CamelModel):
     reason: str = ""
     model: str = ""
     auto_actioned: bool = False
+    # Raw classifier signals (None on rows recorded before they existed). Audit context, not a gate.
+    toxicity_score: Optional[float] = None
+    relationship_score: Optional[float] = None
     human_resolved_at: Optional[str] = None  # ISO datetime; None = unresolved
     created_at: str = ""
     author: Optional[UserSummary] = None
