@@ -25,8 +25,9 @@ one non-negotiable:
   purpose, because both mean "bring care here." There is no per-person "bad actor" score, in any view.
 - **A zoom ladder that is a privacy ladder.** ☀️ **Community Weather** (one project-wide warmth scalar
   with band + trend) → ✨ **Constellation** (anonymous cluster blobs — a *bucketed* size and warmth band
-  with no ids/names/member-lists, GDS Louvain clustering, k-anonymity-suppressed below a floor, refreshed
-  seasonally) → 🏡 **Neighborhood** (your *own* ties only, each rendered by its **dyadic** brightness —
+  with no ids/names/member-lists, GDS Louvain clustering, k-anonymity-suppressed below a floor — which is
+  **adaptive** (scales to community size) and operator-overridable to a fixed value from admin Settings —
+  refreshed seasonally) → 🏡 **Neighborhood** (your *own* ties only, each rendered by its **dyadic** brightness —
   never the friend's global score, which closes the friction side-channel). All three ship today.
 - **Friction is quarantined and decays.** A user report projects a directed `FRICTION` edge that can
   only *dim* an existing tie and fades at a ~14-day half-life; it never creates a tie, and never becomes

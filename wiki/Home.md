@@ -8,8 +8,9 @@ Replyke SDK.** It implements the same API the SDK speaks, so the
 to **your** server instead of `api.replyke.com` — byte-for-byte the same REST paths, response shapes,
 auth semantics, and socket.io events. You keep
 Replyke's feature set (posts, threaded comments, reactions & feeds, follows & connections, nested
-spaces, real-time chat, notifications, moderation & stewardship, semantic search) and run it on
-infrastructure you control, under **AGPL-3.0**.
+spaces, real-time chat, notifications, moderation & stewardship, semantic search) — plus Agora-native
+extensions Replyke never shipped (community **events** with RSVPs & invites, and web/mobile **push
+notifications**) — and run it on infrastructure you control, under **AGPL-3.0**.
 
 ---
 

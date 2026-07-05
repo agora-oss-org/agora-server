@@ -24,6 +24,13 @@ underneath as a verified backstop.
 - **Operators, owners/admins, stewards** — a deployment-operator allowlist grants a project-wide
   god-view; within-project, DB-backed `owner`/`admin`/`steward` grants form the
   `operator ⊇ owner ⊇ admin ⊇ steward ⊇ member` hierarchy.
+- **Native-auth email links fail closed** — the confirm/reset/resend flows refuse to send
+  (`503 auth/email-not-configured`) unless `AUTH_EMAIL_LINK_ALLOWED_ORIGINS` is configured, and a
+  client-supplied `emailRedirectTo` is validated against that allowlist (a non-listed origin 400s) so a
+  link is never built on an unvalidated host — an **open-redirect guard**. See [[Deployment]].
+- **Content deletion defaults to hard** (`CONTENT_DELETE_MODE=hard`) — a delete truly removes the row
+  *and* its uploaded media from storage, rather than tombstoning and orphaning the objects in the
+  bucket. `soft` keeps the recoverable-tombstone behavior. A privacy-forward default; set per deploy.
 - **RLS backstop** — denies `anon`/`authenticated` any private-space, removed, or draft row directly.
 
 ## Principles enforced in every change

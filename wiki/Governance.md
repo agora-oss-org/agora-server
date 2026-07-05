@@ -15,7 +15,8 @@ There are two distinct layers: **moderation judges content; stewardship tends pe
   classifiers gate a Claude Haiku adjudication, and content is either **auto-hidden** or **flagged for
   human review** depending on the score (configurable categories, confidence thresholds, and
   auto-actions, tuned per-project in admin Settings). A `moderation_analyses` audit trail and an
-  operator-gated AI-flag queue back the admin AI tab.
+  operator-gated AI-flag queue back the admin AI tab; each analysis also records the two raw RoBERTa
+  scores (toxicity + relationship sentiment) and surfaces them to human reviewers for context.
 
 The scorer architecture (pipeline, write-back, resource sizing) is documented in
 [`docs/SCORER.md`](https://github.com/agora-oss-org/agora-server/blob/root/docs/SCORER.md) and

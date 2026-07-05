@@ -27,9 +27,26 @@ noticing.
 - **Auth:** anonymous reads, authenticated writes. Agora mints short-lived access tokens + rotating
   refresh tokens (see [[Security]]).
 - **Realtime is socket.io** — event names stay byte-identical to the SDK's socket types. Beyond chat
-  fan-out, every authenticated socket auto-joins a per-user room and receives a `notification:created`
-  event, so the bell/badge updates live for every notification type. Optional cross-replica fan-out via
-  Redis when `REDIS_URL` is set.
+  message fan-out, every authenticated socket auto-joins a per-user room and receives a
+  `notification:created` event, so the bell/badge updates live for every notification type. The same
+  per-user rooms carry a live **conversation inbox** — `conversation:created` plus `message:created`
+  fan-out (so a new DM or a reply surfaces without a poll) and connection request/accept notifications.
+  Optional cross-replica fan-out via Redis when `REDIS_URL` is set.
+
+## Agora extensions
+
+Beyond the 1:1 Replyke surface, Agora adds first-party domains that follow the same envelopes, auth,
+and `/v7/:projectId/...` shape (contract in `docs/MANIFEST.md`):
+
+- **Events** (`§events`) — community events with RSVPs, invites, and co-hosts, visibility-tiered
+  (`public | members | invite`). See [[Governance]] for the enforcement model.
+- **Push notifications** (`§push-notifications`) — a device registry (Web Push / FCM / APNs) that
+  mirrors a push-worthy allowlist of in-app notifications to background sends; gated by the `VAPID_*`
+  env trio (see [[Deployment]]).
+
+New contract-affecting behavior is announced in-band: legacy sort aliases (e.g. `sortBy=new`) now emit
+an **RFC 8594 `Deprecation`** response header rather than breaking, so SDK consumers get a migration
+window.
 
 ## Why a fork?
 

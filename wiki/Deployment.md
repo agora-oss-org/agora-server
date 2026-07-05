@@ -38,6 +38,39 @@ docker compose --profile secure-chat up --build      # standalone secure-chat (r
 docker compose --profile selfhost --profile demo up  # API + the SDK demo harness at /demo/
 ```
 
+## Environment & configuration
+
+Agora ships **one complete env template per compose file** — copy the one that matches how you run it:
+
+| Template | Compose file | Data plane |
+|---|---|---|
+| `.env.dev.example` | `docker-compose.dev.yml` | host-run app (dev) |
+| `.env.selfhost.example` | `docker-compose.yml` | container from source (local Postgres + MinIO) |
+| `.env.prod.example` | `docker-compose.prod.yml` | pulled production image |
+
+Each defaults to a **local Postgres + MinIO**, with cloud Supabase as a commented in-file switch. Pick
+one and `cp` it to `.env`. The `docker-compose.prod.yml` service definitions **no longer use
+`env_file`** — every consumed var is enumerated explicitly (`${VAR:?required}` / `${VAR:-default}`), so
+no secret has to live in a `.env` on disk for a prod deploy (values come from the process environment:
+shell export / systemd / Swarm / K8s secret injection). Full var-by-var reference:
+[`docs/CHEAT-SHEET.md`](https://github.com/agora-oss-org/agora-server/blob/root/docs/CHEAT-SHEET.md).
+
+A few deploy-significant knobs beyond the data plane:
+
+- **`CONTENT_DELETE_MODE` (default `hard`)** — out of the box, deleting an entity / comment / chat
+  message / event truly `DELETE`s the row (FK cascades take dependents) **and removes its uploaded media
+  from storage**. Set `CONTENT_DELETE_MODE=soft` to keep the previous recoverable-tombstone behavior
+  (media stays in the bucket). See [[Security]].
+- **Native-auth email** — when `DEFAULT_AUTH_PROVIDER=native`, the confirm/reset/resend flows **require
+  `AUTH_EMAIL_LINK_ALLOWED_ORIGINS`** (an allowlist of client origins the emailed link may point at) or
+  they fail closed with `503 auth/email-not-configured`. A client's `emailRedirectTo` is validated
+  against it (open-redirect guard), so a multi-front-end deploy sends each user's link back to the site
+  they signed up on. Native transactional email goes out over **Postmark** (`POSTMARK_*`);
+  Supabase-backed auth brokers its own emails and is unaffected.
+- **Push notifications** — set the `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` trio to
+  enable Web Push dispatch (unset → push is a no-op); FCM/APNs providers are credential-gated. See
+  [[API & Contract|API-Contract]].
+
 ## The front door (Caddy)
 
 The `proxy` service is a **Caddy** front door — the single public entrypoint. It terminates TLS with

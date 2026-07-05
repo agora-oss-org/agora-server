@@ -24,6 +24,14 @@ events must keep [`agora-sdk`](https://github.com/jenova-marie/agora-sdk) workin
 
 `pnpm -r typecheck` and `pnpm test` must pass before any work is considered done.
 
+## Keeping mirrors in sync
+
+One change often has many mirrors — a new env var touches three `.env.*.example` templates, three
+compose files, `docs/`, this wiki, and the `CHANGELOG`. `docs/PROPAGATION.yaml` maps what mirrors what,
+and the **`/propagate`** workflow runs a drift-checker over your branch diff and drafts the mirror
+edits for review (propose-then-approve, never auto-commits). Run it before finishing a branch, and keep
+`CHANGELOG.md` current under `## [Unreleased]`.
+
 ## Friendly first areas
 
 Admin-app features, test coverage, and the deployment guide. Browse the

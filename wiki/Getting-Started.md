@@ -32,7 +32,10 @@ cd ../admin && pnpm dev   # http://localhost:5173
 ## Environment
 
 Each app loads its own `.env` from its package directory — for the API, `cp ../../.env.dev.example .env` in
-`apps/api/`. `DATABASE_URL` is the only hard requirement; everything else gates a specific feature and is
+`apps/api/`. There is **one complete template per run mode** — `.env.dev.example` (host-run dev, above),
+`.env.selfhost.example` (container from source), and `.env.prod.example` (pulled prod image); see
+[[Deployment]] for which goes with which compose file. `DATABASE_URL` is the only hard requirement;
+everything else gates a specific feature and is
 validated as optional — e.g. `SUPABASE_*` (Auth + Storage), `VOYAGE_API_KEY` (semantic search),
 `NEO4J_URI` (the [[Social Graph]]), `OPERATOR_USER_IDS`/`OPERATOR_EMAILS` (the operator allowlist). The
 per-app layout (and an optional single-file setup) is in the repo README's
