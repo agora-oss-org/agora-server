@@ -202,6 +202,10 @@ function ModeratorForm({
     },
   );
 
+  // Live inverted-band guard: both edges filled and low > high (parse once).
+  const grayBandInverted =
+    grayLow.trim() !== "" && grayHigh.trim() !== "" && Number(grayLow) > Number(grayHigh);
+
   return (
     <form onSubmit={onSubmit} className="space-y-5">
       {dirty && !SETTINGS_READ_ONLY && <UnsavedBanner />}
@@ -223,7 +227,7 @@ function ModeratorForm({
           <div className="space-y-3">
             <Label>Cascade thresholds</Label>
             <p className="text-xs text-faint">Toxicity gate: <code>allow &lt; low ≤ escalate &lt; high ≤ block</code>. Blank = server default.</p>
-            {grayLow.trim() !== "" && grayHigh.trim() !== "" && Number(grayLow) > Number(grayHigh) && (
+            {grayBandInverted && (
               <p className="text-xs text-danger">Gray-zone low must be ≤ high.</p>
             )}
             <div className="grid gap-4 sm:grid-cols-2">

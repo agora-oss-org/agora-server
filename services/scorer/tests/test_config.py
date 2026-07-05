@@ -110,6 +110,15 @@ def test_resolve_llm_falls_back_to_env_for_anthropic() -> None:
     assert cfg.llm_enabled() is True
 
 
+def test_resolve_anthropic_own_key_overrides_env_key() -> None:
+    # A project's own key wins over the Anthropic env key (cfg_key `or` env_key short-circuits).
+    s = dataclasses.replace(Settings(), anthropic_api_key="env-anthropic-key")
+    cfg = resolve({"llmProvider": "anthropic", "llmApiKey": "proj-own-key"}, s)
+    assert cfg.llm_provider == "anthropic"
+    assert cfg.llm_api_key == "proj-own-key"
+    assert cfg.llm_enabled() is True
+
+
 def test_resolve_openai_without_key_is_disabled_and_never_leaks_env_key() -> None:
     # The security invariant: an openai project with no own key must NOT inherit the Anthropic env key.
     s = dataclasses.replace(Settings(), anthropic_api_key="env-anthropic-key")
