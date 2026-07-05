@@ -19,7 +19,9 @@ async def test_resolve_co_participants_stringifies_and_passes_through(monkeypatc
         return FakePool()
 
     monkeypatch.setattr(db_module, "get_pool", fake_get_pool)
-    out = await db_module.resolve_co_participants(Settings(), comment_id="c1", actor_id="a1")
+    out = await db_module.resolve_co_participants(
+        Settings(), comment_id="c1", actor_id="a1", lookback_days=7, max_participants=50
+    )
     assert out == ["u1", "u2"]
     # comment id, actor id, lookback days, cap — in that positional order.
     assert captured["args"] == ("c1", "a1", 7, 50)

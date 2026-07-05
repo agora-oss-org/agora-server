@@ -266,6 +266,7 @@ async def write_co_participates_edge(
     project_id: str,
     actor_id: str | None,
     participant_id: str | None,
+    max_weight: float,
 ) -> None:
     """MERGE an undirected CO_PARTICIPATES edge between two co-commenters, keyed on the canonical
     (sourceA, sourceB, projectId) pair. No-op (logged) when Neo4j is off, an endpoint is missing, or
@@ -287,6 +288,6 @@ async def write_co_participates_edge(
             source_a=source_a,
             source_b=source_b,
             project_id=str(project_id),
-            max_weight=float(settings.co_participates_max_weight),
+            max_weight=float(max_weight),
         )
     log(logger, "info", "neo4j co-participates edge merged", source_a=source_a, source_b=source_b)

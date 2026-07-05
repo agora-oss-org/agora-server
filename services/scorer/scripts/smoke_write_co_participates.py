@@ -46,6 +46,7 @@ async def _run(project_id: str, actor_id: str, participant_id: str) -> None:
             project_id=project_id,
             actor_id=actor_id,
             participant_id=participant_id,
+            max_weight=10.0,
         )
     finally:
         await close_driver()

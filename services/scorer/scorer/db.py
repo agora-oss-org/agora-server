@@ -190,7 +190,7 @@ async def resolve_report_friction(
 
 
 async def resolve_co_participants(
-    settings: Settings, *, comment_id: str, actor_id: str
+    settings: Settings, *, comment_id: str, actor_id: str, lookback_days: int, max_participants: int
 ) -> list[str]:
     """Distinct other users who also commented on the SAME entity (any thread depth) within the
     CO_PARTICIPATES lookback window, most-recent-first, capped at ``max_participants``. Excludes the
@@ -211,8 +211,8 @@ async def resolve_co_participants(
         "limit $4",
         comment_id,
         actor_id,
-        settings.co_participates_lookback_days,
-        settings.co_participates_max_participants,
+        lookback_days,
+        max_participants,
     )
     return [str(r["user_id"]) for r in rows]
 
