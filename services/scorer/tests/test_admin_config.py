@@ -3,11 +3,14 @@ Called directly (the Depends(require_operator) only binds under FastAPI routing;
 
 from __future__ import annotations
 
+from typing import Any, cast
+
 from worker.admin_api import get_config
 
 
 def test_config_reports_gray_zone_and_deployment() -> None:
-    out = get_config("p1", None)  # type: ignore[arg-type]
+    # get_config returns dict[str, object]; cast so the nested reads below aren't "object not indexable".
+    out = cast(dict[str, Any], get_config("p1", None))  # type: ignore[arg-type]
     defaults = out["config"]["defaults"]
     assert "grayzoneLow" in defaults and "grayzoneHigh" in defaults
     assert defaults["coParticipates"]["maxParticipants"] == 50
