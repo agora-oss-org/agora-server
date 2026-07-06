@@ -2,7 +2,7 @@
 // invalidate — mirrors lib/steward-config.ts. Resolution/clamping is the contract's pure
 // resolveSocialConfig (fail-closed → community defaults). See docs/SOCIAL-GRAPH.md §5.
 import { eq } from "drizzle-orm";
-import { db } from "../db/index.js";
+import { getDb } from "../db/index.js";
 import { projects } from "../db/schema/index.js";
 import { resolveSocialConfig, type ResolvedSocialConfig } from "@agora-server/contract";
 
@@ -12,7 +12,7 @@ const cache = new Map<string, { cfg: ResolvedSocialConfig; at: number }>();
 export async function getSocialConfig(projectId: string): Promise<ResolvedSocialConfig> {
   const hit = cache.get(projectId);
   if (hit && Date.now() - hit.at < CONFIG_TTL_MS) return hit.cfg;
-  const [p] = await db
+  const [p] = await getDb()
     .select({ socialConfig: projects.socialConfig })
     .from(projects)
     .where(eq(projects.id, projectId))

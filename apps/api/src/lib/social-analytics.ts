@@ -13,7 +13,7 @@ import {
   type ChurnRiskBand, type EngagementMember, type InfluenceMember, type ResolvedSocialConfig,
   type Silo, type SocialAnalyticsReport, type SocialEngagement, type SocialInfluence, type SocialSilos,
 } from "@agora-server/contract";
-import { db } from "../db/index.js";
+import { getDb } from "../db/index.js";
 import { profiles, projects, spaceMembers, spaces, socialAnalytics } from "../db/schema/index.js";
 import { getNeo4j, isNeo4jError } from "./neo4j.js";
 import { getSocialConfig } from "./social-config.js";
@@ -143,7 +143,7 @@ async function computeEngagement(
 }
 
 async function fetchMemberSpaces(projectId: string): Promise<Map<string, string[]>> {
-  const rows = await db
+  const rows = await getDb()
     .select({ userId: spaceMembers.userId, spaceId: spaceMembers.spaceId })
     .from(spaceMembers)
     .where(and(eq(spaceMembers.projectId, projectId), eq(spaceMembers.status, "active")));
@@ -182,7 +182,7 @@ async function buildReport(
 }
 
 async function reportDue(projectId: string, report: SocialAnalyticsReport, now: number): Promise<boolean> {
-  const [last] = await db
+  const [last] = await getDb()
     .select({ computedAt: socialAnalytics.computedAt })
     .from(socialAnalytics)
     .where(and(eq(socialAnalytics.projectId, projectId), eq(socialAnalytics.report, report)))
@@ -199,7 +199,7 @@ async function materializeProject(
   const enabled = reports.filter((r) => cfg[ANALYTICS_REPORT_FLAG[r]] === true);
   if (enabled.length === 0) return false;
 
-  const userRows = await db.select({ id: profiles.id }).from(profiles).where(eq(profiles.projectId, projectId));
+  const userRows = await getDb().select({ id: profiles.id }).from(profiles).where(eq(profiles.projectId, projectId));
   const userIds = userRows.map((r) => r.id);
   if (userIds.length === 0) return false;
 
@@ -209,7 +209,7 @@ async function materializeProject(
     const built = await buildReport(driver, projectId, report, cfg, userIds, now);
     if (!built) continue; // e.g. GDS unavailable for influence/silos
     const computedAt = new Date(now);
-    await db
+    await getDb()
       .insert(socialAnalytics)
       .values({ projectId, report, computedAt, payload: built.payload, memberCount: built.memberCount })
       .onConflictDoUpdate({
@@ -238,7 +238,7 @@ export async function rollupAnalytics(
   const reports = opts.reports ?? [...SOCIAL_ANALYTICS_REPORTS];
   const ids = projectId
     ? [projectId]
-    : (await db.select({ id: projects.id }).from(projects)).map((r) => r.id);
+    : (await getDb().select({ id: projects.id }).from(projects)).map((r) => r.id);
 
   let materialized = 0;
   for (const id of ids) {
@@ -256,7 +256,7 @@ export async function rollupAnalytics(
 // ── Reads (operator endpoints; latest snapshot, names hydrated fresh) ────────
 
 async function latestSnapshot(projectId: string, report: SocialAnalyticsReport) {
-  const [row] = await db
+  const [row] = await getDb()
     .select()
     .from(socialAnalytics)
     .where(and(eq(socialAnalytics.projectId, projectId), eq(socialAnalytics.report, report)))
@@ -303,7 +303,7 @@ export async function getSilos(projectId: string): Promise<SocialSilos> {
 const RISK_ORDER: Record<ChurnRiskBand, number> = { "at-risk": 0, watch: 1, none: 2 };
 
 export async function getEngagement(projectId: string): Promise<SocialEngagement> {
-  const rows = await db
+  const rows = await getDb()
     .select()
     .from(socialAnalytics)
     .where(and(eq(socialAnalytics.projectId, projectId), eq(socialAnalytics.report, "engagement")))
@@ -341,7 +341,7 @@ async function fetchSpaceNames(projectId: string, spaceIds: string[]): Promise<M
   const map = new Map<string, string | null>();
   const uniq = [...new Set(spaceIds)];
   if (uniq.length === 0) return map;
-  const rows = await db
+  const rows = await getDb()
     .select({ id: spaces.id, name: spaces.name })
     .from(spaces)
     .where(and(eq(spaces.projectId, projectId), inArray(spaces.id, uniq)));

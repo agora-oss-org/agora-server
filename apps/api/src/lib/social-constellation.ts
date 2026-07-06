@@ -11,7 +11,7 @@ import {
   BLOB_SIZE_BUCKETS, WEATHER_BANDS,
   type BlobSizeBucket, type ConstellationBlob, type SocialConstellation,
 } from "@agora-server/contract";
-import { db } from "../db/index.js";
+import { getDb } from "../db/index.js";
 import { profiles, projects, spaceMembers, socialConstellation } from "../db/schema/index.js";
 import { getNeo4j, isNeo4jError } from "./neo4j.js";
 import { getSocialConfig } from "./social-config.js";
@@ -90,7 +90,7 @@ export async function louvainCommunities(
 
 /** Fallback clustering: each space is a community (active members), grouped from Postgres. */
 async function spaceCommunities(projectId: string): Promise<Map<string, string[]>> {
-  const rows = await db
+  const rows = await getDb()
     .select({ spaceId: spaceMembers.spaceId, userId: spaceMembers.userId })
     .from(spaceMembers)
     .where(and(eq(spaceMembers.projectId, projectId), eq(spaceMembers.status, "active")));
@@ -112,7 +112,7 @@ async function materializeProject(
   if (!cfg.graphEnabled || !cfg.constellationEnabled) return false;
 
   if (!force) {
-    const [last] = await db
+    const [last] = await getDb()
       .select({ computedAt: socialConstellation.computedAt })
       .from(socialConstellation)
       .where(eq(socialConstellation.projectId, projectId))
@@ -121,7 +121,7 @@ async function materializeProject(
     if (last && now - last.computedAt.getTime() < CONSTELLATION_EPOCH_DAYS * DAY_MS) return false; // not due
   }
 
-  const userRows = await db.select({ id: profiles.id }).from(profiles).where(eq(profiles.projectId, projectId));
+  const userRows = await getDb().select({ id: profiles.id }).from(profiles).where(eq(profiles.projectId, projectId));
   const userIds = userRows.map((r) => r.id);
   if (userIds.length === 0) return false;
 
@@ -134,7 +134,7 @@ async function materializeProject(
   const { blobs, memberCount } = blobsFromCommunities(communities, sP, kFloor);
 
   const computedAt = new Date(now);
-  await db
+  await getDb()
     .insert(socialConstellation)
     .values({ projectId, computedAt, method, blobs, memberCount })
     .onConflictDoUpdate({
@@ -160,7 +160,7 @@ export async function rollupConstellation(
   }
   const ids = projectId
     ? [projectId]
-    : (await db.select({ id: projects.id }).from(projects)).map((r) => r.id);
+    : (await getDb().select({ id: projects.id }).from(projects)).map((r) => r.id);
 
   let materialized = 0;
   for (const id of ids) {
@@ -178,7 +178,7 @@ export async function rollupConstellation(
 /** The member-facing read: the LATEST materialized snapshot, or the "forming" sentinel (asOf null) when a
  *  project has never been computed. Reads Postgres only — no live graph query (the cadence is seasonal). */
 export async function getConstellation(projectId: string): Promise<SocialConstellation> {
-  const [row] = await db
+  const [row] = await getDb()
     .select()
     .from(socialConstellation)
     .where(eq(socialConstellation.projectId, projectId))

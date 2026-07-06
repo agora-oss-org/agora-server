@@ -7,7 +7,7 @@
 // the read endpoint hydrates display fields fresh. Invoked by POST /internal/cron/community-stats and
 // the standalone scripts/rollup-community-stats.mjs.
 import { sql } from "drizzle-orm";
-import { db } from "../db/index.js";
+import { getDb } from "../db/index.js";
 import { projects } from "../db/schema/index.js";
 
 // Hours of trailing buckets to recompute each run. 25 → the current hour + the prior 24, so a single
@@ -19,7 +19,7 @@ const LEADERBOARD_WINDOW_DAYS = 7;
 export async function rollupCommunityStats(projectId?: string | null): Promise<{ projects: number; hours: number }> {
   const ids = projectId
     ? [projectId]
-    : (await db.select({ id: projects.id }).from(projects)).map((r) => r.id);
+    : (await getDb().select({ id: projects.id }).from(projects)).map((r) => r.id);
 
   let hours = 0;
   for (const id of ids) {
@@ -33,7 +33,7 @@ async function rollupProject(id: string): Promise<number> {
   //    when nothing happened (so cumulative totals stay continuous); LEFT JOINs attach per-source
   //    counts. Cumulative = all-time base before the window + a running sum over the buckets. The
   //    upsert deliberately omits the top_* snapshot columns so historical snapshots are preserved.
-  const upserted = await db.execute(sql`
+  const upserted = await getDb().execute(sql`
     with hours as (
       select generate_series(
         date_trunc('hour', now() - make_interval(hours => ${BACKFILL_HOURS - 1})),
@@ -139,7 +139,7 @@ async function rollupProject(id: string): Promise<number> {
   // 2) Leaderboard + top-post snapshot for the CURRENT hour, ranked by activity volume over the
   //    rolling window. Stored as id+count arrays (rank order preserved via jsonb_agg ... order by).
   //    The current-hour row was just inserted by step 1, so this UPDATE always lands.
-  await db.execute(sql`
+  await getDb().execute(sql`
     with posters as (
       select user_id, count(*)::int as n
       from entities

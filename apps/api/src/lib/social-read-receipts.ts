@@ -7,7 +7,7 @@
 // members (a non-member who read the post is recorded but never counts toward coverage); the denominator
 // is the space's active membership.
 import { and, eq, isNull, inArray, desc, count, countDistinct, ne, or } from "drizzle-orm";
-import { db } from "../db/index.js";
+import { getDb } from "../db/index.js";
 import { spaces, spaceMembers, entities, readReceipts } from "../db/schema/index.js";
 import { readReceiptCoverage, type SocialReadReceipts, type ReceiptSpace } from "@agora-server/contract";
 
@@ -19,7 +19,7 @@ export async function getReadReceiptsCoverage(projectId: string): Promise<Social
   const asOf = new Date().toISOString();
 
   // 1) The receipts-enabled spaces (the only ones that record reads).
-  const spaceRows = await db
+  const spaceRows = await getDb()
     .select({ id: spaces.id, name: spaces.name })
     .from(spaces)
     .where(and(eq(spaces.projectId, projectId), eq(spaces.readReceiptsEnabled, true), isNull(spaces.deletedAt)))
@@ -28,7 +28,7 @@ export async function getReadReceiptsCoverage(projectId: string): Promise<Social
   const spaceIds = spaceRows.map((s) => s.id);
 
   // 2) Active-member counts per space (the coverage denominator).
-  const memberRows = await db
+  const memberRows = await getDb()
     .select({ spaceId: spaceMembers.spaceId, n: count() })
     .from(spaceMembers)
     .where(and(
@@ -42,7 +42,7 @@ export async function getReadReceiptsCoverage(projectId: string): Promise<Social
   // 3) Recent visible posts per space (newest first, capped). Per-space limit, so loop the few spaces.
   const announcements: { id: string; title: string | null; createdAt: Date; spaceId: string }[] = [];
   for (const s of spaceRows) {
-    const rows = await db
+    const rows = await getDb()
       .select({ id: entities.id, title: entities.title, createdAt: entities.createdAt, spaceId: entities.spaceId })
       .from(entities)
       .where(and(
@@ -60,7 +60,7 @@ export async function getReadReceiptsCoverage(projectId: string): Promise<Social
   // 4) Distinct ACTIVE-member readers per post (the numerator) — one grouped query over all posts.
   const readerCount = new Map<string, number>();
   if (announcements.length > 0) {
-    const readerRows = await db
+    const readerRows = await getDb()
       .select({ entityId: readReceipts.entityId, n: countDistinct(readReceipts.userId) })
       .from(readReceipts)
       .innerJoin(spaceMembers, and(

@@ -6,7 +6,7 @@
 // Setting moderationStatus="removed" takes effect on reads immediately via lib/moderation-visibility
 // + the 0019 RPCs — no extra invalidation needed.
 import { and, eq } from "drizzle-orm";
-import { db } from "../db/index.js";
+import { getDb } from "../db/index.js";
 import { entities, comments } from "../db/schema/index.js";
 import { moderationDecisionsTotal } from "./telemetry.js";
 
@@ -32,11 +32,11 @@ export async function applyClientModeration(args: {
   // No-op when telemetry is disabled.
   let matched: boolean;
   if (args.targetType === "entity") {
-    const [row] = await db.update(entities).set(set)
+    const [row] = await getDb().update(entities).set(set)
       .where(and(eq(entities.projectId, args.projectId), eq(entities.id, args.targetId))).returning({ id: entities.id });
     matched = !!row;
   } else {
-    const [row] = await db.update(comments).set(set)
+    const [row] = await getDb().update(comments).set(set)
       .where(and(eq(comments.projectId, args.projectId), eq(comments.id, args.targetId))).returning({ id: comments.id });
     matched = !!row;
   }

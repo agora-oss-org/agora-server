@@ -5,7 +5,7 @@
 import { randomBytes } from "node:crypto";
 import type { Context } from "hono";
 import { and, eq, inArray } from "drizzle-orm";
-import { db } from "../db/index.js";
+import { getDb } from "../db/index.js";
 import {
   reactions, profiles, spaces, spaceRules, collections, appNotifications, reports,
   conversations, conversationMembers, chatMessages, files, entities, comments,
@@ -113,7 +113,7 @@ export async function loadEntityFiles(
   const map = new Map<string, ReturnType<typeof shapeFile>[]>();
   const ids = [...new Set(entityIds.filter((x): x is string => !!x))];
   if (ids.length === 0) return map;
-  const rows = await db
+  const rows = await getDb()
     .select()
     .from(files)
     .where(and(eq(files.projectId, projectId), inArray(files.entityId, ids)));
@@ -200,7 +200,7 @@ export async function attachUserReactions(
 ): Promise<Map<string, ReactionType>> {
   const map = new Map<string, ReactionType>();
   if (!userId || targetIds.length === 0) return map;
-  const rows = await db
+  const rows = await getDb()
     .select({ targetId: reactions.targetId, reactionType: reactions.reactionType })
     .from(reactions)
     .where(
@@ -223,7 +223,7 @@ export async function loadUsers(
   const map = new Map<string, User>();
   const ids = [...new Set(userIds.filter((x): x is string => !!x))];
   if (ids.length === 0) return map;
-  const rows = await db
+  const rows = await getDb()
     .select()
     .from(profiles)
     .where(and(eq(profiles.projectId, projectId), inArray(profiles.id, ids)));
@@ -388,11 +388,11 @@ export async function loadReportParticipants(
   const commentIds = rows.filter((r) => r.targetType === "comment").map((r) => r.targetId);
   const [entityRows, commentRows] = await Promise.all([
     entityIds.length
-      ? db.select({ id: entities.id, userId: entities.userId }).from(entities)
+      ? getDb().select({ id: entities.id, userId: entities.userId }).from(entities)
           .where(and(eq(entities.projectId, projectId), inArray(entities.id, entityIds)))
       : Promise.resolve([] as { id: string; userId: string | null }[]),
     commentIds.length
-      ? db.select({ id: comments.id, userId: comments.userId }).from(comments)
+      ? getDb().select({ id: comments.id, userId: comments.userId }).from(comments)
           .where(and(eq(comments.projectId, projectId), inArray(comments.id, commentIds)))
       : Promise.resolve([] as { id: string; userId: string | null }[]),
   ]);
@@ -618,7 +618,7 @@ export async function loadMessageFiles(
   const map = new Map<string, ReturnType<typeof shapeFile>[]>();
   const ids = [...new Set(messageIds.filter((x): x is string => !!x))];
   if (ids.length === 0) return map;
-  const rows = await db
+  const rows = await getDb()
     .select()
     .from(files)
     .where(and(eq(files.projectId, projectId), inArray(files.chatMessageId, ids)));

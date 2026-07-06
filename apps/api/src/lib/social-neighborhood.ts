@@ -11,7 +11,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import type {
   NeighborhoodTie, NeighborhoodTieKind, ResolvedSocialConfig, SocialNeighborhood,
 } from "@agora-server/contract";
-import { db } from "../db/index.js";
+import { getDb } from "../db/index.js";
 import { profiles } from "../db/schema/index.js";
 import { getNeo4j, neo4jDatabase } from "./neo4j.js";
 import { pairBrightness, AGE_CUTOFF_HALF_LIVES, LN2, DAY_MS } from "./social-weather.js";
@@ -86,7 +86,7 @@ export async function fetchProfiles(projectId: string, ids: string[]): Promise<M
   const map = new Map<string, ProfileLite>();
   const uniq = [...new Set(ids)];
   if (uniq.length === 0) return map;
-  const rows = await db
+  const rows = await getDb()
     .select({ id: profiles.id, username: profiles.username, name: profiles.name, avatar: profiles.avatar })
     .from(profiles)
     .where(and(eq(profiles.projectId, projectId), inArray(profiles.id, uniq)));

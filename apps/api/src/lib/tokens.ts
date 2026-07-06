@@ -4,7 +4,7 @@
 import { randomBytes, createHash, randomUUID } from "node:crypto";
 import { SignJWT } from "jose";
 import { and, eq } from "drizzle-orm";
-import { db } from "../db/index.js";
+import { getDb } from "../db/index.js";
 import { refreshTokens, profiles } from "../db/schema/index.js";
 import { env } from "./env.js";
 import { isOperator } from "./operators.js";
@@ -36,7 +36,7 @@ export async function signAccessToken(profileId: string, role: string, operator 
 /** Persist a new refresh token (within `familyId`, or a fresh family) and return the raw value. */
 async function issueRefreshToken(projectId: string, profileId: string, familyId: string): Promise<string> {
   const raw = randomBytes(32).toString("base64url");
-  await db.insert(refreshTokens).values({
+  await getDb().insert(refreshTokens).values({
     projectId,
     profileId,
     familyId,
@@ -59,7 +59,7 @@ export async function mintSession(projectId: string, profileId: string, role: st
 }
 
 async function revokeFamily(familyId: string): Promise<void> {
-  await db.update(refreshTokens).set({ revoked: true }).where(eq(refreshTokens.familyId, familyId));
+  await getDb().update(refreshTokens).set({ revoked: true }).where(eq(refreshTokens.familyId, familyId));
 }
 
 /**
@@ -67,7 +67,7 @@ async function revokeFamily(familyId: string): Promise<void> {
  * (a spent/revoked token presented outside the grace window) revokes the entire family first.
  */
 export async function rotateRefreshToken(projectId: string, raw: string): Promise<SessionTokens & { profileId: string }> {
-  const [row] = await db
+  const [row] = await getDb()
     .select()
     .from(refreshTokens)
     .where(and(eq(refreshTokens.projectId, projectId), eq(refreshTokens.tokenHash, sha256(raw))))
@@ -103,7 +103,7 @@ export async function rotateRefreshToken(projectId: string, raw: string): Promis
   }
 
   // Normal rotation: spend this token, mint a successor in the same family.
-  await db.update(refreshTokens).set({ rotatedAt: new Date() }).where(eq(refreshTokens.id, row.id));
+  await getDb().update(refreshTokens).set({ rotatedAt: new Date() }).where(eq(refreshTokens.id, row.id));
   logger.debug({ projectId, profileId: row.profileId, familyId: row.familyId }, "auth: refresh rotated");
   const { role, operator, owner, admin, steward } = await profileAuthBits(projectId, row.profileId);
   return { ...(await mintSession(projectId, row.profileId, role, operator, steward, owner, admin, row.familyId)), profileId: row.profileId };
@@ -111,7 +111,7 @@ export async function rotateRefreshToken(projectId: string, raw: string): Promis
 
 /** Sign-out: revoke the family of the presented refresh token (this session). */
 export async function revokeRefreshToken(projectId: string, raw: string): Promise<void> {
-  const [row] = await db
+  const [row] = await getDb()
     .select({ familyId: refreshTokens.familyId })
     .from(refreshTokens)
     .where(and(eq(refreshTokens.projectId, projectId), eq(refreshTokens.tokenHash, sha256(raw))))
@@ -121,14 +121,14 @@ export async function revokeRefreshToken(projectId: string, raw: string): Promis
 
 /** Revoke every refresh family for a profile (e.g. password change / global sign-out). */
 export async function revokeAllForProfile(profileId: string): Promise<void> {
-  await db.update(refreshTokens).set({ revoked: true }).where(eq(refreshTokens.profileId, profileId));
+  await getDb().update(refreshTokens).set({ revoked: true }).where(eq(refreshTokens.profileId, profileId));
 }
 
 // Re-derive role + operator + per-project owner/admin/steward status for a profile (used on refresh,
 // where we only hold the profile id). Project roles are project-scoped, so this needs the projectId
 // too. `steward` folds the hierarchy operator ⊇ owner ⊇ admin ⊇ steward (an owner/admin is a steward).
 async function profileAuthBits(projectId: string, profileId: string): Promise<{ role: string; operator: boolean; owner: boolean; admin: boolean; steward: boolean }> {
-  const [p] = await db.select({ id: profiles.id, role: profiles.role, email: profiles.email })
+  const [p] = await getDb().select({ id: profiles.id, role: profiles.role, email: profiles.email })
     .from(profiles).where(eq(profiles.id, profileId)).limit(1);
   if (!p) return { role: "visitor", operator: false, owner: false, admin: false, steward: false };
   const roles = await getProjectRoles(projectId, p.id);

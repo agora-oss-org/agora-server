@@ -4,7 +4,7 @@
 // + wound down — see lib/mediation.ts). Defaults: privacy-of-the-harmed "power-aware" notifications,
 // "hybrid" mediation (caucus + optional consensual joint room), and archive-read-only channel wind-down.
 import { eq } from "drizzle-orm";
-import { db } from "../db/index.js";
+import { getDb } from "../db/index.js";
 import { projects } from "../db/schema/index.js";
 import {
   STEWARD_NOTIFY_POLICIES, STEWARD_MEDIATION_MODES, STEWARD_MEDIATION_ON_CLOSE,
@@ -38,7 +38,7 @@ function resolve(raw: unknown): ResolvedStewardConfig {
 export async function getStewardConfig(projectId: string): Promise<ResolvedStewardConfig> {
   const hit = cache.get(projectId);
   if (hit && Date.now() - hit.at < CONFIG_TTL_MS) return hit.cfg;
-  const [p] = await db.select({ stewardConfig: projects.stewardConfig }).from(projects).where(eq(projects.id, projectId)).limit(1);
+  const [p] = await getDb().select({ stewardConfig: projects.stewardConfig }).from(projects).where(eq(projects.id, projectId)).limit(1);
   const cfg = resolve(p?.stewardConfig);
   cache.set(projectId, { cfg, at: Date.now() });
   return cfg;

@@ -4,7 +4,7 @@
 // request-time guards read c.var.auth with no DB hit.
 import { and, eq } from "drizzle-orm";
 import type { Context } from "hono";
-import { db } from "../db/index.js";
+import { getDb } from "../db/index.js";
 import { projectRoles } from "../db/schema/index.js";
 import type { Variables, AuthContext } from "../http/context.js";
 import { Errors } from "../http/errors.js";
@@ -36,7 +36,7 @@ export async function getProjectRoles(projectId: string, profileId: string): Pro
   const k = key(projectId, profileId);
   const hit = cache.get(k);
   if (hit && Date.now() - hit.at < TTL_MS) return hit.roles;
-  const rows = await db.select({ role: projectRoles.role }).from(projectRoles)
+  const rows = await getDb().select({ role: projectRoles.role }).from(projectRoles)
     .where(and(eq(projectRoles.projectId, projectId), eq(projectRoles.profileId, profileId)));
   const roles = new Set<ProjectRole>(rows.map((r) => r.role as ProjectRole));
   cache.set(k, { roles, at: Date.now() });
@@ -48,7 +48,7 @@ export function invalidateProjectRoles(projectId: string, profileId: string): vo
 
 /** Grant a role (idempotent). */
 export async function grantProjectRole(projectId: string, profileId: string, role: ProjectRole, grantedById: string): Promise<void> {
-  await db.insert(projectRoles).values({ projectId, profileId, role, grantedById }).onConflictDoNothing();
+  await getDb().insert(projectRoles).values({ projectId, profileId, role, grantedById }).onConflictDoNothing();
   invalidateProjectRoles(projectId, profileId);
 }
 /** Revoke a role. Guards the last owner — atomically, so two concurrent owner-revokes can't both
@@ -57,7 +57,7 @@ export async function grantProjectRole(projectId: string, profileId: string, rol
  *  count and correctly throws `roles/last-owner`. Non-owner revokes need no guard. */
 export async function revokeProjectRole(projectId: string, profileId: string, role: ProjectRole): Promise<void> {
   if (role === "owner") {
-    await db.transaction(async (tx) => {
+    await getDb().transaction(async (tx) => {
       // Lock every owner row for this project; serializes concurrent owner-revokes through this point.
       const owners = await tx.select({ profileId: projectRoles.profileId }).from(projectRoles)
         .where(and(eq(projectRoles.projectId, projectId), eq(projectRoles.role, "owner")))
@@ -68,14 +68,14 @@ export async function revokeProjectRole(projectId: string, profileId: string, ro
         .where(and(eq(projectRoles.projectId, projectId), eq(projectRoles.profileId, profileId), eq(projectRoles.role, "owner")));
     });
   } else {
-    await db.delete(projectRoles)
+    await getDb().delete(projectRoles)
       .where(and(eq(projectRoles.projectId, projectId), eq(projectRoles.profileId, profileId), eq(projectRoles.role, role)));
   }
   invalidateProjectRoles(projectId, profileId);
 }
 /** List grantees of a role (newest first). */
 export async function listRoleGrantees(projectId: string, role: ProjectRole): Promise<string[]> {
-  const rows = await db.select({ profileId: projectRoles.profileId, at: projectRoles.createdAt }).from(projectRoles)
+  const rows = await getDb().select({ profileId: projectRoles.profileId, at: projectRoles.createdAt }).from(projectRoles)
     .where(and(eq(projectRoles.projectId, projectId), eq(projectRoles.role, role)));
   return rows.sort((x, y) => y.at.getTime() - x.at.getTime()).map((r) => r.profileId);
 }

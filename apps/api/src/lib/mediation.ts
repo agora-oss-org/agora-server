@@ -9,7 +9,7 @@
 // Wind-down on case close is governed by the project's mediationOnClose (see lib/steward-config.ts).
 import { and, eq, ne, sql } from "drizzle-orm";
 import type { StewardMediationMode, StewardMediationOnClose } from "@agora-server/contract";
-import { db } from "../db/index.js";
+import { getDb } from "../db/index.js";
 import { conversations, conversationMembers, chatMessages } from "../db/schema/index.js";
 import { emitToConversation } from "../realtime/socket.js";
 import { shapeChatMessage } from "./shape.js";
@@ -38,7 +38,7 @@ export function canOpenJoint(mode: StewardMediationMode, asymmetry: boolean, has
 
 /** Find an existing mediation channel for a case by role (+ caucus party). Keeps opens idempotent. */
 async function findChannel(projectId: string, caseId: string, role: MediationRole, party?: string): Promise<ConversationRow | null> {
-  const rows = await db.select().from(conversations).where(and(
+  const rows = await getDb().select().from(conversations).where(and(
     eq(conversations.projectId, projectId),
     eq(conversations.stewardCaseId, caseId),
     sql`${conversations.metadata}->'mediation'->>'role' = ${role}`,
@@ -52,7 +52,7 @@ async function createChannel(opts: {
   projectId: string; caseId: string; type: "direct" | "group"; role: MediationRole;
   name?: string | null; party?: string; stewardId: string; partyIds: string[];
 }): Promise<ConversationRow> {
-  const [convo] = await db.insert(conversations).values({
+  const [convo] = await getDb().insert(conversations).values({
     projectId: opts.projectId,
     type: opts.type,
     name: opts.name ?? null,
@@ -66,7 +66,7 @@ async function createChannel(opts: {
       .filter((id) => id !== opts.stewardId)
       .map((id) => ({ projectId: opts.projectId, conversationId: convo!.id, userId: id, role: "member" as const })),
   ];
-  await db.insert(conversationMembers).values(members)
+  await getDb().insert(conversationMembers).values(members)
     .onConflictDoUpdate({ target: [conversationMembers.conversationId, conversationMembers.userId], set: { isActive: true, leftAt: null } });
   return convo!;
 }
@@ -114,14 +114,14 @@ export async function openJointChannel(caseRow: MediationCase, stewardId: string
 
 /** List a case's mediation channels (caucus + joint). */
 export async function listCaseChannels(projectId: string, caseId: string): Promise<ConversationRow[]> {
-  return db.select().from(conversations)
+  return getDb().select().from(conversations)
     .where(and(eq(conversations.projectId, projectId), eq(conversations.stewardCaseId, caseId)))
     .orderBy(conversations.createdAt);
 }
 
 /** Post a system message (no author) into a channel and fan it out. */
 async function postSystemMessage(projectId: string, conversationId: string, content: string): Promise<void> {
-  const [msg] = await db.insert(chatMessages).values({
+  const [msg] = await getDb().insert(chatMessages).values({
     projectId, conversationId, userId: null, content, metadata: { system: true },
   }).returning();
   if (msg) emitToConversation(conversationId, "message:created", shapeChatMessage(msg));
@@ -139,10 +139,10 @@ export async function closeMediationForCase(projectId: string, caseId: string, o
   try {
     const channels = await listCaseChannels(projectId, caseId);
     for (const ch of channels) {
-      await db.update(conversations).set({ postingPermission: "admins", updatedAt: new Date() }).where(eq(conversations.id, ch.id));
+      await getDb().update(conversations).set({ postingPermission: "admins", updatedAt: new Date() }).where(eq(conversations.id, ch.id));
       await postSystemMessage(projectId, ch.id, "🕊️ This case has been resolved. This channel is now read-only.");
       if (onClose === "lock-leave") {
-        const dropped = await db.update(conversationMembers).set({ isActive: false, leftAt: new Date() })
+        const dropped = await getDb().update(conversationMembers).set({ isActive: false, leftAt: new Date() })
           .where(and(
             eq(conversationMembers.conversationId, ch.id),
             eq(conversationMembers.isActive, true),

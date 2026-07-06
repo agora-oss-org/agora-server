@@ -3,7 +3,7 @@
 // the user's refresh-token families (lib/tokens.ts — api-owned auth), which must not be pulled into the
 // shared kernel. The read predicate + hasActiveSuspension live in @agora/core (shared with secure-chat).
 import { and, eq, gt, isNull, or } from "drizzle-orm";
-import { db } from "../db/index.js";
+import { getDb } from "../db/index.js";
 import { userSuspensions } from "../db/schema/index.js";
 import { revokeAllForProfile } from "./tokens.js";
 import { addSuspended, removeSuspended } from "@agora/core/lib/suspension-index";
@@ -14,13 +14,13 @@ type SuspensionRow = typeof userSuspensions.$inferSelect;
 
 /** All suspension rows (active + history) for a profile, newest first. */
 export async function listSuspensions(profileId: string): Promise<SuspensionRow[]> {
-  const rows = await db.select().from(userSuspensions).where(eq(userSuspensions.profileId, profileId));
+  const rows = await getDb().select().from(userSuspensions).where(eq(userSuspensions.profileId, profileId));
   return rows.sort((a, b) => b.startDate.getTime() - a.startDate.getTime());
 }
 
 /** Suspend a user (optionally until endDate) and revoke their refresh families so they can't renew. */
 export async function suspendUser(profileId: string, opts: { reason?: string | null; endDate?: Date | null } = {}): Promise<SuspensionRow> {
-  const [row] = await db.insert(userSuspensions).values({
+  const [row] = await getDb().insert(userSuspensions).values({
     profileId,
     reason: opts.reason ?? null,
     endDate: opts.endDate ?? null,
@@ -33,7 +33,7 @@ export async function suspendUser(profileId: string, opts: { reason?: string | n
 /** Lift a user's suspensions by ending every currently-active row now (keeps history). Returns count. */
 export async function liftSuspensions(profileId: string): Promise<number> {
   const now = new Date();
-  const lifted = await db
+  const lifted = await getDb()
     .update(userSuspensions)
     .set({ endDate: now })
     .where(and(

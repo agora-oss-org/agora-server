@@ -15,7 +15,7 @@ import type { Context } from "hono";
 import { and, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
 import type { Variables } from "../http/context.js";
 import { Errors } from "../http/errors.js";
-import { db } from "../db/index.js";
+import { getDb } from "../db/index.js";
 import { spaces, spaceMembers, entities, comments } from "../db/schema/index.js";
 import { isProjectAdmin } from "./project-roles.js";
 
@@ -29,7 +29,7 @@ async function isOwnerOrActiveMember(
   ownerId: string | null,
 ): Promise<boolean> {
   if (ownerId && ownerId === userId) return true;
-  const [m] = await db
+  const [m] = await getDb()
     .select({ id: spaceMembers.id })
     .from(spaceMembers)
     .where(
@@ -52,7 +52,7 @@ async function isOwnerOrActiveMember(
 export async function assertCanReadSpace(c: Ctx, spaceId: string | null | undefined): Promise<void> {
   if (!spaceId) return;
   if (c.var.auth && isProjectAdmin(c.var.auth)) return;
-  const [space] = await db
+  const [space] = await getDb()
     .select({ userId: spaces.userId, readingPermission: spaces.readingPermission })
     .from(spaces)
     .where(and(eq(spaces.projectId, c.var.projectId), eq(spaces.id, spaceId), isNull(spaces.deletedAt)))
@@ -67,7 +67,7 @@ export async function assertCanReadSpace(c: Ctx, spaceId: string | null | undefi
 /** Resolve an entity to its space and assert read access. No-ops if the entity doesn't exist. */
 export async function assertCanReadEntity(c: Ctx, entityId: string): Promise<void> {
   if (c.var.auth && isProjectAdmin(c.var.auth)) return;
-  const [row] = await db
+  const [row] = await getDb()
     .select({ spaceId: entities.spaceId })
     .from(entities)
     .where(and(eq(entities.projectId, c.var.projectId), eq(entities.id, entityId)))
@@ -79,7 +79,7 @@ export async function assertCanReadEntity(c: Ctx, entityId: string): Promise<voi
 /** Resolve a comment to its entity's space and assert read access. No-ops if the comment is gone. */
 export async function assertCanReadComment(c: Ctx, commentId: string): Promise<void> {
   if (c.var.auth && isProjectAdmin(c.var.auth)) return;
-  const [row] = await db
+  const [row] = await getDb()
     .select({ entityId: comments.entityId })
     .from(comments)
     .where(and(eq(comments.projectId, c.var.projectId), eq(comments.id, commentId)))
@@ -99,7 +99,7 @@ export async function assertCanReadComment(c: Ctx, commentId: string): Promise<v
 export async function assertCanPostInSpace(c: Ctx, spaceId: string | null | undefined): Promise<void> {
   if (!spaceId) return;
   if (c.var.auth && isProjectAdmin(c.var.auth)) return;
-  const [space] = await db
+  const [space] = await getDb()
     .select({ userId: spaces.userId, postingPermission: spaces.postingPermission })
     .from(spaces)
     .where(and(eq(spaces.projectId, c.var.projectId), eq(spaces.id, spaceId), isNull(spaces.deletedAt)))
@@ -109,7 +109,7 @@ export async function assertCanPostInSpace(c: Ctx, spaceId: string | null | unde
   const uid = c.var.auth?.userId;
   if (uid && space.userId === uid) return; // owner ⇒ admin
   const [m] = uid
-    ? await db
+    ? await getDb()
         .select({ role: spaceMembers.role })
         .from(spaceMembers)
         .where(

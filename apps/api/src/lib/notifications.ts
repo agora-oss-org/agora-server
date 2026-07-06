@@ -15,7 +15,7 @@
 // `notification:created` event with the shaped row. Falls back to inbox polling when no socket is open.
 import { and, desc, eq } from "drizzle-orm";
 import type { StewardNotifyPolicy } from "@agora-server/contract";
-import { db } from "../db/index.js";
+import { getDb } from "../db/index.js";
 import { appNotifications, profiles, entities, comments, reactions } from "../db/schema/index.js";
 import { shapeNotification } from "./shape.js";
 import { getStewardConfig } from "./steward-config.js";
@@ -38,7 +38,7 @@ type MilestoneUser = { id: string; name: string | null; username: string | null;
 
 /** Load the acting user's public profile fields (the "initiator" block). Null if missing. */
 async function loadActor(projectId: string, userId: string): Promise<Actor | null> {
-  const [p] = await db
+  const [p] = await getDb()
     .select({ id: profiles.id, name: profiles.name, username: profiles.username, avatar: profiles.avatar })
     .from(profiles)
     .where(and(eq(profiles.projectId, projectId), eq(profiles.id, userId)))
@@ -57,7 +57,7 @@ async function insert(
   metadata: Record<string, unknown>
 ): Promise<void> {
   if (!recipientId || recipientId === actorId) return;
-  const [row] = await db.insert(appNotifications).values({ projectId, userId: recipientId, type, action, metadata }).returning();
+  const [row] = await getDb().insert(appNotifications).values({ projectId, userId: recipientId, type, action, metadata }).returning();
   if (row) {
     const shaped = shapeNotification(row);
     // Push-notification bridge: fire-and-forget broadcast webhook (no-op unless subscribed).
@@ -98,7 +98,7 @@ async function lastThreeReactors(
     eq(reactions.targetId, targetId),
   ];
   if (reactionType) conds.push(eq(reactions.reactionType, reactionType as any));
-  const rows = await db
+  const rows = await getDb()
     .select({ userId: reactions.userId, name: profiles.name, username: profiles.username, avatar: profiles.avatar })
     .from(reactions)
     .leftJoin(profiles, eq(profiles.id, reactions.userId))
@@ -127,7 +127,7 @@ export async function notifyOnComment(
     const actor = await loadActor(projectId, actorId);
     if (!actor) return;
 
-    const [entity] = await db
+    const [entity] = await getDb()
       .select({ id: entities.id, userId: entities.userId, shortId: entities.shortId, title: entities.title, content: entities.content })
       .from(entities)
       .where(and(eq(entities.projectId, projectId), eq(entities.id, comment.entityId)))
@@ -144,7 +144,7 @@ export async function notifyOnComment(
 
     if (comment.parentId) {
       // Reply → notify the parent comment's author …
-      const [parent] = await db
+      const [parent] = await getDb()
         .select({ userId: comments.userId, content: comments.content })
         .from(comments)
         .where(and(eq(comments.projectId, projectId), eq(comments.id, comment.parentId)))
@@ -250,7 +250,7 @@ export async function notifyOnReaction(args: {
     let entityMeta: Record<string, unknown>;
     let commentMeta: Record<string, unknown> = {};
     if (targetType === "entity") {
-      const [e] = await db
+      const [e] = await getDb()
         .select({ userId: entities.userId, shortId: entities.shortId, title: entities.title, content: entities.content })
         .from(entities)
         .where(and(eq(entities.projectId, projectId), eq(entities.id, targetId)))
@@ -259,7 +259,7 @@ export async function notifyOnReaction(args: {
       ownerId = e.userId;
       entityMeta = { entityId: targetId, entityShortId: e.shortId, entityTitle: e.title, entityContent: e.content };
     } else {
-      const [cmt] = await db
+      const [cmt] = await getDb()
         .select({ userId: comments.userId, content: comments.content, entityId: comments.entityId })
         .from(comments)
         .where(and(eq(comments.projectId, projectId), eq(comments.id, targetId)))
@@ -267,7 +267,7 @@ export async function notifyOnReaction(args: {
       if (!cmt) return;
       ownerId = cmt.userId;
       commentMeta = { commentId: targetId, commentContent: cmt.content };
-      const [e] = await db
+      const [e] = await getDb()
         .select({ shortId: entities.shortId, title: entities.title, content: entities.content })
         .from(entities)
         .where(and(eq(entities.projectId, projectId), eq(entities.id, cmt.entityId)))

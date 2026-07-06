@@ -9,7 +9,7 @@
 // POST /internal/cron/digests endpoint (for an external scheduler / Supabase pg_cron + pg_net).
 import crypto from "node:crypto";
 import { and, eq, gte, isNull, desc } from "drizzle-orm";
-import { db } from "../db/index.js";
+import { getDb } from "../db/index.js";
 import { spaces, entities } from "../db/schema/index.js";
 import { shapeEntity } from "./shape.js";
 
@@ -53,7 +53,7 @@ export async function sendSpaceDigest(space: SpaceRow, now = new Date()): Promis
     return { spaceId: space.id, ok: false, skipped: "not-configured" };
   }
   const since = new Date(now.getTime() - WINDOW_MS);
-  const rows = await db.select().from(entities).where(and(
+  const rows = await getDb().select().from(entities).where(and(
     eq(entities.projectId, space.projectId),
     eq(entities.spaceId, space.id),
     isNull(entities.deletedAt),
@@ -108,7 +108,7 @@ export async function sendDueDigests(
   const filters = [eq(spaces.digestEnabled, true), isNull(spaces.deletedAt)];
   if (opts.projectId) filters.push(eq(spaces.projectId, opts.projectId));
   if (opts.spaceId) filters.push(eq(spaces.id, opts.spaceId));
-  const candidates = await db.select().from(spaces).where(and(...filters));
+  const candidates = await getDb().select().from(spaces).where(and(...filters));
 
   const due = opts.force ? candidates : candidates.filter((s) => isDue(s, now));
   const results: DigestSendResult[] = [];

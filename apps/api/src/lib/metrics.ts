@@ -6,7 +6,7 @@
 // Trade-off: a crash loses the unflushed window (≤ FLUSH_INTERVAL_MS of counts) — acceptable for
 // usage metrics. On flush failure the snapshot is merged back so nothing is dropped on transient errors.
 import { sql } from "drizzle-orm";
-import { db } from "../db/index.js";
+import { getDb } from "../db/index.js";
 import { logger } from "./logger.js";
 
 interface Bucket {
@@ -75,7 +75,7 @@ export async function flushMetrics(): Promise<void> {
       try {
         // duration_ms_total is bigint; the accumulator carries fractional ms (performance.now()), so
         // round at the DB boundary. Sub-ms loss on a summed total is irrelevant to avg-latency.
-        await db.execute(sql`
+        await getDb().execute(sql`
           insert into api_usage (project_id, month, requests, egress_bytes, duration_ms_total, errors)
           values (${projectId}::uuid, ${month}::date, ${b.requests}, ${b.egressBytes}, ${Math.round(b.durationMs)}, ${b.errors})
           on conflict (project_id, month) do update set

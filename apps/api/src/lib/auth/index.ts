@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import { db } from "../../db/index.js";
+import { getDb } from "../../db/index.js";
 import { projects } from "../../db/schema/index.js";
 import { SupabaseAuthProvider } from "./supabase-provider.js";
 import { NativeAuthProvider } from "./native-provider.js";
@@ -14,7 +14,7 @@ const cache = new Map<string, { name: "supabase" | "native"; at: number }>();
 async function resolveProviderName(projectId: string): Promise<"supabase" | "native"> {
   const hit = cache.get(projectId);
   if (hit && Date.now() - hit.at < TTL_MS) return hit.name;
-  const [p] = await db.select({ ap: projects.authProvider }).from(projects).where(eq(projects.id, projectId)).limit(1);
+  const [p] = await getDb().select({ ap: projects.authProvider }).from(projects).where(eq(projects.id, projectId)).limit(1);
   const name = p?.ap === "native" ? "native" : "supabase"; // fail safe: default supabase
   cache.set(projectId, { name, at: Date.now() });
   return name;

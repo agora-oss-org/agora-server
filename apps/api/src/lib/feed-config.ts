@@ -3,7 +3,7 @@
 // All numeric tunables are coerced to finite numbers here; range-clamping is enforced at write time
 // by feedConfigSchema (PATCH /settings/feed). Unknown algorithm names fall back to "hot".
 import { eq } from "drizzle-orm";
-import { db } from "../db/index.js";
+import { getDb } from "../db/index.js";
 import { projects } from "../db/schema/index.js";
 import { DEFAULT_RANK_PARAMS, DEFAULT_WEIGHTS, KNOWN_ALGORITHMS, type RankParams } from "./ranking.js";
 
@@ -54,7 +54,7 @@ function resolve(raw: unknown): ResolvedFeedConfig {
 export async function getFeedConfig(projectId: string): Promise<ResolvedFeedConfig> {
   const hit = cache.get(projectId);
   if (hit && Date.now() - hit.at < CONFIG_TTL_MS) return hit.cfg;
-  const [p] = await db.select({ feedConfig: projects.feedConfig }).from(projects).where(eq(projects.id, projectId)).limit(1);
+  const [p] = await getDb().select({ feedConfig: projects.feedConfig }).from(projects).where(eq(projects.id, projectId)).limit(1);
   const cfg = resolve(p?.feedConfig);
   cache.set(projectId, { cfg, at: Date.now() });
   return cfg;

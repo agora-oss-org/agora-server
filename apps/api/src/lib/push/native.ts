@@ -5,12 +5,12 @@
 import http2 from "node:http2";
 import { and, eq } from "drizzle-orm";
 import { SignJWT, importPKCS8 } from "jose";
-import { db } from "../../db/index.js";
+import { getDb } from "../../db/index.js";
 import { projectIntegrations } from "../../db/schema/index.js";
 import type { DeviceLike, PushPayload, PushProvider } from "./provider.js";
 
 async function loadIntegration(projectId: string, name: string): Promise<Record<string, unknown> | null> {
-  const [row] = await db.select({ data: projectIntegrations.data }).from(projectIntegrations)
+  const [row] = await getDb().select({ data: projectIntegrations.data }).from(projectIntegrations)
     .where(and(eq(projectIntegrations.projectId, projectId), eq(projectIntegrations.name, name))).limit(1);
   const data = row?.data as Record<string, unknown> | undefined;
   return data && Object.keys(data).length ? data : null;

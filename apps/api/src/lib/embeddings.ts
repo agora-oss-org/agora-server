@@ -1,6 +1,6 @@
 // Voyage AI embeddings (Anthropic-recommended). Used for semantic content search.
 // input_type matters for retrieval quality: "query" for searches, "document" for stored text.
-import { db } from "../db/index.js";
+import { getDb } from "../db/index.js";
 import { contentEmbeddings } from "../db/schema/index.js";
 import { env } from "./env.js";
 import { logger } from "./logger.js";
@@ -57,7 +57,7 @@ export async function indexContent(projectId: string, sourceType: SourceType, so
     return;
   }
   const embedding = await embedText(text, "document");
-  await db.insert(contentEmbeddings)
+  await getDb().insert(contentEmbeddings)
     .values({ projectId, sourceType, sourceId, embedding })
     .onConflictDoUpdate({ target: [contentEmbeddings.sourceType, contentEmbeddings.sourceId], set: { embedding, updatedAt: new Date() } });
 }

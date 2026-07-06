@@ -3,7 +3,7 @@
 // processing/variant logic lives in exactly one place.
 import { randomUUID } from "node:crypto";
 import sharp from "sharp";
-import { db } from "../db/index.js";
+import { getDb } from "../db/index.js";
 import { files } from "../db/schema/index.js";
 import { Errors } from "../http/errors.js";
 import { uploadBytes, inferFileType, assertUploadSize } from "./storage.js";
@@ -84,7 +84,7 @@ export async function storeImageFromUpload(args: {
     format: out.format, quality: opts.quality ?? 85, exifStripped: stripExif,
     createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
   };
-  const [row] = await db.insert(files).values({
+  const [row] = await getDb().insert(files).values({
     id: fileId, projectId, userId, type: "image",
     originalPath: original.publicPath, originalSize: original.size, originalMimeType: out.mime,
     image,
@@ -118,7 +118,7 @@ export async function storeFileFromUpload(args: {
   const fileId = randomUUID();
   const ext = file.name.includes(".") ? "." + file.name.split(".").pop() : "";
   const url = await uploadBytes(`${projectId}/files/${fileId}${ext}`, bytes, file.type || "application/octet-stream");
-  const [row] = await db.insert(files).values({
+  const [row] = await getDb().insert(files).values({
     id: fileId, projectId, userId,
     type: inferFileType(file.type), originalPath: url, originalSize: bytes.length,
     originalMimeType: file.type || null,

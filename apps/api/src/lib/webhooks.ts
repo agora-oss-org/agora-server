@@ -12,7 +12,7 @@
 // Response (validation):  body { valid, message? } + header X-Response-Signature = HMAC(secret, body)
 import crypto from "node:crypto";
 import { eq } from "drizzle-orm";
-import { db } from "../db/index.js";
+import { getDb } from "../db/index.js";
 import { projects } from "../db/schema/index.js";
 import { logger } from "./logger.js";
 
@@ -28,7 +28,7 @@ const cache = new Map<string, { cfg: WebhookConfig; at: number }>();
 async function getConfig(projectId: string): Promise<WebhookConfig> {
   const hit = cache.get(projectId);
   if (hit && Date.now() - hit.at < CONFIG_TTL_MS) return hit.cfg;
-  const [p] = await db
+  const [p] = await getDb()
     .select({ url: projects.webhookUrl, secret: projects.webhookSecret, events: projects.webhookEvents })
     .from(projects).where(eq(projects.id, projectId)).limit(1);
   const cfg: WebhookConfig = {

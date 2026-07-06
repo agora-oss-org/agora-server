@@ -4,7 +4,7 @@
 // (removeMediaAsync, best-effort). Soft mode never calls into this module: tombstoned content is
 // conceptually recoverable, so its media must survive.
 import { and, eq, inArray, or, sql } from "drizzle-orm";
-import { db } from "../db/index.js";
+import { getDb } from "../db/index.js";
 import { comments, files } from "../db/schema/index.js";
 import { getStorage } from "./storage/index.js";
 import { logger } from "./logger.js";
@@ -48,7 +48,7 @@ export function fileObjectKeys(row: FileRowLike): string[] {
  */
 export async function collectFileRows(projectId: string, assoc: FileAssoc): Promise<FileRowLike[]> {
   if ("entityId" in assoc) {
-    return db
+    return getDb()
       .select()
       .from(files)
       .where(
@@ -58,7 +58,7 @@ export async function collectFileRows(projectId: string, assoc: FileAssoc): Prom
             eq(files.entityId, assoc.entityId),
             inArray(
               files.commentId,
-              db.select({ id: comments.id }).from(comments).where(eq(comments.entityId, assoc.entityId)),
+              getDb().select({ id: comments.id }).from(comments).where(eq(comments.entityId, assoc.entityId)),
             ),
           ),
         ),
@@ -66,7 +66,7 @@ export async function collectFileRows(projectId: string, assoc: FileAssoc): Prom
   }
   if ("commentId" in assoc) {
     // The parent_id FK cascades the whole reply subtree with the root comment — collect all of it.
-    const subtree = await db.execute<{ id: string }>(sql`
+    const subtree = await getDb().execute<{ id: string }>(sql`
       with recursive sub as (
         select id from comments where id = ${assoc.commentId}::uuid and project_id = ${projectId}::uuid
         union all
@@ -76,18 +76,18 @@ export async function collectFileRows(projectId: string, assoc: FileAssoc): Prom
     `);
     const ids = subtree.map((r) => r.id);
     if (!ids.length) return [];
-    return db
+    return getDb()
       .select()
       .from(files)
       .where(and(eq(files.projectId, projectId), inArray(files.commentId, ids)));
   }
   if ("chatMessageId" in assoc) {
-    return db
+    return getDb()
       .select()
       .from(files)
       .where(and(eq(files.projectId, projectId), eq(files.chatMessageId, assoc.chatMessageId)));
   }
-  return db
+  return getDb()
     .select()
     .from(files)
     .where(and(eq(files.projectId, projectId), eq(files.eventId, assoc.eventId)));

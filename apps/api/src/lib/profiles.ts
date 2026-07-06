@@ -2,7 +2,7 @@
 // password auth in routes/auth.ts, OAuth in routes/misc.ts) so a default username is derived consistently
 // regardless of which identity provider created the account.
 import { and, eq } from "drizzle-orm";
-import { db } from "../db/index.js";
+import { getDb } from "../db/index.js";
 import { profiles } from "../db/schema/index.js";
 
 // Pure: derive a sanitized username base from an email local-part. `user@x.com` → `user`; the `+tag`
@@ -21,7 +21,7 @@ export function sanitizeUsernameBase(email?: string): string | undefined {
 export async function defaultUsername(projectId: string, email?: string, authUserId?: string): Promise<string | undefined> {
   const base = sanitizeUsernameBase(email);
   if (!base) return undefined;
-  const [taken] = await db.select({ id: profiles.id }).from(profiles)
+  const [taken] = await getDb().select({ id: profiles.id }).from(profiles)
     .where(and(eq(profiles.projectId, projectId), eq(profiles.username, base))).limit(1);
   if (!taken) return base;
   const suffix = (authUserId ?? "").replace(/-/g, "").slice(0, 8) || Math.random().toString(36).slice(2, 10);
