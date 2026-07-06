@@ -1,13 +1,9 @@
-// Drizzle client over a direct Postgres connection (postgres.js). This is the
-// primary data layer; the Supabase client is reserved for Auth + Storage.
-import { drizzle } from "drizzle-orm/postgres-js";
-import postgres from "postgres";
-import { env } from "../lib/env.js";
+// Public surface of @agora/core/db. Application code uses getDb() (request-scoped);
+// the legacy `db` export remains TEMPORARILY for the incremental rename and is
+// removed at the end of Phase 0 (typecheck then enforces the ban).
 import * as schema from "./schema/index.js";
 
-// DATABASE_URL points at Supabase's transaction pooler (port 6543), so prepared
-// statements must be disabled — pgbouncer transaction mode doesn't support them.
-const client = postgres(env.DATABASE_URL, { prepare: false });
-
-export const db = drizzle(client, { schema });
 export { schema };
+export { getDb, runWithDb, type Db } from "./context.js";
+// export { getDbForDsn, endAllPools } from "./registry.js"; // added in Task 2 — leave this line commented until then
+export { sharedDb as db } from "./shared.js"; // LEGACY — removed in Task 8
