@@ -4,7 +4,7 @@ import { createMiddleware } from "hono/factory";
 import { eq } from "drizzle-orm";
 import type { Variables } from "../http/context.js";
 import { Errors } from "../http/errors.js";
-import { getDb } from "../db/index.js";
+import { getDb, runWithDb } from "../db/index.js";
 import { projects } from "../db/schema/index.js";
 
 const cache = new Map<string, boolean>();
@@ -25,5 +25,7 @@ export const resolveProject = createMiddleware<{ Variables: Variables }>(async (
   }
 
   c.set("projectId", projectId);
-  await next();
+  // Phase 0: env mode — every request runs in an ALS scope carrying the shared handle.
+  // Phase 1 resolves the tenant directory entry here and passes that handle instead.
+  await runWithDb(getDb(), () => next());
 });
