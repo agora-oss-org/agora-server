@@ -4,7 +4,7 @@
 // Connection from SDK: io(origin, { auth: { token }, query: { projectId } })
 import { Server, type Socket } from "socket.io";
 import { and, eq } from "drizzle-orm";
-import { db } from "../db/index.js";
+import { getDb } from "../db/index.js";
 import { conversationMembers } from "../db/schema/index.js";
 import type { Server as HttpServer } from "node:http";
 import { jwtVerify } from "jose";
@@ -84,7 +84,7 @@ function logHandlerFailure(event: string, err: unknown) {
 }
 
 async function isConversationMember(projectId: string, conversationId: string, userId: string): Promise<boolean> {
-  const [m] = await db.select({ id: conversationMembers.id }).from(conversationMembers)
+  const [m] = await getDb().select({ id: conversationMembers.id }).from(conversationMembers)
     .where(and(
       eq(conversationMembers.projectId, projectId),
       eq(conversationMembers.conversationId, conversationId),

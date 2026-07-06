@@ -16,7 +16,7 @@ import { z } from "zod";
 import { and, eq, ne, asc, desc, count, isNull } from "drizzle-orm";
 import type { Variables } from "../http/context.js";
 import { requireAuth } from "../middleware/auth.js";
-import { db } from "../db/index.js";
+import { getDb } from "../db/index.js";
 import { logger } from "../lib/logger.js";
 import { stewardCases, stewardCaseEvents, reports, entities, comments, chatMessages, profiles } from "../db/schema/index.js";
 import { readPagination, paginate } from "../http/envelope.js";
@@ -71,7 +71,7 @@ function shapeChannel(row: Parameters<typeof shapeConversation>[0]) {
 
 // ─── helpers ───────────────────────────────────────────────────────────────
 async function addEvent(caseId: string, actorId: string | null, kind: EventKind, body: string | null = null, meta: unknown = null): Promise<void> {
-  await db.insert(stewardCaseEvents).values({ caseId, actorId, kind, body, meta });
+  await getDb().insert(stewardCaseEvents).values({ caseId, actorId, kind, body, meta });
 }
 
 // Hydrate a page of cases' parties (complainant/respondent/assignee/opener) in one batched query.
@@ -89,25 +89,25 @@ async function hydrateCases(projectId: string, rows: CaseRow[]): Promise<ReturnT
 async function loadSubject(projectId: string, type: CaseRow["subjectType"], id: string | null) {
   if (!type || !id) return null;
   if (type === "entity") {
-    const [e] = await db.select().from(entities).where(and(eq(entities.projectId, projectId), eq(entities.id, id))).limit(1);
+    const [e] = await getDb().select().from(entities).where(and(eq(entities.projectId, projectId), eq(entities.id, id))).limit(1);
     if (!e) return { type, id, entity: null };
     const user = e.userId ? (await loadUsers(projectId, [e.userId])).get(e.userId) ?? null : null;
     return { type, id, entity: shapeEntity(e, { user }) };
   }
   if (type === "comment") {
-    const [cm] = await db.select().from(comments).where(and(eq(comments.projectId, projectId), eq(comments.id, id))).limit(1);
+    const [cm] = await getDb().select().from(comments).where(and(eq(comments.projectId, projectId), eq(comments.id, id))).limit(1);
     if (!cm) return { type, id, comment: null };
     const user = cm.userId ? (await loadUsers(projectId, [cm.userId])).get(cm.userId) ?? null : null;
     return { type, id, comment: shapeComment(cm, { user }) };
   }
-  const [m] = await db.select().from(chatMessages).where(and(eq(chatMessages.projectId, projectId), eq(chatMessages.id, id))).limit(1);
+  const [m] = await getDb().select().from(chatMessages).where(and(eq(chatMessages.projectId, projectId), eq(chatMessages.id, id))).limit(1);
   if (!m) return { type, id, message: null };
   const user = m.userId ? (await loadUsers(projectId, [m.userId])).get(m.userId) ?? null : null;
   return { type, id, message: shapeChatMessage(m, { user }) };
 }
 
 async function getCase(projectId: string, id: string): Promise<CaseRow> {
-  const [row] = await db.select().from(stewardCases)
+  const [row] = await getDb().select().from(stewardCases)
     .where(and(eq(stewardCases.projectId, projectId), eq(stewardCases.id, id))).limit(1);
   if (!row) throw Errors.notFound("steward/case-not-found", "Case not found");
   return row;
@@ -127,8 +127,8 @@ export const stewardRoutes = new Hono<{ Variables: Variables }>()
     if (assigned === "me") conds.push(eq(stewardCases.assignedToId, c.var.auth!.userId));
     else if (assigned) conds.push(eq(stewardCases.assignedToId, assigned));
     const where = and(...conds);
-    const [{ n } = { n: 0 }] = await db.select({ n: count() }).from(stewardCases).where(where);
-    const rows = await db.select().from(stewardCases).where(where)
+    const [{ n } = { n: 0 }] = await getDb().select({ n: count() }).from(stewardCases).where(where);
+    const rows = await getDb().select().from(stewardCases).where(where)
       .orderBy(desc(stewardCases.createdAt)).limit(limit).offset(offset);
     return c.json(paginate(await hydrateCases(c.var.projectId, rows), n, page, limit));
   })
@@ -139,7 +139,7 @@ export const stewardRoutes = new Hono<{ Variables: Variables }>()
     let { respondentId, complainantId, subjectType, subjectId, spaceId } = body;
     const { reportId, summary } = body;
     if (reportId) {
-      const [rep] = await db.select().from(reports)
+      const [rep] = await getDb().select().from(reports)
         .where(and(eq(reports.projectId, c.var.projectId), eq(reports.id, reportId))).limit(1);
       if (!rep) throw Errors.notFound("steward/report-not-found", "Report not found");
       subjectType = subjectType ?? rep.targetType;
@@ -147,7 +147,7 @@ export const stewardRoutes = new Hono<{ Variables: Variables }>()
       spaceId = spaceId ?? rep.spaceId ?? undefined;
       complainantId = complainantId ?? rep.reporterId ?? undefined;
     }
-    const [row] = await db.insert(stewardCases).values({
+    const [row] = await getDb().insert(stewardCases).values({
       projectId: c.var.projectId,
       reportId: reportId ?? null,
       complainantId: complainantId ?? null,
@@ -173,7 +173,7 @@ export const stewardRoutes = new Hono<{ Variables: Variables }>()
     const row = await getCase(c.var.projectId, c.req.param("id"));
     const [base] = await hydrateCases(c.var.projectId, [row]);
     const subject = await loadSubject(c.var.projectId, row.subjectType, row.subjectId);
-    const events = await db.select().from(stewardCaseEvents)
+    const events = await getDb().select().from(stewardCaseEvents)
       .where(eq(stewardCaseEvents.caseId, row.id)).orderBy(asc(stewardCaseEvents.createdAt));
     const actors = await loadUsers(c.var.projectId, events.map((e) => e.actorId));
     const timeline = events.map((e) => shapeCaseEvent(e, e.actorId ? actors.get(e.actorId) ?? null : null));
@@ -217,7 +217,7 @@ export const stewardRoutes = new Hono<{ Variables: Variables }>()
       return c.json(shaped);
     }
     set.updatedAt = new Date();
-    const [updated] = await db.update(stewardCases).set(set)
+    const [updated] = await getDb().update(stewardCases).set(set)
       .where(and(eq(stewardCases.projectId, c.var.projectId), eq(stewardCases.id, row.id))).returning();
     for (const e of events) await addEvent(updated!.id, actor, e.kind, e.body, e.meta);
     // Notify the parties per the project policy: a non-escalate close, or a move into mediation.
@@ -262,15 +262,15 @@ export const stewardRoutes = new Hono<{ Variables: Variables }>()
     let removed = false;
     let msgConversationId: string | undefined;
     if (row.subjectType === "entity") {
-      const [u] = await db.update(entities).set(mod)
+      const [u] = await getDb().update(entities).set(mod)
         .where(and(eq(entities.projectId, c.var.projectId), eq(entities.id, row.subjectId))).returning({ id: entities.id });
       removed = !!u;
     } else if (row.subjectType === "comment") {
-      const [u] = await db.update(comments).set(mod)
+      const [u] = await getDb().update(comments).set(mod)
         .where(and(eq(comments.projectId, c.var.projectId), eq(comments.id, row.subjectId))).returning({ id: comments.id });
       removed = !!u;
     } else {
-      const [u] = await db.update(chatMessages).set(mod)
+      const [u] = await getDb().update(chatMessages).set(mod)
         .where(and(eq(chatMessages.projectId, c.var.projectId), eq(chatMessages.id, row.subjectId)))
         .returning({ id: chatMessages.id, conversationId: chatMessages.conversationId });
       removed = !!u;
@@ -278,12 +278,12 @@ export const stewardRoutes = new Hono<{ Variables: Variables }>()
     }
     if (!removed) throw Errors.notFound("steward/subject-not-found", "Case subject content not found");
 
-    const [updated] = await db.update(stewardCases).set({
+    const [updated] = await getDb().update(stewardCases).set({
       outcome: "escalated", state: "closed", closedAt: new Date(), resolutionNote: reason, updatedAt: new Date(),
     }).where(and(eq(stewardCases.projectId, c.var.projectId), eq(stewardCases.id, row.id))).returning();
     await addEvent(row.id, c.var.auth!.userId, "escalation", reason, { subjectType: row.subjectType, subjectId: row.subjectId });
     if (row.reportId) {
-      await db.update(reports).set({ resolvedAt: new Date(), resolvedById: c.var.auth!.userId })
+      await getDb().update(reports).set({ resolvedAt: new Date(), resolvedById: c.var.auth!.userId })
         .where(and(eq(reports.projectId, c.var.projectId), eq(reports.id, row.reportId), isNull(reports.resolvedAt)));
     }
     // Tell connected chat clients to drop the removed message live (entities/comments hide on next read).
@@ -345,7 +345,7 @@ export const stewardRoutes = new Hono<{ Variables: Variables }>()
   .post("/stewards", requireAuth, async (c) => {
     requireProjectOwner(c);
     const body = parseBody(grantSchema, await c.req.json().catch(() => ({})), "steward");
-    const [p] = await db.select({ id: profiles.id }).from(profiles)
+    const [p] = await getDb().select({ id: profiles.id }).from(profiles)
       .where(and(eq(profiles.projectId, c.var.projectId), eq(profiles.id, body.userId))).limit(1);
     if (!p) throw Errors.notFound("steward/user-not-found", "User not found in this project");
     await grantSteward(c.var.projectId, body.userId, c.var.auth!.userId);

@@ -4,7 +4,7 @@ import { Hono } from "hono";
 import { and, eq, sql } from "drizzle-orm";
 import type { Variables } from "../http/context.js";
 import { requireAuth } from "../middleware/auth.js";
-import { db } from "../db/index.js";
+import { getDb } from "../db/index.js";
 import { pushDevices } from "../db/schema/index.js";
 import { parseBody } from "../lib/validation.js";
 import { pushDeviceSchema, type PushDeviceIdentifier } from "@agora-server/contract";
@@ -17,7 +17,7 @@ async function registerDevice(projectId: string, userId: string, ident: PushDevi
     // The conflict target references an expression index ((subscription->>'endpoint')), which
     // Drizzle's builder cannot express, so use a raw parameterized statement.
     // All user-supplied values are bound parameters — no string interpolation.
-    await db.execute(sql`
+    await getDb().execute(sql`
       INSERT INTO push_devices (project_id, user_id, platform, subscription)
       VALUES (${projectId}::uuid, ${userId}::uuid, 'web', ${JSON.stringify(ident.subscription)}::jsonb)
       ON CONFLICT (project_id, user_id, (subscription->>'endpoint')) WHERE platform = 'web'
@@ -25,7 +25,7 @@ async function registerDevice(projectId: string, userId: string, ident: PushDevi
     `);
   } else {
     // Conflict target matches push_devices_native_unique partial index exactly.
-    await db.insert(pushDevices)
+    await getDb().insert(pushDevices)
       .values({ projectId, userId, platform: ident.platform, token: ident.token })
       .onConflictDoUpdate({
         target: [pushDevices.projectId, pushDevices.userId, pushDevices.platform, pushDevices.token],
@@ -37,11 +37,11 @@ async function registerDevice(projectId: string, userId: string, ident: PushDevi
 
 async function deregisterDevice(projectId: string, userId: string, ident: PushDeviceIdentifier): Promise<void> {
   if (ident.platform === "web") {
-    await db.delete(pushDevices).where(and(
+    await getDb().delete(pushDevices).where(and(
       eq(pushDevices.projectId, projectId), eq(pushDevices.userId, userId), eq(pushDevices.platform, "web"),
       sql`${pushDevices.subscription}->>'endpoint' = ${ident.subscription.endpoint}`));
   } else {
-    await db.delete(pushDevices).where(and(
+    await getDb().delete(pushDevices).where(and(
       eq(pushDevices.projectId, projectId), eq(pushDevices.userId, userId),
       eq(pushDevices.platform, ident.platform), eq(pushDevices.token, ident.token)));
   }

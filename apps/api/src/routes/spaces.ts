@@ -6,7 +6,7 @@ import { and, eq, isNull, desc, asc, count, inArray, sql } from "drizzle-orm";
 import type { Variables } from "../http/context.js";
 import { Errors } from "../http/errors.js";
 import { requireAuth } from "../middleware/auth.js";
-import { db } from "../db/index.js";
+import { getDb } from "../db/index.js";
 import { logger } from "../lib/logger.js";
 import { spaces, spaceMembers, spaceRules, entities, comments, profiles, reports } from "../db/schema/index.js";
 import { readPagination, paginate } from "../http/envelope.js";
@@ -27,14 +27,14 @@ type Membership = typeof spaceMembers.$inferSelect;
 const MAX_SPACE_DEPTH = 5;
 
 async function getSpace(c: any): Promise<SpaceRow> {
-  const [row] = await db.select().from(spaces)
+  const [row] = await getDb().select().from(spaces)
     .where(and(eq(spaces.projectId, c.var.projectId), eq(spaces.id, c.req.param("id")), isNull(spaces.deletedAt))).limit(1);
   if (!row) throw Errors.notFound("spaces/not-found", "Space not found");
   return row;
 }
 
 async function membershipOf(projectId: string, spaceId: string, userId: string): Promise<Membership | null> {
-  const [m] = await db.select().from(spaceMembers)
+  const [m] = await getDb().select().from(spaceMembers)
     .where(and(eq(spaceMembers.projectId, projectId), eq(spaceMembers.spaceId, spaceId), eq(spaceMembers.userId, userId))).limit(1);
   return m ?? null;
 }
@@ -62,7 +62,7 @@ async function wouldCreateCycle(spaceId: string, newParentId: string): Promise<b
     if (current === spaceId) return true;
     if (seen.has(current)) break; // safety against pre-existing corrupt data
     seen.add(current);
-    const [p] = await db.select({ parent: spaces.parentSpaceId }).from(spaces).where(eq(spaces.id, current)).limit(1);
+    const [p] = await getDb().select({ parent: spaces.parentSpaceId }).from(spaces).where(eq(spaces.id, current)).limit(1);
     current = p?.parent ?? null;
   }
   return false;
@@ -79,8 +79,8 @@ export const spaceRoutes = new Hono<{ Variables: Variables }>()
       isNull(spaces.deletedAt),
       parent ? eq(spaces.parentSpaceId, parent) : isNull(spaces.parentSpaceId)
     );
-    const [{ n } = { n: 0 }] = await db.select({ n: count() }).from(spaces).where(where);
-    const rows = await db.select().from(spaces).where(where).orderBy(desc(spaces.createdAt)).limit(limit).offset(offset);
+    const [{ n } = { n: 0 }] = await getDb().select({ n: count() }).from(spaces).where(where);
+    const rows = await getDb().select().from(spaces).where(where).orderBy(desc(spaces.createdAt)).limit(limit).offset(offset);
     return c.json(paginate(rows.map((r) => shapeSpace(r)), n, page, limit));
   })
   .post("/", requireAuth, async (c) => {
@@ -89,7 +89,7 @@ export const spaceRoutes = new Hono<{ Variables: Variables }>()
     if (!check.valid) throw Errors.forbidden("spaces/rejected", check.message ?? "Space rejected by validation webhook");
     let depth = 0;
     if (body.parentSpaceId) {
-      const [parent] = await db.select().from(spaces)
+      const [parent] = await getDb().select().from(spaces)
         .where(and(eq(spaces.projectId, c.var.projectId), eq(spaces.id, body.parentSpaceId), isNull(spaces.deletedAt))).limit(1);
       if (!parent) throw Errors.badRequest("spaces/bad-parent", "Parent space not found", "parentSpaceId");
       // Only an admin (or owner) of the parent space may create a subspace under it.
@@ -97,7 +97,7 @@ export const spaceRoutes = new Hono<{ Variables: Variables }>()
       depth = parent.depth + 1;
       if (depth > MAX_SPACE_DEPTH) throw Errors.badRequest("spaces/too-deep", `Spaces can nest at most ${MAX_SPACE_DEPTH} levels deep`, "parentSpaceId");
     }
-    const [row] = await db.insert(spaces).values({
+    const [row] = await getDb().insert(spaces).values({
       projectId: c.var.projectId, userId: c.var.auth!.userId, shortId: generateShortId(),
       name: body.name, slug: body.slug, description: body.description,
       readingPermission: body.readingPermission, postingPermission: body.postingPermission,
@@ -105,7 +105,7 @@ export const spaceRoutes = new Hono<{ Variables: Variables }>()
       metadata: body.metadata,
     }).returning();
     // Creator joins as admin (trigger bumps members_count).
-    await db.insert(spaceMembers).values({
+    await getDb().insert(spaceMembers).values({
       projectId: c.var.projectId, spaceId: row!.id, userId: c.var.auth!.userId, role: "admin", status: "active",
     }).onConflictDoNothing();
     const shaped = shapeSpace(row!);
@@ -116,7 +116,7 @@ export const spaceRoutes = new Hono<{ Variables: Variables }>()
   .get("/by-short-id", async (c) => {
     const shortId = c.req.query("shortId");
     if (!shortId) throw Errors.badRequest("spaces/missing-short-id", "shortId is required", "shortId");
-    const [row] = await db.select().from(spaces)
+    const [row] = await getDb().select().from(spaces)
       .where(and(eq(spaces.projectId, c.var.projectId), eq(spaces.shortId, shortId), isNull(spaces.deletedAt))).limit(1);
     if (!row) throw Errors.notFound("spaces/not-found", "Space not found");
     return c.json(shapeSpace(row));
@@ -124,7 +124,7 @@ export const spaceRoutes = new Hono<{ Variables: Variables }>()
   .get("/by-slug", async (c) => {
     const slug = c.req.query("slug");
     if (!slug) throw Errors.badRequest("spaces/missing-slug", "slug is required", "slug");
-    const [row] = await db.select().from(spaces)
+    const [row] = await getDb().select().from(spaces)
       .where(and(eq(spaces.projectId, c.var.projectId), eq(spaces.slug, slug), isNull(spaces.deletedAt))).limit(1);
     if (!row) throw Errors.notFound("spaces/not-found", "Space not found");
     return c.json(shapeSpace(row));
@@ -132,7 +132,7 @@ export const spaceRoutes = new Hono<{ Variables: Variables }>()
   .get("/check-slug", async (c) => {
     const slug = c.req.query("slug");
     if (!slug) throw Errors.badRequest("spaces/missing-slug", "slug is required", "slug");
-    const [row] = await db.select({ id: spaces.id }).from(spaces)
+    const [row] = await getDb().select({ id: spaces.id }).from(spaces)
       .where(and(eq(spaces.projectId, c.var.projectId), eq(spaces.slug, slug))).limit(1);
     return c.json({ available: !row });
   })
@@ -140,8 +140,8 @@ export const spaceRoutes = new Hono<{ Variables: Variables }>()
     const { page, limit, offset } = readPagination(c);
     const uid = c.var.auth!.userId;
     const where = and(eq(spaceMembers.projectId, c.var.projectId), eq(spaceMembers.userId, uid));
-    const [{ n } = { n: 0 }] = await db.select({ n: count() }).from(spaceMembers).where(where);
-    const rows = await db.select({ space: spaces, m: spaceMembers })
+    const [{ n } = { n: 0 }] = await getDb().select({ n: count() }).from(spaceMembers).where(where);
+    const rows = await getDb().select({ space: spaces, m: spaceMembers })
       .from(spaceMembers)
       .innerJoin(spaces, eq(spaces.id, spaceMembers.spaceId))
       .where(and(where, isNull(spaces.deletedAt)))
@@ -159,7 +159,7 @@ export const spaceRoutes = new Hono<{ Variables: Variables }>()
     const meId = c.var.auth!.userId;
     const otherId = c.req.param("userId");
     const activeFor = (uid: string) =>
-      db.select({ sid: spaceMembers.spaceId }).from(spaceMembers).where(and(
+      getDb().select({ sid: spaceMembers.spaceId }).from(spaceMembers).where(and(
         eq(spaceMembers.projectId, c.var.projectId),
         eq(spaceMembers.userId, uid),
         eq(spaceMembers.status, "active"),
@@ -170,8 +170,8 @@ export const spaceRoutes = new Hono<{ Variables: Variables }>()
       inArray(spaces.id, activeFor(meId)),
       inArray(spaces.id, activeFor(otherId)),
     );
-    const [{ n } = { n: 0 }] = await db.select({ n: count() }).from(spaces).where(where);
-    const rows = await db.select().from(spaces).where(where)
+    const [{ n } = { n: 0 }] = await getDb().select({ n: count() }).from(spaces).where(where);
+    const rows = await getDb().select().from(spaces).where(where)
       .orderBy(desc(spaces.createdAt)).limit(limit).offset(offset);
     return c.json(paginate(rows.map((r) => shapeSpace(r)), n, page, limit));
   })
@@ -201,7 +201,7 @@ export const spaceRoutes = new Hono<{ Variables: Variables }>()
       const newParentId = body.parentSpaceId;
       if (newParentId) {
         if (newParentId === space.id) throw Errors.badRequest("spaces/cycle", "A space cannot be its own parent", "parentSpaceId");
-        const [parent] = await db.select().from(spaces)
+        const [parent] = await getDb().select().from(spaces)
           .where(and(eq(spaces.projectId, c.var.projectId), eq(spaces.id, newParentId), isNull(spaces.deletedAt))).limit(1);
         if (!parent) throw Errors.badRequest("spaces/bad-parent", "Parent space not found", "parentSpaceId");
         if (await wouldCreateCycle(space.id, newParentId)) {
@@ -218,14 +218,14 @@ export const spaceRoutes = new Hono<{ Variables: Variables }>()
       }
       // child_spaces_count isn't trigger-maintained on UPDATE, so adjust both parents here.
       if (space.parentSpaceId) {
-        await db.update(spaces).set({ childSpacesCount: sql`greatest(0, ${spaces.childSpacesCount} - 1)` }).where(eq(spaces.id, space.parentSpaceId));
+        await getDb().update(spaces).set({ childSpacesCount: sql`greatest(0, ${spaces.childSpacesCount} - 1)` }).where(eq(spaces.id, space.parentSpaceId));
       }
       if (newParentId) {
-        await db.update(spaces).set({ childSpacesCount: sql`${spaces.childSpacesCount} + 1` }).where(eq(spaces.id, newParentId));
+        await getDb().update(spaces).set({ childSpacesCount: sql`${spaces.childSpacesCount} + 1` }).where(eq(spaces.id, newParentId));
       }
     }
 
-    const [row] = await db.update(spaces).set(patch).where(eq(spaces.id, space.id)).returning();
+    const [row] = await getDb().update(spaces).set(patch).where(eq(spaces.id, space.id)).returning();
     const shaped = shapeSpace(row!);
     logger.info({ projectId: c.var.projectId, spaceId: space.id, userId: c.var.auth!.userId, fields: Object.keys(patch) }, "space: updated");
     webhooks.broadcast(c.var.projectId, "space.updated.complete", shaped);
@@ -234,7 +234,7 @@ export const spaceRoutes = new Hono<{ Variables: Variables }>()
   .delete("/:id", requireAuth, async (c) => {
     const space = await getSpace(c);
     if (space.userId !== c.var.auth!.userId) throw Errors.forbidden("spaces/not-owner", "Only the owner can delete");
-    await db.update(spaces).set({ deletedAt: new Date() }).where(eq(spaces.id, space.id));
+    await getDb().update(spaces).set({ deletedAt: new Date() }).where(eq(spaces.id, space.id));
     logger.info({ projectId: c.var.projectId, spaceId: space.id, userId: c.var.auth!.userId }, "space: deleted");
     return c.json({ success: true, deletedSpace: { id: space.id, name: space.name } });
   })
@@ -243,7 +243,7 @@ export const spaceRoutes = new Hono<{ Variables: Variables }>()
     let current = await getSpace(c);
     const chain: SpaceRow[] = [current];
     while (current.parentSpaceId) {
-      const [p] = await db.select().from(spaces).where(eq(spaces.id, current.parentSpaceId)).limit(1);
+      const [p] = await getDb().select().from(spaces).where(eq(spaces.id, current.parentSpaceId)).limit(1);
       if (!p) break;
       chain.unshift(p);
       current = p;
@@ -253,8 +253,8 @@ export const spaceRoutes = new Hono<{ Variables: Variables }>()
   .get("/:id/children", async (c) => {
     const { page, limit, offset } = readPagination(c);
     const where = and(eq(spaces.projectId, c.var.projectId), eq(spaces.parentSpaceId, c.req.param("id")), isNull(spaces.deletedAt));
-    const [{ n } = { n: 0 }] = await db.select({ n: count() }).from(spaces).where(where);
-    const rows = await db.select().from(spaces).where(where).orderBy(desc(spaces.createdAt)).limit(limit).offset(offset);
+    const [{ n } = { n: 0 }] = await getDb().select({ n: count() }).from(spaces).where(where);
+    const rows = await getDb().select().from(spaces).where(where).orderBy(desc(spaces.createdAt)).limit(limit).offset(offset);
     return c.json(paginate(rows.map((r) => shapeSpace(r)), n, page, limit));
   })
   // ── membership ──────────────────────────────────────────────────────────
@@ -262,14 +262,14 @@ export const spaceRoutes = new Hono<{ Variables: Variables }>()
     const space = await getSpace(c);
     const uid = c.var.auth!.userId;
     const status = space.requireJoinApproval ? "pending" : "active";
-    const [row] = await db.insert(spaceMembers)
+    const [row] = await getDb().insert(spaceMembers)
       .values({ projectId: c.var.projectId, spaceId: space.id, userId: uid, role: "member", status })
       .onConflictDoNothing().returning();
     const m = row ?? (await membershipOf(c.var.projectId, space.id, uid))!;
     return c.json({ message: "ok", membership: { id: m.id, spaceId: space.id, userId: uid, role: m.role, status: m.status, joinedAt: m.joinedAt } });
   })
   .delete("/:id/leave", requireAuth, async (c) => {
-    await db.delete(spaceMembers).where(and(
+    await getDb().delete(spaceMembers).where(and(
       eq(spaceMembers.projectId, c.var.projectId), eq(spaceMembers.spaceId, c.req.param("id")), eq(spaceMembers.userId, c.var.auth!.userId)
     ));
     return c.json({ message: "left" });
@@ -306,15 +306,15 @@ export const spaceRoutes = new Hono<{ Variables: Variables }>()
     if (statusQ) conds.push(eq(spaceMembers.status, statusQ as any));
     if (roleQ) conds.push(eq(spaceMembers.role, roleQ as any));
     const where = and(...conds);
-    const [{ n } = { n: 0 }] = await db.select({ n: count() }).from(spaceMembers).where(where);
-    const rows = await db.select({ m: spaceMembers, p: profiles })
+    const [{ n } = { n: 0 }] = await getDb().select({ n: count() }).from(spaceMembers).where(where);
+    const rows = await getDb().select({ m: spaceMembers, p: profiles })
       .from(spaceMembers).innerJoin(profiles, eq(profiles.id, spaceMembers.userId))
       .where(where).orderBy(asc(spaceMembers.joinedAt)).limit(limit).offset(offset);
     const data = rows.map((r) => ({ membershipId: r.m.id, role: r.m.role, status: r.m.status, joinedAt: r.m.joinedAt, user: shapeUser(r.p) }));
     return c.json(paginate(data, n, page, limit));
   })
   .get("/:id/team", async (c) => {
-    const rows = await db.select({ m: spaceMembers, p: profiles })
+    const rows = await getDb().select({ m: spaceMembers, p: profiles })
       .from(spaceMembers).innerJoin(profiles, eq(profiles.id, spaceMembers.userId))
       .where(and(
         eq(spaceMembers.projectId, c.var.projectId), eq(spaceMembers.spaceId, c.req.param("id")),
@@ -325,21 +325,21 @@ export const spaceRoutes = new Hono<{ Variables: Variables }>()
   .delete("/:id/members/:memberId", requireAuth, async (c) => {
     const space = await getSpace(c);
     await requireSpaceRole(c, space, ["admin", "moderator"]);
-    await db.delete(spaceMembers).where(and(eq(spaceMembers.spaceId, space.id), eq(spaceMembers.userId, c.req.param("memberId"))));
+    await getDb().delete(spaceMembers).where(and(eq(spaceMembers.spaceId, space.id), eq(spaceMembers.userId, c.req.param("memberId"))));
     return c.json({ success: true });
   })
   .patch("/:id/members/:memberId/role", requireAuth, async (c) => {
     const space = await getSpace(c);
     await requireSpaceRole(c, space, ["admin"]);
     const { role } = parseBody(memberRoleSchema, await c.req.json().catch(() => ({})), "spaces");
-    const [m] = await db.update(spaceMembers).set({ role }).where(and(eq(spaceMembers.spaceId, space.id), eq(spaceMembers.userId, c.req.param("memberId")))).returning();
+    const [m] = await getDb().update(spaceMembers).set({ role }).where(and(eq(spaceMembers.spaceId, space.id), eq(spaceMembers.userId, c.req.param("memberId")))).returning();
     if (!m) throw Errors.notFound("spaces/member-not-found", "Member not found");
     return c.json({ message: "ok", membership: { id: m.id, role: m.role, status: m.status, joinedAt: m.joinedAt, userId: m.userId } });
   })
   .patch("/:id/members/:memberId/approve", requireAuth, async (c) => {
     const space = await getSpace(c);
     await requireSpaceRole(c, space, ["admin", "moderator"]);
-    const [m] = await db.update(spaceMembers).set({ status: "active" }).where(and(eq(spaceMembers.spaceId, space.id), eq(spaceMembers.userId, c.req.param("memberId")))).returning();
+    const [m] = await getDb().update(spaceMembers).set({ status: "active" }).where(and(eq(spaceMembers.spaceId, space.id), eq(spaceMembers.userId, c.req.param("memberId")))).returning();
     if (!m) throw Errors.notFound("spaces/member-not-found", "Member not found");
     await notifyOnSpaceApproved(space.projectId, c.req.param("memberId"), c.var.auth!.userId, {
       id: space.id, name: space.name, shortId: space.shortId, slug: space.slug, avatar: space.avatarFileId,
@@ -349,14 +349,14 @@ export const spaceRoutes = new Hono<{ Variables: Variables }>()
   .patch("/:id/members/:memberId/decline", requireAuth, async (c) => {
     const space = await getSpace(c);
     await requireSpaceRole(c, space, ["admin", "moderator"]);
-    const [m] = await db.update(spaceMembers).set({ status: "rejected" }).where(and(eq(spaceMembers.spaceId, space.id), eq(spaceMembers.userId, c.req.param("memberId")))).returning();
+    const [m] = await getDb().update(spaceMembers).set({ status: "rejected" }).where(and(eq(spaceMembers.spaceId, space.id), eq(spaceMembers.userId, c.req.param("memberId")))).returning();
     if (!m) throw Errors.notFound("spaces/member-not-found", "Member not found");
     return c.json({ message: "declined", membership: { id: m.id, status: m.status } });
   })
   .patch("/:id/members/:memberId/unban", requireAuth, async (c) => {
     const space = await getSpace(c);
     await requireSpaceRole(c, space, ["admin", "moderator"]);
-    const [m] = await db.update(spaceMembers).set({ status: "active" }).where(and(eq(spaceMembers.spaceId, space.id), eq(spaceMembers.userId, c.req.param("memberId")))).returning();
+    const [m] = await getDb().update(spaceMembers).set({ status: "active" }).where(and(eq(spaceMembers.spaceId, space.id), eq(spaceMembers.userId, c.req.param("memberId")))).returning();
     if (!m) throw Errors.notFound("spaces/member-not-found", "Member not found");
     return c.json({ message: "unbanned", membership: { id: m.id, status: m.status } });
   })
@@ -376,7 +376,7 @@ export const spaceRoutes = new Hono<{ Variables: Variables }>()
     const space = await getSpace(c);
     await requireSpaceRole(c, space, ["admin"]);
     const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
-    const [row] = await db.update(spaces).set({
+    const [row] = await getDb().update(spaces).set({
       ...(body.digestEnabled !== undefined ? { digestEnabled: !!body.digestEnabled } : {}),
       ...(body.digestWebhookUrl !== undefined ? { digestWebhookUrl: body.digestWebhookUrl as string } : {}),
       ...(body.digestWebhookSecret !== undefined ? { digestWebhookSecret: body.digestWebhookSecret as string } : {}),
@@ -391,7 +391,7 @@ export const spaceRoutes = new Hono<{ Variables: Variables }>()
   })
   // ── rules ───────────────────────────────────────────────────────────────
   .get("/:id/rules", async (c) => {
-    const rows = await db.select().from(spaceRules)
+    const rows = await getDb().select().from(spaceRules)
       .where(and(eq(spaceRules.projectId, c.var.projectId), eq(spaceRules.spaceId, c.req.param("id"))))
       .orderBy(asc(spaceRules.order));
     return c.json({ data: rows.map(shapeRule), count: rows.length });
@@ -400,7 +400,7 @@ export const spaceRoutes = new Hono<{ Variables: Variables }>()
     const space = await getSpace(c);
     await requireSpaceRole(c, space, ["admin"]);
     const body = parseBody(createRuleSchema, await c.req.json().catch(() => ({})), "spaces");
-    const [row] = await db.insert(spaceRules).values({
+    const [row] = await getDb().insert(spaceRules).values({
       projectId: c.var.projectId, spaceId: space.id, title: body.title, description: body.description,
       order: body.order ?? 0, lastApprovedBy: c.var.auth!.userId,
     }).returning();
@@ -411,13 +411,13 @@ export const spaceRoutes = new Hono<{ Variables: Variables }>()
     await requireSpaceRole(c, space, ["admin"]);
     const { order } = parseBody(reorderRulesSchema, await c.req.json().catch(() => ({})), "spaces");
     await Promise.all(order.map((ruleId, i) =>
-      db.update(spaceRules).set({ order: i }).where(and(eq(spaceRules.spaceId, space.id), eq(spaceRules.id, ruleId)))
+      getDb().update(spaceRules).set({ order: i }).where(and(eq(spaceRules.spaceId, space.id), eq(spaceRules.id, ruleId)))
     ));
-    const rows = await db.select().from(spaceRules).where(eq(spaceRules.spaceId, space.id)).orderBy(asc(spaceRules.order));
+    const rows = await getDb().select().from(spaceRules).where(eq(spaceRules.spaceId, space.id)).orderBy(asc(spaceRules.order));
     return c.json({ data: rows.map(shapeRule), count: rows.length });
   })
   .get("/:id/rules/:ruleId", async (c) => {
-    const [row] = await db.select().from(spaceRules)
+    const [row] = await getDb().select().from(spaceRules)
       .where(and(eq(spaceRules.spaceId, c.req.param("id")), eq(spaceRules.id, c.req.param("ruleId")))).limit(1);
     if (!row) throw Errors.notFound("spaces/rule-not-found", "Rule not found");
     return c.json(shapeRule(row));
@@ -426,7 +426,7 @@ export const spaceRoutes = new Hono<{ Variables: Variables }>()
     const space = await getSpace(c);
     await requireSpaceRole(c, space, ["admin"]);
     const body = parseBody(updateRuleSchema, await c.req.json().catch(() => ({})), "spaces");
-    const [row] = await db.update(spaceRules).set({
+    const [row] = await getDb().update(spaceRules).set({
       ...(body.title !== undefined ? { title: body.title } : {}),
       ...(body.description !== undefined ? { description: body.description } : {}),
       ...(body.order !== undefined ? { order: body.order } : {}),
@@ -437,7 +437,7 @@ export const spaceRoutes = new Hono<{ Variables: Variables }>()
   .delete("/:id/rules/:ruleId", requireAuth, async (c) => {
     const space = await getSpace(c);
     await requireSpaceRole(c, space, ["admin"]);
-    const [row] = await db.delete(spaceRules).where(and(eq(spaceRules.spaceId, space.id), eq(spaceRules.id, c.req.param("ruleId")))).returning();
+    const [row] = await getDb().delete(spaceRules).where(and(eq(spaceRules.spaceId, space.id), eq(spaceRules.id, c.req.param("ruleId")))).returning();
     if (!row) throw Errors.notFound("spaces/rule-not-found", "Rule not found");
     return c.json({ message: "deleted", deletedRule: { id: row.id, title: row.title } });
   })
@@ -446,7 +446,7 @@ export const spaceRoutes = new Hono<{ Variables: Variables }>()
     const space = await getSpace(c);
     await requireSpaceRole(c, space, ["admin", "moderator"]);
     const { status, reason } = parseBody(moderationSchema, await c.req.json().catch(() => ({})), "spaces");
-    const [row] = await db.update(entities).set({
+    const [row] = await getDb().update(entities).set({
       moderationStatus: status, moderationReason: reason, moderatedAt: new Date(),
       moderatedById: c.var.auth!.userId, moderatedByType: "user",
     }).where(and(eq(entities.projectId, c.var.projectId), eq(entities.id, c.req.param("entityId")), eq(entities.spaceId, space.id))).returning();
@@ -458,7 +458,7 @@ export const spaceRoutes = new Hono<{ Variables: Variables }>()
     const space = await getSpace(c);
     await requireSpaceRole(c, space, ["admin", "moderator"]);
     const { status, reason } = parseBody(moderationSchema, await c.req.json().catch(() => ({})), "spaces");
-    const [row] = await db.update(comments).set({
+    const [row] = await getDb().update(comments).set({
       moderationStatus: status, moderationReason: reason, moderatedAt: new Date(),
       moderatedById: c.var.auth!.userId, moderatedByType: "user",
     }).where(and(eq(comments.projectId, c.var.projectId), eq(comments.id, c.req.param("commentId")))).returning();
@@ -470,14 +470,14 @@ export const spaceRoutes = new Hono<{ Variables: Variables }>()
   .patch("/:id/reports/entity/:entityId", requireAuth, async (c) => {
     const space = await getSpace(c);
     await requireSpaceRole(c, space, ["admin", "moderator"]);
-    await db.update(reports).set({ resolvedAt: new Date(), resolvedById: c.var.auth!.userId })
+    await getDb().update(reports).set({ resolvedAt: new Date(), resolvedById: c.var.auth!.userId })
       .where(and(eq(reports.projectId, c.var.projectId), eq(reports.spaceId, space.id), eq(reports.targetType, "entity"), eq(reports.targetId, c.req.param("entityId"))));
     return c.json({ success: true });
   })
   .patch("/:id/reports/comment/:commentId", requireAuth, async (c) => {
     const space = await getSpace(c);
     await requireSpaceRole(c, space, ["admin", "moderator"]);
-    await db.update(reports).set({ resolvedAt: new Date(), resolvedById: c.var.auth!.userId })
+    await getDb().update(reports).set({ resolvedAt: new Date(), resolvedById: c.var.auth!.userId })
       .where(and(eq(reports.projectId, c.var.projectId), eq(reports.spaceId, space.id), eq(reports.targetType, "comment"), eq(reports.targetId, c.req.param("commentId"))));
     return c.json({ success: true });
   });

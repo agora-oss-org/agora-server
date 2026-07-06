@@ -7,7 +7,7 @@ import { streamSSE } from "hono/streaming";
 import { and, eq, or, ilike, isNull, inArray, sql } from "drizzle-orm";
 import type { Variables } from "../http/context.js";
 import { Errors } from "../http/errors.js";
-import { db } from "../db/index.js";
+import { getDb } from "../db/index.js";
 import { logger } from "../lib/logger.js";
 import { entities, comments, chatMessages, spaces, profiles } from "../db/schema/index.js";
 import { shapeEntity, shapeComment, shapeChatMessage, shapeSpace, shapeUser } from "../lib/shape.js";
@@ -77,7 +77,7 @@ async function retrieveContent(
   // Operators bypass; removed content is always excluded from search for non-operators.
   const viewer = c.var.auth?.userId ?? null;
   const privileged = c.var.auth ? isProjectAdmin(c.var.auth) : false;
-  const matches = (await db.execute(sql`
+  const matches = (await getDb().execute(sql`
     select source_type, source_id, similarity
     from match_content(${projectId}::uuid, ${lit}::vector, ${limit}, ${typesArg}, ${space}::uuid,
                        ${viewer}::uuid, ${privileged}, ${!privileged})
@@ -91,19 +91,19 @@ async function retrieveContent(
 
   const entIds = idsByType("entity");
   if (entIds.length) {
-    for (const r of await db.select().from(entities)
+    for (const r of await getDb().select().from(entities)
       .where(and(eq(entities.projectId, projectId), inArray(entities.id, entIds), isNull(entities.deletedAt))))
       record.set(r.id, shapeEntity(r));
   }
   const cmtIds = idsByType("comment");
   if (cmtIds.length) {
-    for (const r of await db.select().from(comments)
+    for (const r of await getDb().select().from(comments)
       .where(and(eq(comments.projectId, projectId), inArray(comments.id, cmtIds), isNull(comments.deletedAt))))
       record.set(r.id, shapeComment(r));
   }
   const msgIds = idsByType("message");
   if (msgIds.length) {
-    for (const r of await db.select().from(chatMessages)
+    for (const r of await getDb().select().from(chatMessages)
       .where(and(eq(chatMessages.projectId, projectId), inArray(chatMessages.id, msgIds), isNull(chatMessages.userDeletedAt))))
       record.set(r.id, shapeChatMessage(r));
   }
@@ -175,7 +175,7 @@ export const searchRoutes = new Hono<{ Variables: Variables }>()
   .post("/spaces", async (c) => {
     const { q, limit } = await searchBody(c);
     const like = `%${q}%`;
-    const rows = await db.select().from(spaces)
+    const rows = await getDb().select().from(spaces)
       .where(and(
         eq(spaces.projectId, c.var.projectId),
         isNull(spaces.deletedAt),
@@ -191,7 +191,7 @@ export const searchRoutes = new Hono<{ Variables: Variables }>()
   .post("/users", async (c) => {
     const { q, limit } = await searchBody(c);
     const like = `%${q}%`;
-    const rows = await db.select().from(profiles)
+    const rows = await getDb().select().from(profiles)
       .where(and(
         eq(profiles.projectId, c.var.projectId),
         or(ilike(profiles.username, like), ilike(profiles.name, like))

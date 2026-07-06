@@ -7,7 +7,7 @@ import type { Provider } from "@supabase/supabase-js";
 import type { Variables } from "../http/context.js";
 import { Errors } from "../http/errors.js";
 import { requireAuth } from "../middleware/auth.js";
-import { db } from "../db/index.js";
+import { getDb } from "../db/index.js";
 import { oauthIdentities, oauthStates, profiles, projects, projectIntegrations } from "../db/schema/index.js";
 import { pkceClient, oauthConfigured } from "../lib/oauth.js";
 import { env } from "../lib/env.js";
@@ -28,17 +28,17 @@ type ProfileRow = typeof profiles.$inferSelect;
 export const miscRoutes = new Hono<{ Variables: Variables }>()
   // ── oauth identities (the auth user's linked providers) ─────────────────────
   .get("/oauth/identities", requireAuth, async (c) => {
-    const rows = await db.select({ id: oauthIdentities.id, provider: oauthIdentities.provider, createdAt: oauthIdentities.createdAt })
+    const rows = await getDb().select({ id: oauthIdentities.id, provider: oauthIdentities.provider, createdAt: oauthIdentities.createdAt })
       .from(oauthIdentities)
       .where(and(eq(oauthIdentities.projectId, c.var.projectId), eq(oauthIdentities.profileId, c.var.auth!.userId)));
     return c.json({ data: rows });
   })
   .delete("/oauth/identities/:id", requireAuth, async (c) => {
-    const [row] = await db.select({ profileId: oauthIdentities.profileId }).from(oauthIdentities)
+    const [row] = await getDb().select({ profileId: oauthIdentities.profileId }).from(oauthIdentities)
       .where(and(eq(oauthIdentities.projectId, c.var.projectId), eq(oauthIdentities.id, c.req.param("id")))).limit(1);
     if (!row) throw Errors.notFound("oauth/not-found", "Identity not found");
     if (row.profileId !== c.var.auth!.userId) throw Errors.forbidden("oauth/not-owner", "Not your identity");
-    await db.delete(oauthIdentities).where(eq(oauthIdentities.id, c.req.param("id")));
+    await getDb().delete(oauthIdentities).where(eq(oauthIdentities.id, c.req.param("id")));
     return c.json({ success: true });
   })
   // ── OAuth sign-in / link (Supabase-brokered, code + PKCE) ───────────────────
@@ -63,10 +63,10 @@ export const miscRoutes = new Hono<{ Variables: Variables }>()
     const projectId = c.var.projectId;
     const aid = c.req.query("aid");
     if (!aid) throw Errors.badRequest("oauth/missing-state", "Missing state id");
-    const [state] = await db.select().from(oauthStates)
+    const [state] = await getDb().select().from(oauthStates)
       .where(and(eq(oauthStates.projectId, projectId), eq(oauthStates.id, aid))).limit(1);
     if (!state) throw Errors.badRequest("oauth/invalid-state", "Unknown or expired OAuth state");
-    await db.delete(oauthStates).where(eq(oauthStates.id, state.id)); // one-shot
+    await getDb().delete(oauthStates).where(eq(oauthStates.id, state.id)); // one-shot
 
     const base = state.redirectAfterAuth;
     const providerError = c.req.query("error");
@@ -85,7 +85,7 @@ export const miscRoutes = new Hono<{ Variables: Variables }>()
 
       let profile: ProfileRow;
       if (state.flow === "link" && state.profileId) {
-        const [p] = await db.select().from(profiles)
+        const [p] = await getDb().select().from(profiles)
           .where(and(eq(profiles.projectId, projectId), eq(profiles.id, state.profileId))).limit(1);
         if (!p) return errorRedirect(c, base, "link_failed", "Account not found");
         profile = p;
@@ -102,7 +102,7 @@ export const miscRoutes = new Hono<{ Variables: Variables }>()
       }
       await recordIdentity(projectId, profile.id, state.provider, providerUid);
       const tokens = await mintSession(projectId, profile.id, profile.role);
-      await db.update(profiles).set({ lastActive: new Date() }).where(eq(profiles.id, profile.id));
+      await getDb().update(profiles).set({ lastActive: new Date() }).where(eq(profiles.id, profile.id));
       const frag = `accessToken=${encodeURIComponent(tokens.accessToken)}&refreshToken=${encodeURIComponent(tokens.refreshToken)}`;
       return c.redirect(`${base}#${frag}`, 302);
     } catch (e: any) {
@@ -122,7 +122,7 @@ export const miscRoutes = new Hono<{ Variables: Variables }>()
     if (body.url !== undefined) patch.webhookUrl = body.url; // null clears
     if (body.secret !== undefined) patch.webhookSecret = body.secret;
     if (body.events !== undefined) patch.webhookEvents = body.events ?? [];
-    if (Object.keys(patch).length) await db.update(projects).set(patch).where(eq(projects.id, c.var.projectId));
+    if (Object.keys(patch).length) await getDb().update(projects).set(patch).where(eq(projects.id, c.var.projectId));
     webhooks.invalidateConfig(c.var.projectId); // config is cached 30s — drop it now
     return c.json(await webhookConfigView(c.var.projectId));
   })
@@ -143,7 +143,7 @@ export const miscRoutes = new Hono<{ Variables: Variables }>()
   .patch("/settings/feed", requireAuth, async (c) => {
     await requireProjectAdmin(c);
     const body = parseBody(feedConfigSchema, await c.req.json().catch(() => ({})), "feed");
-    const [row] = await db.select({ feedConfig: projects.feedConfig }).from(projects).where(eq(projects.id, c.var.projectId)).limit(1);
+    const [row] = await getDb().select({ feedConfig: projects.feedConfig }).from(projects).where(eq(projects.id, c.var.projectId)).limit(1);
     const current = (row?.feedConfig && typeof row.feedConfig === "object" ? row.feedConfig : {}) as Record<string, any>;
     const next: Record<string, any> = { ...current };
     for (const [k, v] of Object.entries(body)) {
@@ -152,7 +152,7 @@ export const miscRoutes = new Hono<{ Variables: Variables }>()
       if (k === "reactionWeights" && typeof v === "object") next.reactionWeights = { ...(current.reactionWeights ?? {}), ...v };
       else next[k] = v;
     }
-    await db.update(projects).set({ feedConfig: next }).where(eq(projects.id, c.var.projectId));
+    await getDb().update(projects).set({ feedConfig: next }).where(eq(projects.id, c.var.projectId));
     invalidateFeedConfig(c.var.projectId); // cached 30s — drop it now
     return c.json(feedConfigView(await getFeedConfig(c.var.projectId)));
   })
@@ -165,9 +165,9 @@ export const miscRoutes = new Hono<{ Variables: Variables }>()
   .patch("/settings/steward", requireAuth, async (c) => {
     await requireProjectAdmin(c);
     const body = parseBody(stewardConfigSchema, await c.req.json().catch(() => ({})), "steward");
-    const [row] = await db.select({ stewardConfig: projects.stewardConfig }).from(projects).where(eq(projects.id, c.var.projectId)).limit(1);
+    const [row] = await getDb().select({ stewardConfig: projects.stewardConfig }).from(projects).where(eq(projects.id, c.var.projectId)).limit(1);
     const next = { ...((row?.stewardConfig && typeof row.stewardConfig === "object" ? row.stewardConfig : {}) as Record<string, unknown>), ...body };
-    await db.update(projects).set({ stewardConfig: next }).where(eq(projects.id, c.var.projectId));
+    await getDb().update(projects).set({ stewardConfig: next }).where(eq(projects.id, c.var.projectId));
     invalidateStewardConfig(c.var.projectId);
     return c.json(stewardConfigView(await getStewardConfig(c.var.projectId)));
   })
@@ -184,7 +184,7 @@ export const miscRoutes = new Hono<{ Variables: Variables }>()
     const body = parseBody(moderatorConfigSchema, await c.req.json().catch(() => ({})), "moderator");
     // The tuning lives in the moderator_config JSONB (merge-on-write: null clears a key → the scorer
     // falls back to its env default).
-    const [row] = await db.select({ moderatorConfig: projects.moderatorConfig }).from(projects).where(eq(projects.id, c.var.projectId)).limit(1);
+    const [row] = await getDb().select({ moderatorConfig: projects.moderatorConfig }).from(projects).where(eq(projects.id, c.var.projectId)).limit(1);
     const current = (row?.moderatorConfig && typeof row.moderatorConfig === "object" ? row.moderatorConfig : {}) as Record<string, any>;
     const next: Record<string, any> = { ...current };
     for (const k of ["blockAutoActionThreshold", "reviewAutoActionThreshold", "grayzoneLow", "grayzoneHigh", "coParticipatesLookbackDays", "coParticipatesMaxParticipants", "coParticipatesMaxWeight", "llmProvider", "llmBaseUrl", "llmApiKey", "llmModel", "llmMaxTokens", "categories"] as const) {
@@ -200,7 +200,7 @@ export const miscRoutes = new Hono<{ Variables: Variables }>()
     if (typeof next.grayzoneLow === "number" && typeof next.grayzoneHigh === "number" && next.grayzoneLow > next.grayzoneHigh) {
       throw Errors.badRequest("moderator/grayzone-order", "grayzoneLow must be ≤ grayzoneHigh");
     }
-    await db.update(projects).set({ moderatorConfig: next }).where(eq(projects.id, c.var.projectId));
+    await getDb().update(projects).set({ moderatorConfig: next }).where(eq(projects.id, c.var.projectId));
     return c.json(await moderatorView(c.var.projectId));
   })
   // ── social graph (community↔corporate tier; project-admin only) ─
@@ -210,7 +210,7 @@ export const miscRoutes = new Hono<{ Variables: Variables }>()
   // from a corporate→community switch are neutralized, never served).
   .get("/settings/social", requireAuth, async (c) => {
     await requireProjectAdmin(c);
-    const [row] = await db
+    const [row] = await getDb()
       .select({ socialConfig: projects.socialConfig })
       .from(projects)
       .where(eq(projects.id, c.var.projectId))
@@ -220,7 +220,7 @@ export const miscRoutes = new Hono<{ Variables: Variables }>()
   .patch("/settings/social", requireAuth, async (c) => {
     await requireProjectAdmin(c);
     const body = parseBody(socialConfigSchema, await c.req.json().catch(() => ({})), "social");
-    const [row] = await db
+    const [row] = await getDb()
       .select({ socialConfig: projects.socialConfig })
       .from(projects)
       .where(eq(projects.id, c.var.projectId))
@@ -248,17 +248,17 @@ export const miscRoutes = new Hono<{ Variables: Variables }>()
       if (v === null) delete next[k]; // clear → tier default
       else next[k] = v;
     }
-    await db.update(projects).set({ socialConfig: next }).where(eq(projects.id, c.var.projectId));
+    await getDb().update(projects).set({ socialConfig: next }).where(eq(projects.id, c.var.projectId));
     invalidateSocialConfig(c.var.projectId);
     invalidateSocialWeather(c.var.projectId); // half-life/enablement changes shouldn't wait out the 1h weather TTL
     return c.json(socialConfigView(next, resolveSocialConfig(next)));
   })
   // ── lean project info ───────────────────────────────────────────────────────
   .get("/projects/lean", async (c) => {
-    const [project] = await db.select({ id: projects.id, name: projects.name }).from(projects)
+    const [project] = await getDb().select({ id: projects.id, name: projects.name }).from(projects)
       .where(eq(projects.id, c.var.projectId)).limit(1);
     if (!project) throw Errors.notFound("projects/not-found", "Project not found");
-    const integrations = await db.select({ id: projectIntegrations.id, name: projectIntegrations.name })
+    const integrations = await getDb().select({ id: projectIntegrations.id, name: projectIntegrations.name })
       .from(projectIntegrations).where(eq(projectIntegrations.projectId, c.var.projectId));
     return c.json({ id: project.id, name: project.name, integrations });
   })
@@ -306,14 +306,14 @@ export const miscRoutes = new Hono<{ Variables: Variables }>()
 // (non-regression — see plan: "fold isProjectAdmin into the existing requireProjectAdmin").
 async function requireProjectAdmin(c: any): Promise<void> {
   if (isProjectAdmin(c.var.auth!)) return;
-  const [p] = await db.select({ role: profiles.role }).from(profiles)
+  const [p] = await getDb().select({ role: profiles.role }).from(profiles)
     .where(and(eq(profiles.projectId, c.var.projectId), eq(profiles.id, c.var.auth!.userId))).limit(1);
   if (!p || p.role !== "admin") throw Errors.forbidden("project/not-admin", "Project admin or operator required");
 }
 
 // Safe view of the webhook config — never returns the secret, only whether one is set.
 async function webhookConfigView(projectId: string) {
-  const [p] = await db.select({ url: projects.webhookUrl, secret: projects.webhookSecret, events: projects.webhookEvents })
+  const [p] = await getDb().select({ url: projects.webhookUrl, secret: projects.webhookSecret, events: projects.webhookEvents })
     .from(projects).where(eq(projects.id, projectId)).limit(1);
   return { url: p?.url ?? null, events: p?.events ?? [], hasSecret: !!p?.secret };
 }
@@ -321,7 +321,7 @@ async function webhookConfigView(projectId: string) {
 // Safe view of the moderator integration. The write-only LLM API key is redacted to hasLlmApiKey;
 // tuning fields echo the stored per-project override (null = unset → the scorer uses its env default).
 async function moderatorView(projectId: string) {
-  const [p] = await db
+  const [p] = await getDb()
     .select({ cfg: projects.moderatorConfig })
     .from(projects).where(eq(projects.id, projectId)).limit(1);
   const cfg = (p?.cfg && typeof p.cfg === "object" ? p.cfg : {}) as Record<string, any>;
@@ -373,7 +373,7 @@ async function startOAuth(
     options: { redirectTo: callbackUrl, skipBrowserRedirect: true },
   });
   if (error || !data?.url) throw Errors.badRequest("oauth/authorize-failed", error?.message ?? "Could not start OAuth");
-  await db.insert(oauthStates).values({
+  await getDb().insert(oauthStates).values({
     id: stateId, projectId, profileId, provider: body.provider, flow,
     redirectAfterAuth: body.redirectAfterAuth, pkce: dump(),
   });
@@ -391,11 +391,11 @@ export async function ensureOAuthProfile(
   provider: string,
   attrs: { email?: string; name?: string; avatar?: string }
 ): Promise<ProfileRow> {
-  const [existing] = await db.select().from(profiles)
+  const [existing] = await getDb().select().from(profiles)
     .where(and(eq(profiles.projectId, projectId), eq(profiles.authUserId, authUserId))).limit(1);
   if (existing) return existing;
   const username = await defaultUsername(projectId, attrs.email, authUserId);
-  const [row] = await db.insert(profiles).values({
+  const [row] = await getDb().insert(profiles).values({
     projectId, authUserId, email: attrs.email, name: attrs.name, avatar: attrs.avatar, username,
     authMethods: [provider],
   }).returning();
@@ -404,11 +404,11 @@ export async function ensureOAuthProfile(
 
 // Record the linked provider identity (idempotent) and ensure the provider is in authMethods.
 async function recordIdentity(projectId: string, profileId: string, provider: string, providerUid: string): Promise<void> {
-  await db.insert(oauthIdentities).values({ projectId, profileId, provider, providerUid }).onConflictDoNothing();
-  const [p] = await db.select({ am: profiles.authMethods }).from(profiles).where(eq(profiles.id, profileId)).limit(1);
+  await getDb().insert(oauthIdentities).values({ projectId, profileId, provider, providerUid }).onConflictDoNothing();
+  const [p] = await getDb().select({ am: profiles.authMethods }).from(profiles).where(eq(profiles.id, profileId)).limit(1);
   const am = (p?.am ?? []) as string[];
   if (!am.includes(provider)) {
-    await db.update(profiles).set({ authMethods: [...am, provider] }).where(eq(profiles.id, profileId));
+    await getDb().update(profiles).set({ authMethods: [...am, provider] }).where(eq(profiles.id, profileId));
   }
 }
 

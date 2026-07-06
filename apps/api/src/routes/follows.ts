@@ -4,7 +4,7 @@ import { and, eq, count, inArray } from "drizzle-orm";
 import type { Variables } from "../http/context.js";
 import { Errors } from "../http/errors.js";
 import { requireAuth } from "../middleware/auth.js";
-import { db } from "../db/index.js";
+import { getDb } from "../db/index.js";
 import { follows, profiles } from "../db/schema/index.js";
 import { readPagination, paginate } from "../http/envelope.js";
 import { shapeUser } from "../lib/shape.js";
@@ -13,14 +13,14 @@ import { shapeUser } from "../lib/shape.js";
 async function selfFollowList(projectId: string, userId: string, kind: "followers" | "following", page: number, limit: number, offset: number) {
   const matchCol = kind === "followers" ? follows.followedId : follows.followerId;
   const pickCol = kind === "followers" ? follows.followerId : follows.followedId;
-  const [{ n } = { n: 0 }] = await db.select({ n: count() }).from(follows)
+  const [{ n } = { n: 0 }] = await getDb().select({ n: count() }).from(follows)
     .where(and(eq(follows.projectId, projectId), eq(matchCol, userId)));
-  const rows = await db.select({ pid: pickCol }).from(follows)
+  const rows = await getDb().select({ pid: pickCol }).from(follows)
     .where(and(eq(follows.projectId, projectId), eq(matchCol, userId)))
     .limit(limit).offset(offset);
   const ids = rows.map((r) => r.pid);
   const users = ids.length
-    ? await db.select().from(profiles).where(and(eq(profiles.projectId, projectId), inArray(profiles.id, ids)))
+    ? await getDb().select().from(profiles).where(and(eq(profiles.projectId, projectId), inArray(profiles.id, ids)))
     : [];
   const byId = new Map(users.map((u) => [u.id, shapeUser(u)]));
   return paginate(ids.map((i) => byId.get(i)).filter(Boolean), n, page, limit);
@@ -36,21 +36,21 @@ export const followRoutes = new Hono<{ Variables: Variables }>()
     return c.json(await selfFollowList(c.var.projectId, c.var.auth!.userId, "following", page, limit, offset));
   })
   .get("/followers-count", requireAuth, async (c) => {
-    const [r] = await db.select({ n: count() }).from(follows)
+    const [r] = await getDb().select({ n: count() }).from(follows)
       .where(and(eq(follows.projectId, c.var.projectId), eq(follows.followedId, c.var.auth!.userId)));
     return c.json({ count: r?.n ?? 0 });
   })
   .get("/following-count", requireAuth, async (c) => {
-    const [r] = await db.select({ n: count() }).from(follows)
+    const [r] = await getDb().select({ n: count() }).from(follows)
       .where(and(eq(follows.projectId, c.var.projectId), eq(follows.followerId, c.var.auth!.userId)));
     return c.json({ count: r?.n ?? 0 });
   })
   .delete("/:id", requireAuth, async (c) => {
     // Only the follower may delete their own follow edge.
-    const [row] = await db.select({ followerId: follows.followerId }).from(follows)
+    const [row] = await getDb().select({ followerId: follows.followerId }).from(follows)
       .where(and(eq(follows.projectId, c.var.projectId), eq(follows.id, c.req.param("id")))).limit(1);
     if (!row) throw Errors.notFound("follows/not-found", "Follow not found");
     if (row.followerId !== c.var.auth!.userId) throw Errors.forbidden("follows/not-owner", "Not your follow");
-    await db.delete(follows).where(eq(follows.id, c.req.param("id")));
+    await getDb().delete(follows).where(eq(follows.id, c.req.param("id")));
     return c.json({ success: true });
   });

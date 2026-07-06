@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import type { Variables } from "../http/context.js";
 import { Errors } from "../http/errors.js";
 import { requireAuth } from "../middleware/auth.js";
-import { db } from "../db/index.js";
+import { getDb } from "../db/index.js";
 import { files } from "../db/schema/index.js";
 import { uploadBytes, inferFileType, assertUploadSize } from "../lib/storage.js";
 import { shapeFile } from "../lib/shape.js";
@@ -37,7 +37,7 @@ export const storageRoutes = new Hono<{ Variables: Variables }>()
     const ext = file.name.includes(".") ? "." + file.name.split(".").pop() : "";
     const path = `${projectId}/files/${fileId}${ext}`;
     const url = await uploadBytes(path, bytes, file.type || "application/octet-stream");
-    const [row] = await db.insert(files).values({
+    const [row] = await getDb().insert(files).values({
       id: fileId, projectId, userId: c.var.auth!.userId,
       type: inferFileType(file.type), originalPath: url, originalSize: bytes.length,
       originalMimeType: file.type || null, ...assoc,

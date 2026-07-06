@@ -3,7 +3,7 @@ import { Hono } from "hono";
 import { and, eq, isNull, isNotNull, desc, count, inArray } from "drizzle-orm";
 import type { Variables } from "../http/context.js";
 import { requireAuth } from "../middleware/auth.js";
-import { db } from "../db/index.js";
+import { getDb } from "../db/index.js";
 import { logger } from "../lib/logger.js";
 import { reports, spaces, spaceMembers, entities, comments } from "../db/schema/index.js";
 import { readPagination, paginate } from "../http/envelope.js";
@@ -16,9 +16,9 @@ import { isProjectAdmin, requireProjectAdmin } from "../lib/project-roles.js";
 // active admin/moderator role. Used to scope the pending-reports queue for non-operators.
 async function moderatedSpaceIds(projectId: string, userId: string): Promise<string[]> {
   const [owned, member] = await Promise.all([
-    db.select({ id: spaces.id }).from(spaces)
+    getDb().select({ id: spaces.id }).from(spaces)
       .where(and(eq(spaces.projectId, projectId), eq(spaces.userId, userId), isNull(spaces.deletedAt))),
-    db.select({ id: spaceMembers.spaceId }).from(spaceMembers)
+    getDb().select({ id: spaceMembers.spaceId }).from(spaceMembers)
       .where(and(
         eq(spaceMembers.projectId, projectId), eq(spaceMembers.userId, userId),
         eq(spaceMembers.status, "active"), inArray(spaceMembers.role, ["admin", "moderator"]),
@@ -40,7 +40,7 @@ async function scopeReports(c: any, base: ReturnType<typeof and>): Promise<{ whe
 export const reportRoutes = new Hono<{ Variables: Variables }>()
   .post("/", requireAuth, async (c) => {
     const body = parseBody(createReportSchema, await c.req.json().catch(() => ({})), "reports");
-    const [row] = await db.insert(reports).values({
+    const [row] = await getDb().insert(reports).values({
       projectId: c.var.projectId,
       reporterId: c.var.auth!.userId,
       targetType: body.targetType,
@@ -59,8 +59,8 @@ export const reportRoutes = new Hono<{ Variables: Variables }>()
     const { page, limit, offset } = readPagination(c);
     const { where, empty } = await scopeReports(c, and(eq(reports.projectId, c.var.projectId), isNull(reports.resolvedAt)));
     if (empty) return c.json(paginate([], 0, page, limit));
-    const [{ n } = { n: 0 }] = await db.select({ n: count() }).from(reports).where(where);
-    const rows = await db.select().from(reports).where(where)
+    const [{ n } = { n: 0 }] = await getDb().select({ n: count() }).from(reports).where(where);
+    const rows = await getDb().select().from(reports).where(where)
       .orderBy(desc(reports.createdAt)).limit(limit).offset(offset);
     const { authorByReport, reporterByReport } = await loadReportParticipants(c.var.projectId, rows);
     const data = rows.map((r) => shapeReport(r, { author: authorByReport.get(r.id), reporter: reporterByReport.get(r.id) }));
@@ -71,8 +71,8 @@ export const reportRoutes = new Hono<{ Variables: Variables }>()
     const { page, limit, offset } = readPagination(c);
     const { where, empty } = await scopeReports(c, and(eq(reports.projectId, c.var.projectId), isNotNull(reports.resolvedAt)));
     if (empty) return c.json(paginate([], 0, page, limit));
-    const [{ n } = { n: 0 }] = await db.select({ n: count() }).from(reports).where(where);
-    const rows = await db.select().from(reports).where(where)
+    const [{ n } = { n: 0 }] = await getDb().select({ n: count() }).from(reports).where(where);
+    const rows = await getDb().select().from(reports).where(where)
       .orderBy(desc(reports.resolvedAt)).limit(limit).offset(offset);
     const { authorByReport, reporterByReport } = await loadReportParticipants(c.var.projectId, rows);
     const data = rows.map((r) => shapeReport(r, { author: authorByReport.get(r.id), reporter: reporterByReport.get(r.id) }));
@@ -92,7 +92,7 @@ export const reportRoutes = new Hono<{ Variables: Variables }>()
     const action = body.action as "removed" | "approved" | "dismiss"; // validated above
     const reason = typeof body.reason === "string" && body.reason.trim() ? body.reason : undefined;
 
-    const [report] = await db.select().from(reports)
+    const [report] = await getDb().select().from(reports)
       .where(and(eq(reports.projectId, c.var.projectId), eq(reports.id, c.req.param("id")))).limit(1);
     if (!report) throw Errors.notFound("reports/not-found", "Report not found");
 
@@ -102,12 +102,12 @@ export const reportRoutes = new Hono<{ Variables: Variables }>()
         moderatedById: c.var.auth!.userId, moderatedByType: "user" as const,
       };
       if (report.targetType === "entity") {
-        await db.update(entities).set(mod).where(and(eq(entities.projectId, c.var.projectId), eq(entities.id, report.targetId)));
+        await getDb().update(entities).set(mod).where(and(eq(entities.projectId, c.var.projectId), eq(entities.id, report.targetId)));
       } else if (report.targetType === "comment") {
-        await db.update(comments).set(mod).where(and(eq(comments.projectId, c.var.projectId), eq(comments.id, report.targetId)));
+        await getDb().update(comments).set(mod).where(and(eq(comments.projectId, c.var.projectId), eq(comments.id, report.targetId)));
       }
     }
-    await db.update(reports).set({ resolvedAt: new Date(), resolvedById: c.var.auth!.userId })
+    await getDb().update(reports).set({ resolvedAt: new Date(), resolvedById: c.var.auth!.userId })
       .where(and(eq(reports.projectId, c.var.projectId), eq(reports.id, report.id)));
     logger.info({ projectId: c.var.projectId, reportId: report.id, operatorId: c.var.auth!.userId, action, targetType: report.targetType, targetId: report.targetId }, "report: resolved by operator");
     return c.json({ success: true });

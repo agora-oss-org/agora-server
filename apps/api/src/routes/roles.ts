@@ -8,7 +8,7 @@ import { Hono } from "hono";
 import { and, eq } from "drizzle-orm";
 import type { Variables } from "../http/context.js";
 import { requireAuth } from "../middleware/auth.js";
-import { db } from "../db/index.js";
+import { getDb } from "../db/index.js";
 import { profiles } from "../db/schema/index.js";
 import { logger } from "../lib/logger.js";
 import { loadUsers } from "../lib/shape.js";
@@ -39,7 +39,7 @@ export const rolesRoutes = new Hono<{ Variables: Variables }>()
     requireProjectOwner(c);
     const projectId = c.var.projectId;
     const body = parseBody(grantRoleSchema, await c.req.json().catch(() => ({})), "roles");
-    const [p] = await db.select({ id: profiles.id }).from(profiles)
+    const [p] = await getDb().select({ id: profiles.id }).from(profiles)
       .where(and(eq(profiles.projectId, projectId), eq(profiles.id, body.userId))).limit(1);
     if (!p) throw Errors.notFound("roles/user-not-found", "User not found in this project");
     await grantProjectRole(projectId, body.userId, body.role, c.var.auth!.userId);

@@ -6,7 +6,7 @@ import { and, eq, ne, or, count, desc, ilike, inArray } from "drizzle-orm";
 import type { Variables } from "../http/context.js";
 import { Errors } from "../http/errors.js";
 import { requireAuth } from "../middleware/auth.js";
-import { db } from "../db/index.js";
+import { getDb } from "../db/index.js";
 import { profiles, follows, connections } from "../db/schema/index.js";
 import { readPagination, paginate } from "../http/envelope.js";
 import { shapeUser, shapeSuspension } from "../lib/shape.js";
@@ -18,7 +18,7 @@ import * as webhooks from "../lib/webhooks.js";
 import { requireProjectAdmin } from "../lib/project-roles.js";
 
 async function findUser(projectId: string, col: typeof profiles.id | typeof profiles.username | typeof profiles.foreignId, value: string) {
-  const [row] = await db
+  const [row] = await getDb()
     .select()
     .from(profiles)
     .where(and(eq(profiles.projectId, projectId), eq(col, value)))
@@ -50,7 +50,7 @@ export const userRoutes = new Hono<{ Variables: Variables }>()
   .get("/suggestions", async (c) => {
     const { limit } = readPagination(c, { page: 1, limit: 10 });
     const exclude = c.var.auth?.userId;
-    const rows = await db
+    const rows = await getDb()
       .select()
       .from(profiles)
       .where(and(eq(profiles.projectId, c.var.projectId), exclude ? ne(profiles.id, exclude) : undefined))
@@ -71,7 +71,7 @@ export const userRoutes = new Hono<{ Variables: Variables }>()
     if (!check.valid) throw Errors.forbidden("users/rejected", check.message ?? "Profile update rejected by validation webhook");
     let row: typeof profiles.$inferSelect | undefined;
     try {
-      [row] = await db
+      [row] = await getDb()
         .update(profiles)
         .set({
           ...(body.name !== undefined ? { name: body.name } : {}),
@@ -98,7 +98,7 @@ export const userRoutes = new Hono<{ Variables: Variables }>()
   })
   // ── follow relationship ───────────────────────────────────────────────────
   .get("/:id/follow", requireAuth, async (c) => {
-    const [row] = await db
+    const [row] = await getDb()
       .select({ id: follows.id })
       .from(follows)
       .where(and(
@@ -113,14 +113,14 @@ export const userRoutes = new Hono<{ Variables: Variables }>()
     const followedId = c.req.param("id");
     const followerId = c.var.auth!.userId;
     if (followedId === followerId) throw Errors.badRequest("users/self-follow", "Cannot follow yourself");
-    const [row] = await db
+    const [row] = await getDb()
       .insert(follows)
       .values({ projectId: c.var.projectId, followerId, followedId })
       .onConflictDoNothing()
       .returning();
     // already following -> fetch existing id
     if (!row) {
-      const [existing] = await db.select({ id: follows.id }).from(follows)
+      const [existing] = await getDb().select({ id: follows.id }).from(follows)
         .where(and(eq(follows.projectId, c.var.projectId), eq(follows.followerId, followerId), eq(follows.followedId, followedId)))
         .limit(1);
       return c.json({ id: existing?.id, followedId });
@@ -130,7 +130,7 @@ export const userRoutes = new Hono<{ Variables: Variables }>()
     return c.json({ id: row.id, followedId }, 201);
   })
   .delete("/:id/follow", requireAuth, async (c) => {
-    await db.delete(follows).where(and(
+    await getDb().delete(follows).where(and(
       eq(follows.projectId, c.var.projectId),
       eq(follows.followerId, c.var.auth!.userId),
       eq(follows.followedId, c.req.param("id"))
@@ -146,18 +146,18 @@ export const userRoutes = new Hono<{ Variables: Variables }>()
     return c.json(await followList(c.var.projectId, "following", c.req.param("id"), page, limit, offset));
   })
   .get("/:id/followers-count", async (c) => {
-    const [r] = await db.select({ n: count() }).from(follows)
+    const [r] = await getDb().select({ n: count() }).from(follows)
       .where(and(eq(follows.projectId, c.var.projectId), eq(follows.followedId, c.req.param("id"))));
     return c.json({ count: r?.n ?? 0 });
   })
   .get("/:id/following-count", async (c) => {
-    const [r] = await db.select({ n: count() }).from(follows)
+    const [r] = await getDb().select({ n: count() }).from(follows)
       .where(and(eq(follows.projectId, c.var.projectId), eq(follows.followerId, c.req.param("id"))));
     return c.json({ count: r?.n ?? 0 });
   })
   .get("/:id/connections-count", async (c) => {
     const id = c.req.param("id");
-    const [r] = await db.select({ n: count() }).from(connections)
+    const [r] = await getDb().select({ n: count() }).from(connections)
       .where(and(
         eq(connections.projectId, c.var.projectId),
         eq(connections.status, "connected"),
@@ -211,9 +211,9 @@ async function followList(projectId: string, kind: "followers" | "following", id
   const matchCol = kind === "followers" ? follows.followedId : follows.followerId;
   const pickCol = kind === "followers" ? follows.followerId : follows.followedId;
 
-  const [{ n } = { n: 0 }] = await db.select({ n: count() }).from(follows)
+  const [{ n } = { n: 0 }] = await getDb().select({ n: count() }).from(follows)
     .where(and(eq(follows.projectId, projectId), eq(matchCol, id)));
-  const rows = await db
+  const rows = await getDb()
     .select({ pid: pickCol })
     .from(follows)
     .where(and(eq(follows.projectId, projectId), eq(matchCol, id)))
@@ -221,7 +221,7 @@ async function followList(projectId: string, kind: "followers" | "following", id
     .offset(offset);
   const ids = rows.map((r) => r.pid);
   const users = ids.length
-    ? await db.select().from(profiles).where(and(eq(profiles.projectId, projectId), inArray(profiles.id, ids)))
+    ? await getDb().select().from(profiles).where(and(eq(profiles.projectId, projectId), inArray(profiles.id, ids)))
     : [];
   const byId = new Map(users.map((u) => [u.id, shapeUser(u)]));
   const data = ids.map((i) => byId.get(i)).filter(Boolean);
