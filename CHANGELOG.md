@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   are disabled" notice on Settings uses the warning color + `TriangleAlert` icon (matching the
   unsaved-changes / report-review banners) instead of neutral grey, so the disabled state is obvious.
   (`apps/admin/src/routes/SettingsPage.tsx`.)
+- Internal: DB access goes through a request-scoped `getDb()` accessor (AsyncLocalStorage)
+  instead of the `db` module singleton, which is no longer exported from `@agora/core/db`.
+  Behavior-unchanged groundwork for per-tenant database connections
+  (docs/superpowers/specs/2026-07-06-per-tenant-db-design.md, Phase 0).
 
 ## [0.17.0] - 2026-07-05
 
