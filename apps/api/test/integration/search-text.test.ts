@@ -3,7 +3,7 @@
 // Both are POST { query, limit? } and return a BARE array of { similarity, record }, where the
 // derived relevance is exact=1 > prefix=0.9 > substring=0.7 (lib relevance()).
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { db } from "../../src/db/index.js";
+import { getDb } from "../../src/db/index.js";
 import { profiles } from "../../src/db/schema/index.js";
 import { api, createProject, createUser, deleteProject, base } from "./helpers.js";
 
@@ -22,7 +22,7 @@ describe("text search — spaces + users (integration)", () => {
     await api("POST", `${B}/spaces`, { token: owner.token, body: { name: "Cooking", slug: "cooking" } });
 
     // deterministic handles (createUser only mints random usernames)
-    await db.insert(profiles).values([
+    await getDb().insert(profiles).values([
       { projectId, username: "ansel", name: "Ansel Adams" },
       { projectId, username: "ansel_fan", name: "Fan of Ansel" },
       { projectId, username: "chef_marie", name: "Marie Cook" },

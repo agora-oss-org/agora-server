@@ -5,7 +5,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { eq, sql } from "drizzle-orm";
 import { api, createProject, createUser, deleteProject, base } from "./helpers.js";
-import { db } from "../../src/db/index.js";
+import { getDb } from "../../src/db/index.js";
 import { contentEmbeddings, comments } from "../../src/db/schema/index.js";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -26,7 +26,7 @@ describe("match_content semantic search RPC (integration)", () => {
     // Privileged call (p_privileged => true): exercise the full result set across all source types.
     // Messages are membership-gated in match_content (migration 0019), so a viewer-less, non-privileged
     // call would correctly drop them — privileged review mode is what surfaces every source type.
-    const rows = (await db.execute(sql`
+    const rows = (await getDb().execute(sql`
       select source_type, source_id, similarity
       from match_content(${projectId}::uuid, ${lit(vec(1))}::vector, 20, ${typesArg}, ${space}::uuid, null::uuid, true)
     `)) as unknown as { source_type: string; source_id: string; similarity: number }[];
@@ -52,8 +52,8 @@ describe("match_content semantic search RPC (integration)", () => {
     // regardless of whether Voyage is configured.
     // (cosine sim vs query e0: free=1, inSpace=1, comment=0.8, message=0.6)
     await sleep(2000);
-    await db.delete(contentEmbeddings).where(eq(contentEmbeddings.projectId, projectId));
-    await db.insert(contentEmbeddings).values([
+    await getDb().delete(contentEmbeddings).where(eq(contentEmbeddings.projectId, projectId));
+    await getDb().insert(contentEmbeddings).values([
       { projectId, sourceType: "entity", sourceId: ent.free, embedding: vec(1) },
       { projectId, sourceType: "entity", sourceId: ent.inSpace, embedding: vec(1) },
       { projectId, sourceType: "comment", sourceId: commentId, embedding: vec(0.8, 0.6) },
@@ -85,7 +85,7 @@ describe("match_content semantic search RPC (integration)", () => {
   });
 
   it("excludes soft-deleted content (liveness)", async () => {
-    await db.update(comments).set({ deletedAt: new Date() }).where(eq(comments.id, commentId));
+    await getDb().update(comments).set({ deletedAt: new Date() }).where(eq(comments.id, commentId));
     expect((await match(["comment"], null)).map((r) => r.source_id)).toEqual([]);
   });
 });

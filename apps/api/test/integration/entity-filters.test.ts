@@ -4,7 +4,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { eq } from "drizzle-orm";
 import { api, createProject, createUser, deleteProject, base } from "./helpers.js";
-import { db } from "../../src/db/index.js";
+import { getDb } from "../../src/db/index.js";
 import { entities } from "../../src/db/schema/index.js";
 
 describe("entity feed filters + sort (integration)", () => {
@@ -98,7 +98,7 @@ describe("entity feed filters + sort (integration)", () => {
 
   it("timeFrame: excludes entities older than the window", async () => {
     // age `misc` to 10 days ago
-    await db.update(entities).set({ createdAt: new Date(Date.now() - 10 * 864e5) }).where(eq(entities.id, id.misc));
+    await getDb().update(entities).set({ createdAt: new Date(Date.now() - 10 * 864e5) }).where(eq(entities.id, id.misc));
     expect(await feed("timeFrame=week")).not.toContain(id.misc);
     expect(await feed("timeFrame=year")).toContain(id.misc);
   });

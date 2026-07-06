@@ -2,7 +2,7 @@
 // trigger, the is-entity-saved lookup (on the entities route), nesting, and ownership scoping.
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { api, createProject, createUser, deleteProject, base } from "./helpers.js";
-import { db } from "../../src/db/index.js";
+import { getDb } from "../../src/db/index.js";
 import { collectionEntities } from "../../src/db/schema/index.js";
 
 describe("collections (integration)", () => {
@@ -159,7 +159,7 @@ describe("collections cross-tenant isolation (security)", () => {
   it("DB trigger blocks a cross-project collection_entities row even bypassing the handler", async () => {
     // Direct insert (no handler) — the BEFORE INSERT trigger must raise on the project_id mismatch.
     await expect(
-      db.insert(collectionEntities).values({ collectionId, entityId: foreignEntityId }),
+      getDb().insert(collectionEntities).values({ collectionId, entityId: foreignEntityId }),
     ).rejects.toThrow();
   });
 

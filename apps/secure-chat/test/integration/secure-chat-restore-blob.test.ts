@@ -8,7 +8,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
-import { db } from "@agora/core/db";
+import { getDb } from "@agora/core/db";
 import { secureRestoreBlobs } from "@agora/core/db/schema";
 import { createSecureApp } from "../../src/app.js";
 import { api, createProject, createUser, deleteProject, base } from "./helpers.js";
@@ -63,7 +63,7 @@ describe("secure-chat IUC restore blobs", () => {
 
     // The server stored the bytes verbatim — but they ARE the plaintext here only because the test
     // "seal" is identity; the point is the row carries no key/sha256/transferId column to leak.
-    const [row] = await db.select().from(secureRestoreBlobs).where(eq(secureRestoreBlobs.id, blobId));
+    const [row] = await getDb().select().from(secureRestoreBlobs).where(eq(secureRestoreBlobs.id, blobId));
     expect(row!.fromDeviceId).toBe(aliceDev);
     expect(row!.targetDeviceId).toBe(bobDev);
     expect(Object.keys(row!)).not.toContain("key");
@@ -149,10 +149,10 @@ describe("secure-chat IUC restore blobs", () => {
     // unaffected; carol owns the target so she's the authorized fetcher here.
     const past = new Date(Date.now() - 60_000);
     const future = new Date(Date.now() + 60_000);
-    const [expired] = await db.insert(secureRestoreBlobs)
+    const [expired] = await getDb().insert(secureRestoreBlobs)
       .values({ projectId, conversationId, fromDeviceId: aliceDev, targetDeviceId: carolDev, blob: Buffer.from("old"), expiresAt: past })
       .returning({ id: secureRestoreBlobs.id });
-    const [live] = await db.insert(secureRestoreBlobs)
+    const [live] = await getDb().insert(secureRestoreBlobs)
       .values({ projectId, conversationId, fromDeviceId: aliceDev, targetDeviceId: carolDev, blob: Buffer.from("new"), expiresAt: future })
       .returning({ id: secureRestoreBlobs.id });
 
@@ -166,9 +166,9 @@ describe("secure-chat IUC restore blobs", () => {
       headers: { "x-cron-secret": CRON_SECRET },
     });
     expect(res.status).toBe(200);
-    const expiredRows = await db.select().from(secureRestoreBlobs).where(eq(secureRestoreBlobs.id, expired!.id));
+    const expiredRows = await getDb().select().from(secureRestoreBlobs).where(eq(secureRestoreBlobs.id, expired!.id));
     expect(expiredRows.length).toBe(0);
-    const liveRows = await db.select().from(secureRestoreBlobs).where(eq(secureRestoreBlobs.id, live!.id));
+    const liveRows = await getDb().select().from(secureRestoreBlobs).where(eq(secureRestoreBlobs.id, live!.id));
     expect(liveRows.length).toBe(1);
   });
 });

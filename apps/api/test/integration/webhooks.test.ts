@@ -5,7 +5,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import http from "node:http";
 import crypto from "node:crypto";
 import { eq } from "drizzle-orm";
-import { db } from "../../src/db/index.js";
+import { getDb } from "../../src/db/index.js";
 import { projects } from "../../src/db/schema/index.js";
 import { validate, broadcast } from "../../src/lib/webhooks.js";
 import { createProject, deleteProject } from "./helpers.js";
@@ -51,13 +51,13 @@ describe("project webhooks (integration)", () => {
     port = (server.address() as import("node:net").AddressInfo).port;
 
     projectId = await createProject();
-    await db.update(projects)
+    await getDb().update(projects)
       .set({ webhookUrl: `http://127.0.0.1:${port}/hook`, webhookSecret: SECRET, webhookEvents: ["entity.created", "entity.created.complete"] })
       .where(eq(projects.id, projectId));
 
     // a project whose webhook points at a closed port → exercises fail-closed
     deadProjectId = await createProject();
-    await db.update(projects)
+    await getDb().update(projects)
       .set({ webhookUrl: `http://127.0.0.1:9/hook`, webhookSecret: SECRET, webhookEvents: ["entity.created"] })
       .where(eq(projects.id, deadProjectId));
   });

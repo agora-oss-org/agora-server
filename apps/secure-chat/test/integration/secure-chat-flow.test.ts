@@ -4,7 +4,7 @@
 // reaches ONLY its target device.
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { eq } from "drizzle-orm";
-import { db } from "@agora/core/db";
+import { getDb } from "@agora/core/db";
 import { secureMessages } from "@agora/core/db/schema";
 import { api, createProject, createUser, deleteProject, base } from "./helpers.js";
 import { provisionDevice, claimKeyPackage, b64e, b64d, enc, dec } from "./secure-helpers.js";
@@ -78,7 +78,7 @@ describe("secure-chat end-to-end flow (mock crypto)", () => {
     expect(got.senderDeviceId).toBe("alice-web");
 
     // SERVER-BLINDNESS: the bytes at rest must not contain the plaintext.
-    const [stored] = await db.select().from(secureMessages).where(eq(secureMessages.id, sent.body.id));
+    const [stored] = await getDb().select().from(secureMessages).where(eq(secureMessages.id, sent.body.id));
     const haystack = Buffer.from(stored!.ciphertext);
     expect(haystack.includes(Buffer.from(PLAINTEXT, "utf8"))).toBe(false);
   });

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { and, eq } from "drizzle-orm";
 import { api, createProject, deleteProject, base } from "./helpers.js";
-import { db } from "../../src/db/index.js";
+import { getDb } from "../../src/db/index.js";
 import { projects, authCredentials } from "../../src/db/schema/index.js";
 import { invalidateAuthProvider } from "../../src/lib/auth/index.js";
 import { setEmailSender, type EmailSender } from "../../src/lib/auth/email/sender.js";
@@ -21,7 +21,7 @@ describe("native auth (integration)", () => {
 
   beforeAll(async () => {
     projectId = await createProject();
-    await db.update(projects).set({ authProvider: "native" }).where(eq(projects.id, projectId));
+    await getDb().update(projects).set({ authProvider: "native" }).where(eq(projects.id, projectId));
     invalidateAuthProvider(projectId);
     mail = new Capturing();
     setEmailSender(mail);
@@ -63,7 +63,7 @@ describe("native auth (integration)", () => {
     const res = await api("POST", `${B}/auth/sign-up`, { body: { email, password: "Another9!" } });
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ status: "confirmation_required" });
-    const rows = await db.select({ id: authCredentials.id }).from(authCredentials)
+    const rows = await getDb().select({ id: authCredentials.id }).from(authCredentials)
       .where(and(eq(authCredentials.projectId, projectId), eq(authCredentials.email, email)));
     expect(rows).toHaveLength(1);
   });
@@ -86,7 +86,7 @@ describe("native auth (integration)", () => {
   it("isolates tokens across tenants (a token cannot confirm under another project)", async () => {
     const other = await createProject();
     try {
-      await db.update(projects).set({ authProvider: "native" }).where(eq(projects.id, other));
+      await getDb().update(projects).set({ authProvider: "native" }).where(eq(projects.id, other));
       invalidateAuthProvider(other);
       const su = await api("POST", `${base(other)}/auth/sign-up`, { body: { email: "bob@example.com", password: pw } });
       expect(su.status).toBe(200);

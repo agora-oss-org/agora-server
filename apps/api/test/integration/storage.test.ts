@@ -23,7 +23,7 @@ vi.mock("../../src/lib/supabase.js", () => ({
 import sharp from "sharp";
 import { eq } from "drizzle-orm";
 import { createApp } from "../../src/app.js";
-import { db } from "../../src/db/index.js";
+import { getDb } from "../../src/db/index.js";
 import { files } from "../../src/db/schema/index.js";
 import { createProject, createUser, deleteProject, base } from "./helpers.js";
 
@@ -80,7 +80,7 @@ describe("storage uploads (integration, mocked Supabase Storage)", () => {
       expect(res.body.id).toBeTruthy();
 
       // The files row is really in Postgres.
-      const [row] = await db.select().from(files).where(eq(files.id, res.body.id));
+      const [row] = await getDb().select().from(files).where(eq(files.id, res.body.id));
       expect(row).toBeDefined();
       expect(row!.originalSize).toBe(11);
     });
@@ -134,18 +134,18 @@ describe("storage uploads (integration, mocked Supabase Storage)", () => {
       expect(res.body.variants).toBeTruthy();
       expect(res.body.file).toMatchObject({ type: "image", projectId });
 
-      const [row] = await db.select().from(files).where(eq(files.id, res.body.fileId));
+      const [row] = await getDb().select().from(files).where(eq(files.id, res.body.fileId));
       expect(row).toBeDefined();
       expect(row!.type).toBe("image");
     });
 
     it("rejects a non-image (sharp can't read it) without persisting a row", async () => {
-      const before = (await db.select().from(files).where(eq(files.projectId, projectId))).length;
+      const before = (await getDb().select().from(files).where(eq(files.projectId, projectId))).length;
       const notImage = new File([new TextEncoder().encode("not a png")], "fake.png", { type: "image/png" });
       const res = await postMultipart(`${B}/storage/images`, user.token, { file: notImage });
 
       expect(res.status).toBeGreaterThanOrEqual(400);
-      const after = (await db.select().from(files).where(eq(files.projectId, projectId))).length;
+      const after = (await getDb().select().from(files).where(eq(files.projectId, projectId))).length;
       expect(after).toBe(before); // no orphaned files row on a failed decode
     });
   });

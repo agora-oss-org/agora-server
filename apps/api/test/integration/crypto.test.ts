@@ -5,7 +5,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { generateKeyPair, exportPKCS8, exportSPKI } from "jose";
 import { eq } from "drizzle-orm";
 import { api, createProject, deleteProject, base } from "./helpers.js";
-import { db } from "../../src/db/index.js";
+import { getDb } from "../../src/db/index.js";
 import { projects } from "../../src/db/schema/index.js";
 
 describe("crypto sign-testing-jwt + verify-external-user (integration)", () => {
@@ -18,7 +18,7 @@ describe("crypto sign-testing-jwt + verify-external-user (integration)", () => {
     privateKeyPem = await exportPKCS8(privateKey);
     const publicKeyPem = await exportSPKI(publicKey);
     projectId = await createProject();
-    await db.update(projects).set({ externalAuthPublicKey: publicKeyPem }).where(eq(projects.id, projectId));
+    await getDb().update(projects).set({ externalAuthPublicKey: publicKeyPem }).where(eq(projects.id, projectId));
     B = base(projectId);
   });
 

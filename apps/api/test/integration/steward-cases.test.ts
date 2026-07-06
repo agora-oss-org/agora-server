@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { and, eq } from "drizzle-orm";
-import { db } from "../../src/db/index.js";
+import { getDb } from "../../src/db/index.js";
 import { stewardCases, stewardCaseEvents, projectStewards } from "../../src/db/schema/index.js";
 import { api, signToken, createProject, createUser, deleteProject, base } from "./helpers.js";
 
@@ -21,7 +21,7 @@ describe("Stewardship: Cases & Conflict Resolution", () => {
     member = await createUser(projectId);
 
     // Grant steward role to steward user
-    await db.insert(projectStewards).values({
+    await getDb().insert(projectStewards).values({
       projectId,
       profileId: steward.id,
       grantedById: operator.id,
@@ -232,8 +232,8 @@ describe("Stewardship: Cases & Conflict Resolution", () => {
       expect(assignRes.body.assignedTo?.id).toBe(respondent.id);
 
       // Verify assignment event created
-      const caseRow = await db.select().from(stewardCases).where(eq(stewardCases.id, caseId));
-      const events = await db.select().from(stewardCaseEvents).where(eq(stewardCaseEvents.caseId, caseId));
+      const caseRow = await getDb().select().from(stewardCases).where(eq(stewardCases.id, caseId));
+      const events = await getDb().select().from(stewardCaseEvents).where(eq(stewardCaseEvents.caseId, caseId));
       const assignmentEvent = events.find((e) => e.kind === "assignment");
       expect(assignmentEvent).toBeDefined();
       expect(assignmentEvent?.meta).toEqual({ from: null, to: respondent.id });
@@ -275,7 +275,7 @@ describe("Stewardship: Cases & Conflict Resolution", () => {
       expect(toggleRes.body.asymmetry).toBe(true);
 
       // Verify asymmetry event
-      const events = await db.select().from(stewardCaseEvents).where(eq(stewardCaseEvents.caseId, caseId));
+      const events = await getDb().select().from(stewardCaseEvents).where(eq(stewardCaseEvents.caseId, caseId));
       const asymmetryEvent = events.find((e) => e.kind === "asymmetry");
       expect(asymmetryEvent?.meta).toEqual({ asymmetry: true });
     });
@@ -393,7 +393,7 @@ describe("Stewardship: Cases & Conflict Resolution", () => {
       const caseId = openRes.body.id;
 
       // Verify "opened" event
-      let events = await db.select().from(stewardCaseEvents).where(eq(stewardCaseEvents.caseId, caseId));
+      let events = await getDb().select().from(stewardCaseEvents).where(eq(stewardCaseEvents.caseId, caseId));
       expect(events.some((e) => e.kind === "opened")).toBe(true);
 
       // Mutate state
@@ -401,7 +401,7 @@ describe("Stewardship: Cases & Conflict Resolution", () => {
         token: steward.token,
         body: { state: "in_mediation" },
       });
-      events = await db.select().from(stewardCaseEvents).where(eq(stewardCaseEvents.caseId, caseId));
+      events = await getDb().select().from(stewardCaseEvents).where(eq(stewardCaseEvents.caseId, caseId));
       expect(events.some((e) => e.kind === "state_change")).toBe(true);
 
       // Mutate assignment
@@ -409,7 +409,7 @@ describe("Stewardship: Cases & Conflict Resolution", () => {
         token: steward.token,
         body: { assignedToId: respondent.id },
       });
-      events = await db.select().from(stewardCaseEvents).where(eq(stewardCaseEvents.caseId, caseId));
+      events = await getDb().select().from(stewardCaseEvents).where(eq(stewardCaseEvents.caseId, caseId));
       expect(events.some((e) => e.kind === "assignment")).toBe(true);
     });
 

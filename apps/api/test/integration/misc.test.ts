@@ -5,7 +5,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { eq } from "drizzle-orm";
 import { api, createProject, createUser, deleteProject, base } from "./helpers.js";
-import { db } from "../../src/db/index.js";
+import { getDb } from "../../src/db/index.js";
 import { oauthIdentities } from "../../src/db/schema/index.js";
 
 describe("misc routes (integration)", () => {
@@ -73,7 +73,7 @@ describe("misc routes (integration)", () => {
     });
 
     it("lists then ownership-scopes deletion (non-owner 403, owner ok)", async () => {
-      const [row] = await db
+      const [row] = await getDb()
         .insert(oauthIdentities)
         .values({ projectId, profileId: user.id, provider: "google", providerUid: `g_${user.id}` })
         .returning();
@@ -88,7 +88,7 @@ describe("misc routes (integration)", () => {
       const ok = await api("DELETE", `${B}/oauth/identities/${row!.id}`, { token: user.token });
       expect(ok.status).toBe(200);
       // confirm it's gone
-      const remaining = await db.select().from(oauthIdentities).where(eq(oauthIdentities.id, row!.id));
+      const remaining = await getDb().select().from(oauthIdentities).where(eq(oauthIdentities.id, row!.id));
       expect(remaining).toHaveLength(0);
     });
   });

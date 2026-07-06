@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { and, eq } from "drizzle-orm";
-import { db } from "../../src/db/index.js";
+import { getDb } from "../../src/db/index.js";
 import { chatMessages, projectStewards, reports } from "../../src/db/schema/index.js";
 import { api, signToken, createProject, createUser, deleteProject, base } from "./helpers.js";
 
@@ -19,7 +19,7 @@ describe("Chat + Moderation Integration", () => {
     user2 = await createUser(projectId);
 
     // Grant steward + operator roles
-    await db.insert(projectStewards).values({
+    await getDb().insert(projectStewards).values({
       projectId,
       profileId: steward.id,
       grantedById: operator.id,
@@ -78,7 +78,7 @@ describe("Chat + Moderation Integration", () => {
       });
 
       // Verify message is marked as removed
-      const msg = await db.select().from(chatMessages).where(eq(chatMessages.id, messageId));
+      const msg = await getDb().select().from(chatMessages).where(eq(chatMessages.id, messageId));
       expect(msg[0]?.moderationStatus).toBe("removed");
       expect(msg[0]?.moderatedByType).toBe("user");
       expect(msg[0]?.moderatedById).toBe(steward.id);
@@ -108,7 +108,7 @@ describe("Chat + Moderation Integration", () => {
       expect(reportRes.status).toBe(201);
 
       // The endpoint doesn't echo the row, so read the report id back from the DB.
-      const [report] = await db
+      const [report] = await getDb()
         .select()
         .from(reports)
         .where(and(eq(reports.projectId, projectId), eq(reports.targetId, messageId)));
@@ -125,7 +125,7 @@ describe("Chat + Moderation Integration", () => {
       expect(escalateRes.status).toBe(200);
 
       // The originating report is resolved (no GET /reports/:id route — assert against the DB).
-      const [resolved] = await db.select().from(reports).where(eq(reports.id, report!.id));
+      const [resolved] = await getDb().select().from(reports).where(eq(reports.id, report!.id));
       expect(resolved!.resolvedAt).toBeTruthy();
       expect(resolved!.resolvedById).toBe(steward.id);
     });

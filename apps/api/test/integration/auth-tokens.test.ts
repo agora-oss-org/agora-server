@@ -10,7 +10,7 @@ import { createHash } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { jwtVerify } from "jose";
 import { api, createProject, createUser, deleteProject, base } from "./helpers.js";
-import { db } from "../../src/db/index.js";
+import { getDb } from "../../src/db/index.js";
 import { refreshTokens, projectRoles } from "../../src/db/schema/index.js";
 import { mintSession } from "../../src/lib/tokens.js";
 
@@ -64,7 +64,7 @@ describe("auth token rotation (integration)", () => {
     expect(rotated.status).toBe(200);
 
     // age the spent token past the grace window (deterministic — no real sleep)
-    await db
+    await getDb()
       .update(refreshTokens)
       .set({ rotatedAt: new Date(Date.now() - 120_000) })
       .where(eq(refreshTokens.tokenHash, hashOf(start.refreshToken)));
@@ -112,10 +112,10 @@ describe("auth token rotation (integration)", () => {
     it("accepts refresh token at T=29m59s (within 30m limit)", async () => {
       const session = await mintSession(projectId, user.id, "visitor");
       // Mock: set expiresAt to just before 30m limit
-      const row = await db.select().from(refreshTokens).where(eq(refreshTokens.tokenHash, hashOf(session.refreshToken)));
+      const row = await getDb().select().from(refreshTokens).where(eq(refreshTokens.tokenHash, hashOf(session.refreshToken)));
       const nowMs = Date.now();
       const expiresAt = new Date(nowMs + 29 * 60 * 1000 + 59 * 1000); // 29m59s from now
-      await db.update(refreshTokens).set({ expiresAt }).where(eq(refreshTokens.tokenHash, hashOf(session.refreshToken)));
+      await getDb().update(refreshTokens).set({ expiresAt }).where(eq(refreshTokens.tokenHash, hashOf(session.refreshToken)));
 
       const res = await refresh(session.refreshToken);
       expect(res.status).toBe(200);
@@ -126,7 +126,7 @@ describe("auth token rotation (integration)", () => {
       const session = await mintSession(projectId, user.id, "visitor");
       // Mock: set expiresAt to just past 30m limit
       const expiresAt = new Date(Date.now() - 1000); // 1s in the past
-      await db.update(refreshTokens).set({ expiresAt }).where(eq(refreshTokens.tokenHash, hashOf(session.refreshToken)));
+      await getDb().update(refreshTokens).set({ expiresAt }).where(eq(refreshTokens.tokenHash, hashOf(session.refreshToken)));
 
       const res = await refresh(session.refreshToken);
       expect(res.status).toBe(401);
@@ -201,7 +201,7 @@ describe("auth token rotation (integration)", () => {
       expect(before.steward).toBeFalsy();
 
       // Grant steward out-of-band (rotateRefreshToken recomputes auth bits from project_roles).
-      await db.insert(projectRoles).values({ projectId, profileId: grantee.id, role: "steward", grantedById: grantee.id });
+      await getDb().insert(projectRoles).values({ projectId, profileId: grantee.id, role: "steward", grantedById: grantee.id });
 
       // The rotated access token now carries steward:true — the grant propagated on refresh.
       const rotated = await refresh(session.refreshToken);
@@ -257,7 +257,7 @@ describe("auth token rotation (integration)", () => {
       const session = await mintSession(projectId, user.id, "visitor");
 
       // Verify the DB stores the SHA256 hash, not the raw token
-      const row = await db.select().from(refreshTokens).where(eq(refreshTokens.tokenHash, hashOf(session.refreshToken)));
+      const row = await getDb().select().from(refreshTokens).where(eq(refreshTokens.tokenHash, hashOf(session.refreshToken)));
       expect(row.length).toBe(1);
       expect(row[0].tokenHash).toBe(hashOf(session.refreshToken));
       expect(row[0].tokenHash).not.toBe(session.refreshToken); // hash !== raw
@@ -283,7 +283,7 @@ describe("auth token rotation (integration)", () => {
       const first = await refresh(session.refreshToken);
 
       // Using the original token again (outside grace window) should fail
-      await db.update(refreshTokens).set({ rotatedAt: new Date(Date.now() - 120_000) }).where(eq(refreshTokens.tokenHash, hashOf(session.refreshToken)));
+      await getDb().update(refreshTokens).set({ rotatedAt: new Date(Date.now() - 120_000) }).where(eq(refreshTokens.tokenHash, hashOf(session.refreshToken)));
       const reuse = await refresh(session.refreshToken);
       expect(reuse.status).toBe(401);
       expect(reuse.body.code).toBe("auth/refresh-reused");

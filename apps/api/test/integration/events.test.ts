@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
-import { db } from "../../src/db/index.js";
+import { getDb } from "../../src/db/index.js";
 import { spaces, events, files } from "../../src/db/schema/index.js";
 import { api, createProject, createUser, deleteProject, base } from "./helpers.js";
 
@@ -63,7 +63,7 @@ describe("events — CRUD + authorization (integration)", () => {
 
   it("rejects PATCH that moves an event into a members-only space the host can't post in (403)", async () => {
     // `other` owns a members-only space; `host` is not a member, so cannot post there.
-    const [space] = await db.insert(spaces).values({
+    const [space] = await getDb().insert(spaces).values({
       projectId, shortId: randomUUID().slice(0, 8), name: "Closed", userId: other.id,
       postingPermission: "members",
     }).returning();
@@ -81,7 +81,7 @@ describe("events — CRUD + authorization (integration)", () => {
   it("hides a public event living in a members-reading space from non-members; shows it to the space owner/host", async () => {
     // `host` owns a members-reading (private) space, and creates a *public*-visibility event in it.
     // GET /:eventId already 403s a non-member via assertCanReadSpace; the list must match (fail closed).
-    const [space] = await db.insert(spaces).values({
+    const [space] = await getDb().insert(spaces).values({
       projectId, shortId: randomUUID().slice(0, 8), name: "Members-read", userId: host.id,
       readingPermission: "members", postingPermission: "anyone",
     }).returning();
@@ -109,7 +109,7 @@ describe("events — CRUD + authorization (integration)", () => {
     // host owns a members-reading space and creates an *invite*-visibility event in it, then invites
     // `other` — who is NOT a member of the space. single-GET 403s `other` via the space-read gate even
     // though invited; the list must agree (previously the invite branch leaked it).
-    const [space] = await db.insert(spaces).values({
+    const [space] = await getDb().insert(spaces).values({
       projectId, shortId: `sp_${Date.now().toString(36)}`, name: "Members-read invite", userId: host.id,
       readingPermission: "members", postingPermission: "anyone",
     }).returning();
@@ -128,10 +128,10 @@ describe("events — CRUD + authorization (integration)", () => {
     const created = await api("POST", `${B}/events`, { token: host.token, body: { title: "Has cover", startTime: "2026-11-01T18:00:00Z", type: "online" } });
     const evId = created.body.id;
     // Simulate a stored cover (bypassing the upload pipeline): a files row + the event's cover pointer.
-    const [file] = await db.insert(files).values({
+    const [file] = await getDb().insert(files).values({
       projectId, eventId: evId, type: "image", originalPath: "test/cover.webp",
     }).returning();
-    await db.update(events).set({ coverImageId: file!.id }).where(eq(events.id, evId));
+    await getDb().update(events).set({ coverImageId: file!.id }).where(eq(events.id, evId));
     expect((await api("GET", `${B}/events/${evId}`, { token: host.token })).body.coverImageId).toBe(file!.id);
     // Removing the cover file must null the pointer (no dangling coverImageId).
     const patched = await api("PATCH", `${B}/events/${evId}`, { token: host.token, body: { removeImageIds: [file!.id] } });

@@ -10,7 +10,7 @@
 import { Server, type Namespace, type Socket } from "socket.io";
 import { type Server as HttpServer } from "node:http";
 import { and, eq, isNull } from "drizzle-orm";
-import { db } from "@agora/core/db";
+import { getDb } from "@agora/core/db";
 import { secureConversationMembers, secureDevices } from "@agora/core/db/schema";
 import { jwtVerify } from "jose";
 import { env } from "@agora/core/lib/env";
@@ -84,7 +84,7 @@ function logHandlerFailure(event: string, err: unknown) {
 let secureRef: SecureNamespace | null = null;
 
 async function isSecureMember(projectId: string, conversationId: string, userId: string): Promise<boolean> {
-  const [m] = await db.select({ id: secureConversationMembers.id }).from(secureConversationMembers)
+  const [m] = await getDb().select({ id: secureConversationMembers.id }).from(secureConversationMembers)
     .where(and(
       eq(secureConversationMembers.projectId, projectId),
       eq(secureConversationMembers.conversationId, conversationId),
@@ -143,7 +143,7 @@ export function attachSecureRealtime(httpServer: HttpServer): Server {
     logger.trace({ projectId: socket.data.projectId, userId: socket.data.userId, socketId: socket.id }, "secure-socket: connected");
     // Auto-join the device rooms for every active device this user owns, so targeted Welcomes arrive.
     void (async () => {
-      const devices = await db.select({ id: secureDevices.id }).from(secureDevices)
+      const devices = await getDb().select({ id: secureDevices.id }).from(secureDevices)
         .where(and(
           eq(secureDevices.projectId, socket.data.projectId),
           eq(secureDevices.userId, socket.data.userId),
@@ -177,7 +177,7 @@ export function attachSecureRealtime(httpServer: HttpServer): Server {
         return;
       }
       // Only join a device room the caller actually owns.
-      const [own] = await db.select({ id: secureDevices.id }).from(secureDevices)
+      const [own] = await getDb().select({ id: secureDevices.id }).from(secureDevices)
         .where(and(
           eq(secureDevices.projectId, socket.data.projectId),
           eq(secureDevices.id, deviceId),

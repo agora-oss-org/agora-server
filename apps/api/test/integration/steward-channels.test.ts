@@ -2,7 +2,7 @@
 // built on chat — a 1:1 *caucus* per party, or a consensual *joint* room (hybrid mode only, both
 // parties present, never for a "targeting"/asymmetry case). Default project mediationMode is "hybrid".
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { db } from "../../src/db/index.js";
+import { getDb } from "../../src/db/index.js";
 import { projectStewards } from "../../src/db/schema/index.js";
 import { api, signToken, createProject, createUser, deleteProject, base } from "./helpers.js";
 
@@ -20,7 +20,7 @@ describe("steward mediation channels (integration)", () => {
     complainant = await createUser(projectId);
     respondent = await createUser(projectId);
     outsider = await createUser(projectId);
-    await db.insert(projectStewards).values({ projectId, profileId: steward.id, grantedById: steward.id });
+    await getDb().insert(projectStewards).values({ projectId, profileId: steward.id, grantedById: steward.id });
     steward.token = await signToken(steward.id, "visitor", false, true);
     B = base(projectId);
   });

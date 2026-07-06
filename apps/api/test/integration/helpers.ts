@@ -5,7 +5,7 @@ import { randomUUID } from "node:crypto";
 import { SignJWT } from "jose";
 import { eq } from "drizzle-orm";
 import { createApp } from "../../src/app.js";
-import { db } from "../../src/db/index.js";
+import { getDb } from "../../src/db/index.js";
 import { projects, profiles } from "../../src/db/schema/index.js";
 
 const app = createApp();
@@ -48,7 +48,7 @@ export function signToken(
 }
 
 export async function createProject(): Promise<string> {
-  const [p] = await db
+  const [p] = await getDb()
     .insert(projects)
     .values({ clientId: `test-${randomUUID()}`, name: "integration" })
     .returning();
@@ -56,7 +56,7 @@ export async function createProject(): Promise<string> {
 }
 
 export async function createUser(projectId: string, role = "visitor") {
-  const [u] = await db
+  const [u] = await getDb()
     .insert(profiles)
     .values({ projectId, role: role as any, username: `u_${randomUUID().slice(0, 8)}` })
     .returning();
@@ -65,7 +65,7 @@ export async function createUser(projectId: string, role = "visitor") {
 
 /** Deletes the project; FK cascades wipe its entities/comments/reactions/profiles. */
 export async function deleteProject(projectId: string) {
-  await db.delete(projects).where(eq(projects.id, projectId));
+  await getDb().delete(projects).where(eq(projects.id, projectId));
 }
 
 export const base = (projectId: string) => `/v7/${projectId}`;

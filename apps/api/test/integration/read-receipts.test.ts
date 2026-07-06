@@ -9,23 +9,23 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { api, signToken, createProject, createUser, deleteProject, base } from "./helpers.js";
-import { db } from "../../src/db/index.js";
+import { getDb } from "../../src/db/index.js";
 import { spaces, spaceMembers, entities } from "../../src/db/schema/index.js";
 
 const sid = () => randomUUID().slice(0, 10);
 
 async function makeSpace(projectId: string, reading: "anyone" | "members" = "anyone"): Promise<string> {
-  const [s] = await db
+  const [s] = await getDb()
     .insert(spaces)
     .values({ projectId, name: "Announcements", shortId: sid(), readingPermission: reading })
     .returning({ id: spaces.id });
   return s!.id;
 }
 async function addMember(projectId: string, spaceId: string, userId: string, role: "admin" | "member" = "member") {
-  await db.insert(spaceMembers).values({ projectId, spaceId, userId, role, status: "active" }).onConflictDoNothing();
+  await getDb().insert(spaceMembers).values({ projectId, spaceId, userId, role, status: "active" }).onConflictDoNothing();
 }
 async function makeEntity(projectId: string, spaceId: string | null, userId: string): Promise<string> {
-  const [e] = await db
+  const [e] = await getDb()
     .insert(entities)
     .values({ projectId, spaceId, userId, shortId: sid(), title: "New policy", content: "please read" })
     .returning({ id: entities.id });
@@ -184,7 +184,7 @@ describe("read receipts", () => {
       const res = await api("PATCH", `${B}/spaces/${space}`, { token: operator.token, body: { name: "Renamed by operator" } });
       expect(res.status).toBe(200);
       expect(res.body.name).toBe("Renamed by operator");
-      const [row] = await db.select({ name: spaces.name }).from(spaces).where(eq(spaces.id, space));
+      const [row] = await getDb().select({ name: spaces.name }).from(spaces).where(eq(spaces.id, space));
       expect(row?.name).toBe("Renamed by operator");
     });
   });

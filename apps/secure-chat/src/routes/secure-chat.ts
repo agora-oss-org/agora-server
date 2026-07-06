@@ -11,7 +11,7 @@ import { and, eq, desc, asc, count, gt, lt, or, inArray, isNull, sql } from "dri
 import type { Variables } from "@agora/core/http/context";
 import { Errors } from "@agora/core/http/errors";
 import { requireAuth } from "@agora/core/middleware/auth";
-import { db } from "@agora/core/db";
+import { getDb } from "@agora/core/db";
 import {
   secureDevices, secureKeyPackages, secureConversations, secureConversationMembers,
   secureMessages, secureHandshakeMessages, secureKeyBackups, secureRestoreBlobs,
@@ -49,7 +49,7 @@ function assertSize(b64: string, cap: number, code: string): Buffer {
 
 // A device the CALLER owns (by row id), in this project, not revoked.
 async function getMyDevice(c: any, deviceId: string): Promise<DeviceRow> {
-  const [row] = await db.select().from(secureDevices)
+  const [row] = await getDb().select().from(secureDevices)
     .where(and(
       eq(secureDevices.projectId, c.var.projectId),
       eq(secureDevices.id, deviceId),
@@ -61,14 +61,14 @@ async function getMyDevice(c: any, deviceId: string): Promise<DeviceRow> {
 }
 
 async function getSecureConversation(c: any): Promise<ConversationRow> {
-  const [row] = await db.select().from(secureConversations)
+  const [row] = await getDb().select().from(secureConversations)
     .where(and(eq(secureConversations.projectId, c.var.projectId), eq(secureConversations.id, c.req.param("id")))).limit(1);
   if (!row) throw Errors.notFound("secure-chat/conversation-not-found", "Conversation not found");
   return row;
 }
 
 async function requireSecureMember(c: any, conversationId: string): Promise<MemberRow> {
-  const [m] = await db.select().from(secureConversationMembers)
+  const [m] = await getDb().select().from(secureConversationMembers)
     .where(and(
       eq(secureConversationMembers.projectId, c.var.projectId),
       eq(secureConversationMembers.conversationId, conversationId),
@@ -82,7 +82,7 @@ async function requireSecureMember(c: any, conversationId: string): Promise<Memb
 // Restore-blob fetch/delete authz: does the CALLER own this (non-revoked) device row? Tokens are
 // user-scoped, so "only device B may fetch" is enforced at USER granularity (docs/RESTORE.md §3).
 async function callerOwnsDevice(c: any, deviceId: string): Promise<boolean> {
-  const [row] = await db.select({ id: secureDevices.id }).from(secureDevices)
+  const [row] = await getDb().select({ id: secureDevices.id }).from(secureDevices)
     .where(and(
       eq(secureDevices.projectId, c.var.projectId),
       eq(secureDevices.id, deviceId),
@@ -95,13 +95,13 @@ async function callerOwnsDevice(c: any, deviceId: string): Promise<boolean> {
 // Resolve a restore-blob target device + assert its owning user is an active member. A missing/revoked
 // device OR a non-member owner both throw the SAME 404 — no existence/membership oracle for the target.
 async function assertTargetDeviceMember(c: any, conversationId: string, targetDeviceId: string): Promise<void> {
-  const [dev] = await db.select({ userId: secureDevices.userId }).from(secureDevices)
+  const [dev] = await getDb().select({ userId: secureDevices.userId }).from(secureDevices)
     .where(and(
       eq(secureDevices.projectId, c.var.projectId),
       eq(secureDevices.id, targetDeviceId),
       isNull(secureDevices.revokedAt),
     )).limit(1);
-  const ok = dev && (await db.select({ id: secureConversationMembers.id }).from(secureConversationMembers)
+  const ok = dev && (await getDb().select({ id: secureConversationMembers.id }).from(secureConversationMembers)
     .where(and(
       eq(secureConversationMembers.projectId, c.var.projectId),
       eq(secureConversationMembers.conversationId, conversationId),
@@ -119,7 +119,7 @@ export const secureChatRoutes = new Hono<{ Variables: Variables }>()
     const body = parseBody(registerDeviceSchema, await c.req.json().catch(() => ({})), "secure-chat");
     const sig = assertSize(body.signaturePublicKey, env.MAX_SECURE_HANDSHAKE_BYTES, "secure-chat/invalid-key");
     const cred = assertSize(body.credential, env.MAX_SECURE_HANDSHAKE_BYTES, "secure-chat/invalid-key");
-    const [row] = await db.insert(secureDevices)
+    const [row] = await getDb().insert(secureDevices)
       .values({
         projectId: c.var.projectId, userId: me, deviceId: body.deviceId, displayName: body.displayName ?? null,
         signaturePublicKey: sig, credential: cred, ciphersuite: body.ciphersuite,
@@ -136,14 +136,14 @@ export const secureChatRoutes = new Hono<{ Variables: Variables }>()
     // Public device records for a user (signature key + credential) so peers can build a group.
     const userId = c.req.query("userId");
     if (!userId) throw Errors.badRequest("secure-chat/missing-user", "userId query param required", "userId");
-    const rows = await db.select().from(secureDevices)
+    const rows = await getDb().select().from(secureDevices)
       .where(and(eq(secureDevices.projectId, c.var.projectId), eq(secureDevices.userId, userId), isNull(secureDevices.revokedAt)))
       .orderBy(asc(secureDevices.createdAt));
     return c.json({ data: rows.map(shapeSecureDevice) });
   })
   .delete("/devices/:deviceId", requireAuth, async (c) => {
     const dev = await getMyDevice(c, c.req.param("deviceId"));
-    await db.update(secureDevices).set({ revokedAt: new Date(), updatedAt: new Date() }).where(eq(secureDevices.id, dev.id));
+    await getDb().update(secureDevices).set({ revokedAt: new Date(), updatedAt: new Date() }).where(eq(secureDevices.id, dev.id));
     logger.debug({ projectId: c.var.projectId, userId: c.var.auth!.userId, deviceRowId: dev.id, deviceId: dev.deviceId }, "secure-chat: device revoked");
     return c.json({ success: true });
   })
@@ -156,7 +156,7 @@ export const secureChatRoutes = new Hono<{ Variables: Variables }>()
       keyPackage: assertSize(kp.keyPackage, env.MAX_SECURE_HANDSHAKE_BYTES, "secure-chat/key-package-too-large"),
       ciphersuite: kp.ciphersuite, expiresAt: kp.expiresAt ? new Date(kp.expiresAt) : null,
     }));
-    const inserted = await db.insert(secureKeyPackages).values(values)
+    const inserted = await getDb().insert(secureKeyPackages).values(values)
       .onConflictDoNothing({ target: [secureKeyPackages.deviceId, secureKeyPackages.keyPackageRef] })
       .returning({ id: secureKeyPackages.id });
     logger.debug({ projectId: c.var.projectId, deviceRowId: dev.id, submitted: values.length, published: inserted.length }, "secure-chat: key packages published");
@@ -164,7 +164,7 @@ export const secureChatRoutes = new Hono<{ Variables: Variables }>()
   })
   .get("/devices/:deviceId/key-packages/count", requireAuth, async (c) => {
     const dev = await getMyDevice(c, c.req.param("deviceId"));
-    const [{ n } = { n: 0 }] = await db.select({ n: count() }).from(secureKeyPackages)
+    const [{ n } = { n: 0 }] = await getDb().select({ n: count() }).from(secureKeyPackages)
       .where(and(eq(secureKeyPackages.deviceId, dev.id), isNull(secureKeyPackages.consumedAt),
         or(isNull(secureKeyPackages.expiresAt), gt(secureKeyPackages.expiresAt, new Date()))));
     logger.trace({ projectId: c.var.projectId, deviceRowId: dev.id, available: n }, "secure-chat: key packages counted");
@@ -174,11 +174,11 @@ export const secureChatRoutes = new Hono<{ Variables: Variables }>()
     // Any authed user claims a one-time KeyPackage for the TARGET device (to add it to a group).
     const targetDeviceId = c.req.param("deviceId");
     const me = c.var.auth!.userId;
-    const [dev] = await db.select({ id: secureDevices.id, userId: secureDevices.userId }).from(secureDevices)
+    const [dev] = await getDb().select({ id: secureDevices.id, userId: secureDevices.userId }).from(secureDevices)
       .where(and(eq(secureDevices.projectId, c.var.projectId), eq(secureDevices.id, targetDeviceId), isNull(secureDevices.revokedAt))).limit(1);
     if (!dev) throw Errors.notFound("secure-chat/device-not-found", "Device not found");
     // Atomic claim: lock one unconsumed, unexpired package and consume it.
-    const claimed = (await db.execute(sql`
+    const claimed = (await getDb().execute(sql`
       update secure_key_packages set consumed_at = now(), consumed_by_user_id = ${me}::uuid
       where id = (
         select id from secure_key_packages
@@ -196,7 +196,7 @@ export const secureChatRoutes = new Hono<{ Variables: Variables }>()
       throw Errors.conflict("secure-chat/key-packages-exhausted", "No key packages available for this device");
     }
     // Nudge the device owner to replenish if we're running low.
-    const [{ n } = { n: 0 }] = await db.select({ n: count() }).from(secureKeyPackages)
+    const [{ n } = { n: 0 }] = await getDb().select({ n: count() }).from(secureKeyPackages)
       .where(and(eq(secureKeyPackages.deviceId, targetDeviceId), isNull(secureKeyPackages.consumedAt),
         or(isNull(secureKeyPackages.expiresAt), gt(secureKeyPackages.expiresAt, new Date()))));
     logger.debug({ projectId: c.var.projectId, targetDeviceId, claimedByUserId: me, keyPackageRef: r.key_package_ref, remaining: n }, "secure-chat: key package claimed");
@@ -216,13 +216,13 @@ export const secureChatRoutes = new Hono<{ Variables: Variables }>()
     const since = (() => { try { return BigInt(c.req.query("since") ?? "0"); } catch { return 0n; } })();
     const limit = Math.min(Number(c.req.query("limit")) || 100, 500);
     // The caller's active conversations (broadcast Commits/Proposals are visible to all members).
-    const convRows = await db.select({ id: secureConversationMembers.conversationId }).from(secureConversationMembers)
+    const convRows = await getDb().select({ id: secureConversationMembers.conversationId }).from(secureConversationMembers)
       .where(and(eq(secureConversationMembers.projectId, c.var.projectId), eq(secureConversationMembers.userId, me), eq(secureConversationMembers.isActive, true)));
     const convIds = convRows.map((r) => r.id);
     const broadcastCond = convIds.length
       ? and(isNull(secureHandshakeMessages.targetDeviceId), inArray(secureHandshakeMessages.conversationId, convIds))
       : sql`false`;
-    const rows = await db.select().from(secureHandshakeMessages)
+    const rows = await getDb().select().from(secureHandshakeMessages)
       .where(and(
         eq(secureHandshakeMessages.projectId, c.var.projectId),
         gt(secureHandshakeMessages.seq, since),
@@ -252,16 +252,16 @@ export const secureChatRoutes = new Hono<{ Variables: Variables }>()
     const nonce = b64ToBuf(body.nonce);
     const deviceId = body.deviceId ?? null;
     // Manual upsert: a NULL deviceId won't match the unique constraint, so match with IS NOT DISTINCT FROM.
-    const [existing] = await db.select({ id: secureKeyBackups.id }).from(secureKeyBackups)
+    const [existing] = await getDb().select({ id: secureKeyBackups.id }).from(secureKeyBackups)
       .where(and(eq(secureKeyBackups.projectId, c.var.projectId), eq(secureKeyBackups.userId, me), sql`${secureKeyBackups.deviceId} is not distinct from ${deviceId}`)).limit(1);
     if (existing) {
-      const [row] = await db.update(secureKeyBackups)
+      const [row] = await getDb().update(secureKeyBackups)
         .set({ blob, nonce, kdf: body.kdf, kdfParams: body.kdfParams, cipher: body.cipher, version: body.version, updatedAt: new Date() })
         .where(eq(secureKeyBackups.id, existing.id)).returning();
       logger.debug({ projectId: c.var.projectId, userId: me, deviceId, mode: "update", blobBytes: blob.length, version: body.version }, "secure-chat: key backup stored");
       return c.json({ success: true, updatedAt: row!.updatedAt.toISOString() });
     }
-    const [row] = await db.insert(secureKeyBackups)
+    const [row] = await getDb().insert(secureKeyBackups)
       .values({ projectId: c.var.projectId, userId: me, deviceId, blob, nonce, kdf: body.kdf, kdfParams: body.kdfParams, cipher: body.cipher, version: body.version })
       .returning();
     logger.debug({ projectId: c.var.projectId, userId: me, deviceId, mode: "insert", blobBytes: blob.length, version: body.version }, "secure-chat: key backup stored");
@@ -270,7 +270,7 @@ export const secureChatRoutes = new Hono<{ Variables: Variables }>()
   .get("/key-backup", requireAuth, async (c) => {
     const me = c.var.auth!.userId;
     const deviceId = c.req.query("deviceId") ?? null;
-    const [row] = await db.select().from(secureKeyBackups)
+    const [row] = await getDb().select().from(secureKeyBackups)
       .where(and(eq(secureKeyBackups.projectId, c.var.projectId), eq(secureKeyBackups.userId, me), sql`${secureKeyBackups.deviceId} is not distinct from ${deviceId}`)).limit(1);
     if (!row) {
       // Benign: the SDK probes for a backup on bootstrap and treats 404 as "none yet" (→ null).
@@ -290,7 +290,7 @@ export const secureChatRoutes = new Hono<{ Variables: Variables }>()
     const blob = assertSize(body.blob, env.MAX_SECURE_RESTORE_BLOB_BYTES, "secure-chat/restore-blob-too-large");
     // Quota over UNEXPIRED outstanding blobs: per (A→B) pair, then aggregate per target B (429).
     const now = new Date();
-    const [{ pair } = { pair: 0 }] = await db.select({ pair: count() }).from(secureRestoreBlobs)
+    const [{ pair } = { pair: 0 }] = await getDb().select({ pair: count() }).from(secureRestoreBlobs)
       .where(and(
         eq(secureRestoreBlobs.fromDeviceId, body.fromDeviceId),
         eq(secureRestoreBlobs.targetDeviceId, body.targetDeviceId),
@@ -300,14 +300,14 @@ export const secureChatRoutes = new Hono<{ Variables: Variables }>()
       logger.debug({ projectId: c.var.projectId, fromDeviceId: body.fromDeviceId, targetDeviceId: body.targetDeviceId, outstanding: pair, cap: env.MAX_SECURE_RESTORE_BLOBS_PER_PAIR }, "secure-chat: restore-blob pair quota exceeded");
       throw Errors.rateLimited("Too many outstanding restore blobs for this recipient");
     }
-    const [{ tgt } = { tgt: 0 }] = await db.select({ tgt: count() }).from(secureRestoreBlobs)
+    const [{ tgt } = { tgt: 0 }] = await getDb().select({ tgt: count() }).from(secureRestoreBlobs)
       .where(and(eq(secureRestoreBlobs.targetDeviceId, body.targetDeviceId), gt(secureRestoreBlobs.expiresAt, now)));
     if (tgt >= env.MAX_SECURE_RESTORE_BLOBS_PER_TARGET) {
       logger.debug({ projectId: c.var.projectId, targetDeviceId: body.targetDeviceId, outstanding: tgt, cap: env.MAX_SECURE_RESTORE_BLOBS_PER_TARGET }, "secure-chat: restore-blob target quota exceeded");
       throw Errors.rateLimited("Too many outstanding restore blobs for this recipient");
     }
     const expiresAt = new Date(now.getTime() + env.SECURE_RESTORE_BLOB_TTL_SECONDS * 1000);
-    const [row] = await db.insert(secureRestoreBlobs)
+    const [row] = await getDb().insert(secureRestoreBlobs)
       .values({ projectId: c.var.projectId, conversationId: body.conversationId, fromDeviceId: body.fromDeviceId, targetDeviceId: body.targetDeviceId, blob, expiresAt })
       .returning({ id: secureRestoreBlobs.id });
     // Latency nicety: nudge the target device. Payload is conversationId ONLY (no blobId/key).
@@ -318,7 +318,7 @@ export const secureChatRoutes = new Hono<{ Variables: Variables }>()
   .get("/restore-blobs/:blobId", requireAuth, async (c) => {
     // Non-destructive (B may retry before persisting). 404 on miss/expired OR caller-not-owner — one
     // code, no existence oracle for non-recipients.
-    const [row] = await db.select().from(secureRestoreBlobs)
+    const [row] = await getDb().select().from(secureRestoreBlobs)
       .where(and(
         eq(secureRestoreBlobs.projectId, c.var.projectId),
         eq(secureRestoreBlobs.id, c.req.param("blobId")),
@@ -333,12 +333,12 @@ export const secureChatRoutes = new Hono<{ Variables: Variables }>()
   })
   .delete("/restore-blobs/:blobId", requireAuth, async (c) => {
     // Confirm + remove (after B has persisted). Same authz + single 404 code as GET.
-    const [row] = await db.select({ id: secureRestoreBlobs.id, targetDeviceId: secureRestoreBlobs.targetDeviceId }).from(secureRestoreBlobs)
+    const [row] = await getDb().select({ id: secureRestoreBlobs.id, targetDeviceId: secureRestoreBlobs.targetDeviceId }).from(secureRestoreBlobs)
       .where(and(eq(secureRestoreBlobs.projectId, c.var.projectId), eq(secureRestoreBlobs.id, c.req.param("blobId")))).limit(1);
     if (!row || !(await callerOwnsDevice(c, row.targetDeviceId))) {
       throw Errors.notFound("secure-chat/restore-blob-not-found", "Restore blob not found");
     }
-    await db.delete(secureRestoreBlobs).where(eq(secureRestoreBlobs.id, row.id));
+    await getDb().delete(secureRestoreBlobs).where(eq(secureRestoreBlobs.id, row.id));
     logger.debug({ projectId: c.var.projectId, blobId: row.id, targetDeviceId: row.targetDeviceId }, "secure-chat: restore blob deleted");
     return c.body(null, 204);
   })
@@ -367,7 +367,7 @@ export const secureChatRoutes = new Hono<{ Variables: Variables }>()
     const initialEpoch = welcomeValues.reduce((mx, w) => (w.epoch > mx ? w.epoch : mx), 0n);
     let result: { convo: ConversationRow; welcomeRows: (typeof secureHandshakeMessages.$inferSelect)[]; memberCount: number };
     try {
-      result = await db.transaction(async (tx) => {
+      result = await getDb().transaction(async (tx) => {
         const [convo] = await tx.insert(secureConversations)
           .values({ projectId: c.var.projectId, type: body.type, mlsGroupId, spaceId: body.spaceId ?? null, name: body.name ?? null, createdById: me, currentEpoch: initialEpoch })
           .returning();
@@ -409,7 +409,7 @@ export const secureChatRoutes = new Hono<{ Variables: Variables }>()
       eq(secureConversationMembers.isActive, true),
     ];
     if (boundary) conds.push(sql`COALESCE(${secureConversations.lastMessageAt}, ${secureConversations.createdAt}) < ${boundary}::timestamptz`);
-    const rows = await db.select({ convo: secureConversations, member: secureConversationMembers })
+    const rows = await getDb().select({ convo: secureConversations, member: secureConversationMembers })
       .from(secureConversationMembers)
       .innerJoin(secureConversations, eq(secureConversations.id, secureConversationMembers.conversationId))
       .where(and(...conds))
@@ -417,9 +417,9 @@ export const secureChatRoutes = new Hono<{ Variables: Variables }>()
       .limit(limit + 1);
     const hasMore = rows.length > limit;
     const conversations = await Promise.all(rows.slice(0, limit).map(async ({ convo, member }) => {
-      const [{ mc } = { mc: 0 }] = await db.select({ mc: count() }).from(secureConversationMembers)
+      const [{ mc } = { mc: 0 }] = await getDb().select({ mc: count() }).from(secureConversationMembers)
         .where(and(eq(secureConversationMembers.conversationId, convo.id), eq(secureConversationMembers.isActive, true)));
-      const [{ u } = { u: 0 }] = await db.select({ u: count() }).from(secureMessages)
+      const [{ u } = { u: 0 }] = await getDb().select({ u: count() }).from(secureMessages)
         .where(and(eq(secureMessages.conversationId, convo.id), member.lastReadAt ? gt(secureMessages.createdAt, member.lastReadAt) : sql`true`));
       return shapeSecureConversation(convo, { memberCount: mc, unreadCount: u, currentMember: shapeSecureConversationMember(member) });
     }));
@@ -428,14 +428,14 @@ export const secureChatRoutes = new Hono<{ Variables: Variables }>()
   .get("/conversations/:id", requireAuth, async (c) => {
     const convo = await getSecureConversation(c);
     const member = await requireSecureMember(c, convo.id);
-    const [{ mc } = { mc: 0 }] = await db.select({ mc: count() }).from(secureConversationMembers)
+    const [{ mc } = { mc: 0 }] = await getDb().select({ mc: count() }).from(secureConversationMembers)
       .where(and(eq(secureConversationMembers.conversationId, convo.id), eq(secureConversationMembers.isActive, true)));
     return c.json(shapeSecureConversation(convo, { memberCount: mc, currentMember: shapeSecureConversationMember(member) }));
   })
   .post("/conversations/:id/read", requireAuth, async (c) => {
     const convo = await getSecureConversation(c);
     await requireSecureMember(c, convo.id);
-    await db.update(secureConversationMembers).set({ lastReadAt: new Date(), updatedAt: new Date() })
+    await getDb().update(secureConversationMembers).set({ lastReadAt: new Date(), updatedAt: new Date() })
       .where(and(eq(secureConversationMembers.conversationId, convo.id), eq(secureConversationMembers.userId, c.var.auth!.userId)));
     return c.json({ success: true });
   })
@@ -452,7 +452,7 @@ export const secureChatRoutes = new Hono<{ Variables: Variables }>()
       payload: assertSize(w.payload, env.MAX_SECURE_HANDSHAKE_BYTES, "secure-chat/welcome-too-large"),
       targetDeviceId: w.targetDeviceId, senderDeviceId: null,
     }));
-    const out = await db.transaction(async (tx) => {
+    const out = await getDb().transaction(async (tx) => {
       // Optimistic commit ordering: only advance if we're exactly one epoch behind the commit.
       const bumped = await tx.update(secureConversations).set({ currentEpoch: newEpoch, updatedAt: new Date() })
         .where(and(eq(secureConversations.id, convo.id), eq(secureConversations.currentEpoch, newEpoch - 1n))).returning({ id: secureConversations.id });
@@ -489,7 +489,7 @@ export const secureChatRoutes = new Hono<{ Variables: Variables }>()
     const body = parseBody(removeSecureMemberSchema, await c.req.json().catch(() => ({})), "secure-chat");
     const newEpoch = BigInt(body.commit.epoch);
     const commitBuf = assertSize(body.commit.payload, env.MAX_SECURE_HANDSHAKE_BYTES, "secure-chat/commit-too-large");
-    const out = await db.transaction(async (tx) => {
+    const out = await getDb().transaction(async (tx) => {
       const bumped = await tx.update(secureConversations).set({ currentEpoch: newEpoch, updatedAt: new Date() })
         .where(and(eq(secureConversations.id, convo.id), eq(secureConversations.currentEpoch, newEpoch - 1n))).returning({ id: secureConversations.id });
       if (!bumped.length) {
@@ -513,7 +513,7 @@ export const secureChatRoutes = new Hono<{ Variables: Variables }>()
     await requireSecureMember(c, convo.id);
     const me = c.var.auth!.userId;
     const body = parseBody(sendSecureMessageSchema, await c.req.json().catch(() => ({})), "secure-chat");
-    const [dev] = await db.select({ id: secureDevices.id }).from(secureDevices)
+    const [dev] = await getDb().select({ id: secureDevices.id }).from(secureDevices)
       .where(and(eq(secureDevices.projectId, c.var.projectId), eq(secureDevices.id, body.senderDeviceId), eq(secureDevices.userId, me), isNull(secureDevices.revokedAt))).limit(1);
     if (!dev) {
       logger.debug({ projectId: c.var.projectId, conversationId: convo.id, userId: me, senderDeviceId: body.senderDeviceId }, "secure-chat: message rejected (device mismatch)");
@@ -525,7 +525,7 @@ export const secureChatRoutes = new Hono<{ Variables: Variables }>()
       throw Errors.badRequest("secure-chat/epoch-out-of-range", "Message epoch is implausibly far ahead", "epoch");
     }
     const ciphertext = assertSize(body.ciphertext, env.MAX_SECURE_MESSAGE_BYTES, "secure-chat/message-too-large");
-    const [row] = await db.insert(secureMessages)
+    const [row] = await getDb().insert(secureMessages)
       .values({ projectId: c.var.projectId, conversationId: convo.id, senderUserId: me, senderDeviceId: dev.id, epoch, ciphertext, contentType: body.contentType ?? "application" })
       .returning();
     const shaped = shapeSecureMessage(row!);
@@ -540,7 +540,7 @@ export const secureChatRoutes = new Hono<{ Variables: Variables }>()
     const before = c.req.query("before"); // ISO timestamp keyset cursor
     const conds = [eq(secureMessages.conversationId, convo.id)];
     if (before) conds.push(lt(secureMessages.createdAt, new Date(before)));
-    const rows = await db.select().from(secureMessages)
+    const rows = await getDb().select().from(secureMessages)
       .where(and(...conds))
       .orderBy(desc(secureMessages.createdAt), desc(secureMessages.id))
       .limit(limit + 1);

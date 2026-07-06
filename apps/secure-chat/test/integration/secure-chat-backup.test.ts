@@ -4,7 +4,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { eq } from "drizzle-orm";
 import { MockSecureChatCrypto } from "@agora-sdk/secure-chat-crypto/testing";
-import { db } from "@agora/core/db";
+import { getDb } from "@agora/core/db";
 import { secureKeyBackups } from "@agora/core/db/schema";
 import { api, createProject, createUser, deleteProject, base } from "./helpers.js";
 import { b64e, b64d, enc, dec } from "./secure-helpers.js";
@@ -45,7 +45,7 @@ describe("secure-chat passphrase key backup", () => {
     expect([200, 201]).toContain(put.status);
 
     // The server stored the blob verbatim and it does NOT contain the plaintext.
-    const [stored] = await db.select().from(secureKeyBackups).where(eq(secureKeyBackups.userId, alice.id));
+    const [stored] = await getDb().select().from(secureKeyBackups).where(eq(secureKeyBackups.userId, alice.id));
     expect(Buffer.from(stored!.blob).includes(Buffer.from(SECRET, "utf8"))).toBe(false);
 
     // A fresh device fetches the backup and restores → can decrypt the old message.
@@ -82,7 +82,7 @@ describe("secure-chat passphrase key backup", () => {
       body: { blob: b64e(enc.encode("v2")), nonce: b64e(enc.encode("n2")), kdf: "argon2id", kdfParams: { salt: "b" }, cipher: "aes-256-gcm", version: 2 },
     });
     expect(second.status).toBe(200); // existing → update path
-    const rows = await db.select().from(secureKeyBackups).where(eq(secureKeyBackups.userId, alice.id));
+    const rows = await getDb().select().from(secureKeyBackups).where(eq(secureKeyBackups.userId, alice.id));
     expect(rows.length).toBe(1);
     expect(rows[0]!.version).toBe(2);
   });

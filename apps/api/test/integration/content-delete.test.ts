@@ -5,7 +5,7 @@
 import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from "vitest";
 import { eq } from "drizzle-orm";
 import { api, createProject, createUser, deleteProject, base } from "./helpers.js";
-import { db } from "../../src/db/index.js";
+import { getDb } from "../../src/db/index.js";
 import { entities, comments, files } from "../../src/db/schema/index.js";
 import { env } from "../../src/lib/env.js";
 import { setStorageForTest } from "../../src/lib/storage/index.js";
@@ -29,7 +29,7 @@ function captureStorage() {
 
 /** Seed a files row the way the upload path writes it (full-URL original, bare-key variants). */
 async function seedFile(projectId: string, userId: string, assoc: Partial<typeof files.$inferInsert>, withVariants = false) {
-  const [row] = await db
+  const [row] = await getDb()
     .insert(files)
     .values({
       projectId,
@@ -79,10 +79,10 @@ describe("CONTENT_DELETE_MODE (integration)", () => {
     const res = await api("DELETE", `${base(projectId)}/entities/${entity.id}`, { token: owner.token });
     expect(res.status).toBe(200);
 
-    const [row] = await db.select().from(entities).where(eq(entities.id, entity.id));
+    const [row] = await getDb().select().from(entities).where(eq(entities.id, entity.id));
     expect(row).toBeDefined(); // row survives …
     expect(row!.deletedAt).not.toBeNull(); // … tombstoned
-    const fileRows = await db.select().from(files).where(eq(files.id, file.id));
+    const fileRows = await getDb().select().from(files).where(eq(files.id, file.id));
     expect(fileRows).toHaveLength(1); // media metadata kept
     expect(removed).toHaveLength(0); // storage untouched
   });
@@ -107,10 +107,10 @@ describe("CONTENT_DELETE_MODE (integration)", () => {
     // fire-and-forget removal — let the microtask drain
     await vi.waitFor(() => expect(removed.length).toBeGreaterThan(0));
 
-    expect(await db.select().from(entities).where(eq(entities.id, entity.id))).toHaveLength(0);
-    expect(await db.select().from(comments).where(eq(comments.id, comment.id))).toHaveLength(0);
-    expect(await db.select().from(files).where(eq(files.id, entityFile.id))).toHaveLength(0);
-    expect(await db.select().from(files).where(eq(files.id, commentFile.id))).toHaveLength(0);
+    expect(await getDb().select().from(entities).where(eq(entities.id, entity.id))).toHaveLength(0);
+    expect(await getDb().select().from(comments).where(eq(comments.id, comment.id))).toHaveLength(0);
+    expect(await getDb().select().from(files).where(eq(files.id, entityFile.id))).toHaveLength(0);
+    expect(await getDb().select().from(files).where(eq(files.id, commentFile.id))).toHaveLength(0);
 
     // keys: entity original + its variant + the comment's original
     expect(removed).toHaveLength(3);
@@ -138,8 +138,8 @@ describe("CONTENT_DELETE_MODE (integration)", () => {
     expect(res.status).toBe(200);
 
     await vi.waitFor(() => expect(removed.length).toBeGreaterThan(0));
-    expect(await db.select().from(comments).where(eq(comments.id, reply.id))).toHaveLength(0);
-    expect(await db.select().from(files).where(eq(files.id, replyFile.id))).toHaveLength(0);
+    expect(await getDb().select().from(comments).where(eq(comments.id, reply.id))).toHaveLength(0);
+    expect(await getDb().select().from(files).where(eq(files.id, replyFile.id))).toHaveLength(0);
     expect(removed).toHaveLength(1);
   });
 
@@ -153,9 +153,9 @@ describe("CONTENT_DELETE_MODE (integration)", () => {
 
     (env as { CONTENT_DELETE_MODE: string }).CONTENT_DELETE_MODE = "hard";
     // Moderation removal is an UPDATE (hidden, reversible) — not a delete-handler path.
-    await db.update(entities).set({ moderationStatus: "removed" }).where(eq(entities.id, entity.id));
+    await getDb().update(entities).set({ moderationStatus: "removed" }).where(eq(entities.id, entity.id));
 
-    expect(await db.select().from(files).where(eq(files.id, file.id))).toHaveLength(1);
+    expect(await getDb().select().from(files).where(eq(files.id, file.id))).toHaveLength(1);
     expect(removed).toHaveLength(0);
   });
 });

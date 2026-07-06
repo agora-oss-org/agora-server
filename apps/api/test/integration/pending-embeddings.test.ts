@@ -4,7 +4,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { randomUUID } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
-import { db } from "../../src/db/index.js";
+import { getDb } from "../../src/db/index.js";
 import { pendingEmbeddings } from "../../src/db/schema/index.js";
 import { enqueuePending, drainPendingEmbeddings } from "../../src/lib/pending-embeddings.js";
 import { env } from "../../src/lib/env.js";
@@ -16,11 +16,11 @@ describe("pending-embeddings (integration)", () => {
   afterAll(async () => { await deleteProject(projectId); });
 
   const rowsFor = (sourceId: string) =>
-    db.select().from(pendingEmbeddings)
+    getDb().select().from(pendingEmbeddings)
       .where(and(eq(pendingEmbeddings.projectId, projectId), eq(pendingEmbeddings.sourceId, sourceId)));
 
   const globalCount = async () =>
-    Number(((await db.execute(sql`select count(*)::int as n from pending_embeddings`)) as unknown as { n: number }[])[0]!.n);
+    Number(((await getDb().execute(sql`select count(*)::int as n from pending_embeddings`)) as unknown as { n: number }[])[0]!.n);
 
   it("enqueues a durable needs-embedding flag", async () => {
     const id = randomUUID();

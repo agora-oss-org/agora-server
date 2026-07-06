@@ -5,7 +5,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { and, eq, isNull } from "drizzle-orm";
 import { api, createProject, deleteProject, base } from "./helpers.js";
-import { db } from "../../src/db/index.js";
+import { getDb } from "../../src/db/index.js";
 import { projects, profiles, authCredentials, entities } from "../../src/db/schema/index.js";
 import { invalidateAuthProvider } from "../../src/lib/auth/index.js";
 import { setEmailSender, type EmailSender } from "../../src/lib/auth/email/sender.js";
@@ -26,7 +26,7 @@ describe("account deletion — native auth (integration)", () => {
 
   beforeAll(async () => {
     projectId = await createProject();
-    await db.update(projects).set({ authProvider: "native" }).where(eq(projects.id, projectId));
+    await getDb().update(projects).set({ authProvider: "native" }).where(eq(projects.id, projectId));
     invalidateAuthProvider(projectId);
     mail = new Capturing();
     setEmailSender(mail);
@@ -37,7 +37,7 @@ describe("account deletion — native auth (integration)", () => {
     const signIn = await api("POST", `${B}/auth/sign-in`, { body: { email, password: pw } });
     token = signIn.body.accessToken;
     userId = signIn.body.user.id;
-    const [cred] = await db.select().from(authCredentials).where(eq(authCredentials.email, email)).limit(1);
+    const [cred] = await getDb().select().from(authCredentials).where(eq(authCredentials.email, email)).limit(1);
     credentialId = cred!.id;
     // author content that must survive deletion as authorless
     entityId = (await api("POST", `${B}/entities`, { token, body: { title: "survives" } })).body.id;
@@ -54,7 +54,7 @@ describe("account deletion — native auth (integration)", () => {
     const res = await api("POST", `${B}/auth/confirm-account-deletion`, { token, body: { code: "not-the-code" } });
     expect(res.status).toBe(400);
     // still here
-    const [p] = await db.select().from(profiles).where(eq(profiles.id, userId)).limit(1);
+    const [p] = await getDb().select().from(profiles).where(eq(profiles.id, userId)).limit(1);
     expect(p).toBeTruthy();
   });
 
@@ -62,9 +62,9 @@ describe("account deletion — native auth (integration)", () => {
     const res = await api("POST", `${B}/auth/confirm-account-deletion`, { token, body: { code: mail.deletionCode } });
     expect(res.status).toBe(200);
     // profile + credential gone
-    const [p] = await db.select().from(profiles).where(eq(profiles.id, userId)).limit(1);
+    const [p] = await getDb().select().from(profiles).where(eq(profiles.id, userId)).limit(1);
     expect(p).toBeUndefined();
-    const [cred] = await db.select().from(authCredentials).where(eq(authCredentials.id, credentialId)).limit(1);
+    const [cred] = await getDb().select().from(authCredentials).where(eq(authCredentials.id, credentialId)).limit(1);
     expect(cred).toBeUndefined();
   });
 
@@ -74,7 +74,7 @@ describe("account deletion — native auth (integration)", () => {
   });
 
   it("their authored content survives as authorless (community property)", async () => {
-    const [e] = await db.select().from(entities)
+    const [e] = await getDb().select().from(entities)
       .where(and(eq(entities.id, entityId), isNull(entities.userId))).limit(1);
     expect(e).toBeTruthy();
     expect(e!.title).toBe("survives");
@@ -89,7 +89,7 @@ describe("account deletion — soft mode (native)", () => {
   beforeAll(async () => {
     projectId = await createProject();
     // mode = soft: disable the auth user, KEEP the profile (deactivated).
-    await db.update(projects).set({ authProvider: "native", accountDeletionMode: "soft" }).where(eq(projects.id, projectId));
+    await getDb().update(projects).set({ authProvider: "native", accountDeletionMode: "soft" }).where(eq(projects.id, projectId));
     invalidateAuthProvider(projectId);
     mail = new Capturing();
     setEmailSender(mail);
@@ -98,7 +98,7 @@ describe("account deletion — soft mode (native)", () => {
     await api("POST", `${B}/auth/verify-email`, { body: { tokenHash: mail.confirmToken, type: "signup" } });
     const signIn = await api("POST", `${B}/auth/sign-in`, { body: { email, password: pw } });
     token = signIn.body.accessToken; userId = signIn.body.user.id;
-    credentialId = (await db.select().from(authCredentials).where(eq(authCredentials.email, email)).limit(1))[0]!.id;
+    credentialId = (await getDb().select().from(authCredentials).where(eq(authCredentials.email, email)).limit(1))[0]!.id;
   });
   afterAll(async () => { setEmailSender(null); if (projectId) await deleteProject(projectId); });
 
@@ -108,12 +108,12 @@ describe("account deletion — soft mode (native)", () => {
     expect(res.status).toBe(200);
 
     // profile kept, but is_active false
-    const [p] = await db.select().from(profiles).where(eq(profiles.id, userId)).limit(1);
+    const [p] = await getDb().select().from(profiles).where(eq(profiles.id, userId)).limit(1);
     expect(p).toBeTruthy();
     expect(p!.isActive).toBe(false);
 
     // credential kept but disabled
-    const [cred] = await db.select().from(authCredentials).where(eq(authCredentials.id, credentialId)).limit(1);
+    const [cred] = await getDb().select().from(authCredentials).where(eq(authCredentials.id, credentialId)).limit(1);
     expect(cred).toBeTruthy();
     expect(cred!.disabledAt).toBeTruthy();
 

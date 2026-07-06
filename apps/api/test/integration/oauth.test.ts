@@ -5,7 +5,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { api, createProject, createUser, deleteProject, base } from "./helpers.js";
-import { db } from "../../src/db/index.js";
+import { getDb } from "../../src/db/index.js";
 import { oauthStates, profiles } from "../../src/db/schema/index.js";
 import { ensureOAuthProfile } from "../../src/routes/misc.js";
 
@@ -28,7 +28,7 @@ describe("oauth flow orchestration (integration)", () => {
   // these tests exercise the orchestration around it, not the Supabase exchange itself).
   async function seedState(redirectAfterAuth: string) {
     const id = randomUUID();
-    await db.insert(oauthStates).values({
+    await getDb().insert(oauthStates).values({
       id, projectId, profileId: null, provider: "google", flow: "signin", redirectAfterAuth, pkce: {},
     });
     return id;
@@ -74,7 +74,7 @@ describe("oauth flow orchestration (integration)", () => {
     const first = await api("GET", `${B}/oauth/callback?aid=${aid}&error=x`);
     expect(first.status).toBe(302); // consumed + deleted
     // the row is gone
-    const rows = await db.select().from(oauthStates).where(eq(oauthStates.id, aid));
+    const rows = await getDb().select().from(oauthStates).where(eq(oauthStates.id, aid));
     expect(rows).toHaveLength(0);
     // replaying the same aid now misses
     const second = await api("GET", `${B}/oauth/callback?aid=${aid}&error=x`);
@@ -120,7 +120,7 @@ describe("oauth flow orchestration (integration)", () => {
       expect(second.id).toBe(first.id);
       expect(second.username).toBe(first.username);
       expect(second.email).toBe(first.email); // unchanged — not re-upserted from the second call's attrs
-      const rows = await db.select().from(profiles)
+      const rows = await getDb().select().from(profiles)
         .where(and(eq(profiles.projectId, projectId), eq(profiles.authUserId, authUserId)));
       expect(rows).toHaveLength(1);
     });

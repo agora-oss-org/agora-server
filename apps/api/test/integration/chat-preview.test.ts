@@ -1,7 +1,7 @@
 // apps/api/test/integration/chat-preview.test.ts
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { eq } from "drizzle-orm";
-import { db } from "../../src/db/index.js";
+import { getDb } from "../../src/db/index.js";
 import { conversations, conversationMembers } from "../../src/db/schema/index.js";
 import { api, createProject, createUser, deleteProject, base } from "./helpers.js";
 
@@ -46,12 +46,12 @@ describe("chat conversation preview (integration)", () => {
 
   it("otherMembers is empty for a space conversation", async () => {
     // Insert a space-type conversation directly + add bob as a member (bypassing the space plumbing).
-    const [sc] = await db.insert(conversations).values({ projectId, type: "space", createdById: bob.id }).returning();
-    await db.insert(conversationMembers).values({ projectId, conversationId: sc!.id, userId: bob.id, role: "member" });
+    const [sc] = await getDb().insert(conversations).values({ projectId, type: "space", createdById: bob.id }).returning();
+    await getDb().insert(conversationMembers).values({ projectId, conversationId: sc!.id, userId: bob.id, role: "member" });
     const res = await api("GET", `${B}/chat/conversations/${sc!.id}/preview`, { token: bob.token });
     expect(res.status).toBe(200);
     expect(res.body.otherMembers).toEqual([]);
-    await db.delete(conversations).where(eq(conversations.id, sc!.id));
+    await getDb().delete(conversations).where(eq(conversations.id, sc!.id));
   });
 
   it("a non-member gets 403 on /preview", async () => {
