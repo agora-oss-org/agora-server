@@ -51,4 +51,35 @@ describe("getDbForDsn", () => {
     await endAllPools();
     expect(getDbForDsn(dsn(1))).not.toBe(a);
   });
+
+  // maxPools() fallback branches: invalid MAX_POOLS must fall back to a cap of 50.
+  // Discriminating setup: age the first entry PAST the idle guard before adding the
+  // second, so a literally-applied broken cap (0 / -1) would evict it — handle
+  // stability then proves the fallback cap (50) applied, not the recency guard.
+  it("falls back to cap 50 when MAX_POOLS is 0", () => {
+    vi.stubEnv("MAX_POOLS", "0");
+    const a = getDbForDsn(dsn(1));
+    vi.advanceTimersByTime(6 * 60 * 1000); // a is past the idle guard -> evictable if cap were 0
+    const b = getDbForDsn(dsn(2)); // a broken cap of 0 would evict a here
+    expect(getDbForDsn(dsn(1))).toBe(a); // fallback 50 -> nothing evicted
+    expect(getDbForDsn(dsn(2))).toBe(b);
+  });
+
+  it("falls back to cap 50 when MAX_POOLS is negative", () => {
+    vi.stubEnv("MAX_POOLS", "-1");
+    const a = getDbForDsn(dsn(1));
+    vi.advanceTimersByTime(6 * 60 * 1000); // a is past the idle guard -> evictable if cap were -1
+    const b = getDbForDsn(dsn(2)); // a broken cap of -1 would evict a here
+    expect(getDbForDsn(dsn(1))).toBe(a); // fallback 50 -> nothing evicted
+    expect(getDbForDsn(dsn(2))).toBe(b);
+  });
+
+  it("falls back to cap 50 when MAX_POOLS is non-numeric", () => {
+    vi.stubEnv("MAX_POOLS", "not-a-number");
+    const a = getDbForDsn(dsn(1));
+    vi.advanceTimersByTime(6 * 60 * 1000); // a is past the idle guard -> evictable if the cap misparsed
+    const b = getDbForDsn(dsn(2));
+    expect(getDbForDsn(dsn(1))).toBe(a); // fallback 50 -> nothing evicted
+    expect(getDbForDsn(dsn(2))).toBe(b);
+  });
 });
