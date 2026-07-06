@@ -9,7 +9,7 @@ import { importSPKI, jwtVerify } from "jose";
 import type { Variables } from "../http/context.js";
 import { Errors } from "../http/errors.js";
 import { requireAuth, optionalAuth } from "../middleware/auth.js";
-import { db } from "../db/index.js";
+import { getDb } from "../db/index.js";
 import { profiles, userSuspensions, projects } from "../db/schema/index.js";
 import { getAuthProvider } from "../lib/auth/index.js";
 import { resolveEmailLinkBase, allowedEmailOrigins } from "../lib/auth/email/sender.js";
@@ -53,7 +53,7 @@ function requireEmailLinkBase(requested: string | undefined): string {
 
 // Find a project's profile for a Supabase auth user.
 async function profileByAuthUser(projectId: string, authUserId: string): Promise<ProfileRow | null> {
-  const [row] = await db.select().from(profiles)
+  const [row] = await getDb().select().from(profiles)
     .where(and(eq(profiles.projectId, projectId), eq(profiles.authUserId, authUserId))).limit(1);
   return row ?? null;
 }
@@ -65,7 +65,7 @@ async function ensureProfile(projectId: string, authUserId: string, attrs: { ema
   const existing = await profileByAuthUser(projectId, authUserId);
   if (existing) return existing;
   const username = attrs.username ?? await defaultUsername(projectId, attrs.email, authUserId);
-  const [row] = await db.insert(profiles).values({
+  const [row] = await getDb().insert(profiles).values({
     projectId, authUserId, email: attrs.email, name: attrs.name, username,
     authMethods: ["password"],
   }).returning();
@@ -84,7 +84,7 @@ async function authBits(projectId: string, profile: ProfileRow) {
 // Build the auth response: AuthUser + a fresh token pair.
 async function sessionResponse(projectId: string, profile: ProfileRow) {
   const [suspensions, { operator, owner, admin, steward }] = await Promise.all([
-    db.select().from(userSuspensions).where(eq(userSuspensions.profileId, profile.id)),
+    getDb().select().from(userSuspensions).where(eq(userSuspensions.profileId, profile.id)),
     authBits(projectId, profile),
   ]);
   const { accessToken, refreshToken } = await mintSession(projectId, profile.id, profile.role, operator, steward, owner, admin);
@@ -123,7 +123,7 @@ export const authRoutes = new Hono<{ Variables: Variables }>()
       throw Errors.unauthorized("auth/invalid-credentials", "Invalid email or password");
     }
     const profile = await ensureProfile(projectId, cred.authUserId, { email: body.email });
-    await db.update(profiles).set({ lastActive: new Date() }).where(eq(profiles.id, profile.id));
+    await getDb().update(profiles).set({ lastActive: new Date() }).where(eq(profiles.id, profile.id));
     logger.info({ projectId, userId: profile.id, role: profile.role, operator: isOperator(profile) }, "auth: signed in");
     return c.json(await sessionResponse(projectId, profile));
   })
@@ -145,10 +145,10 @@ export const authRoutes = new Hono<{ Variables: Variables }>()
     // Return the user with the rotated tokens. The SDK's refresh/session-restore path calls
     // setUser(result.user), so omitting it would wipe the current user from the store on every
     // refresh (breaking "is this my message?" checks, optimistic-message authorship, etc.).
-    const [profile] = await db.select().from(profiles)
+    const [profile] = await getDb().select().from(profiles)
       .where(and(eq(profiles.projectId, projectId), eq(profiles.id, profileId))).limit(1);
     const suspensions = profile
-      ? await db.select().from(userSuspensions).where(eq(userSuspensions.profileId, profile.id))
+      ? await getDb().select().from(userSuspensions).where(eq(userSuspensions.profileId, profile.id))
       : [];
     const bits = profile ? await authBits(projectId, profile) : undefined;
     return c.json({
@@ -161,7 +161,7 @@ export const authRoutes = new Hono<{ Variables: Variables }>()
   .post("/change-password", requireAuth, async (c) => {
     const projectId = c.var.projectId;
     const body = parseBody(changePasswordSchema, await c.req.json().catch(() => ({})), "auth");
-    const [profile] = await db.select().from(profiles)
+    const [profile] = await getDb().select().from(profiles)
       .where(and(eq(profiles.projectId, projectId), eq(profiles.id, c.var.auth!.userId))).limit(1);
     if (!profile?.authUserId || !profile.email) throw Errors.badRequest("auth/no-password-identity", "No password identity for this user");
     const provider = await getAuthProvider(projectId);
@@ -184,7 +184,7 @@ export const authRoutes = new Hono<{ Variables: Variables }>()
     const body = parseBody(resetPasswordSchema, await c.req.json().catch(() => ({})), "auth");
     const provider = await getAuthProvider(projectId);
     const { authUserId } = await provider.confirmPasswordReset(projectId, body.token, body.newPassword);
-    const [profile] = await db.select({ id: profiles.id }).from(profiles)
+    const [profile] = await getDb().select({ id: profiles.id }).from(profiles)
       .where(and(eq(profiles.projectId, projectId), eq(profiles.authUserId, authUserId))).limit(1);
     if (profile) await revokeAllForProfile(profile.id);
     logger.info({ projectId }, "auth: password reset completed");
@@ -195,7 +195,7 @@ export const authRoutes = new Hono<{ Variables: Variables }>()
     const body = parseBody(verifyEmailSchema, await c.req.json().catch(() => ({})), "auth");
     const provider = await getAuthProvider(projectId);
     const { authUserId } = await provider.confirmEmail(projectId, body.tokenHash, body.type);
-    await db.update(profiles).set({ isVerified: true }).where(and(eq(profiles.projectId, projectId), eq(profiles.authUserId, authUserId)));
+    await getDb().update(profiles).set({ isVerified: true }).where(and(eq(profiles.projectId, projectId), eq(profiles.authUserId, authUserId)));
     logger.info({ projectId }, "auth: email verified");
     return c.json({ success: true });
   })
@@ -213,7 +213,7 @@ export const authRoutes = new Hono<{ Variables: Variables }>()
   // On SOFT/BAN the profile is retained but deactivated and the auth identity is disabled.
   .post("/request-account-deletion", requireAuth, async (c) => {
     const projectId = c.var.projectId;
-    const [profile] = await db.select().from(profiles)
+    const [profile] = await getDb().select().from(profiles)
       .where(and(eq(profiles.projectId, projectId), eq(profiles.id, c.var.auth!.userId))).limit(1);
     if (!profile?.email) throw Errors.badRequest("auth/no-email", "No email on file for this account");
     await requestAccountDeletion(projectId, profile.id, profile.email);
@@ -223,11 +223,11 @@ export const authRoutes = new Hono<{ Variables: Variables }>()
   .post("/confirm-account-deletion", requireAuth, async (c) => {
     const projectId = c.var.projectId;
     const body = parseBody(confirmAccountDeletionSchema, await c.req.json().catch(() => ({})), "auth");
-    const [profile] = await db.select().from(profiles)
+    const [profile] = await getDb().select().from(profiles)
       .where(and(eq(profiles.projectId, projectId), eq(profiles.id, c.var.auth!.userId))).limit(1);
     if (!profile) throw Errors.unauthorized("auth/no-profile", "Authenticated user has no profile");
     await verifyAccountDeletionCode(projectId, profile.id, body.code);
-    const [proj] = await db.select({ mode: projects.accountDeletionMode }).from(projects).where(eq(projects.id, projectId)).limit(1);
+    const [proj] = await getDb().select({ mode: projects.accountDeletionMode }).from(projects).where(eq(projects.id, projectId)).limit(1);
     const mode = resolveDeletionMode(proj?.mode);
     const provider = await getAuthProvider(projectId);
     if (profile.authUserId) await provider.deleteUser(profile.authUserId, mode);
@@ -235,9 +235,9 @@ export const authRoutes = new Hono<{ Variables: Variables }>()
     if (mode === "hard") {
       // FK onDelete on profiles.id: content (entities/comments) → set null (authorless, preserved);
       // engagement (reactions/follows/connections/memberships) → cascade.
-      await db.delete(profiles).where(and(eq(profiles.projectId, projectId), eq(profiles.id, profile.id)));
+      await getDb().delete(profiles).where(and(eq(profiles.projectId, projectId), eq(profiles.id, profile.id)));
     } else {
-      await db.update(profiles).set({ isActive: false }).where(and(eq(profiles.projectId, projectId), eq(profiles.id, profile.id)));
+      await getDb().update(profiles).set({ isActive: false }).where(and(eq(profiles.projectId, projectId), eq(profiles.id, profile.id)));
     }
     logger.info({ projectId, userId: profile.id, mode }, "auth: account deleted");
     return c.json({ success: true });
@@ -245,7 +245,7 @@ export const authRoutes = new Hono<{ Variables: Variables }>()
   .post("/verify-external-user", async (c) => {
     const projectId = c.var.projectId;
     const body = parseBody(externalUserSchema, await c.req.json().catch(() => ({})), "auth");
-    const [project] = await db.select({ key: projects.externalAuthPublicKey }).from(projects).where(eq(projects.id, projectId)).limit(1);
+    const [project] = await getDb().select({ key: projects.externalAuthPublicKey }).from(projects).where(eq(projects.id, projectId)).limit(1);
     if (!project?.key) throw Errors.badRequest("auth/external-not-configured", "External auth public key not set for this project");
 
     let payload: Record<string, any>;
@@ -269,11 +269,11 @@ export const authRoutes = new Hono<{ Variables: Variables }>()
     const ud = (payload.userData ?? {}) as Record<string, any>;
 
     // Upsert profile keyed by foreign id.
-    const [existing] = await db.select().from(profiles)
+    const [existing] = await getDb().select().from(profiles)
       .where(and(eq(profiles.projectId, projectId), eq(profiles.foreignId, foreignId))).limit(1);
     let profile: ProfileRow;
     if (existing) {
-      const [row] = await db.update(profiles).set({
+      const [row] = await getDb().update(profiles).set({
         ...(ud.name !== undefined ? { name: ud.name } : {}),
         ...(ud.username !== undefined ? { username: ud.username } : {}),
         ...(ud.avatar !== undefined ? { avatar: ud.avatar } : {}),
@@ -281,7 +281,7 @@ export const authRoutes = new Hono<{ Variables: Variables }>()
       }).where(eq(profiles.id, existing.id)).returning();
       profile = row!;
     } else {
-      const [row] = await db.insert(profiles).values({
+      const [row] = await getDb().insert(profiles).values({
         projectId, foreignId, name: ud.name, username: ud.username, avatar: ud.avatar,
         metadata: ud.metadata ?? {}, authMethods: ["external"],
       }).returning();

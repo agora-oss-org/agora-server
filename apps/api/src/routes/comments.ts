@@ -9,7 +9,7 @@ import { markDeprecated } from "../http/deprecation.js";
 import type { Variables } from "../http/context.js";
 import { Errors } from "../http/errors.js";
 import { requireAuth } from "../middleware/auth.js";
-import { db } from "../db/index.js";
+import { getDb } from "../db/index.js";
 import { logger } from "../lib/logger.js";
 import { comments, reactions } from "../db/schema/index.js";
 import { env } from "../lib/env.js";
@@ -58,14 +58,14 @@ export const commentRoutes = new Hono<{ Variables: Variables }>()
     if (sort.deprecated) markDeprecated(c);
     const order = commentOrderBy(sort);
 
-    const rows = await db
+    const rows = await getDb()
       .select()
       .from(comments)
       .where(where)
       .orderBy(...order)
       .limit(limit)
       .offset(offset);
-    const totals = await db.select({ total: count() }).from(comments).where(where);
+    const totals = await getDb().select({ total: count() }).from(comments).where(where);
     const total = totals[0]?.total ?? 0;
 
     const reactionMap = await attachUserReactions(projectId, "comment", rows.map((r) => r.id), c.var.auth?.userId);
@@ -87,7 +87,7 @@ export const commentRoutes = new Hono<{ Variables: Variables }>()
     const check = await webhooks.validate(projectId, "comment.created", { ...body, userId });
     if (!check.valid) throw Errors.forbidden("comments/rejected", check.message ?? "Comment rejected by validation webhook");
     // Trigger (0002) bumps entity.replies_count + parent.replies_count on insert.
-    const [row] = await db
+    const [row] = await getDb()
       .insert(comments)
       .values({
         projectId,
@@ -114,7 +114,7 @@ export const commentRoutes = new Hono<{ Variables: Variables }>()
     const projectId = c.var.projectId;
     const foreignId = c.req.query("foreignId");
     if (!foreignId) throw Errors.badRequest("comments/missing-foreign-id", "foreignId is required", "foreignId");
-    const [row] = await db
+    const [row] = await getDb()
       .select()
       .from(comments)
       .where(and(eq(comments.projectId, projectId), eq(comments.foreignId, foreignId), isNull(comments.deletedAt)))
@@ -142,13 +142,13 @@ export const commentRoutes = new Hono<{ Variables: Variables }>()
     // comments AND their descendant subtrees (a JS post-filter would orphan the children).
     const removed = await removedPolicy(c);
     const hideRemoved = !removed.privileged;
-    const res = (await db.execute(sql`
+    const res = (await getDb().execute(sql`
       select id, parent_id, depth from fetch_comment_thread(${entityId}::uuid, ${rootId}::uuid, ${limit}, ${offset}, ${hideRemoved})
     `)) as unknown as { id: string; parent_id: string | null; depth: number }[];
     if (res.length === 0) return c.json({ data: [] });
 
     const ids = res.map((r) => r.id);
-    const rows = await db.select().from(comments)
+    const rows = await getDb().select().from(comments)
       .where(and(eq(comments.projectId, projectId), inArray(comments.id, ids)));
     const byRow = new Map(rows.map((r) => [r.id, r]));
     const reactionMap = await attachUserReactions(projectId, "comment", ids, c.var.auth?.userId);
@@ -177,7 +177,7 @@ export const commentRoutes = new Hono<{ Variables: Variables }>()
   .get("/:id", async (c) => {
     const projectId = c.var.projectId;
     const id = c.req.param("id");
-    const [row] = await db
+    const [row] = await getDb()
       .select()
       .from(comments)
       .where(and(eq(comments.projectId, projectId), eq(comments.id, id), isNull(comments.deletedAt)))
@@ -200,7 +200,7 @@ export const commentRoutes = new Hono<{ Variables: Variables }>()
     if (body.gif !== undefined) patch.gif = body.gif;
     if (body.mentions !== undefined) patch.mentions = body.mentions;
     if (body.metadata !== undefined) patch.metadata = body.metadata;
-    const [updated] = await db.update(comments).set(patch).where(eq(comments.id, row.id)).returning();
+    const [updated] = await getDb().update(comments).set(patch).where(eq(comments.id, row.id)).returning();
     if (body.content !== undefined) indexContentAsync(c.var.projectId, "comment", updated!.id, updated!.content);
     const shaped = shapeComment(updated!);
     logger.info({ projectId: c.var.projectId, commentId: row.id, entityId: updated!.entityId, userId: row.userId, fields: Object.keys(patch) }, "comment: updated");
@@ -213,12 +213,12 @@ export const commentRoutes = new Hono<{ Variables: Variables }>()
       // Collect the reply subtree's files BEFORE the delete — the parent_id cascade takes every
       // descendant comment (and their files rows) with this row.
       const fileRows = await collectFileRows(c.var.projectId, { commentId: row.id });
-      await db.delete(comments).where(eq(comments.id, row.id));
+      await getDb().delete(comments).where(eq(comments.id, row.id));
       removeMediaAsync(fileRows, `comment ${row.id}`);
     } else {
       // Reddit-style soft delete: keep the row (preserves thread), blank via user_deleted_at.
       const now = new Date();
-      await db.update(comments).set({ deletedAt: now, userDeletedAt: now }).where(eq(comments.id, row.id));
+      await getDb().update(comments).set({ deletedAt: now, userDeletedAt: now }).where(eq(comments.id, row.id));
     }
     logger.info({ projectId: c.var.projectId, commentId: row.id, userId: row.userId, mode: env.CONTENT_DELETE_MODE }, "comment: deleted");
     return c.json({ success: true });
@@ -235,8 +235,8 @@ export const commentRoutes = new Hono<{ Variables: Variables }>()
       eq(reactions.targetId, targetId),
       rt ? eq(reactions.reactionType, rt as any) : undefined,
     );
-    const [{ n } = { n: 0 }] = await db.select({ n: count() }).from(reactions).where(where);
-    const rows = await db.select().from(reactions).where(where)
+    const [{ n } = { n: 0 }] = await getDb().select({ n: count() }).from(reactions).where(where);
+    const rows = await getDb().select().from(reactions).where(where)
       .orderBy(desc(reactions.createdAt)).limit(limit).offset(offset);
     const userMap = await loadUsers(c.var.projectId, rows.map((r) => r.userId));
     const data = rows.map((r) => ({
@@ -278,7 +278,7 @@ async function hydrateOne(c: any, row: typeof comments.$inferSelect) {
   }
   if (include.has("parent")) {
     if (row.parentId) {
-      const [p] = await db.select().from(comments)
+      const [p] = await getDb().select().from(comments)
         .where(and(eq(comments.projectId, projectId), eq(comments.id, row.parentId))).limit(1);
       opts.parent = p ? shapeComment(p) : null;
     } else {
@@ -291,7 +291,7 @@ async function hydrateOne(c: any, row: typeof comments.$inferSelect) {
 async function ownedComment(c: any): Promise<{ id: string; userId: string | null }> {
   const projectId = c.var.projectId;
   const id = c.req.param("id");
-  const [row] = await db
+  const [row] = await getDb()
     .select({ id: comments.id, userId: comments.userId })
     .from(comments)
     .where(and(eq(comments.projectId, projectId), eq(comments.id, id), isNull(comments.deletedAt)))
@@ -305,7 +305,7 @@ async function toggleCommentReaction(c: any, type: string) {
   const projectId = c.var.projectId;
   const id = c.req.param("id");
   const userId = c.var.auth.userId;
-  const res = await db.execute(
+  const res = await getDb().execute(
     sql`select toggle_reaction(${projectId}::uuid, 'comment'::reaction_target, ${id}::uuid, ${userId}::uuid, ${type}::reaction_type) as counts`
   );
   return {
@@ -318,7 +318,7 @@ async function clearCommentReaction(c: any) {
   const projectId = c.var.projectId;
   const id = c.req.param("id");
   const userId = c.var.auth.userId;
-  await db
+  await getDb()
     .delete(reactions)
     .where(
       and(
@@ -328,12 +328,12 @@ async function clearCommentReaction(c: any) {
         eq(reactions.userId, userId)
       )
     );
-  const [row] = await db.select({ rc: comments.reactionCounts }).from(comments).where(eq(comments.id, id)).limit(1);
+  const [row] = await getDb().select({ rc: comments.reactionCounts }).from(comments).where(eq(comments.id, id)).limit(1);
   return { reactionCounts: row?.rc ?? null, userReaction: null };
 }
 
 async function currentReaction(projectId: string, id: string, userId: string) {
-  const [row] = await db
+  const [row] = await getDb()
     .select({ reactionType: reactions.reactionType })
     .from(reactions)
     .where(

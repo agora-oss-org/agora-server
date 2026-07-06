@@ -8,7 +8,7 @@ import type { Variables } from "../http/context.js";
 import { Errors } from "../http/errors.js";
 import { requireAuth } from "../middleware/auth.js";
 import { isProjectAdmin } from "../lib/project-roles.js";
-import { db } from "../db/index.js";
+import { getDb } from "../db/index.js";
 import { tableRows } from "../db/schema/index.js";
 import { readPagination, paginate } from "../http/envelope.js";
 import { parseBody, tableRowBodySchema } from "../lib/validation.js";
@@ -80,13 +80,13 @@ export const dbRoutes = new Hono<{ Variables: Variables }>()
     const sortBy = c.req.query("sortBy");
     const dir = c.req.query("sortDir") === "asc" ? asc : desc;
     const orderBy = sortBy ? dir(sql`(${tableRows.data} ->> ${sortBy})`) : desc(tableRows.createdAt);
-    const [{ n } = { n: 0 }] = await db.select({ n: count() }).from(tableRows).where(where);
-    const rows = await db.select().from(tableRows).where(where).orderBy(orderBy).limit(limit).offset(offset);
+    const [{ n } = { n: 0 }] = await getDb().select({ n: count() }).from(tableRows).where(where);
+    const rows = await getDb().select().from(tableRows).where(where).orderBy(orderBy).limit(limit).offset(offset);
     return c.json(paginate(rows.map(shapeRow), n, page, limit));
   })
   .post("/:tableName", requireAuth, async (c) => {
     const body = parseBody(tableRowBodySchema, await c.req.json().catch(() => ({})), "db");
-    const [row] = await db.insert(tableRows).values({
+    const [row] = await getDb().insert(tableRows).values({
       projectId: c.var.projectId, tableName: c.req.param("tableName"),
       userId: c.var.auth!.userId, data: body.data,
     }).returning();
@@ -94,7 +94,7 @@ export const dbRoutes = new Hono<{ Variables: Variables }>()
   })
   .patch("/:tableName/:rowId", requireAuth, async (c) => {
     const body = parseBody(tableRowBodySchema, await c.req.json().catch(() => ({})), "db");
-    const [row] = await db.update(tableRows).set({ data: body.data, updatedAt: new Date() }).where(and(
+    const [row] = await getDb().update(tableRows).set({ data: body.data, updatedAt: new Date() }).where(and(
       eq(tableRows.projectId, c.var.projectId),
       eq(tableRows.tableName, c.req.param("tableName")),
       eq(tableRows.id, c.req.param("rowId")),
@@ -112,16 +112,16 @@ export const dbRoutes = new Hono<{ Variables: Variables }>()
       ownerScope(c),
     );
     if (force) {
-      const [row] = await db.delete(tableRows).where(scope).returning({ id: tableRows.id });
+      const [row] = await getDb().delete(tableRows).where(scope).returning({ id: tableRows.id });
       if (!row) throw Errors.notFound("db/row-not-found", "Row not found");
       return c.json({ deleted: true, soft: false });
     }
-    const [row] = await db.update(tableRows).set({ deletedAt: new Date() }).where(scope).returning({ id: tableRows.id });
+    const [row] = await getDb().update(tableRows).set({ deletedAt: new Date() }).where(scope).returning({ id: tableRows.id });
     if (!row) throw Errors.notFound("db/row-not-found", "Row not found");
     return c.json({ deleted: true, soft: true });
   })
   .post("/:tableName/:rowId/restore", requireAuth, async (c) => {
-    const [row] = await db.update(tableRows).set({ deletedAt: null, updatedAt: new Date() }).where(and(
+    const [row] = await getDb().update(tableRows).set({ deletedAt: null, updatedAt: new Date() }).where(and(
       eq(tableRows.projectId, c.var.projectId),
       eq(tableRows.tableName, c.req.param("tableName")),
       eq(tableRows.id, c.req.param("rowId")),

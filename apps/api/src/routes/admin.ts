@@ -25,7 +25,7 @@ import { logger } from "../lib/logger.js";
 import { buildRunningConfig } from "../lib/running-config.js";
 import { getServerResources } from "../lib/server-resources.js";
 import { loadUsers, shapeEntity } from "../lib/shape.js";
-import { db } from "../db/index.js";
+import { getDb } from "../db/index.js";
 import {
   profiles, reports, spaces, spaceMembers, entities, comments, files, apiUsage, communityStatsHourly,
 } from "../db/schema/index.js";
@@ -33,7 +33,7 @@ import { isProjectAdmin, requireProjectAdmin } from "../lib/project-roles.js";
 
 // Spaces where the user is an active admin/moderator (their moderation scope when not an operator).
 async function moderatedSpaceIds(projectId: string, userId: string): Promise<string[]> {
-  const rows = await db
+  const rows = await getDb()
     .select({ spaceId: spaceMembers.spaceId })
     .from(spaceMembers)
     .innerJoin(spaces, eq(spaces.id, spaceMembers.spaceId))
@@ -67,22 +67,22 @@ export const adminRoutes = new Hono<{ Variables: Variables }>()
     const [
       openReports, members, spaceCount, entityCount, commentCount, mau, storage,
     ] = await Promise.all([
-      db.select({ n: count() }).from(reports).where(openReportsWhere),
-      db.select({ n: count() }).from(profiles).where(eq(profiles.projectId, projectId)),
-      db.select({ n: count() }).from(spaces).where(eq(spaces.projectId, projectId)),
-      db.select({ n: count() }).from(entities).where(eq(entities.projectId, projectId)),
-      db.select({ n: count() }).from(comments).where(eq(comments.projectId, projectId)),
-      db.select({ n: count() }).from(profiles).where(and(
+      getDb().select({ n: count() }).from(reports).where(openReportsWhere),
+      getDb().select({ n: count() }).from(profiles).where(eq(profiles.projectId, projectId)),
+      getDb().select({ n: count() }).from(spaces).where(eq(spaces.projectId, projectId)),
+      getDb().select({ n: count() }).from(entities).where(eq(entities.projectId, projectId)),
+      getDb().select({ n: count() }).from(comments).where(eq(comments.projectId, projectId)),
+      getDb().select({ n: count() }).from(profiles).where(and(
         eq(profiles.projectId, projectId),
         sql`${profiles.lastActive} >= date_trunc('month', now())`,
       )),
-      db.select({ total: sum(files.originalSize) }).from(files).where(eq(files.projectId, projectId)),
+      getDb().select({ total: sum(files.originalSize) }).from(files).where(eq(files.projectId, projectId)),
     ]);
 
     // App metering lives in api_usage, which is gated behind migration 0016. Fail soft: if the table
     // isn't there yet (or the query errors), the dashboard's Project metrics still render and the
     // App-metering cards just read zero rather than 500-ing the whole page.
-    const usage = await db
+    const usage = await getDb()
       .select({
         requests: sum(apiUsage.requests),
         egress: sum(apiUsage.egressBytes),
@@ -99,7 +99,7 @@ export const adminRoutes = new Hono<{ Variables: Variables }>()
     // one authoritative number we can pull is the whole-instance Postgres size. It's instance-wide
     // (all tenants share one DB), not project-scoped, so it's operator-only. Fail-soft like usage.
     const dbSize = isOperator
-      ? await db
+      ? await getDb()
           .execute(sql`select pg_database_size(current_database()) as bytes`)
           .then((rows) => Number((rows as any)[0]?.bytes ?? 0))
           .catch(() => null)
@@ -164,7 +164,7 @@ export const adminRoutes = new Hono<{ Variables: Variables }>()
     const projectId = c.var.projectId;
     const days = Math.min(Math.max(Number(c.req.query("days")) || 30, 1), 90); // clamp 1..90
 
-    const rows = await db
+    const rows = await getDb()
       .select()
       .from(communityStatsHourly)
       .where(and(
@@ -211,7 +211,7 @@ export const adminRoutes = new Hono<{ Variables: Variables }>()
       entries.map((e) => ({ user: users.get(e.userId) ?? null, count: e.count })).filter((x) => x.user);
 
     const entityRows = postRanks.length
-      ? await db.select().from(entities).where(and(
+      ? await getDb().select().from(entities).where(and(
           eq(entities.projectId, projectId),
           inArray(entities.id, postRanks.map((e) => e.entityId)),
         ))
@@ -233,7 +233,7 @@ export const adminRoutes = new Hono<{ Variables: Variables }>()
       })
       .filter((x): x is NonNullable<typeof x> => x !== null);
 
-    const [openNow] = await db
+    const [openNow] = await getDb()
       .select({ n: count() })
       .from(reports)
       .where(and(eq(reports.projectId, projectId), isNull(reports.resolvedAt)));
@@ -367,7 +367,7 @@ export const adminRoutes = new Hono<{ Variables: Variables }>()
     }
     const { enabled } = parseBody(readReceiptsToggleSchema, await c.req.json().catch(() => ({})), "read-receipts");
     const spaceId = c.req.param("spaceId");
-    const [updated] = await db
+    const [updated] = await getDb()
       .update(spaces)
       .set({ readReceiptsEnabled: enabled })
       .where(and(eq(spaces.projectId, c.var.projectId), eq(spaces.id, spaceId), isNull(spaces.deletedAt)))

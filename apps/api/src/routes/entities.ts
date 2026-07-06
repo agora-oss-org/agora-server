@@ -6,7 +6,7 @@ import { and, eq, isNull, desc, count, arrayOverlaps, sql, type SQL } from "driz
 import type { Variables } from "../http/context.js";
 import { Errors } from "../http/errors.js";
 import { requireAuth } from "../middleware/auth.js";
-import { db } from "../db/index.js";
+import { getDb } from "../db/index.js";
 import { logger } from "../lib/logger.js";
 import { indexEntityAsync } from "../lib/embeddings.js";
 import { env } from "../lib/env.js";
@@ -99,7 +99,7 @@ export const entityRoutes = new Hono<{ Variables: Variables }>()
     let rows;
     if (rerankOn) {
       const poolSize = Math.min(limit * Math.max(1, feedCfg.rerankWebhook!.overFetch), 200);
-      const pool = await db.select().from(entities).where(where).orderBy(...orderBy).limit(poolSize);
+      const pool = await getDb().select().from(entities).where(where).orderBy(...orderBy).limit(poolSize);
       const candidates = pool.map((r) => ({
         id: r.id,
         signals: { score: r.score, createdAt: r.createdAt, reactionCounts: r.reactionCounts, repliesCount: r.repliesCount, views: r.views },
@@ -108,7 +108,7 @@ export const entityRoutes = new Hono<{ Variables: Variables }>()
       const ordered = order ? order.map((id) => pool.find((r) => r.id === id)).filter((r): r is typeof pool[number] => !!r) : pool;
       rows = ordered.slice(offset, offset + limit);
     } else {
-      rows = await db.select().from(entities).where(where).orderBy(...orderBy).limit(limit).offset(offset);
+      rows = await getDb().select().from(entities).where(where).orderBy(...orderBy).limit(limit).offset(offset);
     }
     const total = await countWhere(where);
 
@@ -158,7 +158,7 @@ export const entityRoutes = new Hono<{ Variables: Variables }>()
     // Blocking validation webhook (host app may veto). Passes through if unconfigured/unsubscribed.
     const check = await webhooks.validate(projectId, "entity.created", { ...body, userId });
     if (!check.valid) throw Errors.forbidden("entities/rejected", check.message ?? "Entity rejected by validation webhook");
-    const [row] = await db
+    const [row] = await getDb()
       .insert(entities)
       .values({
         projectId,
@@ -205,7 +205,7 @@ export const entityRoutes = new Hono<{ Variables: Variables }>()
       eq(entities.isDraft, true),
       isNull(entities.deletedAt)
     );
-    const rows = await db
+    const rows = await getDb()
       .select()
       .from(entities)
       .where(where)
@@ -234,7 +234,7 @@ export const entityRoutes = new Hono<{ Variables: Variables }>()
     const entityId = c.req.query("entityId");
     if (!entityId) throw Errors.badRequest("entities/missing-entity-id", "entityId is required", "entityId");
     // Saved == present in any of the user's collections.
-    const rows = await db
+    const rows = await getDb()
       .select({ entityId: collectionEntities.entityId })
       .from(collectionEntities)
       .innerJoin(collections, eq(collectionEntities.collectionId, collections.id))
@@ -264,7 +264,7 @@ export const entityRoutes = new Hono<{ Variables: Variables }>()
     if (body.mentions !== undefined) patch.mentions = body.mentions;
     if (body.attachments !== undefined) patch.attachments = body.attachments;
     if (body.metadata !== undefined) patch.metadata = body.metadata;
-    const [updated] = await db.update(entities).set(patch).where(eq(entities.id, row.id)).returning();
+    const [updated] = await getDb().update(entities).set(patch).where(eq(entities.id, row.id)).returning();
     if (body.title !== undefined || body.content !== undefined) {
       indexEntityAsync(c.var.projectId, updated!.id, [updated!.title, updated!.content].filter(Boolean).join("\n"));
     }
@@ -279,10 +279,10 @@ export const entityRoutes = new Hono<{ Variables: Variables }>()
       // Collect files rows (the entity's own + its comments') BEFORE the delete — the FK cascade
       // takes them with the row, and only the API can reach the storage objects they point at.
       const fileRows = await collectFileRows(c.var.projectId, { entityId: row.id });
-      await db.delete(entities).where(eq(entities.id, row.id));
+      await getDb().delete(entities).where(eq(entities.id, row.id));
       removeMediaAsync(fileRows, `entity ${row.id}`);
     } else {
-      await db.update(entities).set({ deletedAt: new Date() }).where(eq(entities.id, row.id));
+      await getDb().update(entities).set({ deletedAt: new Date() }).where(eq(entities.id, row.id));
     }
     logger.info({ projectId: c.var.projectId, entityId: row.id, userId: row.userId, mode: env.CONTENT_DELETE_MODE }, "entity: deleted");
     return c.json({ success: true });
@@ -290,7 +290,7 @@ export const entityRoutes = new Hono<{ Variables: Variables }>()
   // SDK (usePublishDraft) calls PATCH; POST kept for any legacy caller.
   .on(["POST", "PATCH"], "/:id/publish", requireAuth, async (c) => {
     const row = await ownedEntity(c);
-    const [updated] = await db.update(entities).set({ isDraft: false }).where(eq(entities.id, row.id)).returning();
+    const [updated] = await getDb().update(entities).set({ isDraft: false }).where(eq(entities.id, row.id)).returning();
     logger.info({ projectId: c.var.projectId, entityId: row.id, userId: row.userId }, "entity: published");
     return c.json(shapeEntity(updated!));
   })
@@ -300,7 +300,7 @@ export const entityRoutes = new Hono<{ Variables: Variables }>()
   // space under a project that allows receipts; idempotent (one row per member per post, readAt bumped).
   .post("/:id/read", requireAuth, async (c) => {
     const id = c.req.param("id");
-    const [row] = await db
+    const [row] = await getDb()
       .select({ spaceId: entities.spaceId, moderationStatus: entities.moderationStatus, deletedAt: entities.deletedAt })
       .from(entities)
       .where(and(eq(entities.projectId, c.var.projectId), eq(entities.id, id)))
@@ -312,7 +312,7 @@ export const entityRoutes = new Hono<{ Variables: Variables }>()
     if (!row.spaceId) throw Errors.badRequest("social/read-receipts-disabled", "Read receipts are not enabled for this post");
     await assertCanReadSpace(c, row.spaceId); // can't record reading content you can't read
     // Gate: the space must be receipts-enabled AND the project must allow receipts (corporate tier).
-    const [space] = await db
+    const [space] = await getDb()
       .select({ enabled: spaces.readReceiptsEnabled })
       .from(spaces)
       .where(and(eq(spaces.projectId, c.var.projectId), eq(spaces.id, row.spaceId)))
@@ -322,7 +322,7 @@ export const entityRoutes = new Hono<{ Variables: Variables }>()
       throw Errors.badRequest("social/read-receipts-disabled", "Read receipts are not enabled for this space");
     }
     const readAt = new Date();
-    await db
+    await getDb()
       .insert(readReceipts)
       .values({ projectId: c.var.projectId, spaceId: row.spaceId, entityId: id, userId: c.var.auth!.userId, readAt })
       .onConflictDoUpdate({
@@ -344,8 +344,8 @@ export const entityRoutes = new Hono<{ Variables: Variables }>()
       eq(reactions.targetId, targetId),
       rt ? eq(reactions.reactionType, rt as any) : undefined,
     );
-    const [{ n } = { n: 0 }] = await db.select({ n: count() }).from(reactions).where(where);
-    const rows = await db.select().from(reactions).where(where)
+    const [{ n } = { n: 0 }] = await getDb().select({ n: count() }).from(reactions).where(where);
+    const rows = await getDb().select().from(reactions).where(where)
       .orderBy(desc(reactions.createdAt)).limit(limit).offset(offset);
     const userMap = await loadUsers(c.var.projectId, rows.map((r) => r.userId));
     const data = rows.map((r) => ({
@@ -405,7 +405,7 @@ function parseMultipartEntityFields(form: Record<string, unknown>): Record<strin
 }
 
 async function countWhere(where: SQL | undefined): Promise<number> {
-  const rows = await db.select({ total: count() }).from(entities).where(where);
+  const rows = await getDb().select({ total: count() }).from(entities).where(where);
   return rows[0]?.total ?? 0;
 }
 
@@ -414,7 +414,7 @@ type EntityRow = typeof entities.$inferSelect;
 async function lookupEntity(c: any, predicate: SQL, createIfMissing?: () => Promise<EntityRow | null>) {
   const projectId = c.var.projectId;
   const include = parseInclude(c);
-  let [row] = await db
+  let [row] = await getDb()
     .select()
     .from(entities)
     .where(and(eq(entities.projectId, projectId), predicate, isNull(entities.deletedAt)))
@@ -453,7 +453,7 @@ async function lookupEntity(c: any, predicate: SQL, createIfMissing?: () => Prom
  */
 async function createForeignEntity(c: any, foreignId: string): Promise<EntityRow | null> {
   const projectId = c.var.projectId;
-  const [created] = await db
+  const [created] = await getDb()
     .insert(entities)
     .values({ projectId, foreignId, shortId: generateShortId() }) // userId intentionally null: authorless anchor
     .onConflictDoNothing({ target: [entities.projectId, entities.foreignId] })
@@ -463,7 +463,7 @@ async function createForeignEntity(c: any, foreignId: string): Promise<EntityRow
     webhooks.broadcast(projectId, "entity.created.complete", shapeEntity(created));
     return created;
   }
-  const [existing] = await db
+  const [existing] = await getDb()
     .select()
     .from(entities)
     .where(and(eq(entities.projectId, projectId), eq(entities.foreignId, foreignId), isNull(entities.deletedAt)))
@@ -475,7 +475,7 @@ async function createForeignEntity(c: any, foreignId: string): Promise<EntityRow
 async function ownedEntity(c: any): Promise<{ id: string; userId: string | null }> {
   const projectId = c.var.projectId;
   const id = c.req.param("id");
-  const [row] = await db
+  const [row] = await getDb()
     .select({ id: entities.id, userId: entities.userId })
     .from(entities)
     .where(and(eq(entities.projectId, projectId), eq(entities.id, id), isNull(entities.deletedAt)))
@@ -490,10 +490,10 @@ async function toggleEntityReaction(c: any, type: string) {
   const id = c.req.param("id");
   const userId = c.var.auth.userId;
   // Atomic set/switch/clear in Postgres; the 0002 trigger maintains reaction_counts.
-  const res = await db.execute(
+  const res = await getDb().execute(
     sql`select toggle_reaction(${projectId}::uuid, 'entity'::reaction_target, ${id}::uuid, ${userId}::uuid, ${type}::reaction_type) as counts`
   );
-  await db.execute(sql`select refresh_entity_score(${id}::uuid)`);
+  await getDb().execute(sql`select refresh_entity_score(${id}::uuid)`);
   const userReaction = await currentReaction(projectId, "entity", id, userId);
   logger.debug({ projectId, entityId: id, userId, reactionType: type, active: userReaction === type }, "entity: reaction toggled");
   return { reactionCounts: (res as any)[0]?.counts ?? null, userReaction };
@@ -504,7 +504,7 @@ async function clearEntityReaction(c: any) {
   const id = c.req.param("id");
   const userId = c.var.auth.userId;
   // Direct delete; the 0002 trigger fixes reaction_counts.
-  await db
+  await getDb()
     .delete(reactions)
     .where(
       and(
@@ -514,13 +514,13 @@ async function clearEntityReaction(c: any) {
         eq(reactions.userId, userId)
       )
     );
-  await db.execute(sql`select refresh_entity_score(${id}::uuid)`);
-  const [row] = await db.select({ rc: entities.reactionCounts }).from(entities).where(eq(entities.id, id)).limit(1);
+  await getDb().execute(sql`select refresh_entity_score(${id}::uuid)`);
+  const [row] = await getDb().select({ rc: entities.reactionCounts }).from(entities).where(eq(entities.id, id)).limit(1);
   return { reactionCounts: row?.rc ?? null, userReaction: null };
 }
 
 async function currentReaction(projectId: string, target: "entity" | "comment", id: string, userId: string) {
-  const [row] = await db
+  const [row] = await getDb()
     .select({ reactionType: reactions.reactionType })
     .from(reactions)
     .where(

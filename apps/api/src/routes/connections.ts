@@ -7,7 +7,7 @@ import { and, eq, or, count, desc } from "drizzle-orm";
 import type { Variables } from "../http/context.js";
 import { Errors } from "../http/errors.js";
 import { requireAuth } from "../middleware/auth.js";
-import { db } from "../db/index.js";
+import { getDb } from "../db/index.js";
 import { connections, profiles } from "../db/schema/index.js";
 import { notifyOnConnectionRequest, notifyOnConnectionAccept } from "../lib/notifications.js";
 import { readPagination, paginate } from "../http/envelope.js";
@@ -28,14 +28,14 @@ function uuidParam(c: any, name: string): string {
 
 // The authenticated user's profile (also yields the project these connections belong to).
 async function me(c: any): Promise<ProfileRow> {
-  const [p] = await db.select().from(profiles).where(eq(profiles.id, c.var.auth.userId)).limit(1);
+  const [p] = await getDb().select().from(profiles).where(eq(profiles.id, c.var.auth.userId)).limit(1);
   if (!p) throw Errors.unauthorized("auth/no-profile", "Authenticated user has no profile");
   return p;
 }
 
 // The single connection row between two users in a project, in either direction.
 async function between(projectId: string, a: string, b: string): Promise<ConnRow | null> {
-  const [row] = await db.select().from(connections).where(and(
+  const [row] = await getDb().select().from(connections).where(and(
     eq(connections.projectId, projectId),
     or(
       and(eq(connections.requesterId, a), eq(connections.addresseeId, b)),
@@ -59,13 +59,13 @@ export const connectionRoutes = new Hono<{ Variables: Variables }>()
       if (existing.status === "connected") throw Errors.conflict("connections/already-connected", "Already connected");
       if (existing.status === "pending") throw Errors.conflict("connections/already-pending", "A pending request already exists");
       // a prior declined row → reopen as a fresh pending request from self
-      const [row] = await db.update(connections)
+      const [row] = await getDb().update(connections)
         .set({ requesterId: self.id, addresseeId: target, status: "pending", message, respondedAt: null, createdAt: new Date() })
         .where(eq(connections.id, existing.id)).returning();
       await notifyOnConnectionRequest(self.projectId, target, self.id, row!.id);
       return c.json({ id: row!.id, status: row!.status, createdAt: iso(row!.createdAt) });
     }
-    const [row] = await db.insert(connections)
+    const [row] = await getDb().insert(connections)
       .values({ projectId: self.projectId, requesterId: self.id, addresseeId: target, status: "pending", message })
       .returning();
     await notifyOnConnectionRequest(self.projectId, target, self.id, row!.id);
@@ -87,7 +87,7 @@ export const connectionRoutes = new Hono<{ Variables: Variables }>()
     const row = await between(self.projectId, self.id, uuidParam(c, "userId"));
     if (!row) throw Errors.notFound("connections/not-found", "No connection with this user");
     const action = row.status === "connected" ? "disconnect" : row.requesterId === self.id ? "withdraw" : "decline";
-    await db.delete(connections).where(eq(connections.id, row.id));
+    await getDb().delete(connections).where(eq(connections.id, row.id));
     return c.json({ id: row.id, action, message: "Connection removed" });
   })
   .get("/users/:userId/connections-count", requireAuth, async (c) => {
@@ -102,11 +102,11 @@ export const connectionRoutes = new Hono<{ Variables: Variables }>()
     const { page, limit, offset } = readPagination(c);
     const where = and(eq(connections.projectId, self.projectId), eq(connections.status, "connected"),
       or(eq(connections.requesterId, targetId), eq(connections.addresseeId, targetId)));
-    const [{ n } = { n: 0 }] = await db.select({ n: count() }).from(connections).where(where);
-    const rows = await db.select().from(connections).where(where).orderBy(desc(connections.respondedAt)).limit(limit).offset(offset);
+    const [{ n } = { n: 0 }] = await getDb().select({ n: count() }).from(connections).where(where);
+    const rows = await getDb().select().from(connections).where(where).orderBy(desc(connections.respondedAt)).limit(limit).offset(offset);
     const data = await Promise.all(rows.map(async (r) => {
       const otherId = r.requesterId === targetId ? r.addresseeId : r.requesterId;
-      const [other] = await db.select().from(profiles).where(eq(profiles.id, otherId)).limit(1);
+      const [other] = await getDb().select().from(profiles).where(eq(profiles.id, otherId)).limit(1);
       return { id: r.id, connectedUser: other ? shapeUser(other) : null, connectedAt: iso(r.respondedAt) };
     }));
     return c.json(paginate(data, n, page, limit));
@@ -117,11 +117,11 @@ export const connectionRoutes = new Hono<{ Variables: Variables }>()
     const { page, limit, offset } = readPagination(c);
     const where = and(eq(connections.projectId, self.projectId), eq(connections.status, "connected"),
       or(eq(connections.requesterId, self.id), eq(connections.addresseeId, self.id)));
-    const [{ n } = { n: 0 }] = await db.select({ n: count() }).from(connections).where(where);
-    const rows = await db.select().from(connections).where(where).orderBy(desc(connections.respondedAt)).limit(limit).offset(offset);
+    const [{ n } = { n: 0 }] = await getDb().select({ n: count() }).from(connections).where(where);
+    const rows = await getDb().select().from(connections).where(where).orderBy(desc(connections.respondedAt)).limit(limit).offset(offset);
     const data = await Promise.all(rows.map(async (r) => {
       const otherId = r.requesterId === self.id ? r.addresseeId : r.requesterId;
-      const [other] = await db.select().from(profiles).where(eq(profiles.id, otherId)).limit(1);
+      const [other] = await getDb().select().from(profiles).where(eq(profiles.id, otherId)).limit(1);
       return { id: r.id, connectedUser: other ? shapeUser(other) : null, connectedAt: iso(r.respondedAt) };
     }));
     return c.json(paginate(data, n, page, limit));
@@ -141,33 +141,33 @@ export const connectionRoutes = new Hono<{ Variables: Variables }>()
   // ── accept / decline / withdraw a connection by id ──────────────────────────
   .patch("/connections/:id/accept", requireAuth, async (c) => {
     const self = await me(c);
-    const [row] = await db.select().from(connections)
+    const [row] = await getDb().select().from(connections)
       .where(and(eq(connections.id, uuidParam(c, "id")), eq(connections.addresseeId, self.id), eq(connections.status, "pending"))).limit(1);
     if (!row) throw Errors.notFound("connections/not-pending", "No pending request to accept");
-    const [updated] = await db.update(connections).set({ status: "connected", respondedAt: new Date() }).where(eq(connections.id, row.id)).returning();
+    const [updated] = await getDb().update(connections).set({ status: "connected", respondedAt: new Date() }).where(eq(connections.id, row.id)).returning();
     await notifyOnConnectionAccept(self.projectId, row.requesterId, self.id, row.id);
     return c.json({ id: updated!.id, status: "connected", respondedAt: iso(updated!.respondedAt) });
   })
   .patch("/connections/:id/decline", requireAuth, async (c) => {
     const self = await me(c);
-    const [row] = await db.update(connections).set({ status: "declined", respondedAt: new Date() })
+    const [row] = await getDb().update(connections).set({ status: "declined", respondedAt: new Date() })
       .where(and(eq(connections.id, uuidParam(c, "id")), eq(connections.addresseeId, self.id), eq(connections.status, "pending"))).returning();
     if (!row) throw Errors.notFound("connections/not-pending", "No pending request to decline");
     return c.json({ id: row.id, status: "declined", respondedAt: iso(row.respondedAt) });
   })
   .delete("/connections/:id", requireAuth, async (c) => {
     const self = await me(c);
-    const [row] = await db.select().from(connections)
+    const [row] = await getDb().select().from(connections)
       .where(and(eq(connections.id, uuidParam(c, "id")),
         or(eq(connections.requesterId, self.id), eq(connections.addresseeId, self.id)))).limit(1);
     if (!row) throw Errors.notFound("connections/not-found", "Connection not found");
-    await db.delete(connections).where(eq(connections.id, row.id));
+    await getDb().delete(connections).where(eq(connections.id, row.id));
     return c.json({ message: "Connection removed" });
   });
 
 // ── shared ────────────────────────────────────────────────────────────────────
 async function connectedCount(projectId: string, userId: string): Promise<number> {
-  const [r] = await db.select({ n: count() }).from(connections).where(and(
+  const [r] = await getDb().select({ n: count() }).from(connections).where(and(
     eq(connections.projectId, projectId), eq(connections.status, "connected"),
     or(eq(connections.requesterId, userId), eq(connections.addresseeId, userId))
   ));
@@ -179,11 +179,11 @@ async function pendingList(c: any, self: ProfileRow, kind: "received" | "sent") 
   const mineCol = kind === "received" ? connections.addresseeId : connections.requesterId;
   const otherCol = kind === "received" ? connections.requesterId : connections.addresseeId;
   const where = and(eq(connections.projectId, self.projectId), eq(connections.status, "pending"), eq(mineCol, self.id));
-  const [{ n } = { n: 0 }] = await db.select({ n: count() }).from(connections).where(where);
-  const rows = await db.select().from(connections).where(where).orderBy(desc(connections.createdAt)).limit(limit).offset(offset);
+  const [{ n } = { n: 0 }] = await getDb().select({ n: count() }).from(connections).where(where);
+  const rows = await getDb().select().from(connections).where(where).orderBy(desc(connections.createdAt)).limit(limit).offset(offset);
   const data = await Promise.all(rows.map(async (r) => {
     const otherId = (r as any)[otherCol === connections.requesterId ? "requesterId" : "addresseeId"];
-    const [other] = await db.select().from(profiles).where(eq(profiles.id, otherId)).limit(1);
+    const [other] = await getDb().select().from(profiles).where(eq(profiles.id, otherId)).limit(1);
     return { id: r.id, message: r.message ?? undefined, createdAt: iso(r.createdAt), user: other ? shapeUser(other) : null, type: kind };
   }));
   return paginate(data, n, page, limit);

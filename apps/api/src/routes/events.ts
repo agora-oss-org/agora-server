@@ -4,7 +4,7 @@ import { and, eq, isNull, sql, count, asc, desc, type SQL } from "drizzle-orm";
 import type { Variables } from "../http/context.js";
 import { Errors } from "../http/errors.js";
 import { requireAuth } from "../middleware/auth.js";
-import { db } from "../db/index.js";
+import { getDb } from "../db/index.js";
 import { events, eventHosts, eventRsvps, eventInvites, spaceMembers, spaces } from "../db/schema/index.js";
 import { readPagination, paginate } from "../http/envelope.js";
 import { parseBody } from "../lib/validation.js";
@@ -23,20 +23,20 @@ type EventRow = typeof events.$inferSelect;
 
 // ── shared helpers ───────────────────────────────────────────────────────────
 export async function getEventOr404(c: any, id: string): Promise<EventRow> {
-  const [row] = await db.select().from(events)
+  const [row] = await getDb().select().from(events)
     .where(and(eq(events.projectId, c.var.projectId), eq(events.id, id), isNull(events.deletedAt))).limit(1);
   if (!row) throw Errors.notFound("events/not-found", "Event not found");
   return row;
 }
 
 export async function loadHostIds(eventId: string): Promise<string[]> {
-  const rows = await db.select({ userId: eventHosts.userId }).from(eventHosts)
+  const rows = await getDb().select({ userId: eventHosts.userId }).from(eventHosts)
     .where(eq(eventHosts.eventId, eventId)).orderBy(asc(eventHosts.createdAt));
   return rows.map((r) => r.userId);
 }
 
 export async function loadRsvpCounts(eventId: string): Promise<{ going: number; maybe: number; not_going: number }> {
-  const rows = await db.select({ status: eventRsvps.status, n: count() }).from(eventRsvps)
+  const rows = await getDb().select({ status: eventRsvps.status, n: count() }).from(eventRsvps)
     .where(eq(eventRsvps.eventId, eventId)).groupBy(eventRsvps.status);
   const out = { going: 0, maybe: 0, not_going: 0 };
   for (const r of rows) (out as any)[r.status] = r.n;
@@ -44,7 +44,7 @@ export async function loadRsvpCounts(eventId: string): Promise<{ going: number; 
 }
 
 export async function loadLocation(eventId: string): Promise<{ lat: number; lng: number } | null> {
-  const res = (await db.execute(sql`
+  const res = (await getDb().execute(sql`
     select ST_Y(location::geometry) as lat, ST_X(location::geometry) as lng
     from events where id = ${eventId}::uuid and location is not null
   `)) as unknown as { lat: number; lng: number }[];
@@ -56,16 +56,16 @@ export async function isMemberForEvent(c: any, row: EventRow): Promise<boolean> 
   const uid = c.var.auth?.userId;
   if (!uid) return false;
   if (!row.spaceId) return true; // project member = any authenticated user
-  const [m] = await db.select({ id: spaceMembers.id }).from(spaceMembers)
+  const [m] = await getDb().select({ id: spaceMembers.id }).from(spaceMembers)
     .where(and(eq(spaceMembers.spaceId, row.spaceId), eq(spaceMembers.userId, uid), eq(spaceMembers.status, "active"))).limit(1);
   if (m) return true;
-  const [s] = await db.select({ userId: spaces.userId }).from(spaces).where(eq(spaces.id, row.spaceId)).limit(1);
+  const [s] = await getDb().select({ userId: spaces.userId }).from(spaces).where(eq(spaces.id, row.spaceId)).limit(1);
   return !!s && s.userId === uid;
 }
 
 export async function isInvited(eventId: string, userId: string | undefined): Promise<boolean> {
   if (!userId) return false;
-  const [r] = await db.select({ id: eventInvites.id }).from(eventInvites)
+  const [r] = await getDb().select({ id: eventInvites.id }).from(eventInvites)
     .where(and(eq(eventInvites.eventId, eventId), eq(eventInvites.userId, userId))).limit(1);
   return !!r;
 }
@@ -100,7 +100,7 @@ export async function buildEventResponse(c: any, row: EventRow, opts: { include?
   const include = opts.include ?? new Set<string>();
   let userRsvp: string | null | undefined;
   if (include.has("userRsvp") && c.var.auth?.userId) {
-    const [r] = await db.select({ status: eventRsvps.status }).from(eventRsvps)
+    const [r] = await getDb().select({ status: eventRsvps.status }).from(eventRsvps)
       .where(and(eq(eventRsvps.eventId, row.id), eq(eventRsvps.userId, c.var.auth.userId))).limit(1);
     userRsvp = r?.status ?? null;
   }
@@ -115,8 +115,8 @@ export async function buildEventResponse(c: any, row: EventRow, opts: { include?
 // Set the PostGIS location from a {latitude, longitude} input (or clear it when null).
 export async function writeLocation(eventId: string, loc: { latitude: number; longitude: number } | null | undefined) {
   if (loc === undefined) return;
-  if (loc === null) { await db.execute(sql`update events set location = null where id = ${eventId}::uuid`); return; }
-  await db.execute(sql`update events set location = ST_SetSRID(ST_MakePoint(${loc.longitude}, ${loc.latitude}), 4326)::geography where id = ${eventId}::uuid`);
+  if (loc === null) { await getDb().execute(sql`update events set location = null where id = ${eventId}::uuid`); return; }
+  await getDb().execute(sql`update events set location = ST_SetSRID(ST_MakePoint(${loc.longitude}, ${loc.latitude}), 4326)::geography where id = ${eventId}::uuid`);
 }
 
 // Pull scalar event fields out of a multipart form (cover/gallery handled separately).
@@ -154,7 +154,7 @@ export const eventRoutes = new Hono<{ Variables: Variables }>()
     const body = parseBody(createEventSchema, rawBody, "events");
     await assertCanPostInSpace(c, body.spaceId ?? null); // enforce space posting permission if attached
 
-    const [row] = await db.insert(events).values({
+    const [row] = await getDb().insert(events).values({
       projectId, userId, shortId: generateShortId(),
       title: body.title, description: body.description ?? null,
       startTime: new Date(body.startTime), endTime: body.endTime ? new Date(body.endTime) : null,
@@ -169,7 +169,7 @@ export const eventRoutes = new Hono<{ Variables: Variables }>()
 
     // Hosts: creator + any supplied hostIds (deduped). Creator is always a host.
     const hostIds = [...new Set([userId, ...(body.hostIds ?? [])])];
-    await db.insert(eventHosts).values(hostIds.map((uid) => ({ projectId, eventId: row.id, userId: uid }))).onConflictDoNothing();
+    await getDb().insert(eventHosts).values(hostIds.map((uid) => ({ projectId, eventId: row.id, userId: uid }))).onConflictDoNothing();
 
     // Cover (first) + gallery images → files rows linked by event_id; cover_image_id points to the cover file.
     let coverImageId: string | null = null;
@@ -180,9 +180,9 @@ export const eventRoutes = new Hono<{ Variables: Variables }>()
     for (const file of galleryFiles) {
       await storeImageFromUpload({ projectId, userId, file, optionsBody: galleryOpts, assoc: { eventId: row.id } });
     }
-    if (coverImageId) await db.update(events).set({ coverImageId }).where(eq(events.id, row.id));
+    if (coverImageId) await getDb().update(events).set({ coverImageId }).where(eq(events.id, row.id));
 
-    const [fresh] = await db.select().from(events).where(eq(events.id, row.id)).limit(1);
+    const [fresh] = await getDb().select().from(events).where(eq(events.id, row.id)).limit(1);
     logger.info({ projectId, eventId: row.id, userId, spaceId: row.spaceId ?? null, hosts: hostIds.length }, "event: created");
     return c.json(await buildEventResponse(c, fresh!), 201);
   })
@@ -248,8 +248,8 @@ export const eventRoutes = new Hono<{ Variables: Variables }>()
     const orderBy = sortBy === "going"
       ? sql`(select count(*) from event_rsvps r where r.event_id = ${events.id} and r.status = 'going') ${dir}, ${events.startTime} asc`
       : sql`${events.startTime} ${dir}`;
-    const rows = await db.select().from(events).where(where).orderBy(orderBy).limit(limit).offset(offset);
-    const [{ total } = { total: 0 }] = await db.select({ total: count() }).from(events).where(where);
+    const rows = await getDb().select().from(events).where(where).orderBy(orderBy).limit(limit).offset(offset);
+    const [{ total } = { total: 0 }] = await getDb().select({ total: count() }).from(events).where(where);
     const data = await Promise.all(rows.map((r) => buildEventResponse(c, r)));
     return c.json(paginate(data, total, page, limit));
   })
@@ -277,16 +277,16 @@ export const eventRoutes = new Hono<{ Variables: Variables }>()
     set("allowMaybe", "allowMaybe"); set("guestListVisible", "guestListVisible"); set("spaceId", "spaceId");
     set("metadata", "metadata"); set("startTime", "startTime", (v) => new Date(v));
     set("endTime", "endTime", (v) => (v ? new Date(v) : null));
-    if (Object.keys(patch).length) await db.update(events).set(patch).where(eq(events.id, row.id));
+    if (Object.keys(patch).length) await getDb().update(events).set(patch).where(eq(events.id, row.id));
     if (body.location !== undefined) await writeLocation(row.id, body.location);
     if (body.removeImageIds?.length) {
-      await db.execute(sql`delete from files where event_id = ${row.id}::uuid and id = any(${sql`array[${sql.join(body.removeImageIds.map((id) => sql`${id}::uuid`), sql`, `)}]`})`);
+      await getDb().execute(sql`delete from files where event_id = ${row.id}::uuid and id = any(${sql`array[${sql.join(body.removeImageIds.map((id) => sql`${id}::uuid`), sql`, `)}]`})`);
       // If the cover image was among those removed, clear the now-dangling pointer.
       if (row.coverImageId && body.removeImageIds.includes(row.coverImageId)) {
-        await db.update(events).set({ coverImageId: null }).where(eq(events.id, row.id));
+        await getDb().update(events).set({ coverImageId: null }).where(eq(events.id, row.id));
       }
     }
-    const [fresh] = await db.select().from(events).where(eq(events.id, row.id)).limit(1);
+    const [fresh] = await getDb().select().from(events).where(eq(events.id, row.id)).limit(1);
     return c.json(await buildEventResponse(c, fresh!));
   })
   .delete("/:eventId", requireAuth, async (c) => {
@@ -295,10 +295,10 @@ export const eventRoutes = new Hono<{ Variables: Variables }>()
     if (env.CONTENT_DELETE_MODE === "hard") {
       // Collect files rows (cover image) BEFORE the delete — the FK cascade takes them with the row.
       const fileRows = await collectFileRows(c.var.projectId, { eventId: row.id });
-      await db.delete(events).where(eq(events.id, row.id));
+      await getDb().delete(events).where(eq(events.id, row.id));
       removeMediaAsync(fileRows, `event ${row.id}`);
     } else {
-      await db.update(events).set({ deletedAt: new Date() }).where(eq(events.id, row.id));
+      await getDb().update(events).set({ deletedAt: new Date() }).where(eq(events.id, row.id));
     }
     logger.info({ projectId: c.var.projectId, eventId: row.id, userId: c.var.auth!.userId, mode: env.CONTENT_DELETE_MODE }, "event: deleted");
     return c.body(null, 204);
@@ -306,8 +306,8 @@ export const eventRoutes = new Hono<{ Variables: Variables }>()
   .post("/:eventId/cancel", requireAuth, async (c) => {
     const row = await getEventOr404(c, c.req.param("eventId"));
     requireEventManage(c, await loadHostIds(row.id));
-    await db.update(events).set({ status: "cancelled" }).where(eq(events.id, row.id));
-    const [fresh] = await db.select().from(events).where(eq(events.id, row.id)).limit(1);
+    await getDb().update(events).set({ status: "cancelled" }).where(eq(events.id, row.id));
+    const [fresh] = await getDb().select().from(events).where(eq(events.id, row.id)).limit(1);
     return c.json(await buildEventResponse(c, fresh!));
   })
   .post("/:eventId/rsvp", requireAuth, async (c) => {
@@ -324,7 +324,7 @@ export const eventRoutes = new Hono<{ Variables: Variables }>()
       // plain read-then-insert is a TOCTOU race that could overshoot capacity. `for update` on the
       // event row makes each going-RSVP re-count under the lock; maybe/not_going/withdraw never add a
       // seat, so they skip the lock. Invariant held: the going count can never exceed capacity.
-      await db.transaction(async (tx) => {
+      await getDb().transaction(async (tx) => {
         await tx.execute(sql`select 1 from events where id = ${row.id}::uuid for update`);
         const [g = { n: 0 }] = await tx.select({ n: count() }).from(eventRsvps)
           .where(and(eq(eventRsvps.eventId, row.id), eq(eventRsvps.status, "going")));
@@ -337,7 +337,7 @@ export const eventRoutes = new Hono<{ Variables: Variables }>()
           .onConflictDoUpdate({ target: [eventRsvps.eventId, eventRsvps.userId], set: { status, updatedAt: new Date() } });
       });
     } else {
-      await db.insert(eventRsvps).values({ projectId: c.var.projectId, eventId: row.id, userId: uid, status })
+      await getDb().insert(eventRsvps).values({ projectId: c.var.projectId, eventId: row.id, userId: uid, status })
         .onConflictDoUpdate({ target: [eventRsvps.eventId, eventRsvps.userId], set: { status, updatedAt: new Date() } });
     }
     return c.json(await buildEventResponse(c, row));
@@ -345,7 +345,7 @@ export const eventRoutes = new Hono<{ Variables: Variables }>()
   .delete("/:eventId/rsvp", requireAuth, async (c) => {
     const row = await getEventOr404(c, c.req.param("eventId"));
     await assertCanViewEvent(c, row); // can't touch RSVP state on an event you can't see
-    await db.delete(eventRsvps).where(and(eq(eventRsvps.eventId, row.id), eq(eventRsvps.userId, c.var.auth!.userId)));
+    await getDb().delete(eventRsvps).where(and(eq(eventRsvps.eventId, row.id), eq(eventRsvps.userId, c.var.auth!.userId)));
     return c.json(await buildEventResponse(c, row));
   })
   .get("/:eventId/rsvps", async (c) => {
@@ -362,8 +362,8 @@ export const eventRoutes = new Hono<{ Variables: Variables }>()
       throw Errors.badRequest("events/invalid-filter", "Invalid 'status' filter", "status");
     }
     const where = and(eq(eventRsvps.eventId, row.id), status ? sql`${eventRsvps.status} = ${status}::rsvp_status` : undefined);
-    const rows = await db.select().from(eventRsvps).where(where).orderBy(desc(eventRsvps.createdAt)).limit(limit).offset(offset);
-    const [{ total } = { total: 0 }] = await db.select({ total: count() }).from(eventRsvps).where(where);
+    const rows = await getDb().select().from(eventRsvps).where(where).orderBy(desc(eventRsvps.createdAt)).limit(limit).offset(offset);
+    const [{ total } = { total: 0 }] = await getDb().select({ total: count() }).from(eventRsvps).where(where);
     const include = parseInclude(c);
     const userMap = include.has("user") ? await loadUsers(c.var.projectId, rows.map((r) => r.userId)) : null;
     const data = rows.map((r) => shapeEventRsvp(r, userMap ? userMap.get(r.userId) ?? null : undefined));
@@ -374,7 +374,7 @@ export const eventRoutes = new Hono<{ Variables: Variables }>()
     const row = await getEventOr404(c, c.req.param("eventId"));
     requireEventManage(c, await loadHostIds(row.id));
     const { userId } = parseBody(eventUserIdSchema, await c.req.json().catch(() => ({})), "events");
-    await db.insert(eventInvites).values({ projectId: c.var.projectId, eventId: row.id, userId }).onConflictDoNothing();
+    await getDb().insert(eventInvites).values({ projectId: c.var.projectId, eventId: row.id, userId }).onConflictDoNothing();
     return c.json(await buildEventResponse(c, row));
   })
   .delete("/:eventId/invites", requireAuth, async (c) => {
@@ -382,17 +382,17 @@ export const eventRoutes = new Hono<{ Variables: Variables }>()
     requireEventManage(c, await loadHostIds(row.id));
     const { userId } = parseBody(eventUserIdSchema, await c.req.json().catch(() => ({})), "events");
     // Removing an invite also drops that user's RSVP (revokes access to invite-only events).
-    await db.delete(eventInvites).where(and(eq(eventInvites.eventId, row.id), eq(eventInvites.userId, userId)));
-    await db.delete(eventRsvps).where(and(eq(eventRsvps.eventId, row.id), eq(eventRsvps.userId, userId)));
+    await getDb().delete(eventInvites).where(and(eq(eventInvites.eventId, row.id), eq(eventInvites.userId, userId)));
+    await getDb().delete(eventRsvps).where(and(eq(eventRsvps.eventId, row.id), eq(eventRsvps.userId, userId)));
     return c.json(await buildEventResponse(c, row));
   })
   .get("/:eventId/invites", requireAuth, async (c) => {
     const row = await getEventOr404(c, c.req.param("eventId"));
     requireEventManage(c, await loadHostIds(row.id)); // host-only list
     const { page, limit, offset } = readPagination(c);
-    const rows = await db.select().from(eventInvites).where(eq(eventInvites.eventId, row.id))
+    const rows = await getDb().select().from(eventInvites).where(eq(eventInvites.eventId, row.id))
       .orderBy(desc(eventInvites.createdAt)).limit(limit).offset(offset);
-    const [{ total } = { total: 0 }] = await db.select({ total: count() }).from(eventInvites).where(eq(eventInvites.eventId, row.id));
+    const [{ total } = { total: 0 }] = await getDb().select({ total: count() }).from(eventInvites).where(eq(eventInvites.eventId, row.id));
     const include = parseInclude(c);
     const userMap = include.has("user") ? await loadUsers(c.var.projectId, rows.map((r) => r.userId)) : null;
     const data = rows.map((r) => shapeEventInvite(r, userMap ? userMap.get(r.userId) ?? null : undefined));
@@ -403,7 +403,7 @@ export const eventRoutes = new Hono<{ Variables: Variables }>()
     const row = await getEventOr404(c, c.req.param("eventId"));
     requireEventManage(c, await loadHostIds(row.id));
     const { userId } = parseBody(eventUserIdSchema, await c.req.json().catch(() => ({})), "events");
-    await db.insert(eventHosts).values({ projectId: c.var.projectId, eventId: row.id, userId }).onConflictDoNothing();
+    await getDb().insert(eventHosts).values({ projectId: c.var.projectId, eventId: row.id, userId }).onConflictDoNothing();
     return c.json(await buildEventResponse(c, row));
   })
   .delete("/:eventId/hosts", requireAuth, async (c) => {
@@ -412,6 +412,6 @@ export const eventRoutes = new Hono<{ Variables: Variables }>()
     requireEventManage(c, hostIds);
     const { userId } = parseBody(eventUserIdSchema, await c.req.json().catch(() => ({})), "events");
     if (wouldOrphanHosts(hostIds, userId)) throw Errors.badRequest("events/last-host", "An event must have at least one host");
-    await db.delete(eventHosts).where(and(eq(eventHosts.eventId, row.id), eq(eventHosts.userId, userId)));
+    await getDb().delete(eventHosts).where(and(eq(eventHosts.eventId, row.id), eq(eventHosts.userId, userId)));
     return c.json(await buildEventResponse(c, row));
   });

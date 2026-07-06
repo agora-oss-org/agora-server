@@ -5,7 +5,7 @@ import { and, eq, desc, asc, count, inArray, gt, ne, sql } from "drizzle-orm";
 import type { Variables } from "../http/context.js";
 import { Errors } from "../http/errors.js";
 import { requireAuth } from "../middleware/auth.js";
-import { db } from "../db/index.js";
+import { getDb } from "../db/index.js";
 import {
   conversations, conversationMembers, chatMessages, chatMessageReactions, reports, profiles,
   spaces, spaceMembers,
@@ -30,14 +30,14 @@ type MemberRow = typeof conversationMembers.$inferSelect;
 type MessageRow = typeof chatMessages.$inferSelect;
 
 async function getConversation(c: any): Promise<ConversationRow> {
-  const [row] = await db.select().from(conversations)
+  const [row] = await getDb().select().from(conversations)
     .where(and(eq(conversations.projectId, c.var.projectId), eq(conversations.id, c.req.param("id")))).limit(1);
   if (!row) throw Errors.notFound("chat/conversation-not-found", "Conversation not found");
   return row;
 }
 
 async function requireMember(c: any, conversationId: string): Promise<MemberRow> {
-  const [m] = await db.select().from(conversationMembers)
+  const [m] = await getDb().select().from(conversationMembers)
     .where(and(
       eq(conversationMembers.projectId, c.var.projectId),
       eq(conversationMembers.conversationId, conversationId),
@@ -52,7 +52,7 @@ async function requireMember(c: any, conversationId: string): Promise<MemberRow>
 async function userReactionsByMessage(messageIds: string[], userId: string | undefined): Promise<Map<string, string[]>> {
   const map = new Map<string, string[]>();
   if (!userId || messageIds.length === 0) return map;
-  const rows = await db.select({ messageId: chatMessageReactions.messageId, emoji: chatMessageReactions.emoji })
+  const rows = await getDb().select({ messageId: chatMessageReactions.messageId, emoji: chatMessageReactions.emoji })
     .from(chatMessageReactions)
     .where(and(eq(chatMessageReactions.userId, userId), inArray(chatMessageReactions.messageId, messageIds)));
   for (const r of rows) map.set(r.messageId, [...(map.get(r.messageId) ?? []), r.emoji]);
@@ -62,13 +62,13 @@ async function userReactionsByMessage(messageIds: string[], userId: string | und
 // Build the inbox ConversationPreview for one (conversation, viewing member): latest message,
 // unread count vs the member's lastReadAt, and ≤5 other active members (empty for space chats).
 async function buildConversationPreview(c: any, convo: ConversationRow, member: MemberRow) {
-  const [last] = await db.select().from(chatMessages)
+  const [last] = await getDb().select().from(chatMessages)
     .where(eq(chatMessages.conversationId, convo.id)).orderBy(desc(chatMessages.createdAt)).limit(1);
-  const [{ u } = { u: 0 }] = await db.select({ u: count() }).from(chatMessages)
+  const [{ u } = { u: 0 }] = await getDb().select({ u: count() }).from(chatMessages)
     .where(and(eq(chatMessages.conversationId, convo.id), member.lastReadAt ? gt(chatMessages.createdAt, member.lastReadAt) : sql`true`));
   let otherMembers: ReturnType<typeof pickOtherMembers> = [];
   if (convo.type !== "space") {
-    const rows = await db.select({ p: profiles }).from(conversationMembers)
+    const rows = await getDb().select({ p: profiles }).from(conversationMembers)
       .innerJoin(profiles, eq(profiles.id, conversationMembers.userId))
       .where(and(
         eq(conversationMembers.conversationId, convo.id),
@@ -93,7 +93,7 @@ async function buildConversationPreview(c: any, convo: ConversationRow, member: 
 async function emitConversationCreated(c: any, convo: ConversationRow, memberIds: string[]) {
   if (convo.type === "space" || memberIds.length === 0) return;
   try {
-    const profs = await db.select().from(profiles).where(inArray(profiles.id, memberIds));
+    const profs = await getDb().select().from(profiles).where(inArray(profiles.id, memberIds));
     const byId = new Map(profs.map((p) => [p.id, p]));
     for (const recipientId of memberIds) {
       const others = memberIds
@@ -135,7 +135,7 @@ export const chatRoutes = new Hono<{ Variables: Variables }>()
     if (types && types.length) conds.push(inArray(conversations.type, types as any));
     if (boundary) conds.push(sql`COALESCE(${conversations.lastMessageAt}, ${conversations.createdAt}) < ${boundary}::timestamptz`);
 
-    const rows = await db.select({ convo: conversations, member: conversationMembers })
+    const rows = await getDb().select({ convo: conversations, member: conversationMembers })
       .from(conversationMembers)
       .innerJoin(conversations, eq(conversations.id, conversationMembers.conversationId))
       .where(and(...conds))
@@ -150,13 +150,13 @@ export const chatRoutes = new Hono<{ Variables: Variables }>()
     const projectId = c.var.projectId;
     const uid = c.var.auth!.userId;
     const body = parseBody(createConversationSchema, await c.req.json().catch(() => ({})), "chat");
-    const [convo] = await db.insert(conversations).values({
+    const [convo] = await getDb().insert(conversations).values({
       projectId, type: body.type ?? "group", name: body.name, description: body.description,
       spaceId: body.spaceId, createdById: uid, postingPermission: body.postingPermission,
     }).returning();
     // Creator is admin; supplied members join as members.
     const memberIds = [...new Set([uid, ...(body.memberIds ?? [])])];
-    await db.insert(conversationMembers).values(memberIds.map((userId) => ({
+    await getDb().insert(conversationMembers).values(memberIds.map((userId) => ({
       projectId, conversationId: convo!.id, userId, role: userId === uid ? "admin" as const : "member" as const,
     }))).onConflictDoNothing();
     logger.info({ projectId, conversationId: convo!.id, userId: uid, type: convo!.type, spaceId: convo!.spaceId ?? null, members: memberIds.length }, "chat: conversation created");
@@ -169,18 +169,18 @@ export const chatRoutes = new Hono<{ Variables: Variables }>()
     const { userId: other } = parseBody(directConversationSchema, await c.req.json().catch(() => ({})), "chat");
     if (other === uid) throw Errors.badRequest("chat/self-direct", "Cannot start a direct chat with yourself");
     // Get-or-create the 1:1 direct conversation between the two users.
-    const existing = await db.execute(sql`
+    const existing = await getDb().execute(sql`
       select c.id from conversations c
       join conversation_members a on a.conversation_id = c.id and a.user_id = ${uid}::uuid
       join conversation_members b on b.conversation_id = c.id and b.user_id = ${other}::uuid
       where c.project_id = ${projectId}::uuid and c.type = 'direct' limit 1`);
     const foundId = (existing as any)[0]?.id as string | undefined;
     if (foundId) {
-      const [row] = await db.select().from(conversations).where(eq(conversations.id, foundId)).limit(1);
+      const [row] = await getDb().select().from(conversations).where(eq(conversations.id, foundId)).limit(1);
       return c.json(shapeConversation(row!));
     }
-    const [convo] = await db.insert(conversations).values({ projectId, type: "direct", createdById: uid }).returning();
-    await db.insert(conversationMembers).values([
+    const [convo] = await getDb().insert(conversations).values({ projectId, type: "direct", createdById: uid }).returning();
+    await getDb().insert(conversationMembers).values([
       { projectId, conversationId: convo!.id, userId: uid, role: "member" as const },
       { projectId, conversationId: convo!.id, userId: other, role: "member" as const },
     ]);
@@ -191,7 +191,7 @@ export const chatRoutes = new Hono<{ Variables: Variables }>()
   // (the SDK's chat-context fetches this on load; otherwise "unread-count" is captured as an :id → 500).
   .get("/conversations/unread-count", requireAuth, async (c) => {
     const me = c.var.auth!.userId;
-    const rows = (await db.execute(sql`
+    const rows = (await getDb().execute(sql`
       select count(*)::int as total_unread,
              count(distinct m.conversation_id)::int as unread_conversation_count
       from conversation_members cm
@@ -212,7 +212,7 @@ export const chatRoutes = new Hono<{ Variables: Variables }>()
   .get("/conversations/:id", requireAuth, async (c) => {
     const convo = await getConversation(c);
     const member = await requireMember(c, convo.id);
-    const [{ mc } = { mc: 0 }] = await db.select({ mc: count() }).from(conversationMembers)
+    const [{ mc } = { mc: 0 }] = await getDb().select({ mc: count() }).from(conversationMembers)
       .where(and(eq(conversationMembers.conversationId, convo.id), eq(conversationMembers.isActive, true)));
     return c.json(shapeConversation(convo, { memberCount: mc, currentMember: shapeConversationMember(member) }));
   })
@@ -221,7 +221,7 @@ export const chatRoutes = new Hono<{ Variables: Variables }>()
     const member = await requireMember(c, convo.id);
     if (member.role !== "admin") throw Errors.forbidden("chat/not-admin", "Admin only");
     const body = parseBody(updateConversationSchema, await c.req.json().catch(() => ({})), "chat");
-    const [row] = await db.update(conversations).set({
+    const [row] = await getDb().update(conversations).set({
       ...(body.name !== undefined ? { name: body.name } : {}),
       ...(body.description !== undefined ? { description: body.description } : {}),
     }).where(eq(conversations.id, convo.id)).returning();
@@ -232,14 +232,14 @@ export const chatRoutes = new Hono<{ Variables: Variables }>()
     const convo = await getConversation(c);
     const member = await requireMember(c, convo.id);
     if (member.role !== "admin" && convo.createdById !== c.var.auth!.userId) throw Errors.forbidden("chat/not-admin", "Admin only");
-    await db.delete(conversations).where(eq(conversations.id, convo.id));
+    await getDb().delete(conversations).where(eq(conversations.id, convo.id));
     emitToConversation(convo.id, "conversation:deleted", { conversationId: convo.id });
     return c.json({ success: true });
   })
   .delete("/conversations/:id/leave", requireAuth, async (c) => {
     const convo = await getConversation(c);
     await requireMember(c, convo.id);
-    await db.update(conversationMembers).set({ isActive: false, leftAt: new Date() })
+    await getDb().update(conversationMembers).set({ isActive: false, leftAt: new Date() })
       .where(and(eq(conversationMembers.conversationId, convo.id), eq(conversationMembers.userId, c.var.auth!.userId)));
     emitToConversation(convo.id, "member:left", { conversationId: convo.id, userId: c.var.auth!.userId });
     return c.json({ success: true });
@@ -247,7 +247,7 @@ export const chatRoutes = new Hono<{ Variables: Variables }>()
   .post("/conversations/:id/read", requireAuth, async (c) => {
     const convo = await getConversation(c);
     await requireMember(c, convo.id);
-    await db.update(conversationMembers).set({ lastReadAt: new Date() })
+    await getDb().update(conversationMembers).set({ lastReadAt: new Date() })
       .where(and(eq(conversationMembers.conversationId, convo.id), eq(conversationMembers.userId, c.var.auth!.userId)));
     return c.json({ success: true });
   })
@@ -255,7 +255,7 @@ export const chatRoutes = new Hono<{ Variables: Variables }>()
   .get("/conversations/:id/members", requireAuth, async (c) => {
     const convo = await getConversation(c);
     await requireMember(c, convo.id);
-    const rows = await db.select({ m: conversationMembers, p: profiles })
+    const rows = await getDb().select({ m: conversationMembers, p: profiles })
       .from(conversationMembers).innerJoin(profiles, eq(profiles.id, conversationMembers.userId))
       .where(and(eq(conversationMembers.conversationId, convo.id), eq(conversationMembers.isActive, true)))
       .orderBy(asc(conversationMembers.createdAt));
@@ -266,11 +266,11 @@ export const chatRoutes = new Hono<{ Variables: Variables }>()
     const member = await requireMember(c, convo.id);
     if (member.role !== "admin") throw Errors.forbidden("chat/not-admin", "Admin only");
     const body = parseBody(addConversationMemberSchema, await c.req.json().catch(() => ({})), "chat");
-    const [row] = await db.insert(conversationMembers)
+    const [row] = await getDb().insert(conversationMembers)
       .values({ projectId: c.var.projectId, conversationId: convo.id, userId: body.userId, role: body.role ?? "member" })
       .onConflictDoUpdate({ target: [conversationMembers.conversationId, conversationMembers.userId], set: { isActive: true, leftAt: null } })
       .returning();
-    const [p] = await db.select().from(profiles).where(eq(profiles.id, body.userId)).limit(1);
+    const [p] = await getDb().select().from(profiles).where(eq(profiles.id, body.userId)).limit(1);
     const shaped = shapeConversationMember(row!, p ? shapeUser(p) : null);
     emitToConversation(convo.id, "member:joined", { conversationId: convo.id, member: shaped });
     return c.json(shaped, 201);
@@ -280,7 +280,7 @@ export const chatRoutes = new Hono<{ Variables: Variables }>()
     const member = await requireMember(c, convo.id);
     if (member.role !== "admin") throw Errors.forbidden("chat/not-admin", "Admin only");
     const target = c.req.param("memberId");
-    await db.update(conversationMembers).set({ isActive: false, leftAt: new Date() })
+    await getDb().update(conversationMembers).set({ isActive: false, leftAt: new Date() })
       .where(and(eq(conversationMembers.conversationId, convo.id), eq(conversationMembers.userId, target)));
     emitToConversation(convo.id, "member:left", { conversationId: convo.id, userId: target });
     return c.json({ success: true });
@@ -290,7 +290,7 @@ export const chatRoutes = new Hono<{ Variables: Variables }>()
     const member = await requireMember(c, convo.id);
     if (member.role !== "admin") throw Errors.forbidden("chat/not-admin", "Admin only");
     const { role } = parseBody(convMemberRoleSchema, await c.req.json().catch(() => ({})), "chat");
-    const [row] = await db.update(conversationMembers).set({ role })
+    const [row] = await getDb().update(conversationMembers).set({ role })
       .where(and(eq(conversationMembers.conversationId, convo.id), eq(conversationMembers.userId, c.req.param("memberId")))).returning();
     if (!row) throw Errors.notFound("chat/member-not-found", "Member not found");
     return c.json(shapeConversationMember(row));
@@ -323,7 +323,7 @@ export const chatRoutes = new Hono<{ Variables: Variables }>()
     const removedFilter = excludeRemovedSql(await removedPolicy(c), chatMessages);
     if (removedFilter) conds.push(removedFilter);
 
-    const rows = await db.select().from(chatMessages)
+    const rows = await getDb().select().from(chatMessages)
       .where(and(...conds))
       .orderBy(order)
       .limit(limit + 1);
@@ -369,7 +369,7 @@ export const chatRoutes = new Hono<{ Variables: Variables }>()
     const check = await webhooks.validate(c.var.projectId, "message.created", { ...body, conversationId: convo.id, userId: c.var.auth!.userId });
     if (!check.valid) throw Errors.forbidden("chat/rejected", check.message ?? "Message rejected by validation webhook");
     // Trigger (0002) bumps conversation.last_message_at + parent thread_reply_count.
-    const [row] = await db.insert(chatMessages).values({
+    const [row] = await getDb().insert(chatMessages).values({
       projectId: c.var.projectId, conversationId: convo.id, userId: c.var.auth!.userId,
       content: body.content, gif: body.gif, mentions: body.mentions, metadata: body.metadata,
       parentMessageId: body.parentMessageId, quotedMessageId: body.quotedMessageId,
@@ -383,12 +383,12 @@ export const chatRoutes = new Hono<{ Variables: Variables }>()
     const shaped = shapeChatMessage(row!, { localId: body.localId, ...(fileRows.length ? { files: fileRows.map(shapeFile) } : {}) });
     indexContentAsync(c.var.projectId, "message", row!.id, row!.content);
     logger.debug({ projectId: c.var.projectId, conversationId: convo.id, messageId: row!.id, userId: c.var.auth!.userId, parentMessageId: row!.parentMessageId ?? null, files: fileRows.length }, "chat: message created");
-    const memberRows = await db.select({ userId: conversationMembers.userId }).from(conversationMembers)
+    const memberRows = await getDb().select({ userId: conversationMembers.userId }).from(conversationMembers)
       .where(and(eq(conversationMembers.conversationId, convo.id), eq(conversationMembers.isActive, true)));
     emitMessageCreated(convo.id, c.var.projectId, memberRows.map((m) => m.userId), shaped);
     webhooks.broadcast(c.var.projectId, "message.created.complete", shaped);
     if (row!.parentMessageId) {
-      const [parent] = await db.select({ n: chatMessages.threadReplyCount }).from(chatMessages).where(eq(chatMessages.id, row!.parentMessageId)).limit(1);
+      const [parent] = await getDb().select({ n: chatMessages.threadReplyCount }).from(chatMessages).where(eq(chatMessages.id, row!.parentMessageId)).limit(1);
       emitToConversation(convo.id, "thread:reply_count", { messageId: row!.parentMessageId, conversationId: convo.id, threadReplyCount: parent?.n ?? 0 });
     }
     return c.json(shaped, 201);
@@ -396,12 +396,12 @@ export const chatRoutes = new Hono<{ Variables: Variables }>()
   .patch("/conversations/:id/messages/:messageId", requireAuth, async (c) => {
     const convo = await getConversation(c);
     await requireMember(c, convo.id);
-    const [msg] = await db.select().from(chatMessages)
+    const [msg] = await getDb().select().from(chatMessages)
       .where(and(eq(chatMessages.conversationId, convo.id), eq(chatMessages.id, c.req.param("messageId")))).limit(1);
     if (!msg) throw Errors.notFound("chat/message-not-found", "Message not found");
     if (msg.userId !== c.var.auth!.userId) throw Errors.forbidden("chat/not-author", "Not the message author");
     const body = parseBody(editMessageSchema, await c.req.json().catch(() => ({})), "chat");
-    const [row] = await db.update(chatMessages).set({
+    const [row] = await getDb().update(chatMessages).set({
       ...(body.content !== undefined ? { content: body.content } : {}),
       ...(body.gif !== undefined ? { gif: body.gif } : {}),
       ...(body.mentions !== undefined ? { mentions: body.mentions } : {}),
@@ -417,7 +417,7 @@ export const chatRoutes = new Hono<{ Variables: Variables }>()
   .delete("/conversations/:id/messages/:messageId", requireAuth, async (c) => {
     const convo = await getConversation(c);
     await requireMember(c, convo.id);
-    const [msg] = await db.select().from(chatMessages)
+    const [msg] = await getDb().select().from(chatMessages)
       .where(and(eq(chatMessages.conversationId, convo.id), eq(chatMessages.id, c.req.param("messageId")))).limit(1);
     if (!msg) throw Errors.notFound("chat/message-not-found", "Message not found");
     if (msg.userId !== c.var.auth!.userId) throw Errors.forbidden("chat/not-author", "Not the message author");
@@ -425,10 +425,10 @@ export const chatRoutes = new Hono<{ Variables: Variables }>()
     if (env.CONTENT_DELETE_MODE === "hard") {
       // Collect files rows BEFORE the delete — the FK cascade takes them with the message row.
       const fileRows = await collectFileRows(c.var.projectId, { chatMessageId: msg.id });
-      await db.delete(chatMessages).where(eq(chatMessages.id, msg.id));
+      await getDb().delete(chatMessages).where(eq(chatMessages.id, msg.id));
       removeMediaAsync(fileRows, `chat message ${msg.id}`);
     } else {
-      await db.update(chatMessages).set({ userDeletedAt: now }).where(eq(chatMessages.id, msg.id));
+      await getDb().update(chatMessages).set({ userDeletedAt: now }).where(eq(chatMessages.id, msg.id));
     }
     // Same socket event in both modes — clients drop the message from view either way.
     emitToConversation(convo.id, "message:deleted", { messageId: msg.id, conversationId: convo.id, userDeletedAt: now });
@@ -440,13 +440,13 @@ export const chatRoutes = new Hono<{ Variables: Variables }>()
     const messageId = c.req.param("messageId");
     const { emoji } = parseBody(messageReactionSchema, await c.req.json().catch(() => ({})), "chat");
     const uid = c.var.auth!.userId;
-    const [existing] = await db.select({ id: chatMessageReactions.id }).from(chatMessageReactions)
+    const [existing] = await getDb().select({ id: chatMessageReactions.id }).from(chatMessageReactions)
       .where(and(eq(chatMessageReactions.messageId, messageId), eq(chatMessageReactions.userId, uid), eq(chatMessageReactions.emoji, emoji))).limit(1);
     const delta = existing ? -1 : 1;
-    if (existing) await db.delete(chatMessageReactions).where(eq(chatMessageReactions.id, existing.id));
-    else await db.insert(chatMessageReactions).values({ projectId: c.var.projectId, messageId, userId: uid, emoji });
+    if (existing) await getDb().delete(chatMessageReactions).where(eq(chatMessageReactions.id, existing.id));
+    else await getDb().insert(chatMessageReactions).values({ projectId: c.var.projectId, messageId, userId: uid, emoji });
     // Maintain the denormalized emoji->count map; drop the key when it hits 0.
-    const [row] = await db.execute(sql`
+    const [row] = await getDb().execute(sql`
       update chat_messages set reaction_counts =
         case when greatest(0, coalesce((reaction_counts->>${emoji})::int,0) + ${delta}) = 0
           then reaction_counts - ${emoji}
@@ -460,7 +460,7 @@ export const chatRoutes = new Hono<{ Variables: Variables }>()
     const convo = await getConversation(c);
     await requireMember(c, convo.id);
     const body = parseBody(reportMessageSchema, await c.req.json().catch(() => ({})), "chat");
-    await db.insert(reports).values({
+    await getDb().insert(reports).values({
       projectId: c.var.projectId, reporterId: c.var.auth!.userId,
       targetType: "message", targetId: c.req.param("messageId"), reason: body.reason, details: body.details,
     });
@@ -476,7 +476,7 @@ export const chatRoutes = new Hono<{ Variables: Variables }>()
     const spaceId = c.req.param("spaceId");
     const uid = c.var.auth!.userId;
 
-    const [space] = await db.select().from(spaces)
+    const [space] = await getDb().select().from(spaces)
       .where(and(eq(spaces.projectId, projectId), eq(spaces.id, spaceId))).limit(1);
     if (!space) throw Errors.notFound("spaces/not-found", "Space not found");
 
@@ -484,7 +484,7 @@ export const chatRoutes = new Hono<{ Variables: Variables }>()
     let spaceRole: "admin" | "moderator" | "member" | null = null;
     if (space.userId === uid) spaceRole = "admin";
     else {
-      const [sm] = await db.select().from(spaceMembers)
+      const [sm] = await getDb().select().from(spaceMembers)
         .where(and(eq(spaceMembers.projectId, projectId), eq(spaceMembers.spaceId, spaceId), eq(spaceMembers.userId, uid))).limit(1);
       if (sm && sm.status === "active") spaceRole = sm.role;
     }
@@ -492,23 +492,23 @@ export const chatRoutes = new Hono<{ Variables: Variables }>()
     const convRole = spaceRole === "admin" ? "admin" : "member";
 
     // Get-or-create the single space conversation (seed posting permission from the space).
-    let [convo] = await db.select().from(conversations)
+    let [convo] = await getDb().select().from(conversations)
       .where(and(eq(conversations.projectId, projectId), eq(conversations.spaceId, spaceId), eq(conversations.type, "space"))).limit(1);
     const created = !convo;
     if (!convo) {
       const seedPosting = space.postingPermission === "admins" ? "admins" : "members";
-      [convo] = await db.insert(conversations)
+      [convo] = await getDb().insert(conversations)
         .values({ projectId, type: "space", spaceId, createdById: uid, postingPermission: seedPosting }).returning();
     }
 
     // Auto-join the caller (re)activating their membership; don't clobber an existing role.
-    await db.insert(conversationMembers)
+    await getDb().insert(conversationMembers)
       .values({ projectId, conversationId: convo!.id, userId: uid, role: convRole })
       .onConflictDoUpdate({ target: [conversationMembers.conversationId, conversationMembers.userId], set: { isActive: true, leftAt: null } });
 
-    const [me] = await db.select().from(conversationMembers)
+    const [me] = await getDb().select().from(conversationMembers)
       .where(and(eq(conversationMembers.conversationId, convo!.id), eq(conversationMembers.userId, uid))).limit(1);
-    const [{ n } = { n: 0 }] = await db.select({ n: count() }).from(conversationMembers)
+    const [{ n } = { n: 0 }] = await getDb().select({ n: count() }).from(conversationMembers)
       .where(and(eq(conversationMembers.conversationId, convo!.id), eq(conversationMembers.isActive, true)));
     return c.json(shapeConversation(convo!, { currentMember: me ? shapeConversationMember(me) : undefined, memberCount: n }), created ? 201 : 200);
   });
