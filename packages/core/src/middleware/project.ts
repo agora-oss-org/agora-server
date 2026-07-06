@@ -4,7 +4,7 @@ import { createMiddleware } from "hono/factory";
 import { eq } from "drizzle-orm";
 import type { Variables } from "../http/context.js";
 import { Errors } from "../http/errors.js";
-import { db } from "../db/index.js";
+import { getDb } from "../db/index.js";
 import { projects } from "../db/schema/index.js";
 
 const cache = new Map<string, boolean>();
@@ -19,7 +19,7 @@ export const resolveProject = createMiddleware<{ Variables: Variables }>(async (
   if (!UUID_RE.test(projectId)) throw Errors.notFound("project/not-found", "Unknown project");
 
   if (!cache.get(projectId)) {
-    const rows = await db.select({ id: projects.id }).from(projects).where(eq(projects.id, projectId)).limit(1);
+    const rows = await getDb().select({ id: projects.id }).from(projects).where(eq(projects.id, projectId)).limit(1);
     if (!rows[0]) throw Errors.notFound("project/not-found", "Unknown project");
     cache.set(projectId, true);
   }

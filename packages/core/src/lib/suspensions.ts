@@ -8,7 +8,7 @@
 // refresh-token families (api-owned auth) and would drag lib/tokens.ts into this kernel; secure-chat
 // only needs the read.
 import { eq } from "drizzle-orm";
-import { db } from "../db/index.js";
+import { getDb } from "../db/index.js";
 import { userSuspensions } from "../db/schema/index.js";
 import {
   suspensionIndexEnabled, isSuspendedRedis, rebuildSuspendedSet, markSuspensionIndexReady,
@@ -22,7 +22,7 @@ export function isActiveSuspension(now: Date, row: { startDate: Date; endDate: D
 /** Authoritative DB read — used directly when the Redis index is disabled, and as the source of truth
  *  for (re)building the index (hydrate + cron). Indexed point lookup by profile_id. */
 export async function hasActiveSuspensionDb(profileId: string): Promise<boolean> {
-  const rows = await db
+  const rows = await getDb()
     .select({ startDate: userSuspensions.startDate, endDate: userSuspensions.endDate })
     .from(userSuspensions)
     .where(eq(userSuspensions.profileId, profileId));
@@ -45,7 +45,7 @@ export async function hydrateSuspensionIndex(): Promise<{ enabled: boolean; coun
     markSuspensionIndexReady();
     return { enabled: false, count: 0 };
   }
-  const rows = await db
+  const rows = await getDb()
     .select({ profileId: userSuspensions.profileId, startDate: userSuspensions.startDate, endDate: userSuspensions.endDate })
     .from(userSuspensions);
   const now = new Date();
