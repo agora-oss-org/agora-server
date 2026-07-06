@@ -5,5 +5,5 @@ import * as schema from "./schema/index.js";
 
 export { schema };
 export { getDb, runWithDb, type Db } from "./context.js";
-// export { getDbForDsn, endAllPools } from "./registry.js"; // added in Task 2 — leave this line commented until then
+export { getDbForDsn, endAllPools } from "./registry.js";
 export { sharedDb as db } from "./shared.js"; // LEGACY — removed in Task 8
