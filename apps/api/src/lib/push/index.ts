@@ -9,6 +9,7 @@ import { getVapidKeys } from "./vapid.js";
 import { WebPushProvider } from "./webpush.js";
 import { getFcmProvider, getApnsProvider } from "./native.js"; // added in Task 8
 import { logger } from "../logger.js";
+import { loadDisabledTypes, isTypeDisabled } from "../notification-prefs.js";
 
 export async function getProviders(projectId: string): Promise<ProviderMap> {
   const vapid = await getVapidKeys(projectId);
@@ -30,11 +31,16 @@ export async function dispatchToUser(projectId: string, userId: string, payload:
 }
 
 /** Fire-and-forget bridge from the notification choke point (never blocks/throws into the request).
- *  No-ops when the type isn't push-worthy (reactions/milestones → in-app only; see allowlist). */
+ *  No-ops when the type isn't push-worthy (reactions/milestones → in-app only; see allowlist), or
+ *  when the user has opted out of this push type (`push_notification_preferences`). */
 export function dispatchNotificationPush(projectId: string, userId: string, type: string): void {
   const payload = notificationPushPayload(type);
   if (!payload) return; // suppressed type → in-app only
-  dispatchToUser(projectId, userId, payload).catch((err) => {
+  (async () => {
+    const disabled = await loadDisabledTypes(projectId, userId);
+    if (isTypeDisabled(disabled, type)) return; // user opted out of this push type
+    await dispatchToUser(projectId, userId, payload);
+  })().catch((err) => {
     logger.error("push: notification dispatch failed");
     logger.debug({ err, type }, "push: notification dispatch failed");
   });
