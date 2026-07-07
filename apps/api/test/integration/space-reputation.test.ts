@@ -97,6 +97,14 @@ describe("space_reputation trigger maintenance", () => {
     await deleteProject(projectId);
   });
 
+  it("content_space_id returns null for a message target", async () => {
+    const projectId = await createProject();
+    const rows = await getDb().execute<{ sid: string | null }>(sql`
+      select content_space_id('message'::reaction_target, ${randomUUID()}::uuid) as sid`);
+    expect([...rows][0]!.sid).toBeNull();
+    await deleteProject(projectId);
+  });
+
   it("applies the reaction delta map (love = +2)", async () => {
     const { projectId, author, reactor } = await setup();
     const space = await makeSpace(projectId, author.token);

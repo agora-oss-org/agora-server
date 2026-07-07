@@ -29,14 +29,17 @@ export async function loadSpaceReputations(
   // type record to uuid[]"). sql.join keeps each id its own bound, explicitly-cast param.
   const idList = sql.join(ids.map((id) => sql`${id}::uuid`), sql`, `);
   if (includeDescendants) {
+    // CYCLE bounds the walk against a (app-prevented) parent_space_id cycle — for an acyclic tree
+    // (the normal case) it changes no results, since every node is still visited exactly once.
     const rows = await getDb().execute<{ user_id: string; reputation: number }>(sql`
-      with recursive subtree as (
+      with recursive subtree(id) as (
         select id from spaces where id = ${spaceId}::uuid and project_id = ${projectId}::uuid
         union all
         select s.id from spaces s
           join subtree t on s.parent_space_id = t.id
         where s.project_id = ${projectId}::uuid
       )
+      cycle id set is_cycle using path
       select sr.user_id, sum(sr.reputation)::int as reputation
       from space_reputation sr
       where sr.project_id = ${projectId}::uuid
