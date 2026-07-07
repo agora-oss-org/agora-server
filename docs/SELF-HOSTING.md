@@ -307,6 +307,18 @@ Just a connection string. Self-host points it at the `db` container
 (`postgres://postgres:<pw>@db:5432/postgres`, a direct `:5432` connection — `prepare:false` stays
 valid). No schema or migration changes; the same `scripts/migrate.mjs` runs against either backend.
 
+### Boot hook (`AGORA_BOOT_MODULE`)
+
+`AGORA_BOOT_MODULE` is an optional module specifier the `agora` and `secure-chat` processes
+**side-effect-import once at startup, before serving** — the supported way for a prebuilt image to run
+deployment init (e.g. registering a per-project DB resolver) without editing the bundled entrypoint.
+Unset → no-op. If set and the module fails to load, the process **fails closed** (logs and exits) rather
+than serve without it. It fires after env validation, the logger, and OpenTelemetry are ready.
+
+This is the **sole supported** mechanism. Node's native `NODE_OPTIONS=--import` can technically preload a
+module too, but it runs before env/logger/OTel exist and is **not** a contract Agora documents, relies on,
+or tests — if you use it, you are on your own.
+
 ## Switching an existing deployment
 
 The seams are designed for **fresh** self-hosted deploys. Moving a *live* Supabase deployment to
