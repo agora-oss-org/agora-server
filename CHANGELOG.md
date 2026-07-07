@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-07-07
+
 ### Added
 - **`@agora/core/db` resolver seam** — `setDbResolver`/`resolveDbFor` let an external deployment inject a
   per-project DB handle at boot (unregistered → the shared `DATABASE_URL` handle; resolver errors fail
@@ -2047,7 +2049,8 @@ cloud Supabase — no stubbed endpoints remain.
   (`@agora/*`), a repointed fork of `@replyke/core`.
 - Backlog: rate limiting, refresh-token cleanup sweep, RLS write policies, turnkey deploy guide.
 
-[Unreleased]: https://github.com/jenova-marie/agora/compare/v0.17.0...HEAD
+[Unreleased]: https://github.com/jenova-marie/agora/compare/v0.18.0...HEAD
+[0.18.0]: https://github.com/jenova-marie/agora/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/jenova-marie/agora/compare/v0.16.5...v0.17.0
 [0.16.5]: https://github.com/jenova-marie/agora/compare/v0.16.4...v0.16.5
 [0.16.4]: https://github.com/jenova-marie/agora/compare/v0.16.3...v0.16.4

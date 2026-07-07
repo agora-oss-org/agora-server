@@ -1,6 +1,6 @@
 {
   "name": "@agora/core",
-  "version": "0.17.0",
+  "version": "0.18.0",
   "private": true,
   "type": "module",
   "description": "Shared Agora server kernel — env, logger, db client + schema, http envelope/context, auth/project middleware, validation, suspensions, redis. Consumed by @agora/api and @agora/secure-chat.",
