@@ -94,7 +94,10 @@ Supabase Postgres   schema + triggers + RPC + pgvector + PostGIS
   a type error. `resolveProject` runs each `/v7/:projectId/*` request inside an AsyncLocalStorage
   scope (`runWithDb`); outside a request (crons/scripts) `getDb()` falls back to the shared
   singleton. Never hoist (`const db = getDb()` at module scope) — that freezes the handle and
-  defeats the seam (groundwork for per-tenant DBs; the dormant `getDbForDsn` registry is Phase 1).
+  defeats the seam. Groundwork for **external per-tenant deployments**: `setDbResolver`/
+  `resolveDbFor` (`@agora/core/db`) let a deployment inject a per-project handle at boot
+  (resolver errors fail closed — no shared-db fallback); unregistered, everything is the shared
+  DB. This repo stays **single-tenant** — multi-tenant routing lives in `../agora-hosting`.
 - **`auth.users` is NOT modeled in Drizzle** — `profiles.auth_user_id` is a plain uuid the app
   links, so Drizzle never tries to own the Supabase-managed `auth` schema.
 - Multi-tenant by `project_id` (every table has it; the SDK addresses `/v7/:projectId/...`).
@@ -308,8 +311,9 @@ remove uploaded media from storage; `soft` tombstones), and for **native** auth 
 `AUTH_EMAIL_LINK_ALLOWED_ORIGINS` (**required** — without it confirm/reset/resend fail closed with
 `503 auth/email-not-configured`; validates client `emailRedirectTo`) + `AUTH_EMAIL_LINK_BASE`
 (default `http://localhost:5173`; Supabase-brokered auth is unaffected),
-`VAPID_PUBLIC_KEY`/`VAPID_PRIVATE_KEY`/`VAPID_SUBJECT` (web push — unset → push dispatch is a no-op).
-Empty strings are treated as unset.
+`VAPID_PUBLIC_KEY`/`VAPID_PRIVATE_KEY`/`VAPID_SUBJECT` (web push — unset → push dispatch is a no-op),
+`MAX_POOLS` (cap on the db registry's per-DSN connection pools, default 50 — generic tuning,
+irrelevant to a single-`DATABASE_URL` deployment). Empty strings are treated as unset.
 
 **Operators (deployment god-view).** `OPERATOR_USER_IDS`/`OPERATOR_EMAILS` (comma-separated profile
 UUIDs / case-insensitive emails) are an env allowlist resolved by `lib/operators.ts` `isOperator()`.

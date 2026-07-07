@@ -51,8 +51,31 @@ catch-all:
   prose:
     - CHANGELOG.md
 
-exceptions: []
 # Example entry (grows over time as the user rules on skipped obligations):
 #   - subject: RATE_LIMIT_WINDOW_SECONDS
 #     target: docker-compose.prod.yml
 #     reason: tuned via .env only; compose never overrides it
+exceptions:
+  # MAX_POOLS is a generic, optional pool-tuning knob (default 50) that is irrelevant to a
+  # single-DATABASE_URL deployment — which is every deployment of this (single-tenant) repo.
+  # It ships in the .env templates + CLAUDE.md as a documented knob; compose passes it through
+  # env_file automatically (no explicit default needed), and it has no place in user-facing
+  # deploy docs. Multi-tenant registry tuning lives in ../agora-hosting.
+  - subject: MAX_POOLS
+    target: docker-compose.dev.yml
+    reason: passed via env_file; optional tuning knob, no compose default needed
+  - subject: MAX_POOLS
+    target: docker-compose.yml
+    reason: passed via env_file; optional tuning knob, no compose default needed
+  - subject: MAX_POOLS
+    target: docker-compose.prod.yml
+    reason: passed via env_file; optional tuning knob, no compose default needed
+  - subject: MAX_POOLS
+    target: docs/SELF-HOSTING.md
+    reason: internal registry tuning, irrelevant to single-tenant self-hosting
+  - subject: MAX_POOLS
+    target: README.md
+    reason: internal registry tuning, irrelevant to single-tenant self-hosting
+  - subject: MAX_POOLS
+    target: wiki/Deployment.md
+    reason: internal registry tuning, irrelevant to single-tenant self-hosting
