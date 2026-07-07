@@ -13,6 +13,7 @@ import { env } from "../lib/env.js";
 import { collectFileRows, removeMediaAsync } from "../lib/storage-cleanup.js";
 import * as webhooks from "../lib/webhooks.js";
 import { notifyOnEntityMentions, notifyOnReaction } from "../lib/notifications.js";
+import { sanitizeMentions } from "../lib/mentions.js";
 import { parseBracketQuery, buildFeedConditions, buildFeedOrder } from "../lib/entity-filters.js";
 import { entities, reactions, collections, collectionEntities, spaces, readReceipts } from "../db/schema/index.js";
 import { getSocialConfig } from "../lib/social-config.js";
@@ -171,7 +172,7 @@ export const entityRoutes = new Hono<{ Variables: Variables }>()
         spaceId: body.spaceId,
         // null → undefined so Drizzle applies the NOT NULL array/jsonb defaults
         keywords: body.keywords ?? undefined,
-        mentions: body.mentions ?? undefined,
+        mentions: await sanitizeMentions(projectId, body.mentions),
         attachments: body.attachments ?? undefined,
         metadata: body.metadata ?? undefined,
         isDraft: body.isDraft ?? false,
@@ -261,7 +262,7 @@ export const entityRoutes = new Hono<{ Variables: Variables }>()
     if (body.title !== undefined) patch.title = body.title;
     if (body.content !== undefined) patch.content = body.content;
     if (body.keywords !== undefined) patch.keywords = body.keywords;
-    if (body.mentions !== undefined) patch.mentions = body.mentions;
+    if (body.mentions !== undefined) patch.mentions = await sanitizeMentions(c.var.projectId, body.mentions);
     if (body.attachments !== undefined) patch.attachments = body.attachments;
     if (body.metadata !== undefined) patch.metadata = body.metadata;
     const [updated] = await getDb().update(entities).set(patch).where(eq(entities.id, row.id)).returning();

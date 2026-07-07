@@ -24,6 +24,7 @@ import {
 } from "../lib/validation.js";
 import * as webhooks from "../lib/webhooks.js";
 import { notifyOnComment, notifyOnReaction } from "../lib/notifications.js";
+import { sanitizeMentions } from "../lib/mentions.js";
 import { indexContentAsync } from "../lib/embeddings.js";
 import { assertCanReadEntity, assertCanReadComment } from "../lib/space-access.js";
 import { removedPolicy, excludeRemovedSql, shouldHide } from "../lib/moderation-visibility.js";
@@ -98,7 +99,7 @@ export const commentRoutes = new Hono<{ Variables: Variables }>()
         gif: body.gif ?? undefined,
         foreignId: body.foreignId,
         // null → undefined so Drizzle applies the NOT NULL jsonb defaults
-        mentions: body.mentions ?? undefined,
+        mentions: await sanitizeMentions(projectId, body.mentions),
         metadata: body.metadata ?? undefined,
       })
       .returning();
@@ -198,7 +199,7 @@ export const commentRoutes = new Hono<{ Variables: Variables }>()
     const patch: Record<string, unknown> = {};
     if (body.content !== undefined) patch.content = body.content;
     if (body.gif !== undefined) patch.gif = body.gif;
-    if (body.mentions !== undefined) patch.mentions = body.mentions;
+    if (body.mentions !== undefined) patch.mentions = await sanitizeMentions(c.var.projectId, body.mentions);
     if (body.metadata !== undefined) patch.metadata = body.metadata;
     const [updated] = await getDb().update(comments).set(patch).where(eq(comments.id, row.id)).returning();
     if (body.content !== undefined) indexContentAsync(c.var.projectId, "comment", updated!.id, updated!.content);

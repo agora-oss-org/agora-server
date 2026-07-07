@@ -242,7 +242,7 @@ type CollectionRow = typeof collections.$inferSelect;
 type NotificationRow = typeof appNotifications.$inferSelect;
 type ReportRow = typeof reports.$inferSelect;
 
-export function shapeSpace(row: SpaceRow, opts: { isMember?: boolean } = {}) {
+export function shapeSpace(row: SpaceRow, opts: { isMember?: boolean; files?: unknown[] } = {}) {
   const space = {
     id: row.id,
     projectId: row.projectId,
@@ -269,6 +269,7 @@ export function shapeSpace(row: SpaceRow, opts: { isMember?: boolean } = {}) {
     deletedAt: iso(row.deletedAt),
   } as Record<string, unknown>;
   if (opts.isMember !== undefined) space.isMember = opts.isMember;
+  if (opts.files !== undefined) (space as Record<string, unknown>).files = opts.files;
   return space;
 }
 
@@ -627,6 +628,30 @@ export async function loadMessageFiles(
     const arr = map.get(r.chatMessageId) ?? [];
     arr.push(shapeFile(r));
     map.set(r.chatMessageId, arr);
+  }
+  return map;
+}
+
+/**
+ * Batch-load the file associations for a set of spaces. Returns a Map keyed by spaceId;
+ * spaces with no files are absent from the map.
+ */
+export async function loadSpaceFiles(
+  projectId: string,
+  spaceIds: (string | null | undefined)[]
+): Promise<Map<string, ReturnType<typeof shapeFile>[]>> {
+  const map = new Map<string, ReturnType<typeof shapeFile>[]>();
+  const ids = [...new Set(spaceIds.filter((x): x is string => !!x))];
+  if (ids.length === 0) return map;
+  const rows = await getDb()
+    .select()
+    .from(files)
+    .where(and(eq(files.projectId, projectId), inArray(files.spaceId, ids)));
+  for (const r of rows.sort((a, b) => (a.position ?? 0) - (b.position ?? 0))) {
+    if (!r.spaceId) continue;
+    const arr = map.get(r.spaceId) ?? [];
+    arr.push(shapeFile(r));
+    map.set(r.spaceId, arr);
   }
   return map;
 }

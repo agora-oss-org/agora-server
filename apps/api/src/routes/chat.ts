@@ -24,6 +24,7 @@ import { removedPolicy, excludeRemovedSql } from "../lib/moderation-visibility.j
 import { logger } from "../lib/logger.js";
 import { indexContentAsync } from "../lib/embeddings.js";
 import * as webhooks from "../lib/webhooks.js";
+import { sanitizeMentions } from "../lib/mentions.js";
 
 type ConversationRow = typeof conversations.$inferSelect;
 type MemberRow = typeof conversationMembers.$inferSelect;
@@ -371,7 +372,7 @@ export const chatRoutes = new Hono<{ Variables: Variables }>()
     // Trigger (0002) bumps conversation.last_message_at + parent thread_reply_count.
     const [row] = await getDb().insert(chatMessages).values({
       projectId: c.var.projectId, conversationId: convo.id, userId: c.var.auth!.userId,
-      content: body.content, gif: body.gif, mentions: body.mentions, metadata: body.metadata,
+      content: body.content, gif: body.gif, mentions: await sanitizeMentions(c.var.projectId, body.mentions), metadata: body.metadata,
       parentMessageId: body.parentMessageId, quotedMessageId: body.quotedMessageId,
     }).returning();
     // Upload any attached files (images → variants, others as-is), linked to this message.
@@ -404,7 +405,7 @@ export const chatRoutes = new Hono<{ Variables: Variables }>()
     const [row] = await getDb().update(chatMessages).set({
       ...(body.content !== undefined ? { content: body.content } : {}),
       ...(body.gif !== undefined ? { gif: body.gif } : {}),
-      ...(body.mentions !== undefined ? { mentions: body.mentions } : {}),
+      ...(body.mentions !== undefined ? { mentions: await sanitizeMentions(c.var.projectId, body.mentions) } : {}),
       ...(body.metadata !== undefined ? { metadata: body.metadata } : {}),
       editedAt: new Date(),
     }).where(eq(chatMessages.id, msg.id)).returning();

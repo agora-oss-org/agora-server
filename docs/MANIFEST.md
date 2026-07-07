@@ -167,7 +167,7 @@ signs an RS256 JWT (issuer=projectId, aud="replyke.com", sub=userData.id, claim 
 | GET | `/users/by-foreign-id` | ✅ |
 | GET | `/users/by-username` | ✅ |
 | GET | `/users/check-username` | ✅ |
-| GET | `/users/suggestions` | ✅ |
+| GET | `/users/suggestions` (`query` — username/name ILIKE substring, caller excluded, reputation-ordered; returns a **bare `User[]`**, NOT the standard envelope — matches SDK's `useFetchUserSuggestions`) | ✅ |
 | GET | `/users/:id/follow` (follow status) | ✅ |
 | POST | `/users/:id/follow` | ✅ |
 | DELETE | `/users/:id/follow` | ✅ |
@@ -198,7 +198,7 @@ signs an RS256 JWT (issuer=projectId, aud="replyke.com", sub=userData.id, claim 
 ### spaces
 | Method | Path | Status |
 |---|---|---|
-| GET | `/spaces` (list, `?…`) | ✅ |
+| GET | `/spaces` (list; `parentSpaceId` (absent → root spaces only), `searchAny` (ILIKE across name/slug/description), `searchName`/`searchSlug`/`searchDescription` (field-specific ILIKE, combine with AND), `sortBy` ∈ `newest`\|`members`\|`alphabetical` (default `newest`; invalid value → `400 spaces/invalid-filter`), `memberOf=true` (restrict to spaces the caller is an ACTIVE member of; literal `"true"` only), `include=files` (attaches each space's `files[]`), pagination) | ✅ |
 | POST | `/spaces` | ✅ |
 | GET | `/spaces/:id` | ✅ |
 | PATCH | `/spaces/:id` | ✅ |

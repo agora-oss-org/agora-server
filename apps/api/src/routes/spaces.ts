@@ -2,7 +2,7 @@
 // Static routes (/by-slug, /user-spaces, …) MUST stay above /:id.
 // NOTE: :memberId is treated as the member's USER id (operate on space_members by user).
 import { Hono } from "hono";
-import { and, eq, isNull, desc, asc, count, inArray, sql } from "drizzle-orm";
+import { and, eq, isNull, desc, asc, count, inArray, ilike, or, sql } from "drizzle-orm";
 import type { Variables } from "../http/context.js";
 import { Errors } from "../http/errors.js";
 import { requireAuth } from "../middleware/auth.js";
@@ -10,10 +10,10 @@ import { getDb } from "../db/index.js";
 import { logger } from "../lib/logger.js";
 import { spaces, spaceMembers, spaceRules, entities, comments, profiles, reports } from "../db/schema/index.js";
 import { readPagination, paginate } from "../http/envelope.js";
-import { shapeSpace, shapeRule, shapeUser, generateShortId } from "../lib/shape.js";
+import { shapeSpace, shapeRule, shapeUser, generateShortId, parseInclude, loadSpaceFiles } from "../lib/shape.js";
 import {
   parseBody, createSpaceSchema, updateSpaceSchema, createRuleSchema, updateRuleSchema,
-  reorderRulesSchema, memberRoleSchema, moderationSchema,
+  reorderRulesSchema, memberRoleSchema, moderationSchema, spaceSortByEnum,
 } from "../lib/validation.js";
 import { notifyOnSpaceApproved } from "../lib/notifications.js";
 import * as webhooks from "../lib/webhooks.js";
@@ -71,17 +71,47 @@ async function wouldCreateCycle(spaceId: string, newParentId: string): Promise<b
 export const spaceRoutes = new Hono<{ Variables: Variables }>()
   .get("/", async (c) => {
     const { page, limit, offset } = readPagination(c);
-    // SDK sends an absent parent filter as the literal string "null"/"undefined".
+    // SDK sends an absent filter as the literal string "null"/"undefined".
+    const q = (k: string) => { const v = c.req.query(k); return v && v !== "null" && v !== "undefined" ? v : undefined; };
     const pq = c.req.query("parentSpaceId");
     const parent = pq && pq !== "null" && pq !== "undefined" ? pq : undefined;
-    const where = and(
+
+    const conds = [
       eq(spaces.projectId, c.var.projectId),
       isNull(spaces.deletedAt),
-      parent ? eq(spaces.parentSpaceId, parent) : isNull(spaces.parentSpaceId)
-    );
+      parent ? eq(spaces.parentSpaceId, parent) : isNull(spaces.parentSpaceId),
+    ];
+    const any = q("searchAny");
+    if (any) conds.push(or(ilike(spaces.name, `%${any}%`), ilike(spaces.slug, `%${any}%`), ilike(spaces.description, `%${any}%`))!);
+    if (q("searchName")) conds.push(ilike(spaces.name, `%${q("searchName")}%`));
+    if (q("searchSlug")) conds.push(ilike(spaces.slug, `%${q("searchSlug")}%`));
+    if (q("searchDescription")) conds.push(ilike(spaces.description, `%${q("searchDescription")}%`));
+
+    // memberOf=true → restrict to spaces the caller is an ACTIVE member of (literal "true" only).
+    const uid = c.var.auth?.userId;
+    if (q("memberOf") === "true") {
+      if (!uid) return c.json(paginate([], 0, page, limit));
+      conds.push(inArray(spaces.id, getDb().select({ id: spaceMembers.spaceId }).from(spaceMembers)
+        .where(and(eq(spaceMembers.projectId, c.var.projectId), eq(spaceMembers.userId, uid), eq(spaceMembers.status, "active")))));
+    }
+
+    const sortByRaw = q("sortBy");
+    if (sortByRaw !== undefined && !spaceSortByEnum.safeParse(sortByRaw).success) {
+      throw Errors.badRequest("spaces/invalid-filter", "Invalid 'sortBy' filter", "sortBy");
+    }
+    const orderBy = sortByRaw === "members" ? desc(spaces.membersCount)
+      : sortByRaw === "alphabetical" ? asc(spaces.name)
+      : desc(spaces.createdAt);
+
+    const where = and(...conds);
     const [{ n } = { n: 0 }] = await getDb().select({ n: count() }).from(spaces).where(where);
-    const rows = await getDb().select().from(spaces).where(where).orderBy(desc(spaces.createdAt)).limit(limit).offset(offset);
-    return c.json(paginate(rows.map((r) => shapeSpace(r)), n, page, limit));
+    const rows = await getDb().select().from(spaces).where(where).orderBy(orderBy).limit(limit).offset(offset);
+    const include = parseInclude(c);
+    const fileMap = include.has("files") ? await loadSpaceFiles(c.var.projectId, rows.map((r) => r.id)) : null;
+    return c.json(paginate(
+      rows.map((r) => shapeSpace(r, fileMap ? { files: fileMap.get(r.id) ?? [] } : {})),
+      n, page, limit,
+    ));
   })
   .post("/", requireAuth, async (c) => {
     const body = parseBody(createSpaceSchema, await c.req.json().catch(() => ({})), "spaces");

@@ -71,14 +71,16 @@ async function insert(
   }
 }
 
-/** Pull candidate user ids out of the untyped `mentions` jsonb (array of {id} | string). */
-function mentionIds(mentions: unknown): string[] {
+/** Pull candidate user ids out of the untyped `mentions` jsonb (array of {id} | string). (Exported for unit tests.) */
+export function mentionIds(mentions: unknown): string[] {
   if (!Array.isArray(mentions)) return [];
   const ids = new Set<string>();
   for (const m of mentions) {
     if (typeof m === "string") ids.add(m);
     else if (m && typeof m === "object") {
-      const id = (m as Record<string, unknown>).id ?? (m as Record<string, unknown>).userId;
+      const o = m as Record<string, unknown>;
+      if (o.type === "space") continue; // space mentions are rich-text links, not notification recipients
+      const id = o.id ?? o.userId;
       if (typeof id === "string") ids.add(id);
     }
   }
