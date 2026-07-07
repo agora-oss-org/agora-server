@@ -565,6 +565,7 @@ export function shapeConversationMember(row: ConversationMemberRow, user?: User 
     role: row.role ?? null,
     lastReadAt: iso(row.lastReadAt),
     mutedUntil: iso(row.mutedUntil),
+    mutedForever: row.mutedForever ?? false,
     isActive: row.isActive,
     leftAt: iso(row.leftAt),
     createdAt: iso(row.createdAt)!,

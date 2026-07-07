@@ -4,6 +4,7 @@ import {
   shapeEntity,
   shapeComment,
   shapeSpace,
+  shapeConversationMember,
   generateShortId,
   parseInclude,
   parseBoolFlag,
@@ -230,5 +231,22 @@ describe("shapeSpace visibility", () => {
   });
   it("defaults legacy null to 'public'", () => {
     expect((shapeSpace(spaceRow({ visibility: null })) as any).visibility).toBe("public");
+  });
+});
+
+function memberRow(over: Record<string, unknown> = {}) {
+  return {
+    id: "m1", projectId: "p1", conversationId: "c1", userId: "u1", role: "member",
+    lastReadAt: null, mutedUntil: null, mutedForever: true, isActive: true, leftAt: null,
+    createdAt: new Date(0), updatedAt: new Date(0), ...over,
+  } as any;
+}
+
+describe("shapeConversationMember mutedForever", () => {
+  it("emits mutedForever from the row", () => {
+    expect((shapeConversationMember(memberRow()) as any).mutedForever).toBe(true);
+  });
+  it("defaults a missing value to false", () => {
+    expect((shapeConversationMember(memberRow({ mutedForever: undefined })) as any).mutedForever).toBe(false);
   });
 });

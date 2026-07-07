@@ -415,6 +415,12 @@
 			"when": 1781934611657,
 			"tag": "0058_space_visibility",
 			"breakpoints": true
+		},{
+			"idx": 60,
+			"version": "7",
+			"when": 1781934611658,
+			"tag": "0059_conversation_member_muted_forever",
+			"breakpoints": true
 		}
 	]
 }
