@@ -1,11 +1,11 @@
 // /v7/:projectId/events/* — events, RSVPs, invites, hosts (SDK v7.6.2). Pure REST (no sockets).
 import { Hono } from "hono";
-import { and, eq, isNull, sql, count, asc, desc, type SQL } from "drizzle-orm";
+import { and, eq, isNull, inArray, sql, count, asc, desc, type SQL } from "drizzle-orm";
 import type { Variables } from "../http/context.js";
 import { Errors } from "../http/errors.js";
 import { requireAuth } from "../middleware/auth.js";
 import { getDb } from "../db/index.js";
-import { events, eventHosts, eventRsvps, eventInvites, spaceMembers, spaces } from "../db/schema/index.js";
+import { events, eventHosts, eventRsvps, eventInvites, spaceMembers, spaces, profiles } from "../db/schema/index.js";
 import { readPagination, paginate } from "../http/envelope.js";
 import { parseBody } from "../lib/validation.js";
 import { createEventSchema, updateEventSchema, rsvpSchema, eventUserIdSchema, eventTypeEnum, eventStatusEnum, rsvpStatusEnum } from "@agora-server/contract";
@@ -61,6 +61,21 @@ export async function isMemberForEvent(c: any, row: EventRow): Promise<boolean> 
   if (m) return true;
   const [s] = await getDb().select({ userId: spaces.userId }).from(spaces).where(eq(spaces.id, row.spaceId)).limit(1);
   return !!s && s.userId === uid;
+}
+
+// Assert every supplied userId is a real profile IN THIS PROJECT before a host/invite write. The
+// event_hosts/event_invites FKs reference profiles.id but are NOT project-scoped, so a raw insert
+// would 500 on a non-existent id and — worse — silently accept a profile id from ANOTHER project
+// (a cross-tenant leak). Reject with a clean 400 instead. Trust boundary is the server.
+export async function assertProfilesInProject(projectId: string, userIds: string[]): Promise<void> {
+  const ids = [...new Set(userIds)];
+  if (ids.length === 0) return;
+  const rows = await getDb().select({ id: profiles.id }).from(profiles)
+    .where(and(eq(profiles.projectId, projectId), inArray(profiles.id, ids)));
+  const found = new Set(rows.map((r) => r.id));
+  if (ids.some((id) => !found.has(id))) {
+    throw Errors.badRequest("events/invalid-user", "No such user in this project", "userId");
+  }
 }
 
 export async function isInvited(eventId: string, userId: string | undefined): Promise<boolean> {
@@ -153,6 +168,8 @@ export const eventRoutes = new Hono<{ Variables: Variables }>()
     }
     const body = parseBody(createEventSchema, rawBody, "events");
     await assertCanPostInSpace(c, body.spaceId ?? null); // enforce space posting permission if attached
+    // Validate supplied co-hosts are real in-project profiles BEFORE any write (no orphan event on reject).
+    if (body.hostIds?.length) await assertProfilesInProject(projectId, body.hostIds);
 
     const [row] = await getDb().insert(events).values({
       projectId, userId, shortId: generateShortId(),
@@ -374,6 +391,7 @@ export const eventRoutes = new Hono<{ Variables: Variables }>()
     const row = await getEventOr404(c, c.req.param("eventId"));
     requireEventManage(c, await loadHostIds(row.id));
     const { userId } = parseBody(eventUserIdSchema, await c.req.json().catch(() => ({})), "events");
+    await assertProfilesInProject(c.var.projectId, [userId]);
     await getDb().insert(eventInvites).values({ projectId: c.var.projectId, eventId: row.id, userId }).onConflictDoNothing();
     return c.json(await buildEventResponse(c, row));
   })
@@ -403,6 +421,7 @@ export const eventRoutes = new Hono<{ Variables: Variables }>()
     const row = await getEventOr404(c, c.req.param("eventId"));
     requireEventManage(c, await loadHostIds(row.id));
     const { userId } = parseBody(eventUserIdSchema, await c.req.json().catch(() => ({})), "events");
+    await assertProfilesInProject(c.var.projectId, [userId]);
     await getDb().insert(eventHosts).values({ projectId: c.var.projectId, eventId: row.id, userId }).onConflictDoNothing();
     return c.json(await buildEventResponse(c, row));
   })

@@ -7,7 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.18.0] - 2026-07-07
+### Fixed
+- **Events host/invite `userId` validation.** `POST /events/:id/hosts`, `POST /events/:id/invites`, and
+  the `hostIds` on `POST /events` now verify each supplied user is a real profile **in the same project**
+  before writing. Previously a non-existent id produced a raw FK `500` and — a cross-tenant hole — a
+  profile id from *another* project was silently accepted into the host/invite row. Both now fail closed
+  with `400 events/invalid-user` (create validates before the event insert, so a bad `hostIds` no longer
+  leaves an orphan event).
 
 ### Added
 - **`@agora/core/db` resolver seam** — `setDbResolver`/`resolveDbFor` let an external deployment inject a

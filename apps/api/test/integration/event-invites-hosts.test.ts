@@ -49,3 +49,59 @@ describe("event invites + hosts (integration)", () => {
     expect((await api("GET", `${B}/events/${eventId}`, { token: guest.token })).status).toBe(403);
   });
 });
+
+describe("event host/invite userId validation (integration)", () => {
+  let projectId: string; let foreignProjectId: string; let B: string;
+  let host: { id: string; token: string };
+  let foreignUser: { id: string; token: string }; // a real profile, but in ANOTHER project
+  let eventId: string;
+  // A well-formed uuid that matches no profile row.
+  const BOGUS = "00000000-0000-4000-8000-000000000000";
+
+  beforeAll(async () => {
+    [projectId, foreignProjectId] = await Promise.all([createProject(), createProject()]);
+    B = base(projectId);
+    [host, foreignUser] = await Promise.all([createUser(projectId), createUser(foreignProjectId)]);
+    eventId = (await api("POST", `${B}/events`, { token: host.token, body: { title: "Guarded", startTime: "2026-07-01T18:00:00Z", type: "online", visibility: "public" } })).body.id;
+  });
+  afterAll(async () => { await Promise.all([projectId && deleteProject(projectId), foreignProjectId && deleteProject(foreignProjectId)].filter(Boolean)); });
+
+  it("POST /invites rejects a non-existent user with 400 (not a raw FK 500)", async () => {
+    const res = await api("POST", `${B}/events/${eventId}/invites`, { token: host.token, body: { userId: BOGUS } });
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe("events/invalid-user");
+  });
+
+  it("POST /invites rejects a cross-project profile id (no cross-tenant leak)", async () => {
+    const res = await api("POST", `${B}/events/${eventId}/invites`, { token: host.token, body: { userId: foreignUser.id } });
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe("events/invalid-user");
+  });
+
+  it("POST /hosts rejects a non-existent user with 400 (not a raw FK 500)", async () => {
+    const res = await api("POST", `${B}/events/${eventId}/hosts`, { token: host.token, body: { userId: BOGUS } });
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe("events/invalid-user");
+  });
+
+  it("POST /hosts rejects a cross-project profile id (no cross-tenant leak)", async () => {
+    const res = await api("POST", `${B}/events/${eventId}/hosts`, { token: host.token, body: { userId: foreignUser.id } });
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe("events/invalid-user");
+  });
+
+  it("create rejects a cross-project hostId with 400 and leaves no orphan event", async () => {
+    const res = await api("POST", `${B}/events`, { token: host.token, body: { title: "Bad hosts", startTime: "2026-07-01T18:00:00Z", type: "online", hostIds: [foreignUser.id] } });
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe("events/invalid-user");
+    // The check runs before the event insert → the event must not have been created.
+    const list = await api("GET", `${B}/events`, { token: host.token });
+    expect(list.body.data.some((e: { title: string }) => e.title === "Bad hosts")).toBe(false);
+  });
+
+  it("still accepts a valid in-project user as invite + host", async () => {
+    const member = await createUser(projectId);
+    expect((await api("POST", `${B}/events/${eventId}/invites`, { token: host.token, body: { userId: member.id } })).status).toBe(200);
+    expect((await api("POST", `${B}/events/${eventId}/hosts`, { token: host.token, body: { userId: member.id } })).body.hostIds).toContain(member.id);
+  });
+});
