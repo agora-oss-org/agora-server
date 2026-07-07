@@ -8,6 +8,10 @@ const schema = z.object({
   SECURE_CHAT_PORT: z.coerce.number().default(4002),
   // Supabase transaction pooler — Drizzle owns DB access.
   DATABASE_URL: z.string().url(),
+  // Optional deployment boot hook (see @agora/core/lib/boot). A module specifier the entrypoint
+  // side-effect-imports ONCE before serving — the documented way for a prebuilt image to register a
+  // per-project DB resolver without editing the bundle. Unset → no-op. Empty string treated as unset.
+  AGORA_BOOT_MODULE: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
   // Supabase Auth + Storage only. Optional until those handlers are built, so the
   // DB-backed server boots without them. Empty strings in .env are treated as unset.
   SUPABASE_URL: z.preprocess((v) => (v === "" ? undefined : v), z.string().url().optional()),

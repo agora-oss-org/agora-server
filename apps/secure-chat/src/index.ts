@@ -8,6 +8,7 @@ import { serve } from "@hono/node-server";
 import { env } from "@agora/core/lib/env";
 import { logger } from "@agora/core/lib/logger";
 import { hydrateSuspensionIndex } from "@agora/core/lib/suspensions";
+import { loadBootModule } from "@agora/core/lib/boot";
 import { createSecureApp } from "./app.js";
 import { attachSecureRealtime } from "./realtime/secure-socket.js";
 
@@ -22,6 +23,19 @@ process.on("uncaughtException", (err) => {
   logger.error("uncaught exception (contained — secure-chat stays up)");
   logger.debug({ err }, "uncaught exception (contained — secure-chat stays up)");
 });
+
+// Optional deployment boot hook — import an operator-supplied module ONCE before serving (registers a
+// per-project DB resolver, etc.). Unset → no-op. Fail CLOSED: a configured module that fails to load
+// means refuse to start — never serve without it (mirrors @agora/api). AGORA_BOOT_MODULE is the sole
+// supported mechanism.
+try {
+  const loaded = await loadBootModule(env.AGORA_BOOT_MODULE);
+  if (loaded) logger.info("boot module loaded");
+} catch (err) {
+  logger.error("boot module failed to load — refusing to start");
+  logger.debug({ err }, "boot module failed to load — refusing to start");
+  process.exit(1);
+}
 
 // Hydrate the Redis suspension index BEFORE listening — the readiness gate. secure-chat treats Redis as
 // a HARD dependency, so a boot hydrate failure means refuse to start (the orchestrator restarts; compose
