@@ -7,6 +7,7 @@ import { and, eq, or, count, desc } from "drizzle-orm";
 import type { Variables } from "../http/context.js";
 import { Errors } from "../http/errors.js";
 import { requireAuth } from "../middleware/auth.js";
+import { scopeDbToAuthProject } from "../middleware/db-scope.js";
 import { getDb } from "../db/index.js";
 import { connections, profiles } from "../db/schema/index.js";
 import { notifyOnConnectionRequest, notifyOnConnectionAccept } from "../lib/notifications.js";
@@ -49,7 +50,7 @@ const iso = (d: Date | null) => (d ? d.toISOString() : null);
 
 export const connectionRoutes = new Hono<{ Variables: Variables }>()
   // ── request / status / remove against a specific user ──────────────────────
-  .post("/users/:userId/connection", requireAuth, async (c) => {
+  .post("/users/:userId/connection", requireAuth, scopeDbToAuthProject, async (c) => {
     const self = await me(c);
     const target = uuidParam(c, "userId");
     if (target === self.id) throw Errors.badRequest("connections/self", "Cannot connect with yourself");
@@ -71,7 +72,7 @@ export const connectionRoutes = new Hono<{ Variables: Variables }>()
     await notifyOnConnectionRequest(self.projectId, target, self.id, row!.id);
     return c.json({ id: row!.id, status: row!.status, createdAt: iso(row!.createdAt) }, 201);
   })
-  .get("/users/:userId/connection", requireAuth, async (c) => {
+  .get("/users/:userId/connection", requireAuth, scopeDbToAuthProject, async (c) => {
     const self = await me(c);
     const row = await between(self.projectId, self.id, uuidParam(c, "userId"));
     if (!row) return c.json({ status: "none" });
@@ -82,7 +83,7 @@ export const connectionRoutes = new Hono<{ Variables: Variables }>()
     if (row.status === "pending") return c.json({ status: "pending", type, connectionId: row.id, createdAt: iso(row.createdAt) });
     return c.json({ status: "declined", type, connectionId: row.id, respondedAt: iso(row.respondedAt) });
   })
-  .delete("/users/:userId/connection", requireAuth, async (c) => {
+  .delete("/users/:userId/connection", requireAuth, scopeDbToAuthProject, async (c) => {
     const self = await me(c);
     const row = await between(self.projectId, self.id, uuidParam(c, "userId"));
     if (!row) throw Errors.notFound("connections/not-found", "No connection with this user");
@@ -90,13 +91,13 @@ export const connectionRoutes = new Hono<{ Variables: Variables }>()
     await getDb().delete(connections).where(eq(connections.id, row.id));
     return c.json({ id: row.id, action, message: "Connection removed" });
   })
-  .get("/users/:userId/connections-count", requireAuth, async (c) => {
+  .get("/users/:userId/connections-count", requireAuth, scopeDbToAuthProject, async (c) => {
     const self = await me(c);
     return c.json({ count: await connectedCount(self.projectId, uuidParam(c, "userId")) });
   })
   // SDK (useFetchConnectionsByUserId) — a specific user's established connections (project derived
   // from the caller's profile). Mirrors GET /connections but scoped to :userId, not the caller.
-  .get("/users/:userId/connections", requireAuth, async (c) => {
+  .get("/users/:userId/connections", requireAuth, scopeDbToAuthProject, async (c) => {
     const self = await me(c);
     const targetId = uuidParam(c, "userId");
     const { page, limit, offset } = readPagination(c);
@@ -112,7 +113,7 @@ export const connectionRoutes = new Hono<{ Variables: Variables }>()
     return c.json(paginate(data, n, page, limit));
   })
   // ── established + counts for the current user ───────────────────────────────
-  .get("/connections", requireAuth, async (c) => {
+  .get("/connections", requireAuth, scopeDbToAuthProject, async (c) => {
     const self = await me(c);
     const { page, limit, offset } = readPagination(c);
     const where = and(eq(connections.projectId, self.projectId), eq(connections.status, "connected"),
@@ -126,20 +127,20 @@ export const connectionRoutes = new Hono<{ Variables: Variables }>()
     }));
     return c.json(paginate(data, n, page, limit));
   })
-  .get("/connections/count", requireAuth, async (c) => {
+  .get("/connections/count", requireAuth, scopeDbToAuthProject, async (c) => {
     const self = await me(c);
     return c.json({ count: await connectedCount(self.projectId, self.id) });
   })
-  .get("/connections/pending/received", requireAuth, async (c) => {
+  .get("/connections/pending/received", requireAuth, scopeDbToAuthProject, async (c) => {
     const self = await me(c);
     return c.json(await pendingList(c, self, "received"));
   })
-  .get("/connections/pending/sent", requireAuth, async (c) => {
+  .get("/connections/pending/sent", requireAuth, scopeDbToAuthProject, async (c) => {
     const self = await me(c);
     return c.json(await pendingList(c, self, "sent"));
   })
   // ── accept / decline / withdraw a connection by id ──────────────────────────
-  .patch("/connections/:id/accept", requireAuth, async (c) => {
+  .patch("/connections/:id/accept", requireAuth, scopeDbToAuthProject, async (c) => {
     const self = await me(c);
     const [row] = await getDb().select().from(connections)
       .where(and(eq(connections.id, uuidParam(c, "id")), eq(connections.addresseeId, self.id), eq(connections.status, "pending"))).limit(1);
@@ -148,14 +149,14 @@ export const connectionRoutes = new Hono<{ Variables: Variables }>()
     await notifyOnConnectionAccept(self.projectId, row.requesterId, self.id, row.id);
     return c.json({ id: updated!.id, status: "connected", respondedAt: iso(updated!.respondedAt) });
   })
-  .patch("/connections/:id/decline", requireAuth, async (c) => {
+  .patch("/connections/:id/decline", requireAuth, scopeDbToAuthProject, async (c) => {
     const self = await me(c);
     const [row] = await getDb().update(connections).set({ status: "declined", respondedAt: new Date() })
       .where(and(eq(connections.id, uuidParam(c, "id")), eq(connections.addresseeId, self.id), eq(connections.status, "pending"))).returning();
     if (!row) throw Errors.notFound("connections/not-pending", "No pending request to decline");
     return c.json({ id: row.id, status: "declined", respondedAt: iso(row.respondedAt) });
   })
-  .delete("/connections/:id", requireAuth, async (c) => {
+  .delete("/connections/:id", requireAuth, scopeDbToAuthProject, async (c) => {
     const self = await me(c);
     const [row] = await getDb().select().from(connections)
       .where(and(eq(connections.id, uuidParam(c, "id")),
