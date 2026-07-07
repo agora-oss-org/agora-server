@@ -5,7 +5,7 @@ import {
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import {
-  readingPermission, postingPermission, spaceMemberRole, spaceMemberStatus, connectionStatus,
+  readingPermission, postingPermission, spaceMemberRole, spaceMemberStatus, connectionStatus, spaceVisibility,
 } from "./_shared.js";
 import { projects, profiles } from "./projects.js";
 
@@ -21,6 +21,7 @@ export const spaces = pgTable("spaces", {
   userId: uuid("user_id").references(() => profiles.id, { onDelete: "set null" }),
   readingPermission: readingPermission("reading_permission").notNull().default("anyone"),
   postingPermission: postingPermission("posting_permission").notNull().default("members"),
+  visibility: spaceVisibility("visibility").notNull().default("public"),
   requireJoinApproval: boolean("require_join_approval").notNull().default(false),
   parentSpaceId: uuid("parent_space_id").references((): AnyPgColumn => spaces.id, { onDelete: "cascade" }),
   depth: integer("depth").notNull().default(0),

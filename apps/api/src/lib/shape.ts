@@ -255,6 +255,7 @@ export function shapeSpace(row: SpaceRow, opts: { isMember?: boolean } = {}) {
     userId: row.userId ?? null,
     readingPermission: row.readingPermission,
     postingPermission: row.postingPermission,
+    visibility: row.visibility ?? "public",
     requireJoinApproval: row.requireJoinApproval,
     parentSpaceId: row.parentSpaceId ?? null,
     depth: row.depth,

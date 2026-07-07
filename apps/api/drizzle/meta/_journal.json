@@ -409,6 +409,12 @@
 			"when": 1781934611656,
 			"tag": "0060_push_notification_preferences",
 			"breakpoints": true
+		},{
+			"idx": 59,
+			"version": "7",
+			"when": 1781934611657,
+			"tag": "0058_space_visibility",
+			"breakpoints": true
 		}
 	]
 }
