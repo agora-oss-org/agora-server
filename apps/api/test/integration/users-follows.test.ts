@@ -100,6 +100,11 @@ describe("user suggestions — mention autocomplete (integration)", () => {
     projectId = await createProject();
     B = base(projectId);
     me = await createUser(projectId);
+    // Give the caller a name that also matches the "smith" query below, so the
+    // exclusion assertion in "matches on name too, and excludes the caller"
+    // actually exercises the ne(profiles.id, exclude) filter — without it, `me`
+    // would otherwise appear in those results too.
+    await api("PATCH", `${B}/users/${me.id}`, { token: me.token, body: { name: "Smith Caller" } });
     // Two searchable users with known username/name.
     const jenny = await createUser(projectId);
     await api("PATCH", `${B}/users/${jenny.id}`, { token: jenny.token, body: { username: "jenny", name: "Jen Smith" } });
