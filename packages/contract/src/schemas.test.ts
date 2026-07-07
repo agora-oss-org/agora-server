@@ -13,6 +13,9 @@ import {
   createConversationSchema,
   moderationAnalyzeSchema,
   moderatorConfigSchema,
+  muteConversationSchema,
+  matchUsersSchema,
+  spaceVisibility,
 } from "./schemas.js";
 
 const UUID = "11111111-1111-1111-1111-111111111111";
@@ -177,5 +180,44 @@ describe("moderatorConfigSchema — scorer cascade knobs", () => {
     expect(moderatorConfigSchema.safeParse({ coParticipatesMaxParticipants: 0 }).success).toBe(false);
     expect(moderatorConfigSchema.safeParse({ coParticipatesLookbackDays: 366 }).success).toBe(false);
     expect(moderatorConfigSchema.safeParse({ coParticipatesMaxWeight: 0 }).success).toBe(false);
+  });
+});
+
+describe("muteConversationSchema", () => {
+  it("accepts each duration and null", () => {
+    for (const d of ["8h", "24h", "1w", "forever", null]) {
+      expect(muteConversationSchema.parse({ duration: d }).duration).toBe(d);
+    }
+  });
+  it("rejects a bogus duration", () => {
+    expect(() => muteConversationSchema.parse({ duration: "2h" })).toThrow();
+  });
+});
+
+describe("matchUsersSchema", () => {
+  it("accepts passive mode with no query", () => {
+    expect(matchUsersSchema.parse({ mode: "passive" }).mode).toBe("passive");
+  });
+  it("rejects directed mode without a non-empty query", () => {
+    expect(() => matchUsersSchema.parse({ mode: "directed" })).toThrow();
+    expect(() => matchUsersSchema.parse({ mode: "directed", query: "  " })).toThrow();
+  });
+  it("accepts directed mode with a query + optional flags", () => {
+    const r = matchUsersSchema.parse({ mode: "directed", query: "art", excludeSelf: true, limit: 5 });
+    expect(r.query).toBe("art");
+    expect(r.excludeSelf).toBe(true);
+  });
+});
+
+describe("space visibility", () => {
+  it("enumerates the three values", () => {
+    expect(spaceVisibility.options).toEqual(["public", "unlisted", "private"]);
+  });
+  it("createSpaceSchema accepts an optional visibility", () => {
+    expect(createSpaceSchema.parse({ name: "x", visibility: "unlisted" }).visibility).toBe("unlisted");
+    expect(createSpaceSchema.parse({ name: "x" }).visibility).toBeUndefined();
+  });
+  it("createSpaceSchema rejects a bad visibility", () => {
+    expect(() => createSpaceSchema.parse({ name: "x", visibility: "secret" })).toThrow();
   });
 });
