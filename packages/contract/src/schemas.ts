@@ -135,6 +135,7 @@ export const updateProfileSchema = z
 // ─── spaces ────────────────────────────────────────────────────────────────
 const readingPerm = z.enum(["anyone", "members"]);
 const postingPerm = z.enum(["anyone", "members", "admins"]);
+export const spaceSortByEnum = z.enum(["newest", "members", "alphabetical"]);
 
 export const createSpaceSchema = z.object({
   name: z.string().min(1).max(120),

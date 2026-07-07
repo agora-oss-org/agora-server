@@ -139,3 +139,46 @@ describe("spaces permissions + membership (integration)", () => {
     expect(ownerOk.status).toBe(200);
   });
 });
+
+describe("spaces list — search/sort/memberOf (#-mention autocomplete) (integration)", () => {
+  let projectId: string; let B: string; let owner: { id: string; token: string };
+
+  beforeAll(async () => {
+    projectId = await createProject();
+    B = base(projectId);
+    owner = await createUser(projectId);
+    await api("POST", `${B}/spaces`, { token: owner.token, body: { name: "Developers", slug: "dev-talk", description: "coding" } });
+    await api("POST", `${B}/spaces`, { token: owner.token, body: { name: "Gardening", slug: "garden", description: "plants" } });
+  });
+  afterAll(async () => { if (projectId) await deleteProject(projectId); });
+
+  it("filters by searchAny across name/slug/description", async () => {
+    const res = await api("GET", `${B}/spaces?searchAny=dev`, { token: owner.token });
+    expect(res.status).toBe(200);
+    expect(res.body.data.some((s: any) => s.slug === "dev-talk")).toBe(true);
+    expect(res.body.data.some((s: any) => s.slug === "garden")).toBe(false);
+  });
+
+  it("filters by searchDescription", async () => {
+    const res = await api("GET", `${B}/spaces?searchDescription=plants`, { token: owner.token });
+    expect(res.body.data.every((s: any) => s.slug === "garden")).toBe(true);
+  });
+
+  it("sorts alphabetically by name", async () => {
+    const res = await api("GET", `${B}/spaces?sortBy=alphabetical`, { token: owner.token });
+    const names = res.body.data.map((s: any) => s.name);
+    expect(names.indexOf("Developers")).toBeLessThan(names.indexOf("Gardening"));
+  });
+
+  it("rejects an unknown sortBy with 400", async () => {
+    const res = await api("GET", `${B}/spaces?sortBy=bogus`, { token: owner.token });
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe("spaces/invalid-filter");
+  });
+
+  it("memberOf=true returns only spaces the caller actively belongs to", async () => {
+    const outsider = await createUser(projectId);
+    const res = await api("GET", `${B}/spaces?memberOf=true`, { token: outsider.token });
+    expect(res.body.data.length).toBe(0); // outsider is a member of none
+  });
+});
