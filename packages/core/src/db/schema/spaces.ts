@@ -1,7 +1,7 @@
 // spaces, space_members, space_rules, follows, connections (ex-0003)
 import { sql } from "drizzle-orm";
 import {
-  pgTable, uuid, text, integer, boolean, jsonb, timestamp, index, unique, check,
+  pgTable, uuid, text, integer, boolean, jsonb, timestamp, index, unique, check, primaryKey,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import {
@@ -58,6 +58,18 @@ export const spaceMembers = pgTable("space_members", {
   unique("space_members_unique").on(t.spaceId, t.userId),
   index("space_members_status_idx").on(t.spaceId, t.status),
   index("space_members_user_idx").on(t.userId),
+]);
+
+// Per-(user, space) reputation — the space-partitioned twin of profiles.reputation.
+// Trigger-maintained (see drizzle/0059); composite PK is the upsert conflict target.
+export const spaceReputation = pgTable("space_reputation", {
+  projectId: uuid("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  spaceId: uuid("space_id").notNull().references(() => spaces.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").notNull().references(() => profiles.id, { onDelete: "cascade" }),
+  reputation: integer("reputation").notNull().default(0),
+}, (t) => [
+  primaryKey({ columns: [t.projectId, t.spaceId, t.userId] }),
+  index("space_reputation_user_idx").on(t.projectId, t.userId),
 ]);
 
 export const spaceRules = pgTable("space_rules", {
