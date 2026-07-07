@@ -24,14 +24,30 @@ export async function loadSpaceReputations(
 ): Promise<Map<string, number>> {
   const ids = [...new Set(userIds)];
   if (ids.length === 0) return new Map();
-  if (includeDescendants) {
-    // Filled in Task 4.
-    throw new Error("descendant rollup not yet implemented");
-  }
   // Drizzle's sql template renders an interpolated JS array as a parenthesized list of params
   // (`($1, $2)`), not a Postgres array literal — so `= any(${ids}::uuid[])` breaks ("cannot cast
   // type record to uuid[]"). sql.join keeps each id its own bound, explicitly-cast param.
   const idList = sql.join(ids.map((id) => sql`${id}::uuid`), sql`, `);
+  if (includeDescendants) {
+    const rows = await getDb().execute<{ user_id: string; reputation: number }>(sql`
+      with recursive subtree as (
+        select id from spaces where id = ${spaceId}::uuid and project_id = ${projectId}::uuid
+        union all
+        select s.id from spaces s
+          join subtree t on s.parent_space_id = t.id
+        where s.project_id = ${projectId}::uuid
+      )
+      select sr.user_id, sum(sr.reputation)::int as reputation
+      from space_reputation sr
+      where sr.project_id = ${projectId}::uuid
+        and sr.space_id in (select id from subtree)
+        and sr.user_id in (${idList})
+      group by sr.user_id`);
+    return fillReputationMap(
+      [...rows].map((r) => ({ userId: r.user_id, reputation: Number(r.reputation) })),
+      ids,
+    );
+  }
   const rows = await getDb().execute<{ user_id: string; reputation: number }>(sql`
     select user_id, reputation from space_reputation
     where project_id = ${projectId}::uuid and space_id = ${spaceId}::uuid

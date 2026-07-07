@@ -167,3 +167,49 @@ describe("loadSpaceReputations (single space)", () => {
     await deleteProject(projectId);
   });
 });
+
+describe("loadSpaceReputations (descendant rollup)", () => {
+  it("sums parent + child + grandchild, excludes siblings", async () => {
+    const projectId = await createProject();
+    const author = await createUser(projectId);
+    const reactor = await createUser(projectId);
+    const mk = async (parentSpaceId?: string) =>
+      (await api("POST", `${base(projectId)}/spaces`,
+        { token: author.token, body: { name: `S_${randomUUID().slice(0, 6)}`, ...(parentSpaceId ? { parentSpaceId } : {}) } })).body;
+
+    const parent = await mk();
+    const child = await mk(parent.id);
+    const grandchild = await mk(child.id);
+    const sibling = await mk(); // top-level, NOT under parent
+
+    for (const s of [parent, child, grandchild, sibling]) {
+      const { body: e } = await api("POST", `${base(projectId)}/entities`,
+        { token: author.token, body: { title: "t", spaceId: s.id } });
+      await api("POST", `${base(projectId)}/entities/${e.id}/reactions`,
+        { token: reactor.token, body: { reactionType: "upvote" } }); // +1 each
+    }
+
+    const rolled = await loadSpaceReputations(projectId, parent.id, true, [author.id]);
+    expect(rolled.get(author.id)).toBe(3); // parent + child + grandchild, sibling excluded
+
+    const self = await loadSpaceReputations(projectId, parent.id, false, [author.id]);
+    expect(self.get(author.id)).toBe(1); // parent only
+    await deleteProject(projectId);
+  });
+
+  it("does not bleed across projects (tenant isolation)", async () => {
+    const a = await createProject();
+    const b = await createProject();
+    const authorA = await createUser(a);
+    const reactorA = await createUser(a);
+    const { body: spaceA } = await api("POST", `${base(a)}/spaces`, { token: authorA.token, body: { name: "A" } });
+    const { body: entA } = await api("POST", `${base(a)}/entities`, { token: authorA.token, body: { title: "t", spaceId: spaceA.id } });
+    await api("POST", `${base(a)}/entities/${entA.id}/reactions`, { token: reactorA.token, body: { reactionType: "upvote" } });
+
+    // Query project B for the same user id — must see nothing from A.
+    const m = await loadSpaceReputations(b, spaceA.id, true, [authorA.id]);
+    expect(m.get(authorA.id)).toBe(0);
+    await deleteProject(a);
+    await deleteProject(b);
+  });
+});
