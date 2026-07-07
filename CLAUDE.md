@@ -89,6 +89,12 @@ Supabase Postgres   schema + triggers + RPC + pgvector + PostGIS
 
 - **Drizzle owns all DB access** via a direct `postgres.js` connection (`apps/api/src/db/index.ts`).
   The Supabase JS client is *only* for Auth/Storage and is lazily constructed.
+- **DB handle is request-scoped: call `getDb()` per call site** (`@agora/core/db`, re-exported by
+  `apps/api/src/db/index.ts`). The old `db` singleton export is deliberately GONE — importing it is
+  a type error. `resolveProject` runs each `/v7/:projectId/*` request inside an AsyncLocalStorage
+  scope (`runWithDb`); outside a request (crons/scripts) `getDb()` falls back to the shared
+  singleton. Never hoist (`const db = getDb()` at module scope) — that freezes the handle and
+  defeats the seam (groundwork for per-tenant DBs; the dormant `getDbForDsn` registry is Phase 1).
 - **`auth.users` is NOT modeled in Drizzle** — `profiles.auth_user_id` is a plain uuid the app
   links, so Drizzle never tries to own the Supabase-managed `auth` schema.
 - Multi-tenant by `project_id` (every table has it; the SDK addresses `/v7/:projectId/...`).

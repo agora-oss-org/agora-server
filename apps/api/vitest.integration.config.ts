@@ -34,6 +34,11 @@ export default defineConfig({
       // Forced unset, the weather endpoint's 503 path is deterministic. The opt-in live test
       // (social-weather-live.test.ts) uses TEST_NEO4J_URI with its own driver instead.
       NEO4J_URI: "",
+      // Hermetic: a developer's .env sets CRON_SECRET for real cron; leaked into the worker it
+      // enables the /internal/cron/* gate and flips env-dependent assertions (digests.test.ts
+      // additionally save/unset/restores env.CRON_SECRET around its disabled-path assertion —
+      // this force-empty is the belt to that braces). No integration test needs it set.
+      CRON_SECRET: "",
     },
   },
 });
