@@ -15,10 +15,18 @@ import { embedText, embeddingsEnabled, type SourceType } from "../lib/embeddings
 import { allow } from "../lib/embed-throttle.js";
 import { streamText, llmEnabled } from "../lib/llm.js";
 import { isProjectAdmin } from "../lib/project-roles.js";
+import { resolveSpaceSubtree } from "../lib/space-tree.js";
 
 // Mirrors the SDK's ContentSearchResult (interfaces/models): a shaped Entity | Comment | ChatMessage.
 type ContentSearchResult = { sourceType: SourceType; similarity: number; record: unknown };
-type AskBody = { query?: string; sourceTypes?: string[]; spaceId?: string; conversationId?: string; limit?: number };
+type AskBody = {
+  query?: string;
+  sourceTypes?: string[];
+  spaceId?: string;
+  includeChildSpaces?: boolean;
+  conversationId?: string;
+  limit?: number;
+};
 
 /** Read { query, limit } from a POST body (the SDK's search hooks post JSON, not query params). */
 async function searchBody(c: any): Promise<{ q: string; limit: number }> {
@@ -50,11 +58,20 @@ const VALID_SOURCE_TYPES: SourceType[] = ["entity", "comment", "message"];
 async function retrieveContent(
   c: any,
   q: string,
-  opts: { sourceTypes?: string[]; spaceId?: string | null; limit?: number }
+  opts: { sourceTypes?: string[]; spaceId?: string | null; includeChildSpaces?: boolean; limit?: number }
 ): Promise<ContentSearchResult[]> {
   const projectId = c.var.projectId as string;
   const limit = Math.min(50, Math.max(1, Number(opts.limit) || 20));
   const space = opts.spaceId ?? null;
+  // includeChildSpaces resolves {self ∪ descendants} via a recursive CTE (lib/space-tree.ts) and
+  // scopes the search to that set instead of a single space — p_space is nulled out in that case
+  // (mutually exclusive with p_space_ids inside match_content; see migration 0061).
+  let spaceIds: string[] | null = null;
+  if (opts.includeChildSpaces && space) spaceIds = await resolveSpaceSubtree(projectId, space);
+  const spaceArg = spaceIds ? sql`null::uuid` : sql`${space}::uuid`;
+  const spaceIdsArg = spaceIds
+    ? sql`array[${sql.join(spaceIds.map((id) => sql`${id}::uuid`), sql`, `)}]::uuid[]`
+    : sql`null::uuid[]`;
   // null = all types; otherwise restrict to the (validated) requested set.
   const requested = Array.isArray(opts.sourceTypes)
     ? opts.sourceTypes.filter((t): t is SourceType => (VALID_SOURCE_TYPES as string[]).includes(t))
@@ -79,8 +96,8 @@ async function retrieveContent(
   const privileged = c.var.auth ? isProjectAdmin(c.var.auth) : false;
   const matches = (await getDb().execute(sql`
     select source_type, source_id, similarity
-    from match_content(${projectId}::uuid, ${lit}::vector, ${limit}, ${typesArg}, ${space}::uuid,
-                       ${viewer}::uuid, ${privileged}, ${!privileged})
+    from match_content(${projectId}::uuid, ${lit}::vector, ${limit}, ${typesArg}, ${spaceArg},
+                       ${viewer}::uuid, ${privileged}, ${!privileged}, ${spaceIdsArg})
   `)) as unknown as { source_type: SourceType; source_id: string; similarity: number }[];
   if (matches.length === 0) return [];
 
