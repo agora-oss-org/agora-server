@@ -5,6 +5,7 @@ import crypto from "node:crypto";
 import { Hono, type Context } from "hono";
 import { cors } from "hono/cors";
 import type { Variables } from "./http/context.js";
+import { resolveDbFor, runWithDb } from "./db/index.js";
 import { ApiError } from "./http/errors.js";
 import { env } from "./lib/env.js";
 import { logger } from "./lib/logger.js";
@@ -143,7 +144,12 @@ export function createApp() {
     if (!body?.projectId || (body.targetType !== "entity" && body.targetType !== "comment") || !body.targetId)
       return c.json({ error: "projectId, targetType (entity|comment) and targetId are required", code: "moderation/bad-request" }, 400);
     const status = body.status === "approved" ? "approved" : "removed";
-    const ok = await applyClientModeration({ projectId: body.projectId, targetType: body.targetType, targetId: body.targetId, status, reason: body.reason });
+    const { projectId, targetType, targetId } = body;
+    // Seam: the body names the project (no :projectId path segment) — resolve + scope
+    // explicitly. A resolver error (unknown project / db unavailable) propagates: fail closed.
+    const ok = await runWithDb(await resolveDbFor(projectId), () =>
+      applyClientModeration({ projectId, targetType, targetId, status, reason: body.reason }),
+    );
     if (!ok) {
       logger.warn({ projectId: body.projectId, targetType: body.targetType, targetId: body.targetId, status }, "moderation: client write-back target not found");
       return c.json({ error: "Target not found", code: "moderation/not-found" }, 404);
