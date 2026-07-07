@@ -397,6 +397,12 @@
 			"when": 1781934611654,
 			"tag": "0056_analysis_raw_signals",
 			"breakpoints": true
+		},{
+			"idx": 57,
+			"version": "7",
+			"when": 1781934611655,
+			"tag": "0057_query_path_indexes",
+			"breakpoints": true
 		}
 	]
 }

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Indexes for hot API query paths** (migration `0057`). Four plain btree indexes surfaced by an
+  index audit of the API's query paths: `profiles(project_id, auth_user_id)` (resolved on every
+  sign-in/sign-up/OAuth callback — previously a seq scan), `profiles(project_id, reputation DESC)`
+  (`GET /users/suggestions` ordering), `collection_entities(entity_id)` (the per-entity "is this
+  saved?" check, which the PK's leading `collection_id` can't serve), and `refresh_tokens(expires_at)`
+  (the purge-tokens cron's `DELETE WHERE expires_at < now()`). Mirrored in the Drizzle schema.
+
 ### Changed
 - **Admin: view-only settings banner now reads as a warning.** The "View-only mode — settings changes
   are disabled" notice on Settings uses the warning color + `TriangleAlert` icon (matching the

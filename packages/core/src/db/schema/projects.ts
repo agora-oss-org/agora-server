@@ -82,6 +82,10 @@ export const profiles = pgTable("profiles", {
   unique("profiles_project_foreign").on(t.projectId, t.foreignId),
   index("profiles_project_username_idx").on(t.projectId, t.username),
   index("profiles_project_foreign_idx").on(t.projectId, t.foreignId),
+  // Every sign-in/sign-up/OAuth callback resolves the profile by (project_id, auth_user_id).
+  index("profiles_auth_user_idx").on(t.projectId, t.authUserId),
+  // GET /users/suggestions orders by reputation within the tenant.
+  index("profiles_reputation_idx").on(t.projectId, t.reputation.desc()),
   check("profiles_bio_len", sql`char_length(${t.bio}) <= 300`),
 ]);
 

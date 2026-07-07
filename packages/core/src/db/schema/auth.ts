@@ -19,6 +19,8 @@ export const refreshTokens = pgTable("refresh_tokens", {
   index("refresh_tokens_hash_idx").on(t.tokenHash),
   index("refresh_tokens_family_idx").on(t.familyId),
   index("refresh_tokens_profile_idx").on(t.profileId),
+  // The purge-tokens cron deletes WHERE expires_at < now(); without this it full-scans.
+  index("refresh_tokens_expires_idx").on(t.expiresAt),
 ]);
 
 // auth_credentials — Agora-native email+password store (only used when projects.auth_provider='native').

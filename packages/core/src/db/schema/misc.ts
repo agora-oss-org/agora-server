@@ -30,6 +30,8 @@ export const collectionEntities = pgTable("collection_entities", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (t) => [
   primaryKey({ columns: [t.collectionId, t.entityId] }),
+  // "Is this entity saved?" looks up by entity_id alone; the PK leads with collection_id.
+  index("collection_entities_entity_idx").on(t.entityId),
 ]);
 
 // Generic per-project custom-table rows (the SDK's `/db/:tableName` surface). Schemaless `data`
