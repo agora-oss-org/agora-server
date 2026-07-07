@@ -313,7 +313,10 @@ remove uploaded media from storage; `soft` tombstones), and for **native** auth 
 (default `http://localhost:5173`; Supabase-brokered auth is unaffected),
 `VAPID_PUBLIC_KEY`/`VAPID_PRIVATE_KEY`/`VAPID_SUBJECT` (web push — unset → push dispatch is a no-op),
 `MAX_POOLS` (cap on the db registry's per-DSN connection pools, default 50 — generic tuning,
-irrelevant to a single-`DATABASE_URL` deployment). Empty strings are treated as unset.
+irrelevant to a single-`DATABASE_URL` deployment),
+`AGORA_BOOT_MODULE` (a module specifier the api/secure-chat entrypoints side-effect-import once at boot,
+before serving — the supported hook for a prebuilt image to register a per-project DB resolver; unset →
+no-op, fails closed if a set module throws). Empty strings are treated as unset.
 
 **Operators (deployment god-view).** `OPERATOR_USER_IDS`/`OPERATOR_EMAILS` (comma-separated profile
 UUIDs / case-insensitive emails) are an env allowlist resolved by `lib/operators.ts` `isOperator()`.

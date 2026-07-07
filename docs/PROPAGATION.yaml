@@ -79,3 +79,22 @@ exceptions:
   - subject: MAX_POOLS
     target: wiki/Deployment.md
     reason: internal registry tuning, irrelevant to single-tenant self-hosting
+  # AGORA_BOOT_MODULE is a hosting-layer boot hook (default unset), irrelevant to a single-tenant
+  # deployment — which is every deployment of this repo. It ships in the .env templates + CLAUDE.md +
+  # SELF-HOSTING.md as a documented seam; compose passes it through env_file (no explicit default), and
+  # it has no place in user-facing deploy prose. Hosting init lives in ../agora-hosting.
+  - subject: AGORA_BOOT_MODULE
+    target: docker-compose.dev.yml
+    reason: passed via env_file; hosting-layer knob, no compose default needed
+  - subject: AGORA_BOOT_MODULE
+    target: docker-compose.yml
+    reason: passed via env_file; hosting-layer knob, no compose default needed
+  - subject: AGORA_BOOT_MODULE
+    target: docker-compose.prod.yml
+    reason: passed via env_file; hosting-layer knob, no compose default needed
+  - subject: AGORA_BOOT_MODULE
+    target: README.md
+    reason: hosting-layer seam; documented in SELF-HOSTING.md + CLAUDE.md, not a user-facing self-host knob
+  - subject: AGORA_BOOT_MODULE
+    target: wiki/Deployment.md
+    reason: hosting-layer seam; documented in SELF-HOSTING.md + CLAUDE.md, not a user-facing self-host knob

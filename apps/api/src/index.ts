@@ -11,6 +11,7 @@ import { startMetricsFlush } from "./lib/metrics.js";
 import { startRateLimitSweep } from "./lib/rate-limit.js";
 import { startEmbedThrottleSweep } from "./lib/embed-throttle.js";
 import { hydrateSuspensionIndex } from "@agora/core/lib/suspensions";
+import { loadBootModule } from "@agora/core/lib/boot";
 
 // Last-resort safety net: a stray rejection/throw from a background task (socket handler, fan-out,
 // fire-and-forget index/embeds) must NOT take the whole API down. Node's default is to crash on an
@@ -24,6 +25,19 @@ process.on("uncaughtException", (err) => {
   logger.error("uncaught exception (contained — server stays up)");
   logger.debug({ err }, "uncaught exception (contained — server stays up)");
 });
+
+// Optional deployment boot hook — import an operator-supplied module ONCE before serving (registers a
+// per-project DB resolver, warms a tenant directory, etc.). Unset → no-op. Fail CLOSED: a configured
+// module that fails to load means refuse to start — never serve without it (a silent shared-DB fallback
+// would be cross-tenant contamination). AGORA_BOOT_MODULE is the sole supported mechanism.
+try {
+  const loaded = await loadBootModule(env.AGORA_BOOT_MODULE);
+  if (loaded) logger.info("boot module loaded");
+} catch (err) {
+  logger.error("boot module failed to load — refusing to start");
+  logger.debug({ err }, "boot module failed to load — refusing to start");
+  process.exit(1);
+}
 
 const app = createApp();
 startMetricsFlush(); // periodic flush of request-metering deltas → api_usage

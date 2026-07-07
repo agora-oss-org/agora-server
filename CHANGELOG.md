@@ -24,6 +24,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`GET /users/suggestions` ordering), `collection_entities(entity_id)` (the per-entity "is this
   saved?" check, which the PK's leading `collection_id` can't serve), and `refresh_tokens(expires_at)`
   (the purge-tokens cron's `DELETE WHERE expires_at < now()`). Mirrored in the Drizzle schema.
+- **Boot hook (`AGORA_BOOT_MODULE`).** Optional module specifier the `agora` and `secure-chat`
+  entrypoints side-effect-import once at startup, before serving — lets a prebuilt image register a
+  per-project DB resolver (or other init) without editing the bundle. Unset → no-op; a configured module
+  that fails to load makes the process fail closed (exit 1). `NODE_OPTIONS=--import` is explicitly not a
+  supported mechanism.
 
 ### Changed
 - **Admin: view-only settings banner now reads as a warning.** The "View-only mode — settings changes
