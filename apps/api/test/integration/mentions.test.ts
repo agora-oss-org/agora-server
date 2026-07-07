@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { eq } from "drizzle-orm";
 import { createProject, createUser, deleteProject, api, base } from "./helpers.js";
 import { getDb } from "../../src/db/index.js";
-import { spaces, appNotifications } from "../../src/db/schema/index.js";
+import { spaces, appNotifications, profiles } from "../../src/db/schema/index.js";
 import { randomUUID } from "node:crypto";
 import { sanitizeMentions } from "../../src/lib/mentions.js";
 
@@ -52,6 +52,18 @@ describe("sanitizeMentions (integration)", () => {
   it("returns [] for empty/nullish input", async () => {
     expect(await sanitizeMentions(projectId, null)).toEqual([]);
     expect(await sanitizeMentions(projectId, [])).toEqual([]);
+  });
+
+  it("refreshes a stale/client-supplied foreignId (and username) from the DB, never trusting the client's value", async () => {
+    await getDb().update(profiles).set({ foreignId: "canonical-fid-123" }).where(eq(profiles.id, alice.id));
+
+    const out = await sanitizeMentions(projectId, [
+      { type: "user", id: alice.id, username: "stale", foreignId: "WRONG-CLIENT-FID" },
+    ]);
+    expect(out).toHaveLength(1);
+    const token = out[0] as any;
+    expect(token.foreignId).toBe("canonical-fid-123"); // DB value wins, not the client-supplied one
+    expect(token.username).not.toBe("stale"); // refreshed to the canonical value too
   });
 });
 
