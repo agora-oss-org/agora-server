@@ -138,6 +138,7 @@ export interface Report {
 // Auth identity attached to a request (set by middleware, returned in some payloads).
 export interface AuthContext {
   userId: string; // Agora profile id
+  projectId: string | null; // project the token was minted for (`pid` claim; null on pre-pid tokens)
   role: "admin" | "moderator" | "visitor";
   isOperator: boolean; // deployment operator (env allowlist) — project-wide moderation/admin
   isProjectOwner: boolean; // per-project owner (DB grant) — within-project god

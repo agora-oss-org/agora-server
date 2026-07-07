@@ -3,7 +3,7 @@ import { isProjectAdmin, isProjectOwner } from "./project-roles.js";
 import type { AuthContext } from "../http/context.js";
 
 const a = (o: Partial<AuthContext>): AuthContext => ({
-  userId: "u", role: "visitor", isOperator: false, isProjectOwner: false, isProjectAdmin: false, isSteward: false, ...o,
+  userId: "u", projectId: null, role: "visitor", isOperator: false, isProjectOwner: false, isProjectAdmin: false, isSteward: false, ...o,
 });
 
 describe("project role hierarchy", () => {
