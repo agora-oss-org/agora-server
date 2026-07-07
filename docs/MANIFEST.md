@@ -167,7 +167,7 @@ signs an RS256 JWT (issuer=projectId, aud="replyke.com", sub=userData.id, claim 
 | GET | `/users/by-foreign-id` | ✅ |
 | GET | `/users/by-username` | ✅ |
 | GET | `/users/check-username` | ✅ |
-| GET | `/users/suggestions` (`query` — username/name ILIKE substring, caller excluded, reputation-ordered; returns a **bare `User[]`**, NOT the standard envelope — matches SDK's `useFetchUserSuggestions`) | ✅ |
+| GET | `/users/suggestions` (`query` optional — username/name ILIKE substring when present, else reputation-ranked top-N; caller excluded; returns a **bare `User[]`**, NOT the standard envelope — matches SDK's `useFetchUserSuggestions`) | ✅ |
 | GET | `/users/:id/follow` (follow status) | ✅ |
 | POST | `/users/:id/follow` | ✅ |
 | DELETE | `/users/:id/follow` | ✅ |
