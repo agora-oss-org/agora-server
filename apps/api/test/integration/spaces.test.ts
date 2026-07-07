@@ -181,4 +181,10 @@ describe("spaces list — search/sort/memberOf (#-mention autocomplete) (integra
     const res = await api("GET", `${B}/spaces?memberOf=true`, { token: outsider.token });
     expect(res.body.data.length).toBe(0); // outsider is a member of none
   });
+
+  it("include=files attaches an empty files array (base shape) without erroring", async () => {
+    const res = await api("GET", `${base(projectId)}/spaces?include=files`, { token: owner.token });
+    expect(res.status).toBe(200);
+    expect(res.body.data.every((s: any) => Array.isArray(s.files))).toBe(true);
+  });
 });

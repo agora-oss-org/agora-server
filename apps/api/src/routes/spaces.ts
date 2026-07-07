@@ -10,7 +10,7 @@ import { getDb } from "../db/index.js";
 import { logger } from "../lib/logger.js";
 import { spaces, spaceMembers, spaceRules, entities, comments, profiles, reports } from "../db/schema/index.js";
 import { readPagination, paginate } from "../http/envelope.js";
-import { shapeSpace, shapeRule, shapeUser, generateShortId } from "../lib/shape.js";
+import { shapeSpace, shapeRule, shapeUser, generateShortId, parseInclude, loadSpaceFiles } from "../lib/shape.js";
 import {
   parseBody, createSpaceSchema, updateSpaceSchema, createRuleSchema, updateRuleSchema,
   reorderRulesSchema, memberRoleSchema, moderationSchema, spaceSortByEnum,
@@ -106,7 +106,12 @@ export const spaceRoutes = new Hono<{ Variables: Variables }>()
     const where = and(...conds);
     const [{ n } = { n: 0 }] = await getDb().select({ n: count() }).from(spaces).where(where);
     const rows = await getDb().select().from(spaces).where(where).orderBy(orderBy).limit(limit).offset(offset);
-    return c.json(paginate(rows.map((r) => shapeSpace(r)), n, page, limit));
+    const include = parseInclude(c);
+    const fileMap = include.has("files") ? await loadSpaceFiles(c.var.projectId, rows.map((r) => r.id)) : null;
+    return c.json(paginate(
+      rows.map((r) => shapeSpace(r, fileMap ? { files: fileMap.get(r.id) ?? [] } : {})),
+      n, page, limit,
+    ));
   })
   .post("/", requireAuth, async (c) => {
     const body = parseBody(createSpaceSchema, await c.req.json().catch(() => ({})), "spaces");
