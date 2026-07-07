@@ -1,4 +1,4 @@
-// The pluggable per-project DB resolver (hosting-enablement spec §2). Generic dependency
+// The pluggable per-project DB resolver. Generic dependency
 // injection, not a feature: no env var, no config surface. Unregistered — every self-host,
 // every test, every current deployment — resolveDbFor returns the shared DATABASE_URL handle,
 // byte-for-byte today's behavior. An external deployment may register a resolver ONCE at boot

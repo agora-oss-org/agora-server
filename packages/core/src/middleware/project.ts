@@ -19,7 +19,7 @@ export const resolveProject = createMiddleware<{ Variables: Variables }>(async (
   if (!projectId) throw Errors.badRequest("project/missing", "Missing projectId in path");
   if (!UUID_RE.test(projectId)) throw Errors.notFound("project/not-found", "Unknown project");
 
-  // The seam (hosting-enablement spec §3): an external deployment may have registered a
+  // The seam: an external deployment may have registered a
   // per-project resolver; unregistered this IS the shared handle (today's behavior).
   // Resolve BEFORE the existence check — with a resolver, each project's own DB carries its
   // own `projects` row, so the check must read the resolved handle.
