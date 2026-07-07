@@ -3,7 +3,7 @@
 // replays the backlog into content_embeddings at a deliberately bounded pace (its batch size × cadence),
 // so the backfill can never re-blow Voyage even while the live path is still tripped.
 import { and, asc, eq, sql } from "drizzle-orm";
-import { getDb } from "../db/index.js";
+import { getDb, resolveDbFor } from "../db/index.js";
 import { contentEmbeddings, pendingEmbeddings } from "../db/schema/index.js";
 import { embedText, embeddingsEnabled, type SourceType } from "./embeddings.js";
 import { env } from "./env.js";
@@ -57,7 +57,10 @@ export async function drainPendingEmbeddings(limit = 100): Promise<{ drained: nu
   for (const row of rows) {
     try {
       const embedding = await embedText(row.text, "document");
-      await getDb().insert(contentEmbeddings)
+      // Seam: the embedding row belongs to the row's project — write it on that project's
+      // handle. Queue bookkeeping below stays on the ambient handle (the queue it was read from).
+      const target = await resolveDbFor(row.projectId);
+      await target.insert(contentEmbeddings)
         .values({ projectId: row.projectId, sourceType: row.sourceType, sourceId: row.sourceId, embedding })
         .onConflictDoUpdate({
           target: [contentEmbeddings.sourceType, contentEmbeddings.sourceId],

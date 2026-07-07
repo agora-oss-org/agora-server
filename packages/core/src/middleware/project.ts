@@ -4,7 +4,8 @@ import { createMiddleware } from "hono/factory";
 import { eq } from "drizzle-orm";
 import type { Variables } from "../http/context.js";
 import { Errors } from "../http/errors.js";
-import { getDb, runWithDb } from "../db/index.js";
+import { runWithDb } from "../db/index.js";
+import { resolveDbFor } from "../db/resolver.js";
 import { projects } from "../db/schema/index.js";
 
 const cache = new Map<string, boolean>();
@@ -18,14 +19,19 @@ export const resolveProject = createMiddleware<{ Variables: Variables }>(async (
   if (!projectId) throw Errors.badRequest("project/missing", "Missing projectId in path");
   if (!UUID_RE.test(projectId)) throw Errors.notFound("project/not-found", "Unknown project");
 
+  // The seam: an external deployment may have registered a
+  // per-project resolver; unregistered this IS the shared handle (today's behavior).
+  // Resolve BEFORE the existence check — with a resolver, each project's own DB carries its
+  // own `projects` row, so the check must read the resolved handle.
+  const db = await resolveDbFor(projectId);
+
   if (!cache.get(projectId)) {
-    const rows = await getDb().select({ id: projects.id }).from(projects).where(eq(projects.id, projectId)).limit(1);
+    const rows = await db.select({ id: projects.id }).from(projects).where(eq(projects.id, projectId)).limit(1);
     if (!rows[0]) throw Errors.notFound("project/not-found", "Unknown project");
     cache.set(projectId, true);
   }
 
   c.set("projectId", projectId);
-  // Phase 0: env mode — every request runs in an ALS scope carrying the shared handle.
-  // Phase 1 resolves the tenant directory entry here and passes that handle instead.
-  await runWithDb(getDb(), () => next());
+  // Every request runs inside an ALS scope carrying its project's handle.
+  await runWithDb(db, () => next());
 });

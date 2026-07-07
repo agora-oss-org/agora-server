@@ -4,6 +4,7 @@
 // request — the contamination-safety invariant (spec §2, §10).
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres, { type Sql } from "postgres";
+import { env } from "../lib/env.js";
 import { logger } from "../lib/logger.js";
 import type { Db } from "./context.js";
 import * as schema from "./schema/index.js";
@@ -16,15 +17,10 @@ const registry = new Map<string, Entry>();
 // detached fire-and-forget work that may still hold the handle (spec §4.1).
 const EVICT_MIN_IDLE_MS = 5 * 60 * 1000;
 
-function maxPools(): number {
-  const n = Number(process.env.MAX_POOLS ?? 50);
-  return Number.isFinite(n) && n > 0 ? n : 50;
-}
-
 export function getDbForDsn(dsn: string): Db {
   let entry = registry.get(dsn);
   if (!entry) {
-    if (registry.size >= maxPools()) evictLru();
+    if (registry.size >= env.MAX_POOLS) evictLru();
     // Every runtime DSN is assumed to sit behind a transaction-mode pooler:
     // prepare:false is non-negotiable; small per-process pool, the pooler owns the ceiling.
     const client = postgres(dsn, { prepare: false, max: 5, idle_timeout: 30, max_lifetime: 1800 });
@@ -36,6 +32,12 @@ export function getDbForDsn(dsn: string): Db {
   return entry.db;
 }
 
+// LRU eviction — deliberately conservative, two documented quirks:
+//   (1) SINGLE eviction per call: each over-cap insert evicts at most one entry, so the
+//       registry converges on the cap gradually instead of mass-draining pools.
+//   (2) Growth past the cap: entries used within EVICT_MIN_IDLE_MS are never evicted (they
+//       may be held by in-flight or detached fire-and-forget work) — when every entry is
+//       recent, the insert proceeds anyway. Availability over the cap, never kill a live pool.
 function evictLru(): void {
   let oldestKey: string | undefined;
   let oldest = Infinity;

@@ -149,6 +149,10 @@ How Agora is *designed* to be secure — useful context for both operators and r
   is bounded.
 - **Multi-tenant isolation by `project_id`.** `:projectId` is validated (UUID + existence) in middleware
   and every query is scoped to it; tenants can't read across each other.
+- **DB resolution fails closed.** The per-project DB resolver seam (`@agora/core/db`) propagates resolver
+  errors — there is no "resolver failed → shared database" fallback, so a misconfigured multi-DB
+  deployment can never silently serve one project's request from another's database. Single-`DATABASE_URL`
+  deployments are unaffected (no resolver is ever registered; every request uses the one shared handle).
 - **Authentication.** Identity is backed by **Supabase Auth** (passwords never touch Agora code — they go
   straight to Supabase; never logged or stored). Agora mints its own **HS256 access JWTs** (short-lived,
   ~30 min) plus **rotating refresh tokens** with **reuse-detection** (a replayed token revokes the whole

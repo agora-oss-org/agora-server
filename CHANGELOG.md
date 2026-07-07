@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`@agora/core/db` resolver seam** — `setDbResolver`/`resolveDbFor` let an external deployment inject a
+  per-project DB handle at boot (unregistered → the shared `DATABASE_URL` handle; resolver errors fail
+  closed, never a shared-db fallback). Wired at every projectId-known chokepoint: `resolveProject`, socket
+  connection-auth, the root-mounted connections routes (via the new access-token `pid` claim +
+  `scopeDbToAuthProject`), `/internal/moderation/apply`, the `api_usage` metrics flush, and the
+  pending-embeddings drain. Zero behavior change for single-tenant deployments.
+- Access tokens now carry a `pid` (projectId) claim, surfaced as `auth.projectId` (`AuthContext.projectId`,
+  null on tokens minted before this change).
+- **`MAX_POOLS`** env var (default 50): cap on the core db registry's per-DSN connection pools, now
+  validated in the env schema (invalid values fail boot instead of silently falling back).
 - **Indexes for hot API query paths** (migration `0057`). Four plain btree indexes surfaced by an
   index audit of the API's query paths: `profiles(project_id, auth_user_id)` (resolved on every
   sign-in/sign-up/OAuth callback — previously a seq scan), `profiles(project_id, reputation DESC)`
@@ -22,8 +32,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`apps/admin/src/routes/SettingsPage.tsx`.)
 - Internal: DB access goes through a request-scoped `getDb()` accessor (AsyncLocalStorage)
   instead of the `db` module singleton, which is no longer exported from `@agora/core/db`.
-  Behavior-unchanged groundwork for per-tenant database connections
-  (docs/superpowers/specs/2026-07-06-per-tenant-db-design.md, Phase 0).
+  Behavior-unchanged groundwork for external per-tenant database routing.
+- `AuthContext` (contract) gained `projectId: string | null`; `signAccessToken` (internal) now
+  takes `projectId` as its first parameter.
 
 ## [0.17.0] - 2026-07-05
 

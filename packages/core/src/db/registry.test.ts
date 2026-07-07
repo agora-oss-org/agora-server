@@ -1,18 +1,20 @@
 // Unit tests for the DSN-keyed pool registry. postgres.js clients are lazy (no
 // connection until a query) so fake DSNs are safe; we never query.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { env } from "../lib/env.js";
 import { endAllPools, getDbForDsn } from "./registry.js";
 
 const dsn = (n: number) => `postgres://u:p@host${n}.invalid:6432/agora`;
 
 describe("getDbForDsn", () => {
+  const savedMaxPools = env.MAX_POOLS;
   beforeEach(() => {
     vi.useFakeTimers();
   });
   afterEach(async () => {
     await endAllPools();
     vi.useRealTimers();
-    vi.unstubAllEnvs();
+    (env as { MAX_POOLS: number }).MAX_POOLS = savedMaxPools;
   });
 
   it("returns the same handle for the same DSN (dedupe)", () => {
@@ -24,7 +26,7 @@ describe("getDbForDsn", () => {
   });
 
   it("evicts the least-recently-used idle entry past the cap", () => {
-    vi.stubEnv("MAX_POOLS", "2");
+    (env as { MAX_POOLS: number }).MAX_POOLS = 2;
     const a = getDbForDsn(dsn(1));
     vi.advanceTimersByTime(1000);
     const b = getDbForDsn(dsn(2));
@@ -36,7 +38,7 @@ describe("getDbForDsn", () => {
   });
 
   it("never evicts a recently-used entry (in-flight/detached work guard)", () => {
-    vi.stubEnv("MAX_POOLS", "2");
+    (env as { MAX_POOLS: number }).MAX_POOLS = 2;
     const a = getDbForDsn(dsn(1));
     const b = getDbForDsn(dsn(2));
     // both used "just now" -> evictor must decline; registry grows past cap instead
@@ -52,34 +54,26 @@ describe("getDbForDsn", () => {
     expect(getDbForDsn(dsn(1))).not.toBe(a);
   });
 
-  // maxPools() fallback branches: invalid MAX_POOLS must fall back to a cap of 50.
-  // Discriminating setup: age the first entry PAST the idle guard before adding the
-  // second, so a literally-applied broken cap (0 / -1) would evict it — handle
-  // stability then proves the fallback cap (50) applied, not the recency guard.
-  it("falls back to cap 50 when MAX_POOLS is 0", () => {
-    vi.stubEnv("MAX_POOLS", "0");
+  it("evicts at most ONE entry per over-cap insert (converges gradually)", () => {
+    (env as { MAX_POOLS: number }).MAX_POOLS = 2;
     const a = getDbForDsn(dsn(1));
-    vi.advanceTimersByTime(6 * 60 * 1000); // a is past the idle guard -> evictable if cap were 0
-    const b = getDbForDsn(dsn(2)); // a broken cap of 0 would evict a here
-    expect(getDbForDsn(dsn(1))).toBe(a); // fallback 50 -> nothing evicted
-    expect(getDbForDsn(dsn(2))).toBe(b);
-  });
-
-  it("falls back to cap 50 when MAX_POOLS is negative", () => {
-    vi.stubEnv("MAX_POOLS", "-1");
-    const a = getDbForDsn(dsn(1));
-    vi.advanceTimersByTime(6 * 60 * 1000); // a is past the idle guard -> evictable if cap were -1
-    const b = getDbForDsn(dsn(2)); // a broken cap of -1 would evict a here
-    expect(getDbForDsn(dsn(1))).toBe(a); // fallback 50 -> nothing evicted
-    expect(getDbForDsn(dsn(2))).toBe(b);
-  });
-
-  it("falls back to cap 50 when MAX_POOLS is non-numeric", () => {
-    vi.stubEnv("MAX_POOLS", "not-a-number");
-    const a = getDbForDsn(dsn(1));
-    vi.advanceTimersByTime(6 * 60 * 1000); // a is past the idle guard -> evictable if the cap misparsed
+    vi.advanceTimersByTime(1000);
     const b = getDbForDsn(dsn(2));
-    expect(getDbForDsn(dsn(1))).toBe(a); // fallback 50 -> nothing evicted
-    expect(getDbForDsn(dsn(2))).toBe(b);
+    vi.advanceTimersByTime(6 * 60 * 1000); // both aged past the idle guard
+    getDbForDsn(dsn(3)); // over cap -> exactly one eviction (a, the oldest)
+    expect(getDbForDsn(dsn(2))).toBe(b); // b survived the same insert
+  });
+
+  // The old lazy-read fallback (invalid → 50) is gone: MAX_POOLS is now validated at boot by
+  // the env schema. Assert the schema itself rejects what the fallback used to paper over.
+  it("env schema rejects an invalid MAX_POOLS at parse time (fail loud at boot)", async () => {
+    const { z } = await import("zod");
+    const maxPools = z.preprocess((v) => (v === "" ? undefined : v), z.coerce.number().int().positive().default(50));
+    expect(maxPools.parse(undefined)).toBe(50);
+    expect(maxPools.parse("")).toBe(50);
+    expect(maxPools.parse("7")).toBe(7);
+    expect(() => maxPools.parse("0")).toThrow();
+    expect(() => maxPools.parse("-1")).toThrow();
+    expect(() => maxPools.parse("not-a-number")).toThrow();
   });
 });

@@ -57,6 +57,12 @@ const schema = z.object({
   // cap holds across API replicas; unset → in-process (per-replica) limiting. The app fail-opens to
   // in-memory if Redis is unreachable. A single replica needs no Redis. e.g. redis://redis:6379
   REDIS_URL: z.preprocess((v) => (v === "" ? undefined : v), z.string().url().optional()),
+  // Cap on concurrently-open per-DSN connection pools in the @agora/core/db registry
+  // (getDbForDsn). Purely generic pool tuning; irrelevant to a single-DATABASE_URL deployment
+  // (which never opens more than a handful). Past the cap the least-recently-used IDLE pool is
+  // drained; pools used within the last 5 minutes are never evicted (the registry may grow
+  // past the cap rather than kill a live pool).
+  MAX_POOLS: z.preprocess((v) => (v === "" ? undefined : v), z.coerce.number().int().positive().default(50)),
   // Neo4j (DozerDB) — the social graph's READ side (docs/SOCIAL-GRAPH.md §3). The scorer service is
   // the graph's only writer; the API only runs read queries (Weather). Unset → social graph read
   // endpoints return 503 and the rest of the server is unaffected. e.g. bolt://neo4j:7687

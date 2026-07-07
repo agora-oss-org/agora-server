@@ -6,7 +6,7 @@
 // Trade-off: a crash loses the unflushed window (≤ FLUSH_INTERVAL_MS of counts) — acceptable for
 // usage metrics. On flush failure the snapshot is merged back so nothing is dropped on transient errors.
 import { sql } from "drizzle-orm";
-import { getDb } from "../db/index.js";
+import { resolveDbFor } from "../db/index.js";
 import { logger } from "./logger.js";
 
 interface Bucket {
@@ -73,9 +73,20 @@ export async function flushMetrics(): Promise<void> {
     for (const [key, b] of snapshot) {
       const [projectId, month] = key.split("|") as [string, string];
       try {
+        // Seam: metering is keyed by projectId — resolve the project's handle per bucket.
+        // Unregistered resolver → the shared handle (today's write, identical SQL).
+        let db;
+        try {
+          db = await resolveDbFor(projectId);
+        } catch (resolveErr) {
+          // Unresolvable project (e.g. decommissioned) — drop the bucket like the deleted-
+          // project FK case: best-effort telemetry must never become a poison pill.
+          logger.debug({ err: resolveErr, projectId }, "[metrics] dropping flush for unresolvable project");
+          continue;
+        }
         // duration_ms_total is bigint; the accumulator carries fractional ms (performance.now()), so
         // round at the DB boundary. Sub-ms loss on a summed total is irrelevant to avg-latency.
-        await getDb().execute(sql`
+        await db.execute(sql`
           insert into api_usage (project_id, month, requests, egress_bytes, duration_ms_total, errors)
           values (${projectId}::uuid, ${month}::date, ${b.requests}, ${b.egressBytes}, ${Math.round(b.durationMs)}, ${b.errors})
           on conflict (project_id, month) do update set

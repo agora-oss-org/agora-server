@@ -20,6 +20,7 @@ async function verify(token: string): Promise<AuthContext | null> {
     if (!payload.sub) return null;
     return {
       userId: payload.sub,
+      projectId: typeof payload.pid === "string" ? payload.pid : null,
       role: (payload.role as AuthContext["role"]) ?? "visitor",
       isOperator: payload.operator === true,
       isSteward: payload.steward === true,
