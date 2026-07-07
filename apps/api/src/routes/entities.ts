@@ -170,9 +170,9 @@ export const entityRoutes = new Hono<{ Variables: Variables }>()
         foreignId: body.foreignId,
         sourceId: body.sourceId,
         spaceId: body.spaceId,
+        mentions: await sanitizeMentions(projectId, body.mentions),
         // null → undefined so Drizzle applies the NOT NULL array/jsonb defaults
         keywords: body.keywords ?? undefined,
-        mentions: await sanitizeMentions(projectId, body.mentions),
         attachments: body.attachments ?? undefined,
         metadata: body.metadata ?? undefined,
         isDraft: body.isDraft ?? false,

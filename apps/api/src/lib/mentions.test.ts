@@ -31,6 +31,20 @@ describe("parseMentionTokens", () => {
     ]);
   });
 
+  it("coerces a truly-bare { userId } object (legacy userId key) to a user token", () => {
+    // The id falls back to `userId` when `id` is absent; with no type/username/slug it's a bare
+    // legacy token, so the username is refilled later by sanitizeMentions.
+    expect(parseMentionTokens([{ userId: "u7" }])).toEqual([
+      { type: "user", id: "u7", username: "" },
+    ]);
+  });
+
+  it("drops an untyped object decorated with a slug (malformed structured token)", () => {
+    // A slug without an explicit type="space" is a decorated-but-untyped shape, dropped rather than
+    // coerced — symmetric to the untyped-with-username drop above.
+    expect(parseMentionTokens([{ id: "s2", slug: "eng" }])).toEqual([]);
+  });
+
   it("dedupes by (type,id) keeping the first", () => {
     expect(parseMentionTokens([
       { type: "user", id: "u1", username: "alice" },

@@ -98,8 +98,8 @@ export const commentRoutes = new Hono<{ Variables: Variables }>()
         content: body.content,
         gif: body.gif ?? undefined,
         foreignId: body.foreignId,
-        // null → undefined so Drizzle applies the NOT NULL jsonb defaults
         mentions: await sanitizeMentions(projectId, body.mentions),
+        // null → undefined so Drizzle applies the NOT NULL jsonb defaults
         metadata: body.metadata ?? undefined,
       })
       .returning();
