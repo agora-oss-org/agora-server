@@ -1,6 +1,10 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { api, createProject, createUser, deleteProject, base } from "./helpers.js";
 
+// Events must start in the FUTURE or the handler closes RSVPs (events/rsvp-closed once startTime < now).
+// Computed relative to now so it never goes stale — a hardcoded date is a time-bomb.
+const FUTURE_START = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+
 describe("event RSVPs (integration)", () => {
   let projectId: string; let B: string;
   let host: { id: string; token: string };
@@ -12,7 +16,7 @@ describe("event RSVPs (integration)", () => {
     projectId = await createProject();
     B = base(projectId);
     [host, a, b] = await Promise.all([createUser(projectId), createUser(projectId), createUser(projectId)]);
-    eventId = (await api("POST", `${B}/events`, { token: host.token, body: { title: "Capped", startTime: "2026-07-01T18:00:00Z", type: "online", capacity: 1, allowMaybe: false } })).body.id;
+    eventId = (await api("POST", `${B}/events`, { token: host.token, body: { title: "Capped", startTime: FUTURE_START, type: "online", capacity: 1, allowMaybe: false } })).body.id;
   });
   afterAll(async () => { if (projectId) await deleteProject(projectId); });
 
@@ -65,7 +69,7 @@ describe("event RSVP capacity race (integration)", () => {
     projectId = await createProject();
     B = base(projectId);
     [host, u1, u2] = await Promise.all([createUser(projectId), createUser(projectId), createUser(projectId)]);
-    eventId = (await api("POST", `${B}/events`, { token: host.token, body: { title: "Race", startTime: "2026-07-01T18:00:00Z", type: "online", capacity: 1 } })).body.id;
+    eventId = (await api("POST", `${B}/events`, { token: host.token, body: { title: "Race", startTime: FUTURE_START, type: "online", capacity: 1 } })).body.id;
   });
   afterAll(async () => { if (projectId) await deleteProject(projectId); });
 
@@ -95,7 +99,7 @@ describe("event RSVP/guest-list visibility gate (integration)", () => {
     projectId = await createProject();
     B = base(projectId);
     [host, invitee, stranger] = await Promise.all([createUser(projectId), createUser(projectId), createUser(projectId)]);
-    eventId = (await api("POST", `${B}/events`, { token: host.token, body: { title: "Invite-gated", startTime: "2026-07-01T18:00:00Z", type: "online", visibility: "invite" } })).body.id;
+    eventId = (await api("POST", `${B}/events`, { token: host.token, body: { title: "Invite-gated", startTime: FUTURE_START, type: "online", visibility: "invite" } })).body.id;
     await api("POST", `${B}/events/${eventId}/invites`, { token: host.token, body: { userId: invitee.id } });
   });
   afterAll(async () => { if (projectId) await deleteProject(projectId); });

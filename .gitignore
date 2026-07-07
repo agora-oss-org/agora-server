@@ -17,3 +17,5 @@ neo4j/plugins/*.jar
 # TLS edge certs (deploy/proxy/Caddyfile.onion) — never commit private keys/certs
 deploy/proxy/certs/*
 !deploy/proxy/certs/.gitkeep
+
+docs/superpowers/

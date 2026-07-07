@@ -1,12 +1,14 @@
 // Integration: per-space digests (lib/digests.ts). Boots a local receiver that verifies the
 // outgoing HMAC X-Signature (signed with the SPACE's digest secret), then exercises the real
 // due-now scheduling gate, the --force override, the no-content skip, and the envelope contents.
-// Also asserts the secret-gated cron endpoint is disabled when CRON_SECRET is unset (the test env).
+// Also asserts the secret-gated cron endpoint is disabled when CRON_SECRET is unset (unset just for
+// that assertion, so it holds regardless of the ambient .env).
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import http from "node:http";
 import crypto from "node:crypto";
 import { sendDueDigests } from "../../src/lib/digests.js";
 import { api, createProject, createUser, deleteProject, base } from "./helpers.js";
+import { env } from "../../src/lib/env.js";
 
 const SECRET = "digest_test_secret";
 const hmac = (msg: string) => crypto.createHmac("sha256", SECRET).update(msg).digest("hex");
@@ -131,8 +133,16 @@ describe("space digests (integration)", () => {
   });
 
   it("the cron endpoint is disabled (503) when CRON_SECRET is unset", async () => {
-    const r = await api("POST", `/internal/cron/digests`);
-    expect(r.status).toBe(503);
-    expect(r.body.code).toBe("cron/disabled");
+    // app.ts reads env.CRON_SECRET live per request; unset it just here so we prove the disabled-path
+    // regardless of the ambient .env (which normally sets the secret for real cron).
+    const saved = env.CRON_SECRET;
+    (env as { CRON_SECRET?: string }).CRON_SECRET = undefined;
+    try {
+      const r = await api("POST", `/internal/cron/digests`);
+      expect(r.status).toBe(503);
+      expect(r.body.code).toBe("cron/disabled");
+    } finally {
+      (env as { CRON_SECRET?: string }).CRON_SECRET = saved;
+    }
   });
 });

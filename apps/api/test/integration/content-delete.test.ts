@@ -1,6 +1,7 @@
 // Integration: CONTENT_DELETE_MODE soft|hard delete semantics. Proves what unit tests can't —
 // the FK cascades (entity → comments → files; comment reply subtrees), that hard mode collects
-// storage keys BEFORE the row delete, and that soft mode (default) leaves rows AND media alone.
+// storage keys BEFORE the row delete, and that soft mode leaves rows AND media alone. Each test sets
+// CONTENT_DELETE_MODE explicitly (the prod default is `hard`); afterEach restores the imported value.
 // Storage is a captured fake via setStorageForTest (hermetic — no real MinIO/Supabase).
 import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from "vitest";
 import { eq } from "drizzle-orm";
@@ -68,7 +69,8 @@ describe("CONTENT_DELETE_MODE (integration)", () => {
     setStorageForTest(null);
   });
 
-  it("soft (default): tombstones the entity, keeps files rows, never touches storage", async () => {
+  it("soft: tombstones the entity, keeps files rows, never touches storage", async () => {
+    (env as { CONTENT_DELETE_MODE: string }).CONTENT_DELETE_MODE = "soft";
     const removed = captureStorage();
     const { body: entity } = await api("POST", `${base(projectId)}/entities`, {
       token: owner.token,

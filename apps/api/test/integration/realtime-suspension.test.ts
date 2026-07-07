@@ -1,7 +1,8 @@
 // Security regression: a suspended user must be cut off from the realtime layer, not just REST.
-// Both the plaintext root namespace (socket.ts) and the E2E "/secure" namespace (secure-socket.ts)
-// enforce hasActiveSuspension() at handshake time, mirroring middleware/auth.ts requireAuth.
-// Operators bypass (operator claim in the JWT), matching the REST behavior.
+// The API's root namespace (socket.ts) enforces hasActiveSuspension() at handshake time, mirroring
+// middleware/auth.ts requireAuth. Operators bypass (operator claim in the JWT), matching REST behavior.
+// The E2E "/secure" namespace lives in the separate @agora/secure-chat process (its own socket server,
+// secure-socket.ts) — its suspension gate is covered by that package's test, not from here.
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { serve } from "@hono/node-server";
 import { io as connectClient, type Socket } from "socket.io-client";
@@ -51,14 +52,11 @@ afterAll(async () => {
 });
 
 describe("realtime suspension enforcement (socket.io)", () => {
-  it("an active (non-suspended) user connects to both namespaces", async () => {
+  it("an active (non-suspended) user connects to the root namespace", async () => {
     const user = await createUser(projectId);
     const root = await connect(user.token);
-    const secure = await connect(user.token, "/secure");
     expect(root.connected).toBe(true);
-    expect(secure.connected).toBe(true);
     root.close();
-    secure.close();
   });
 
   it("a suspended user is rejected on the root namespace", async () => {
@@ -67,22 +65,13 @@ describe("realtime suspension enforcement (socket.io)", () => {
     await expect(connect(user.token)).rejects.toMatchObject({ message: "suspended" });
   });
 
-  it("a suspended user is rejected on the /secure namespace", async () => {
-    const user = await createUser(projectId);
-    expect((await suspend(user.id)).status).toBe(201);
-    await expect(connect(user.token, "/secure")).rejects.toMatchObject({ message: "suspended" });
-  });
-
-  it("an operator bypasses the suspension check (operator claim) on both namespaces", async () => {
+  it("an operator bypasses the suspension check (operator claim) on the root namespace", async () => {
     const user = await createUser(projectId);
     expect((await suspend(user.id)).status).toBe(201);
     // Same suspended subject, but carrying the operator claim → must still connect (no self-lockout).
     const opToken = await signToken(user.id, "visitor", true);
     const root = await connect(opToken);
-    const secure = await connect(opToken, "/secure");
     expect(root.connected).toBe(true);
-    expect(secure.connected).toBe(true);
     root.close();
-    secure.close();
   });
 });
