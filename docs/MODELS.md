@@ -25,6 +25,7 @@ metadata(jsonb), secureMetadata(jsonb, never exposed in public), reputation, isV
 lastActive, createdAt, updatedAt`
 - **User** (public) = UserFull minus `email, secureMetadata, isVerified, isActive, lastActive, updatedAt`
 - **AuthUser** = UserFull minus `secureMetadata`, plus `suspensions[]{reason?, startDate, endDate?}`, `authMethods[]`
+- `GET /users/suggestions?query=` — username/name substring search, bare `User[]`.
 - **Session response** (sign-in, and sign-up with auto-confirm) = `{ user: AuthUser, accessToken, refreshToken }`
 - **Sign-up with email confirmation enabled** returns `{ status: "confirmation_required", email }` (`200`,
   no tokens): the user is created and the confirmation email sent, but no session exists until they
@@ -43,6 +44,9 @@ readingPermission(anyone|members), postingPermission(anyone|members|admins), req
 readReceiptsEnabled(bool), parentSpaceId?, depth, metadata(jsonb), createdAt, updatedAt, deletedAt?,
 membersCount, childSpacesCount, isMember?, avatarFile?, bannerFile?`
 SpaceDetailed adds: `memberPermissions?, parentSpace?(SpacePreview), childSpaces[](SpacePreview)`
+- `GET /spaces` (list) search/sort/scope surface: `searchAny`/`searchName`/`searchSlug`/`searchDescription`
+  (ILIKE), `sortBy`(newest|members|alphabetical), `memberOf`(caller's active memberships only),
+  `include=files` (attaches `files[]` per space). Stays the standard `{ data, pagination }` envelope.
 
 ## SpaceMember
 `id, projectId, spaceId, userId, role(admin|moderator|member), status(pending|active|banned|rejected),

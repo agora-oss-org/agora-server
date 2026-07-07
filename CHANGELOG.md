@@ -41,6 +41,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   per-project DB resolver (or other init) without editing the bundle. Unset → no-op; a configured module
   that fails to load makes the process fail closed (exit 1). `NODE_OPTIONS=--import` is explicitly not a
   supported mechanism.
+- **Mention autocomplete + server-side validation.** `GET /users/suggestions` now honors `query`
+  (username/name substring) and returns a bare `User[]`; `GET /spaces` honors its full list surface
+  (`searchAny`/`searchName`/`searchSlug`/`searchDescription`, `sortBy`, `memberOf`, `include=files`).
+  `mentions[]` on entity/comment/message writes is validated server-side (`lib/mentions.ts`): tokens
+  are dropped unless they resolve to a real in-project profile/space, and display fields are refreshed
+  to canonical values — closing a cross-tenant mention/notification vector.
 
 ### Changed
 - **Admin: view-only settings banner now reads as a warning.** The "View-only mode — settings changes
