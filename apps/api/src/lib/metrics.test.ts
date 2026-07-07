@@ -1,7 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const execute = vi.fn();
-vi.mock("../db/index.js", () => ({ getDb: () => ({ execute: (...a: unknown[]) => execute(...a) }) }));
+vi.mock("../db/index.js", () => ({
+  getDb: () => ({ execute: (...a: unknown[]) => execute(...a) }),
+  resolveDbFor: async () => ({ execute: (...a: unknown[]) => execute(...a) }),
+}));
 
 import { recordRequest, flushMetrics } from "./metrics.js";
 
