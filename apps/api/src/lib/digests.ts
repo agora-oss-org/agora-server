@@ -21,8 +21,8 @@ type SpaceRow = typeof spaces.$inferSelect;
 
 const sign = (secret: string, msg: string) => crypto.createHmac("sha256", secret).update(msg).digest("hex");
 
-/** Current hour (0–23) in an IANA timezone, defaulting to UTC; unknown tz → UTC. */
-function hourInZone(now: Date, tz: string | null): number {
+/** Current hour (0–23) in an IANA timezone, defaulting to UTC; unknown tz → UTC. (Exported for unit tests.) */
+export function hourInZone(now: Date, tz: string | null): number {
   try {
     const parts = new Intl.DateTimeFormat("en-US", { timeZone: tz || "UTC", hour: "numeric", hour12: false }).formatToParts(now);
     return Number(parts.find((p) => p.type === "hour")?.value ?? "0") % 24; // some platforms render midnight as "24"
@@ -31,8 +31,8 @@ function hourInZone(now: Date, tz: string | null): number {
   }
 }
 
-/** A space is due when it's opted in, fully configured, and the local hour matches its schedule. */
-function isDue(space: SpaceRow, now: Date): boolean {
+/** A space is due when it's opted in, fully configured, and the local hour matches its schedule. (Exported for unit tests.) */
+export function isDue(space: SpaceRow, now: Date): boolean {
   if (!space.digestEnabled || !space.digestWebhookUrl || !space.digestWebhookSecret) return false;
   if (space.digestScheduleHour == null) return false;
   return hourInZone(now, space.digestTimezone) === space.digestScheduleHour;
