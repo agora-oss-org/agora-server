@@ -14,6 +14,7 @@ import { notifyOnConnectionRequest, notifyOnConnectionAccept } from "../lib/noti
 import { readPagination, paginate } from "../http/envelope.js";
 import { shapeUser } from "../lib/shape.js";
 import { parseBody, connectionRequestSchema } from "../lib/validation.js";
+import { normalizeUserSearch, userSearchCondition } from "../lib/user-search.js";
 
 type ConnRow = typeof connections.$inferSelect;
 type ProfileRow = typeof profiles.$inferSelect;
@@ -101,30 +102,36 @@ export const connectionRoutes = new Hono<{ Variables: Variables }>()
     const self = await me(c);
     const targetId = uuidParam(c, "userId");
     const { page, limit, offset } = readPagination(c);
+    const { like, fields } = normalizeUserSearch(c.req.query("query"), c.req.query("searchFields"));
+    const searchCond = userSearchCondition(like, fields, { username: profiles.username, name: profiles.name });
     const where = and(eq(connections.projectId, self.projectId), eq(connections.status, "connected"),
       or(eq(connections.requesterId, targetId), eq(connections.addresseeId, targetId)));
     const [{ n } = { n: 0 }] = await getDb().select({ n: count() }).from(connections).where(where);
     const rows = await getDb().select().from(connections).where(where).orderBy(desc(connections.respondedAt)).limit(limit).offset(offset);
-    const data = await Promise.all(rows.map(async (r) => {
+    const data = (await Promise.all(rows.map(async (r) => {
       const otherId = r.requesterId === targetId ? r.addresseeId : r.requesterId;
-      const [other] = await getDb().select().from(profiles).where(eq(profiles.id, otherId)).limit(1);
-      return { id: r.id, connectedUser: other ? shapeUser(other) : null, connectedAt: iso(r.respondedAt) };
-    }));
+      const [other] = await getDb().select().from(profiles).where(and(eq(profiles.id, otherId), searchCond)).limit(1);
+      if (!other) return null;
+      return { id: r.id, connectedUser: shapeUser(other), connectedAt: iso(r.respondedAt) };
+    }))).filter((d): d is NonNullable<typeof d> => d !== null);
     return c.json(paginate(data, n, page, limit));
   })
   // ── established + counts for the current user ───────────────────────────────
   .get("/connections", requireAuth, scopeDbToAuthProject, async (c) => {
     const self = await me(c);
     const { page, limit, offset } = readPagination(c);
+    const { like, fields } = normalizeUserSearch(c.req.query("query"), c.req.query("searchFields"));
+    const searchCond = userSearchCondition(like, fields, { username: profiles.username, name: profiles.name });
     const where = and(eq(connections.projectId, self.projectId), eq(connections.status, "connected"),
       or(eq(connections.requesterId, self.id), eq(connections.addresseeId, self.id)));
     const [{ n } = { n: 0 }] = await getDb().select({ n: count() }).from(connections).where(where);
     const rows = await getDb().select().from(connections).where(where).orderBy(desc(connections.respondedAt)).limit(limit).offset(offset);
-    const data = await Promise.all(rows.map(async (r) => {
+    const data = (await Promise.all(rows.map(async (r) => {
       const otherId = r.requesterId === self.id ? r.addresseeId : r.requesterId;
-      const [other] = await getDb().select().from(profiles).where(eq(profiles.id, otherId)).limit(1);
-      return { id: r.id, connectedUser: other ? shapeUser(other) : null, connectedAt: iso(r.respondedAt) };
-    }));
+      const [other] = await getDb().select().from(profiles).where(and(eq(profiles.id, otherId), searchCond)).limit(1);
+      if (!other) return null;
+      return { id: r.id, connectedUser: shapeUser(other), connectedAt: iso(r.respondedAt) };
+    }))).filter((d): d is NonNullable<typeof d> => d !== null);
     return c.json(paginate(data, n, page, limit));
   })
   .get("/connections/count", requireAuth, scopeDbToAuthProject, async (c) => {
