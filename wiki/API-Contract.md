@@ -42,7 +42,11 @@ and `/v7/:projectId/...` shape (contract in `docs/MANIFEST.md`):
   (`public | members | invite`). See [[Governance]] for the enforcement model.
 - **Push notifications** (`§push-notifications`) — a device registry (Web Push / FCM / APNs) that
   mirrors a push-worthy allowlist of in-app notifications to background sends; gated by the `VAPID_*`
-  env trio (see [[Deployment]]).
+  env trio (see [[Deployment]]). Per-user opt-out preferences (`§push-notifications`) let a user
+  disable specific notification types.
+- **User matching** (`§match`) — `POST /match/users` currently ships the request contract only
+  (validated `passive`/`directed` modes) and always resolves `{ results: [] }`; the real
+  facet/embedding matching engine is a future spec.
 
 New contract-affecting behavior is announced in-band: legacy sort aliases (e.g. `sortBy=new`) now emit
 an **RFC 8594 `Deprecation`** response header rather than breaking, so SDK consumers get a migration

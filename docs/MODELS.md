@@ -40,9 +40,14 @@ lastActive, createdAt, updatedAt`
 ## Space / SpaceDetailed
 `id, projectId, shortId, slug?, name, description?, avatarFileId?, bannerFileId?, userId,
 readingPermission(anyone|members), postingPermission(anyone|members|admins), requireJoinApproval,
-readReceiptsEnabled(bool), parentSpaceId?, depth, metadata(jsonb), createdAt, updatedAt, deletedAt?,
+readReceiptsEnabled(bool), visibility(public|unlisted|private, required, default "public"),
+parentSpaceId?, depth, metadata(jsonb), createdAt, updatedAt, deletedAt?,
 membersCount, childSpacesCount, isMember?, avatarFile?, bannerFile?`
 SpaceDetailed adds: `memberPermissions?, parentSpace?(SpacePreview), childSpaces[](SpacePreview)`
+`visibility` (migration `0058`) is a discoverability axis distinct from `readingPermission`/
+`postingPermission` — persisted + emitted on create/update/read this cycle. **No listing/discovery
+filtering is applied yet** (an `unlisted`/`private` space is not currently hidden from any list) —
+that's a future addition.
 
 ## SpaceMember
 `id, projectId, spaceId, userId, role(admin|moderator|member), status(pending|active|banned|rejected),
@@ -64,8 +69,13 @@ and the `conversation:created` socket event (zero-state: `unreadCount: 0`, `last
 from the `conversation:created` payload (client refills on the next list fetch).
 
 ## ConversationMember
-`id, projectId, conversationId, userId, role(admin|member|null), lastReadAt?, mutedUntil?, isActive,
-leftAt?, createdAt, updatedAt, user?`
+`id, projectId, conversationId, userId, role(admin|member|null), lastReadAt?, mutedUntil?,
+mutedForever(bool), isActive, leftAt?, createdAt, updatedAt, user?`
+`mutedUntil`/`mutedForever` (migration `0059`) are viewer-only self state — set via
+`POST /chat/conversations/:id/mute`, never another member's. A per-conversation push-suppression
+helper (`isConversationMutedForUser`) exists in `lib/push/index.ts` but is currently **unreachable**:
+no chat `message` push-dispatch call site is wired up yet, so muting a conversation today only
+persists the state — it does not yet suppress any push (there is no message-push path to suppress).
 
 ## ChatMessage
 `id, localId?, projectId, conversationId, userId?, content?, gif?, mentions[], files?[], metadata(jsonb),
@@ -109,6 +119,18 @@ shape (see `AppNotification.ts`). Store generically: `type` + `action` + jsonb `
 ## PushDevice
 `id, projectId, userId, platform(ios|android|web), token?(string — FCM/APNs device token; null for web),
 subscription?({endpoint, keys:{p256dh, auth}} — Web Push subscription; null for native), createdAt, updatedAt`
+
+## Notification preferences
+`GET`/`PUT /push-notifications/preferences` both return/accept the same shape: `{ disabledTypes:
+PushEventType[] }` — a per-user, per-project **opt-OUT** set (migration `0060`; empty/absent row =
+all types enabled). `PUT` is a full-replace upsert; an unknown `PushEventType` value → `400`.
+`PushEventType` (20 values, must match the SDK's `PUSH_EVENT_TYPES` order exactly): `entity-comment,
+comment-reply, entity-mention, comment-mention, entity-upvote, comment-upvote, entity-reaction,
+comment-reaction, entity-reaction-milestone-specific, entity-reaction-milestone-total,
+comment-reaction-milestone-specific, comment-reaction-milestone-total, new-follow,
+connection-request, connection-accepted, space-membership-approved, event-invite, event-updated,
+event-cancelled, message`. Push dispatch (`lib/push/index.ts` `dispatchNotificationPush`) skips a
+type present in the caller's `disabledTypes` before fanning out to devices.
 
 ## Event / EventRsvp / EventInvite
 Event: `id, shortId, projectId, userId?, user?, title, description?, startTime, endTime?, timezone?,

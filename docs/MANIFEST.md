@@ -160,31 +160,45 @@ signs an RS256 JWT (issuer=projectId, aud="replyke.com", sub=userData.id, claim 
 | GET/POST/DELETE | `/comments/:id/reactions` (GET = paginated reactor list, `useFetchCommentReactions`) | ✅ |
 
 ### users
+Every user-direct (`/users/*`) handler below now VALIDATES two optional query params —
+`spaceReputationId: uuid|"none"|"context"` and `spaceReputationDescendants: "true"` — via
+`validateSpaceReputationParams` (`"context"` → `400 space-reputation/context-not-allowed` on these
+user-direct endpoints; `spaceReputationDescendants` without an explicit uuid id →
+`400 space-reputation/descendants-needs-uuid`). **Validation only — enrichment is deferred**: no
+response currently carries a space-scoped reputation value; a real tally/rollup + per-response
+enrichment is a separate future spec.
 | Method | Path | Status |
 |---|---|---|
-| GET | `/users/:id` | ✅ |
-| PATCH | `/users/:id` (update profile) | ✅ |
+| GET | `/users/:id` (`spaceReputationId?`/`spaceReputationDescendants?` — validated, not yet enriched) | ✅ |
+| PATCH | `/users/:id` (update profile; same params validated) | ✅ |
 | GET | `/users/by-foreign-id` | ✅ |
 | GET | `/users/by-username` | ✅ |
 | GET | `/users/check-username` | ✅ |
 | GET | `/users/suggestions` | ✅ |
-| GET | `/users/:id/follow` (follow status) | ✅ |
-| POST | `/users/:id/follow` | ✅ |
-| DELETE | `/users/:id/follow` | ✅ |
-| GET | `/users/:id/followers` | ✅ |
-| GET | `/users/:id/following` | ✅ |
-| GET | `/users/:id/followers-count` | ✅ |
-| GET | `/users/:id/following-count` | ✅ |
-| GET | `/users/:id/connections-count` | ✅ (also exposed at the `/v7` root `/users/:userId/connections-count` via the connections module) |
+| GET | `/users/:id/follow` (follow status; params validated) | ✅ |
+| POST | `/users/:id/follow` (params validated) | ✅ |
+| DELETE | `/users/:id/follow` (params validated) | ✅ |
+| GET | `/users/:id/followers` (params validated) | ✅ |
+| GET | `/users/:id/following` (params validated) | ✅ |
+| GET | `/users/:id/followers-count` (params validated) | ✅ |
+| GET | `/users/:id/following-count` (params validated) | ✅ |
+| GET | `/users/:id/connections-count` (params validated) | ✅ (also exposed at the `/v7` root `/users/:userId/connections-count` via the connections module) |
+| GET | `/users/:id/suspensions` (project-admin; params validated) | ✅ |
 
 ### follows
 | Method | Path | Status |
 |---|---|---|
 | DELETE | `/follows/:id` | ✅ |
-| GET | `/follows/followers` | ✅ |
-| GET | `/follows/following` | ✅ |
+| GET | `/follows/followers` (`?query=&searchFields=username\|name`, comma-separated) | ✅ |
+| GET | `/follows/following` (`?query=&searchFields=username\|name`, comma-separated) | ✅ |
 | GET | `/follows/followers-count` | ✅ |
 | GET | `/follows/following-count` | ✅ |
+
+`query`/`searchFields` (default both `username`+`name`) apply an ILIKE filter to the resolved page of
+followed/follower profiles. **Filtering runs AFTER id-pagination**, not before — `limit`/`page` bound
+the underlying follow-edge query, and the text filter is applied to that page's profiles. So
+`pagination.totalCount` reflects the **unfiltered** edge count, and a filtered page can return fewer
+than `limit` rows even when more matches exist on later pages.
 
 ### connections (state machine: none → pending → connected/declined)
 > Fully implemented in `routes/connections.ts` (mounted at the `/v7` root, not under `/:projectId` — the
@@ -194,14 +208,22 @@ signs an RS256 JWT (issuer=projectId, aud="replyke.com", sub=userData.id, claim 
 > withdraw, disconnect, list connections (own + `GET /users/:userId/connections`), list pending
 > (received/sent), connection status, connection count. Request/accept fan out over `notification:created`
 > (types `connection-request` / `connection-accepted`); non-UUID path params are rejected with `400`.
+> `GET /connections` and `GET /users/:userId/connections` both accept `?query=&searchFields=username|name`
+> (comma-separated) — same ILIKE-on-the-resolved-page behavior as follows' `query`/`searchFields`
+> (§follows): the filter runs AFTER pagination, so `totalCount` reflects the unfiltered connection
+> count and a filtered page can come back shorter than `limit`.
 
 ### spaces
+`POST`/`PATCH /spaces` accept an optional `visibility: public|unlisted|private` (default `public`;
+migration `0058`), persisted and emitted on every space response. **Persist + emit only this cycle —
+no listing/discovery filtering is applied** (an `unlisted`/`private` space is not hidden from
+`GET /spaces`, search, or any other list); that's a future addition.
 | Method | Path | Status |
 |---|---|---|
 | GET | `/spaces` (list, `?…`) | ✅ |
-| POST | `/spaces` | ✅ |
+| POST | `/spaces` (`visibility?` — see above) | ✅ |
 | GET | `/spaces/:id` | ✅ |
-| PATCH | `/spaces/:id` | ✅ |
+| PATCH | `/spaces/:id` (`visibility?` — see above) | ✅ |
 | DELETE | `/spaces/:id` | ✅ |
 | GET | `/spaces/by-short-id?shortId=` | ✅ |
 | GET | `/spaces/by-slug?slug=` | ✅ |
@@ -277,6 +299,7 @@ lock). Removing the last host is rejected (`400 events/last-host`); a hidden gue
 | DELETE | `/chat/conversations/:id` | ✅ |
 | DELETE | `/chat/conversations/:id/leave` | ✅ |
 | POST | `/chat/conversations/:id/read` | ✅ |
+| POST | `/chat/conversations/:id/mute` (self only; body `{ duration: "8h"\|"24h"\|"1w"\|"forever"\|null }`, `null` clears the mute → `{ currentMember }` carrying the caller's own `mutedUntil`/`mutedForever`) | 🔶 |
 | GET | `/chat/conversations/:id/members` | ✅ |
 | POST | `/chat/conversations/:id/members` | ✅ |
 | DELETE | `/chat/conversations/:id/members/:id` | ✅ |
@@ -288,6 +311,13 @@ lock). Removing the last host is rejected (`400 events/last-host`); a hidden gue
 | POST | `/chat/conversations/:id/messages/:id/reactions` | ✅ |
 | POST | `/chat/conversations/:id/messages/:id/report` | ✅ |
 | GET | `/chat/spaces/:id/conversation` | ✅ |
+
+`/mute` persists `mutedUntil`/`mutedForever` on the caller's own `ConversationMember` row. A
+per-conversation push-suppression helper (`isConversationMutedForUser` / `dispatchChatMessagePush` in
+`lib/push/index.ts`) is implemented but **currently unreachable** — no chat `message` push-dispatch
+call site is wired into the message-send handler yet, so muting today has no observable effect on
+push delivery (there's nothing dispatching a `message` push to suppress). Wiring that call site is a
+follow-up.
 
 ### collections
 | Method | Path | Status |
@@ -332,6 +362,21 @@ notification is written — reactions, reaction-milestones, and **all steward ev
 | DELETE | `/push-notifications/devices` (auth; deregister; body identifies the device → `204`) | ✅ |
 | POST | `/push-notifications/devices/deregister` (auth; proxy-safe fallback for gateways that strip DELETE bodies → `204`) | ✅ |
 | GET | `/push-notifications/vapid-public-key` (**unauthenticated**, rate-limited — fetched pre-sign-in → `{ publicKey: string \| null }`) | ✅ |
+| GET | `/push-notifications/preferences` (auth; own row → `{ disabledTypes: PushEventType[] }`, `[]` if unset) | 🔶 |
+| PUT | `/push-notifications/preferences` (auth; full-replace upsert, body `{ disabledTypes }`; an unknown `PushEventType` → `400`) | 🔶 |
+
+`disabledTypes` is a per-user **opt-OUT** set over the 20-value `PushEventType` enum (migration
+`0060`; see MODELS.md). `dispatchNotificationPush` skips any type in the caller's set before fanning
+out to devices.
+
+### match (Agora extension — request contract only, engine deferred)
+| Method | Path | Status |
+|---|---|---|
+| POST | `/match/users` (auth; body `{ mode: passive\|directed, query?, limit?, spaceId?, includeChildSpaces?, includeSampleContent?, excludeSelf? }` — `directed` mode requires a non-empty `query`, else `400`) → `{ results: [] }` | 🔶 |
+
+**Stub.** `useMatchUsers` gets a validated request contract and a clean empty-results response so it
+settles without erroring, but the actual facet/embedding matching engine is unimplemented — `results`
+is unconditionally `[]`. The real engine is a separate future spec.
 
 ### reports
 | Method | Path | Status |
@@ -354,10 +399,14 @@ array** of `{ similarity, record }` results (NOT a `{ data, pagination }` envelo
 against the SDK's `useSearchContent`/`useAskContent`/`useSearchSpaces`/`useSearchUsers`.
 | Method | Path | Status |
 |---|---|---|
-| POST | `/search/content` (semantic across entity/comment/message; Voyage→`match_content` pgvector; honors `sourceTypes`) → `ContentSearchResult[]` | ✅ |
-| POST | `/search/ask` (RAG; SSE stream `token`→`sources`→`done`/`error`) | ✅ |
+| POST | `/search/content` (semantic across entity/comment/message; Voyage→`match_content` pgvector; honors `sourceTypes`, `spaceId`, `includeChildSpaces?`) → `ContentSearchResult[]` | ✅ |
+| POST | `/search/ask` (RAG; SSE stream `token`→`sources`→`done`/`error`; honors the same `spaceId`/`includeChildSpaces?`) | ✅ |
 | POST | `/search/spaces` (ILIKE) → `SpaceSearchResult[]` | ✅ |
 | POST | `/search/users` (ILIKE) → `UserSearchResult[]` | ✅ |
+
+`includeChildSpaces?: boolean` (with a `spaceId`) resolves `{self ∪ descendants}` via a recursive CTE
+(`lib/space-tree.ts` `resolveSpaceSubtree`, migration `0061` — `match_content` gained `p_space_ids`)
+and scopes the search to that set instead of the single space.
 
 ### storage
 | Method | Path | Status |
