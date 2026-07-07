@@ -50,13 +50,19 @@ export const userRoutes = new Hono<{ Variables: Variables }>()
   .get("/suggestions", async (c) => {
     const { limit } = readPagination(c, { page: 1, limit: 10 });
     const exclude = c.var.auth?.userId;
+    const query = c.req.query("query")?.trim();
+    const like = query ? `%${query}%` : null;
     const rows = await getDb()
       .select()
       .from(profiles)
-      .where(and(eq(profiles.projectId, c.var.projectId), exclude ? ne(profiles.id, exclude) : undefined))
+      .where(and(
+        eq(profiles.projectId, c.var.projectId),
+        exclude ? ne(profiles.id, exclude) : undefined,
+        like ? or(ilike(profiles.username, like), ilike(profiles.name, like)) : undefined,
+      ))
       .orderBy(desc(profiles.reputation))
       .limit(limit);
-    return c.json({ data: rows.map(shapeUser) });
+    return c.json(rows.map(shapeUser)); // bare User[] — matches the SDK's useFetchUserSuggestions
   })
   .get("/:id", async (c) => {
     const row = await findUser(c.var.projectId, profiles.id, c.req.param("id"));

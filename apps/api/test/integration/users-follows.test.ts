@@ -91,3 +91,40 @@ describe("users + follows (integration)", () => {
     expect(count.body.count).toBe(0);
   });
 });
+
+describe("user suggestions — mention autocomplete (integration)", () => {
+  let projectId: string; let B: string;
+  let me: { id: string; token: string };
+
+  beforeAll(async () => {
+    projectId = await createProject();
+    B = base(projectId);
+    me = await createUser(projectId);
+    // Two searchable users with known username/name.
+    const jenny = await createUser(projectId);
+    await api("PATCH", `${B}/users/${jenny.id}`, { token: jenny.token, body: { username: "jenny", name: "Jen Smith" } });
+    const bob = await createUser(projectId);
+    await api("PATCH", `${B}/users/${bob.id}`, { token: bob.token, body: { username: "bobby", name: "Bob" } });
+  });
+  afterAll(async () => { if (projectId) await deleteProject(projectId); });
+
+  it("returns a bare array and filters by username substring", async () => {
+    const res = await api("GET", `${B}/users/suggestions?query=jen`, { token: me.token });
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body)).toBe(true);                 // bare array, not { data }
+    expect(res.body.some((u: any) => u.username === "jenny")).toBe(true);
+    expect(res.body.some((u: any) => u.username === "bobby")).toBe(false);
+  });
+
+  it("matches on name too, and excludes the caller", async () => {
+    const res = await api("GET", `${B}/users/suggestions?query=smith`, { token: me.token });
+    expect(res.body.some((u: any) => u.username === "jenny")).toBe(true);
+    expect(res.body.some((u: any) => u.id === me.id)).toBe(false);
+  });
+
+  it("with no query returns the reputation-ranked list (bare array)", async () => {
+    const res = await api("GET", `${B}/users/suggestions`, { token: me.token });
+    expect(Array.isArray(res.body)).toBe(true);
+    expect(res.body.length).toBeGreaterThan(0);
+  });
+});
