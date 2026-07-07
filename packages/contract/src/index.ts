@@ -9,3 +9,4 @@ export * from "./secure-chat.js";
 export * from "./social.js";
 export * from "./events.js";
 export * from "./push.js";
+export * from "./mentions.js";
