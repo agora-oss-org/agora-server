@@ -4,7 +4,7 @@
 // Connection from SDK: io(origin, { auth: { token }, query: { projectId } })
 import { Server, type Socket } from "socket.io";
 import { and, eq } from "drizzle-orm";
-import { getDb } from "../db/index.js";
+import { getDb, resolveDbFor, runWithDb, type Db } from "../db/index.js";
 import { conversationMembers } from "../db/schema/index.js";
 import type { Server as HttpServer } from "node:http";
 import { jwtVerify } from "jose";
@@ -46,6 +46,7 @@ export interface ClientToServerEvents {
 interface SocketData {
   userId: string;
   projectId: string;
+  db: Db; // the socket's project handle, resolved once at connection-auth (seam)
 }
 
 const accessSecret = new TextEncoder().encode(env.ACCESS_TOKEN_SECRET);
@@ -74,7 +75,7 @@ function safeOn<E extends keyof ClientToServerEvents>(
     // exactly as before (socket.io would otherwise crash on an unhandled async rejection). No-op when
     // telemetry is disabled.
     socketEventsTotal.add(1, { event: String(event) });
-    withSpan(`socket ${String(event)}`, async () => handler(...args)).catch((err) => logHandlerFailure(event, err));
+    withSpan(`socket ${String(event)}`, async () => runWithDb(socket.data.db, () => handler(...args))).catch((err) => logHandlerFailure(event, err));
   });
 }
 
@@ -127,15 +128,19 @@ export function attachRealtime(httpServer: HttpServer) {
       if (!token || !projectId) return next(new Error("unauthorized"));
       const { payload } = await jwtVerify(token, accessSecret, { algorithms: ["HS256"] });
       if (!payload.sub) return next(new Error("unauthorized"));
+      // Seam: resolve the project's handle once per connection. Unregistered resolver → the
+      // shared handle. A resolver failure (unknown project) lands in the catch → unauthorized.
+      const db = await resolveDbFor(projectId);
       // Enforce suspensions on the realtime path too (mirrors middleware/auth.ts requireAuth):
       // a suspended user must not keep receiving live events. Operators AND project owners bypass
       // (deployment god-view / no owner self-lockout).
       const privileged = payload.operator === true || payload.powner === true;
-      if (!privileged && (await hasActiveSuspension(payload.sub))) {
+      if (!privileged && (await runWithDb(db, () => hasActiveSuspension(payload.sub!)))) {
         return next(new Error("suspended"));
       }
       socket.data.userId = payload.sub;
       socket.data.projectId = projectId;
+      socket.data.db = db;
       next();
     } catch {
       next(new Error("unauthorized"));
