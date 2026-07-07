@@ -2,7 +2,7 @@
 // FCM/APNs providers are wired in Task 8; until then `getProviders` returns them as null (skipped).
 import { and, eq } from "drizzle-orm";
 import { getDb } from "../../db/index.js";
-import { pushDevices } from "../../db/schema/index.js";
+import { pushDevices, conversationMembers } from "../../db/schema/index.js";
 import type { ProviderMap, PushPayload } from "./provider.js";
 import { dispatchToDevices, notificationPushPayload } from "./dispatch.js";
 import { getVapidKeys } from "./vapid.js";
@@ -10,6 +10,7 @@ import { WebPushProvider } from "./webpush.js";
 import { getFcmProvider, getApnsProvider } from "./native.js"; // added in Task 8
 import { logger } from "../logger.js";
 import { loadDisabledTypes, isTypeDisabled } from "../notification-prefs.js";
+import { isConversationMuted } from "../mute.js";
 
 export async function getProviders(projectId: string): Promise<ProviderMap> {
   const vapid = await getVapidKeys(projectId);
@@ -43,5 +44,31 @@ export function dispatchNotificationPush(projectId: string, userId: string, type
   })().catch((err) => {
     logger.error("push: notification dispatch failed");
     logger.debug({ err, type }, "push: notification dispatch failed");
+  });
+}
+
+/** Chat message push: skip when the recipient muted THIS conversation (forever or timed). */
+export async function isConversationMutedForUser(projectId: string, conversationId: string, userId: string): Promise<boolean> {
+  const [m] = await getDb().select({ mutedUntil: conversationMembers.mutedUntil, mutedForever: conversationMembers.mutedForever })
+    .from(conversationMembers)
+    .where(and(eq(conversationMembers.projectId, projectId), eq(conversationMembers.conversationId, conversationId), eq(conversationMembers.userId, userId)))
+    .limit(1);
+  return m ? isConversationMuted(m, new Date()) : false;
+}
+
+/** Fire-and-forget bridge for chat `message` push: same suppressed-payload + global-opt-out gate as
+ *  `dispatchNotificationPush`, plus a per-conversation mute check the generic bridge can't do (it only
+ *  receives `type`, not a conversation id). */
+export function dispatchChatMessagePush(projectId: string, userId: string, conversationId: string): void {
+  const payload = notificationPushPayload("message");
+  if (!payload) return; // suppressed type → in-app only
+  (async () => {
+    const disabled = await loadDisabledTypes(projectId, userId);
+    if (isTypeDisabled(disabled, "message")) return; // global chat-push opt-out (#1)
+    if (await isConversationMutedForUser(projectId, conversationId, userId)) return; // per-conversation mute (#2)
+    await dispatchToUser(projectId, userId, payload);
+  })().catch((err) => {
+    logger.error("push: chat message dispatch failed");
+    logger.debug({ err, conversationId }, "push: chat message dispatch failed");
   });
 }

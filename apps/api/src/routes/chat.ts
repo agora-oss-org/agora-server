@@ -2,6 +2,7 @@
 // REST writes fan out durable socket.io events (realtime/socket.ts) after the DB commit.
 import { Hono } from "hono";
 import { and, eq, desc, asc, count, inArray, gt, ne, sql } from "drizzle-orm";
+import { muteConversationSchema } from "@agora-server/contract";
 import type { Variables } from "../http/context.js";
 import { Errors } from "../http/errors.js";
 import { requireAuth } from "../middleware/auth.js";
@@ -14,6 +15,7 @@ import { shapeConversation, shapeConversationMember, shapeChatMessage, shapeFile
 import { storeUpload } from "../lib/images.js";
 import { env } from "../lib/env.js";
 import { collectFileRows, removeMediaAsync } from "../lib/storage-cleanup.js";
+import { muteDurationToState } from "../lib/mute.js";
 import {
   parseBody, createConversationSchema, directConversationSchema, updateConversationSchema,
   sendMessageSchema, editMessageSchema, messageReactionSchema, reportMessageSchema,
@@ -250,6 +252,22 @@ export const chatRoutes = new Hono<{ Variables: Variables }>()
     await getDb().update(conversationMembers).set({ lastReadAt: new Date() })
       .where(and(eq(conversationMembers.conversationId, convo.id), eq(conversationMembers.userId, c.var.auth!.userId)));
     return c.json({ success: true });
+  })
+  .post("/conversations/:id/mute", requireAuth, async (c) => {
+    const convo = await getConversation(c);
+    await requireMember(c, convo.id); // acting user must be a member
+    const body = parseBody(muteConversationSchema, await c.req.json().catch(() => ({})), "chat");
+    const { mutedUntil, mutedForever } = muteDurationToState(body.duration, new Date());
+    const [row] = await getDb().update(conversationMembers)
+      .set({ mutedUntil, mutedForever, updatedAt: new Date() })
+      .where(and(
+        eq(conversationMembers.projectId, c.var.projectId),
+        eq(conversationMembers.conversationId, convo.id),
+        eq(conversationMembers.userId, c.var.auth!.userId),
+      ))
+      .returning();
+    // Self-serialized: only the caller's own row, carrying the mute fields. Never another member's.
+    return c.json({ currentMember: shapeConversationMember(row!) });
   })
   // ── members ────────────────────────────────────────────────────────────────
   .get("/conversations/:id/members", requireAuth, async (c) => {
