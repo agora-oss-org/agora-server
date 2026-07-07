@@ -10,7 +10,7 @@ import {
   createCollectionSchema,
   moderationSchema,
 } from "./validation.js";
-import { createEventSchema, rsvpSchema, rsvpStatusEnum, pushDeviceSchema, commentSortBySchema, sortDirSchema } from "@agora-server/contract";
+import { createEventSchema, updateEventSchema, rsvpSchema, rsvpStatusEnum, pushDeviceSchema, commentSortBySchema, sortDirSchema } from "@agora-server/contract";
 
 describe("SDK contract — request field names (Class 1)", () => {
   describe("change-password: SDK sends `password` for the current password", () => {
@@ -93,6 +93,11 @@ describe("event schemas", () => {
     for (const s of ["going", "maybe", "not_going"]) expect(rsvpSchema.safeParse({ status: s }).success).toBe(true);
     expect(rsvpSchema.safeParse({ status: "perhaps" }).success).toBe(false);
     expect(rsvpStatusEnum.options).toEqual(["going", "maybe", "not_going"]);
+  });
+  it("rejects an empty update body but accepts any single field", () => {
+    expect(updateEventSchema.safeParse({}).success).toBe(false); // the .refine — no updatable fields
+    expect(updateEventSchema.safeParse({ title: "Renamed" }).success).toBe(true);
+    expect(updateEventSchema.safeParse({ description: null }).success).toBe(true); // nullable clear counts
   });
 });
 

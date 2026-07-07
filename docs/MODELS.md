@@ -116,6 +116,6 @@ type(online|physical|hybrid), url?, venueName?, address?, location?(GeoJSON Poin
 visibility(public|members|invite), status(active|cancelled), allowMaybe, guestListVisible, capacity?,
 hostIds[], coverImageId?, files?[], rsvpCounts{going, maybe, not_going}, userRsvp?(going|maybe|not_going),
 metadata(jsonb), createdAt, updatedAt, deletedAt?`
-`include`: user | userRsvp (and space/files when populated)
+`include` (request via `?include=`): `user` | `userRsvp`. (`space`/`files` are base-shape fields the server populates when present — not requestable include tokens.)
 EventRsvp: `id, eventId, userId, user?, status(going|maybe|not_going), createdAt, updatedAt`
 EventInvite: `id, eventId, userId, user?, invitedAt, createdAt, updatedAt`

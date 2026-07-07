@@ -63,6 +63,9 @@ export const eventInvites = pgTable("event_invites", {
   projectId: uuid("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
   eventId: uuid("event_id").notNull().references(() => events.id, { onDelete: "cascade" }),
   userId: uuid("user_id").notNull().references(() => profiles.id, { onDelete: "cascade" }),
+  // `invitedAt` and `createdAt` are intentionally both present (not accidental redundancy): the SDK
+  // contract's EventInvite exposes both fields (see packages/contract EventInvite + MODELS.md), so
+  // shapeEventInvite emits both. Keep them — dropping `invited_at` would be a wire-contract break.
   invitedAt: timestamp("invited_at", { withTimezone: true }).defaultNow().notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),

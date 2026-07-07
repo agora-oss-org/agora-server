@@ -91,6 +91,15 @@ export async function isInvited(eventId: string, userId: string | undefined): Pr
 export async function assertCanViewEvent(c: any, row: EventRow): Promise<void> {
   const removed = await removedPolicy(c);
   if (shouldHide(removed, row.moderationStatus)) throw Errors.notFound("events/not-found", "Event not found");
+  const isAdmin = !!(c.var.auth && isProjectAdmin(c.var.auth));
+  if (row.spaceId && !isAdmin) {
+    // The event's space must be LIVE. A soft-deleted (or missing) space hides the event from the list
+    // (spaceReadable requires `deleted_at is null`), so single-GET must 404 to match — otherwise an
+    // orphaned event leaks on direct fetch. Admins/operators bypass (they manage orphaned content).
+    const [live] = await getDb().select({ id: spaces.id }).from(spaces)
+      .where(and(eq(spaces.projectId, c.var.projectId), eq(spaces.id, row.spaceId), isNull(spaces.deletedAt))).limit(1);
+    if (!live) throw Errors.notFound("events/not-found", "Event not found");
+  }
   if (row.spaceId) await assertCanReadSpace(c, row.spaceId); // space read gate first
   const hostIds = await loadHostIds(row.id);
   const isHostOrAdmin = !!(c.var.auth && (isProjectAdmin(c.var.auth) || isEventHost(hostIds, c.var.auth.userId)));

@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   profile id from *another* project was silently accepted into the host/invite row. Both now fail closed
   with `400 events/invalid-user` (create validates before the event insert, so a bad `hostIds` no longer
   leaves an orphan event).
+- **Events in a soft-deleted space no longer leak on single-GET.** `GET /events/:id` now returns `404`
+  for a non-admin when the event's space has been soft-deleted (or is missing), matching how `GET /events`
+  already hides it. Previously the list hid the orphaned event while the single fetch still returned it —
+  the two paths now agree (fail closed); operators/project-admins still see it to manage cleanup.
 
 ### Added
 - **`@agora/core/db` resolver seam** — `setDbResolver`/`resolveDbFor` let an external deployment inject a

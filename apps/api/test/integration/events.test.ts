@@ -124,6 +124,25 @@ describe("events — CRUD + authorization (integration)", () => {
     expect(list.body.data.some((e: any) => e.id === evId)).toBe(false);
   });
 
+  it("hides an event whose space was soft-deleted from single-GET too (list ↔ single-GET consistent, fail closed)", async () => {
+    // A public event in a public space. Once the space is soft-deleted, the list already drops the
+    // event (spaceReadable requires `deleted_at is null`); single-GET must agree instead of leaking it.
+    const [space] = await getDb().insert(spaces).values({
+      projectId, shortId: `sp_${Date.now().toString(36)}`, name: "Doomed", userId: host.id,
+      readingPermission: "anyone", postingPermission: "anyone",
+    }).returning();
+    const created = await api("POST", `${B}/events`, { token: host.token, body: { title: "Orphaned", startTime: "2026-12-01T18:00:00Z", type: "online", spaceId: space!.id } });
+    expect(created.status).toBe(201);
+    const evId = created.body.id;
+    expect((await api("GET", `${B}/events/${evId}`, { token: host.token })).status).toBe(200); // visible while the space is live
+    await getDb().update(spaces).set({ deletedAt: new Date() }).where(eq(spaces.id, space!.id));
+    // List hides it (existing behavior)…
+    const list = await api("GET", `${B}/events`, { token: host.token });
+    expect(list.body.data.some((e: any) => e.id === evId)).toBe(false);
+    // …and single-GET must now 404 too (previously it leaked the orphaned event). Fail closed.
+    expect((await api("GET", `${B}/events/${evId}`, { token: host.token })).status).toBe(404);
+  });
+
   it("clears coverImageId when the cover file is removed via removeImageIds", async () => {
     const created = await api("POST", `${B}/events`, { token: host.token, body: { title: "Has cover", startTime: "2026-11-01T18:00:00Z", type: "online" } });
     const evId = created.body.id;
