@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { getDb } from "../../src/db/index.js";
+import { loadSpaceReputations } from "../../src/lib/space-reputation.js";
 import { api, base, createProject, createUser, deleteProject } from "./helpers.js";
 
 /** Read one user's stored self-score for a space (0 when absent). */
@@ -135,6 +136,34 @@ describe("space_reputation trigger maintenance", () => {
     await api("POST", url, { token: reactor.token, body: { reactionType: "like" } }); // +1
     await api("POST", url, { token: reactor.token, body: { reactionType: "like" } }); // toggle off → 0
     expect(await spaceRep(projectId, space.id, author.id)).toBe(0);
+    await deleteProject(projectId);
+  });
+});
+
+describe("loadSpaceReputations (single space)", () => {
+  it("returns the space's own score and 0 for users with no activity", async () => {
+    const projectId = await createProject();
+    const author = await createUser(projectId);
+    const reactor = await createUser(projectId);
+    const { body: space } = await api("POST", `${base(projectId)}/spaces`,
+      { token: author.token, body: { name: "Solo" } });
+    const { body: entity } = await api("POST", `${base(projectId)}/entities`,
+      { token: author.token, body: { title: "t", spaceId: space.id } });
+    await api("POST", `${base(projectId)}/entities/${entity.id}/reactions`,
+      { token: reactor.token, body: { reactionType: "upvote" } });
+
+    const m = await loadSpaceReputations(projectId, space.id, false, [author.id, reactor.id]);
+    expect(m.get(author.id)).toBe(1);
+    expect(m.get(reactor.id)).toBe(0); // present, zero — never undefined
+    await deleteProject(projectId);
+  });
+
+  it("returns an empty map for an empty user list", async () => {
+    const projectId = await createProject();
+    const author = await createUser(projectId);
+    const { body: space } = await api("POST", `${base(projectId)}/spaces`,
+      { token: author.token, body: { name: "Empty" } });
+    expect((await loadSpaceReputations(projectId, space.id, false, [])).size).toBe(0);
     await deleteProject(projectId);
   });
 });
