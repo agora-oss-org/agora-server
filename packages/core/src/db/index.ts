@@ -14,3 +14,4 @@ export { schema };
 export { getDb, runWithDb, type Db } from "./context.js";
 export { getDbForDsn, endAllPools } from "./registry.js";
 export { setDbResolver, resetDbResolver, resolveDbFor, type DbResolver } from "./resolver.js";
+export { isDbConnectionError } from "./errors.js";

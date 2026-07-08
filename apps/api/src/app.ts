@@ -5,8 +5,8 @@ import crypto from "node:crypto";
 import { Hono, type Context } from "hono";
 import { cors } from "hono/cors";
 import type { Variables } from "./http/context.js";
-import { resolveDbFor, runWithDb } from "./db/index.js";
-import { ApiError } from "./http/errors.js";
+import { isDbConnectionError, resolveDbFor, runWithDb } from "./db/index.js";
+import { ApiError, Errors } from "./http/errors.js";
 import { env } from "./lib/env.js";
 import { logger } from "./lib/logger.js";
 import { mountRoutes } from "./routes/index.js";
@@ -165,6 +165,17 @@ export function createApp() {
   app.onError((err, c) => {
     if (err instanceof ApiError) {
       return c.json({ error: err.message, code: err.code, ...(err.field ? { field: err.field } : {}) }, err.status);
+    }
+    // A tenant DB we could not REACH (host down, refused, DNS, connect timeout, dropped socket) is a
+    // transient infra outage, not an application bug — map it to a retryable 503, mirroring the
+    // resolver's own project/db-unavailable. Query/constraint errors fall through to the 500 below so
+    // real defects aren't masked. Log the driver code ONLY: the DSN carries the tenant DB password and
+    // must never reach an aggregator-shipped level (Security-first / Log-with-intent).
+    if (isDbConnectionError(err)) {
+      logger.warn({ code: (err as { code?: string }).code }, "tenant database unreachable");
+      logger.debug({ err }, "tenant database unreachable");
+      const e = Errors.unavailable("project/db-unavailable", "Project database unavailable");
+      return c.json({ error: e.message, code: e.code }, e.status);
     }
     logger.error("unhandled error");
     logger.debug({ err }, "unhandled error");

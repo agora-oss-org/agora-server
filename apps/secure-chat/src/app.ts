@@ -7,14 +7,14 @@ import crypto from "node:crypto";
 import { Hono, type Context } from "hono";
 import { cors } from "hono/cors";
 import type { Variables } from "@agora/core/http/context";
-import { ApiError } from "@agora/core/http/errors";
+import { ApiError, Errors } from "@agora/core/http/errors";
 import { env } from "@agora/core/lib/env";
 import { logger } from "@agora/core/lib/logger";
 import { requestLog } from "@agora/core/middleware/request-log";
 import { resolveProject } from "@agora/core/middleware/project";
 import { hydrateSuspensionIndex } from "@agora/core/lib/suspensions";
 import { suspensionIndexReady } from "@agora/core/lib/suspension-index";
-import { getDb } from "@agora/core/db";
+import { getDb, isDbConnectionError } from "@agora/core/db";
 import { secureRestoreBlobs } from "@agora/core/db/schema";
 import { lte } from "drizzle-orm";
 import { secureChatRoutes } from "./routes/secure-chat.js";
@@ -93,6 +93,15 @@ export function createSecureApp() {
   app.onError((err, c) => {
     if (err instanceof ApiError) {
       return c.json({ error: err.message, code: err.code, ...(err.field ? { field: err.field } : {}) }, err.status);
+    }
+    // An unreachable tenant DB is a transient infra outage, not a bug — map it to a retryable 503,
+    // identical to @agora/api. Query/constraint errors fall through to the 500 below. Log the driver
+    // code ONLY: the DSN carries the tenant DB password (Security-first / Log-with-intent).
+    if (isDbConnectionError(err)) {
+      logger.warn({ code: (err as { code?: string }).code }, "tenant database unreachable");
+      logger.debug({ err }, "tenant database unreachable");
+      const e = Errors.unavailable("project/db-unavailable", "Project database unavailable");
+      return c.json({ error: e.message, code: e.code }, e.status);
     }
     logger.error("unhandled error");
     logger.debug({ err }, "unhandled error");
