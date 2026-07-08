@@ -18,6 +18,8 @@ import {
 import { notifyOnSpaceApproved } from "../lib/notifications.js";
 import * as webhooks from "../lib/webhooks.js";
 import { isProjectAdmin } from "../lib/project-roles.js";
+import { spaceRepGate } from "../middleware/space-rep.js";
+import { enrichSpaceReputation } from "../lib/space-reputation-enrich.js";
 
 type SpaceRow = typeof spaces.$inferSelect;
 type Membership = typeof spaceMembers.$inferSelect;
@@ -69,6 +71,7 @@ async function wouldCreateCycle(spaceId: string, newParentId: string): Promise<b
 }
 
 export const spaceRoutes = new Hono<{ Variables: Variables }>()
+  .use("*", spaceRepGate("context"))
   .get("/", async (c) => {
     const { page, limit, offset } = readPagination(c);
     // SDK sends an absent filter as the literal string "null"/"undefined".
@@ -343,7 +346,7 @@ export const spaceRoutes = new Hono<{ Variables: Variables }>()
       .from(spaceMembers).innerJoin(profiles, eq(profiles.id, spaceMembers.userId))
       .where(where).orderBy(asc(spaceMembers.joinedAt)).limit(limit).offset(offset);
     const data = rows.map((r) => ({ membershipId: r.m.id, role: r.m.role, status: r.m.status, joinedAt: r.m.joinedAt, user: shapeUser(r.p) }));
-    return c.json(paginate(data, n, page, limit));
+    return c.json(await enrichSpaceReputation(c, paginate(data, n, page, limit)));
   })
   .get("/:id/team", async (c) => {
     const rows = await getDb().select({ m: spaceMembers, p: profiles })
@@ -352,7 +355,7 @@ export const spaceRoutes = new Hono<{ Variables: Variables }>()
         eq(spaceMembers.projectId, c.var.projectId), eq(spaceMembers.spaceId, c.req.param("id")),
         inArray(spaceMembers.role, ["admin", "moderator"])
       )).orderBy(asc(spaceMembers.joinedAt));
-    return c.json({ data: rows.map((r) => ({ membershipId: r.m.id, role: r.m.role, status: r.m.status, joinedAt: r.m.joinedAt, user: shapeUser(r.p) })) });
+    return c.json(await enrichSpaceReputation(c, { data: rows.map((r) => ({ membershipId: r.m.id, role: r.m.role, status: r.m.status, joinedAt: r.m.joinedAt, user: shapeUser(r.p) })) }));
   })
   .delete("/:id/members/:memberId", requireAuth, async (c) => {
     const space = await getSpace(c);
