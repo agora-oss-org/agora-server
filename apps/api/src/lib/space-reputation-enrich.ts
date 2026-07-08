@@ -6,6 +6,7 @@ import type { User, SpaceReputationDirective } from "@agora-server/contract";
 import type { Variables } from "../http/context.js";
 import { loadSpaceReputations, validateSpaceReputationParams } from "./space-reputation.js";
 import { assertCanReadSpace } from "./space-access.js";
+import { logger } from "./logger.js";
 
 export type UserLike = User & Record<string, unknown>;
 
@@ -77,7 +78,10 @@ export async function enrichSpaceReputation<T>(
   // participation oracle). Public/space-less/operator/owner/member all pass; denial → emit no field.
   try {
     await assertCanReadSpace(c, directive.spaceId, pid);
-  } catch {
+  } catch (err) {
+    // Fail closed (no field). Debug-only: an expected members-only denial and a transient read-gate
+    // error look identical here; debug keeps the common denial out of info/error noise (log-with-intent).
+    logger.debug({ err }, "space-rep read-gate check failed; omitting spaceReputation");
     return payload;
   }
   const ids = [...new Set(users.map((u) => u.id))];
