@@ -15,6 +15,8 @@ import { readPagination, paginate } from "../http/envelope.js";
 import { shapeUser } from "../lib/shape.js";
 import { parseBody, connectionRequestSchema } from "../lib/validation.js";
 import { normalizeUserSearch, userSearchCondition } from "../lib/user-search.js";
+import { spaceRepGate } from "../middleware/space-rep.js";
+import { enrichSpaceReputation } from "../lib/space-reputation-enrich.js";
 
 type ConnRow = typeof connections.$inferSelect;
 type ProfileRow = typeof profiles.$inferSelect;
@@ -50,6 +52,7 @@ async function between(projectId: string, a: string, b: string): Promise<ConnRow
 const iso = (d: Date | null) => (d ? d.toISOString() : null);
 
 export const connectionRoutes = new Hono<{ Variables: Variables }>()
+  .use("*", spaceRepGate("context"))
   // ── request / status / remove against a specific user ──────────────────────
   .post("/users/:userId/connection", requireAuth, scopeDbToAuthProject, async (c) => {
     const self = await me(c);
@@ -114,7 +117,7 @@ export const connectionRoutes = new Hono<{ Variables: Variables }>()
       if (!other) return null;
       return { id: r.id, connectedUser: shapeUser(other), connectedAt: iso(r.respondedAt) };
     }))).filter((d): d is NonNullable<typeof d> => d !== null);
-    return c.json(paginate(data, n, page, limit));
+    return c.json(await enrichSpaceReputation(c, paginate(data, n, page, limit), self.projectId));
   })
   // ── established + counts for the current user ───────────────────────────────
   .get("/connections", requireAuth, scopeDbToAuthProject, async (c) => {
@@ -132,7 +135,7 @@ export const connectionRoutes = new Hono<{ Variables: Variables }>()
       if (!other) return null;
       return { id: r.id, connectedUser: shapeUser(other), connectedAt: iso(r.respondedAt) };
     }))).filter((d): d is NonNullable<typeof d> => d !== null);
-    return c.json(paginate(data, n, page, limit));
+    return c.json(await enrichSpaceReputation(c, paginate(data, n, page, limit), self.projectId));
   })
   .get("/connections/count", requireAuth, scopeDbToAuthProject, async (c) => {
     const self = await me(c);
@@ -140,11 +143,11 @@ export const connectionRoutes = new Hono<{ Variables: Variables }>()
   })
   .get("/connections/pending/received", requireAuth, scopeDbToAuthProject, async (c) => {
     const self = await me(c);
-    return c.json(await pendingList(c, self, "received"));
+    return c.json(await enrichSpaceReputation(c, await pendingList(c, self, "received"), self.projectId));
   })
   .get("/connections/pending/sent", requireAuth, scopeDbToAuthProject, async (c) => {
     const self = await me(c);
-    return c.json(await pendingList(c, self, "sent"));
+    return c.json(await enrichSpaceReputation(c, await pendingList(c, self, "sent"), self.projectId));
   })
   // ── accept / decline / withdraw a connection by id ──────────────────────────
   .patch("/connections/:id/accept", requireAuth, scopeDbToAuthProject, async (c) => {

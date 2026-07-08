@@ -510,6 +510,81 @@ describe("space-reputation enrichment — search (/search/users)", () => {
   });
 });
 
+describe("space-reputation enrichment — follows (self followers/following list)", () => {
+  const projects: string[] = [];
+  afterAll(async () => { for (const p of projects) await deleteProject(p); });
+
+  async function seedSpace(projectId: string, ownerId: string): Promise<string> {
+    const [s] = await getDb().insert(spaces).values({
+      projectId, shortId: `srf_${randomUUID().slice(0, 8)}`, name: "rep-space-follows", userId: ownerId,
+    }).returning();
+    return s!.id;
+  }
+  async function setRep(projectId: string, spaceId: string, userId: string, reputation: number) {
+    await getDb().insert(spaceReputation).values({ projectId, spaceId, userId, reputation });
+  }
+
+  it("a follower's user carries spaceReputation on the self followers list", async () => {
+    const pid = await createProject(); projects.push(pid);
+    const alice = await createUser(pid);
+    const bob = await createUser(pid);
+    const spaceId = await seedSpace(pid, bob.id); // public space — gate always passes
+    await setRep(pid, spaceId, alice.id, 11);
+
+    await api("POST", `${base(pid)}/users/${bob.id}/follow`, { token: alice.token }); // alice follows bob
+
+    const got = await api("GET", `${base(pid)}/follows/followers?spaceReputationId=${spaceId}`, { token: bob.token });
+    expect(got.status).toBe(200);
+    const aliceRow = got.body.data.find((u: any) => u.id === alice.id);
+    expect(aliceRow).toBeDefined();
+    expect(aliceRow.spaceReputation).toBe(11);
+    // Sanity: absent the query param, no field is emitted.
+    const plain = await api("GET", `${base(pid)}/follows/followers`, { token: bob.token });
+    const alicePlain = plain.body.data.find((u: any) => u.id === alice.id);
+    expect(alicePlain.spaceReputation).toBeUndefined();
+  });
+});
+
+describe("space-reputation enrichment — connections (root-mounted, 3rd-arg projectId)", () => {
+  const projects: string[] = [];
+  afterAll(async () => { for (const p of projects) await deleteProject(p); });
+
+  async function seedSpace(projectId: string, ownerId: string): Promise<string> {
+    const [s] = await getDb().insert(spaces).values({
+      projectId, shortId: `src2_${randomUUID().slice(0, 8)}`, name: "rep-space-connections", userId: ownerId,
+    }).returning();
+    return s!.id;
+  }
+  async function setRep(projectId: string, spaceId: string, userId: string, reputation: number) {
+    await getDb().insert(spaceReputation).values({ projectId, spaceId, userId, reputation });
+  }
+
+  it("a connected user's record carries spaceReputation on GET /connections — proves the 3rd-arg self.projectId path", async () => {
+    const pid = await createProject(); projects.push(pid);
+    const alice = await createUser(pid);
+    const bob = await createUser(pid);
+    const spaceId = await seedSpace(pid, alice.id); // public space — gate always passes
+    await setRep(pid, spaceId, bob.id, 27);
+
+    // Establish a CONNECTED pair via the real request/accept flow (root-mounted, no /:projectId prefix).
+    const req = await api("POST", `/v7/users/${bob.id}/connection`, { token: alice.token, body: { message: "hi" } });
+    expect(req.status).toBe(201);
+    await api("PATCH", `/v7/connections/${req.body.id}/accept`, { token: bob.token });
+
+    const got = await api("GET", `/v7/connections?spaceReputationId=${spaceId}`, { token: alice.token });
+    expect(got.status).toBe(200);
+    const bobRow = got.body.data.find((r: any) => r.connectedUser.id === bob.id);
+    expect(bobRow).toBeDefined();
+    // A non-zero/defined value here can ONLY appear if enrichSpaceReputation received self.projectId
+    // as its 3rd arg (connections is root-mounted — c.var.projectId is undefined there).
+    expect(bobRow.connectedUser.spaceReputation).toBe(27);
+    // Sanity: absent the query param, no field is emitted.
+    const plain = await api("GET", `/v7/connections`, { token: alice.token });
+    const bobPlain = plain.body.data.find((r: any) => r.connectedUser.id === bob.id);
+    expect(bobPlain.connectedUser.spaceReputation).toBeUndefined();
+  });
+});
+
 describe("space-reputation enrichment — reports (full User vs summary)", () => {
   const projects: string[] = [];
   afterAll(async () => { for (const p of projects) await deleteProject(p); });
