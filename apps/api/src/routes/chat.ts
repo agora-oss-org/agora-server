@@ -27,6 +27,8 @@ import { logger } from "../lib/logger.js";
 import { indexContentAsync } from "../lib/embeddings.js";
 import * as webhooks from "../lib/webhooks.js";
 import { sanitizeMentions } from "../lib/mentions.js";
+import { spaceRepGate } from "../middleware/space-rep.js";
+import { enrichSpaceReputation } from "../lib/space-reputation-enrich.js";
 
 type ConversationRow = typeof conversations.$inferSelect;
 type MemberRow = typeof conversationMembers.$inferSelect;
@@ -118,6 +120,7 @@ async function emitConversationCreated(c: any, convo: ConversationRow, memberIds
 }
 
 export const chatRoutes = new Hono<{ Variables: Variables }>()
+  .use("*", spaceRepGate("context"))
   // ── conversations ─────────────────────────────────────────────────────────
   .get("/conversations", requireAuth, async (c) => {
     // SDK contract (useConversations): cursor pagination, response `{ conversations, hasMore }`.
@@ -147,7 +150,7 @@ export const chatRoutes = new Hono<{ Variables: Variables }>()
 
     const hasMore = rows.length > limit;
     const data = await Promise.all(rows.slice(0, limit).map(({ convo, member }) => buildConversationPreview(c, convo, member)));
-    return c.json({ conversations: data, hasMore });
+    return c.json(await enrichSpaceReputation(c, { conversations: data, hasMore }));
   })
   .post("/conversations", requireAuth, async (c) => {
     const projectId = c.var.projectId;
@@ -210,14 +213,14 @@ export const chatRoutes = new Hono<{ Variables: Variables }>()
   .get("/conversations/:id/preview", requireAuth, async (c) => {
     const convo = await getConversation(c);
     const member = await requireMember(c, convo.id);
-    return c.json(await buildConversationPreview(c, convo, member));
+    return c.json(await enrichSpaceReputation(c, await buildConversationPreview(c, convo, member)));
   })
   .get("/conversations/:id", requireAuth, async (c) => {
     const convo = await getConversation(c);
     const member = await requireMember(c, convo.id);
     const [{ mc } = { mc: 0 }] = await getDb().select({ mc: count() }).from(conversationMembers)
       .where(and(eq(conversationMembers.conversationId, convo.id), eq(conversationMembers.isActive, true)));
-    return c.json(shapeConversation(convo, { memberCount: mc, currentMember: shapeConversationMember(member) }));
+    return c.json(await enrichSpaceReputation(c, shapeConversation(convo, { memberCount: mc, currentMember: shapeConversationMember(member) })));
   })
   .patch("/conversations/:id", requireAuth, async (c) => {
     const convo = await getConversation(c);
@@ -268,7 +271,7 @@ export const chatRoutes = new Hono<{ Variables: Variables }>()
       ))
       .returning();
     // Self-serialized: only the caller's own row, carrying the mute fields. Never another member's.
-    return c.json({ currentMember: shapeConversationMember(row!) });
+    return c.json(await enrichSpaceReputation(c, { currentMember: shapeConversationMember(row!) }));
   })
   // ── members ────────────────────────────────────────────────────────────────
   .get("/conversations/:id/members", requireAuth, async (c) => {
@@ -278,7 +281,7 @@ export const chatRoutes = new Hono<{ Variables: Variables }>()
       .from(conversationMembers).innerJoin(profiles, eq(profiles.id, conversationMembers.userId))
       .where(and(eq(conversationMembers.conversationId, convo.id), eq(conversationMembers.isActive, true)))
       .orderBy(asc(conversationMembers.createdAt));
-    return c.json({ data: rows.map((r) => shapeConversationMember(r.m, shapeUser(r.p))) });
+    return c.json(await enrichSpaceReputation(c, { data: rows.map((r) => shapeConversationMember(r.m, shapeUser(r.p))) }));
   })
   .post("/conversations/:id/members", requireAuth, async (c) => {
     const convo = await getConversation(c);
@@ -292,7 +295,7 @@ export const chatRoutes = new Hono<{ Variables: Variables }>()
     const [p] = await getDb().select().from(profiles).where(eq(profiles.id, body.userId)).limit(1);
     const shaped = shapeConversationMember(row!, p ? shapeUser(p) : null);
     emitToConversation(convo.id, "member:joined", { conversationId: convo.id, member: shaped });
-    return c.json(shaped, 201);
+    return c.json(await enrichSpaceReputation(c, shaped), 201);
   })
   .delete("/conversations/:id/members/:memberId", requireAuth, async (c) => {
     const convo = await getConversation(c);
@@ -312,7 +315,7 @@ export const chatRoutes = new Hono<{ Variables: Variables }>()
     const [row] = await getDb().update(conversationMembers).set({ role })
       .where(and(eq(conversationMembers.conversationId, convo.id), eq(conversationMembers.userId, c.req.param("memberId")))).returning();
     if (!row) throw Errors.notFound("chat/member-not-found", "Member not found");
-    return c.json(shapeConversationMember(row));
+    return c.json(await enrichSpaceReputation(c, shapeConversationMember(row)));
   })
   // ── messages ───────────────────────────────────────────────────────────────
   .get("/conversations/:id/messages", requireAuth, async (c) => {
@@ -355,7 +358,7 @@ export const chatRoutes = new Hono<{ Variables: Variables }>()
       userReactions: reactionMap.get(r.id) ?? [],
       ...(fileMap.has(r.id) ? { files: fileMap.get(r.id) } : {}),
     }));
-    return c.json({ messages, hasMore });
+    return c.json(await enrichSpaceReputation(c, { messages, hasMore }));
   })
   .post("/conversations/:id/messages", requireAuth, async (c) => {
     const convo = await getConversation(c);
@@ -410,7 +413,7 @@ export const chatRoutes = new Hono<{ Variables: Variables }>()
       const [parent] = await getDb().select({ n: chatMessages.threadReplyCount }).from(chatMessages).where(eq(chatMessages.id, row!.parentMessageId)).limit(1);
       emitToConversation(convo.id, "thread:reply_count", { messageId: row!.parentMessageId, conversationId: convo.id, threadReplyCount: parent?.n ?? 0 });
     }
-    return c.json(shaped, 201);
+    return c.json(await enrichSpaceReputation(c, shaped), 201);
   })
   .patch("/conversations/:id/messages/:messageId", requireAuth, async (c) => {
     const convo = await getConversation(c);
@@ -431,7 +434,7 @@ export const chatRoutes = new Hono<{ Variables: Variables }>()
       messageId: row!.id, conversationId: convo.id, content: row!.content, gif: row!.gif as any,
       mentions: row!.mentions as any, metadata: row!.metadata as any, editedAt: row!.editedAt,
     });
-    return c.json(shapeChatMessage(row!));
+    return c.json(await enrichSpaceReputation(c, shapeChatMessage(row!)));
   })
   .delete("/conversations/:id/messages/:messageId", requireAuth, async (c) => {
     const convo = await getConversation(c);
@@ -529,5 +532,5 @@ export const chatRoutes = new Hono<{ Variables: Variables }>()
       .where(and(eq(conversationMembers.conversationId, convo!.id), eq(conversationMembers.userId, uid))).limit(1);
     const [{ n } = { n: 0 }] = await getDb().select({ n: count() }).from(conversationMembers)
       .where(and(eq(conversationMembers.conversationId, convo!.id), eq(conversationMembers.isActive, true)));
-    return c.json(shapeConversation(convo!, { currentMember: me ? shapeConversationMember(me) : undefined, memberCount: n }), created ? 201 : 200);
+    return c.json(await enrichSpaceReputation(c, shapeConversation(convo!, { currentMember: me ? shapeConversationMember(me) : undefined, memberCount: n })), created ? 201 : 200);
   });

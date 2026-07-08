@@ -392,3 +392,40 @@ describe("space-reputation enrichment — embedded (entities/comments)", () => {
     expect(got.body.comment.user.spaceReputation).toBe(5);
   });
 });
+
+describe("space-reputation enrichment — chat (members/messages)", () => {
+  const projects: string[] = [];
+  afterAll(async () => { for (const p of projects) await deleteProject(p); });
+
+  async function seedSpace(projectId: string, ownerId: string): Promise<string> {
+    const [s] = await getDb().insert(spaces).values({
+      projectId, shortId: `src_${randomUUID().slice(0, 8)}`, name: "rep-space-chat", userId: ownerId,
+    }).returning();
+    return s!.id;
+  }
+  async function setRep(projectId: string, spaceId: string, userId: string, reputation: number) {
+    await getDb().insert(spaceReputation).values({ projectId, spaceId, userId, reputation });
+  }
+
+  it("a conversation member's user carries spaceReputation on the member list", async () => {
+    const pid = await createProject(); projects.push(pid);
+    const alice = await createUser(pid);
+    const bob = await createUser(pid);
+    const spaceId = await seedSpace(pid, alice.id); // public space — gate always passes
+    await setRep(pid, spaceId, bob.id, 7);
+
+    const convo = await api("POST", `${base(pid)}/chat/conversations`,
+      { token: alice.token, body: { type: "group", name: "Crew", memberIds: [bob.id] } });
+    const conversationId = convo.body.id;
+
+    const got = await api("GET", `${base(pid)}/chat/conversations/${conversationId}/members?spaceReputationId=${spaceId}`,
+      { token: alice.token });
+    expect(got.status).toBe(200);
+    const bobMember = got.body.data.find((m: any) => m.user.id === bob.id);
+    expect(bobMember.user.spaceReputation).toBe(7);
+    // Sanity: absent the query param, no field is emitted.
+    const plain = await api("GET", `${base(pid)}/chat/conversations/${conversationId}/members`, { token: alice.token });
+    const bobPlain = plain.body.data.find((m: any) => m.user.id === bob.id);
+    expect(bobPlain.user.spaceReputation).toBeUndefined();
+  });
+});
