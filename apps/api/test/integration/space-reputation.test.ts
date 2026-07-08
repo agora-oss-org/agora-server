@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import { getDb } from "../../src/db/index.js";
 import { loadSpaceReputations } from "../../src/lib/space-reputation.js";
+import { spaces, spaceReputation } from "../../src/db/schema/index.js";
 import { api, base, createProject, createUser, deleteProject } from "./helpers.js";
 
 /** Read one user's stored self-score for a space (0 when absent). */
@@ -219,5 +220,64 @@ describe("loadSpaceReputations (descendant rollup)", () => {
     expect(m.get(authorA.id)).toBe(0);
     await deleteProject(a);
     await deleteProject(b);
+  });
+});
+
+describe("space-reputation enrichment — user-direct", () => {
+  const projects: string[] = [];
+  afterAll(async () => { for (const p of projects) await deleteProject(p); });
+
+  async function seedSpace(projectId: string, ownerId: string): Promise<string> {
+    const [s] = await getDb().insert(spaces).values({
+      projectId, shortId: `sr_${randomUUID().slice(0, 8)}`, name: "rep-space", userId: ownerId,
+    }).returning();
+    return s!.id;
+  }
+  async function setRep(projectId: string, spaceId: string, userId: string, reputation: number) {
+    await getDb().insert(spaceReputation).values({ projectId, spaceId, userId, reputation });
+  }
+
+  it("uuid attaches the space-scoped number; absent omits the field", async () => {
+    const pid = await createProject(); projects.push(pid);
+    const owner = await createUser(pid);
+    const spaceId = await seedSpace(pid, owner.id);
+    await setRep(pid, spaceId, owner.id, 42);
+
+    const plain = await api("GET", `${base(pid)}/users/${owner.id}`, { token: owner.token });
+    expect(plain.status).toBe(200);
+    expect(plain.body.spaceReputation).toBeUndefined();
+
+    const enriched = await api("GET", `${base(pid)}/users/${owner.id}?spaceReputationId=${spaceId}`, { token: owner.token });
+    expect(enriched.body.spaceReputation).toBe(42);
+  });
+
+  it("'none' mirrors global reputation", async () => {
+    const pid = await createProject(); projects.push(pid);
+    const u = await createUser(pid);
+    const r = await api("GET", `${base(pid)}/users/${u.id}?spaceReputationId=none`, { token: u.token });
+    expect(r.body.spaceReputation).toBe(r.body.reputation);
+  });
+
+  it("'context' → 400 on a user-direct route", async () => {
+    const pid = await createProject(); projects.push(pid);
+    const u = await createUser(pid);
+    const r = await api("GET", `${base(pid)}/users/${u.id}?spaceReputationId=context`, { token: u.token });
+    expect(r.status).toBe(400);
+  });
+
+  it("descendants=true rolls a child space's reputation into the parent", async () => {
+    const pid = await createProject(); projects.push(pid);
+    const owner = await createUser(pid);
+    const parent = await seedSpace(pid, owner.id);
+    const [child] = await getDb().insert(spaces).values({
+      projectId: pid, shortId: `sr_${randomUUID().slice(0, 8)}`, name: "child", userId: owner.id, parentSpaceId: parent,
+    }).returning();
+    await setRep(pid, parent, owner.id, 10);
+    await setRep(pid, child!.id, owner.id, 5);
+
+    const flat = await api("GET", `${base(pid)}/users/${owner.id}?spaceReputationId=${parent}`, { token: owner.token });
+    expect(flat.body.spaceReputation).toBe(10);
+    const rolled = await api("GET", `${base(pid)}/users/${owner.id}?spaceReputationId=${parent}&spaceReputationDescendants=true`, { token: owner.token });
+    expect(rolled.body.spaceReputation).toBe(15);
   });
 });
