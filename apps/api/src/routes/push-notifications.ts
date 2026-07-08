@@ -73,11 +73,12 @@ export const pushNotificationRoutes = new Hono<{ Variables: Variables }>()
   })
   .put("/preferences", requireAuth, async (c) => {
     const body = parseBody(updateNotificationPreferencesSchema, await c.req.json().catch(() => ({})), "push-notifications");
+    const disabledTypes = [...new Set(body.disabledTypes)];
     const [row] = await getDb().insert(pushNotificationPreferences)
-      .values({ projectId: c.var.projectId, userId: c.var.auth!.userId, disabledTypes: body.disabledTypes, updatedAt: new Date() })
+      .values({ projectId: c.var.projectId, userId: c.var.auth!.userId, disabledTypes, updatedAt: new Date() })
       .onConflictDoUpdate({
         target: [pushNotificationPreferences.projectId, pushNotificationPreferences.userId],
-        set: { disabledTypes: body.disabledTypes, updatedAt: new Date() },
+        set: { disabledTypes, updatedAt: new Date() },
       })
       .returning({ disabledTypes: pushNotificationPreferences.disabledTypes });
     return c.json({ disabledTypes: row!.disabledTypes });

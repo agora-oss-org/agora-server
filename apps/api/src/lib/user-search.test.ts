@@ -16,4 +16,9 @@ describe("normalizeUserSearch", () => {
   it("ignores a bogus searchFields (falls back to both)", () => {
     expect(normalizeUserSearch("Ann", "email").fields).toEqual(["username", "name"]);
   });
+  it("escapes LIKE wildcards in the query", () => {
+    expect(normalizeUserSearch("50%", undefined).like).toBe("%50\\%%");
+    expect(normalizeUserSearch("a_b", undefined).like).toBe("%a\\_b%");
+    expect(normalizeUserSearch("c\\d", undefined).like).toBe("%c\\\\d%");
+  });
 });

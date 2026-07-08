@@ -28,4 +28,7 @@ describe("isConversationMuted", () => {
   it("not muted when both empty", () => {
     expect(isConversationMuted({ mutedUntil: null, mutedForever: false }, NOW)).toBe(false);
   });
+  it("is NOT muted at the exact expiry instant (strict >)", () => {
+    expect(isConversationMuted({ mutedUntil: new Date("2026-07-07T12:00:00.000Z"), mutedForever: false }, NOW)).toBe(false);
+  });
 });

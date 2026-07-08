@@ -3,11 +3,15 @@ import type { AnyPgColumn } from "drizzle-orm/pg-core";
 
 type Field = "username" | "name";
 
+function escapeLike(s: string): string {
+  return s.replace(/[\\%_]/g, (c) => `\\${c}`);
+}
+
 /** Pure normalization of the SDK's (query, searchFields) params. `like` is null when no filtering. */
 export function normalizeUserSearch(query: string | undefined, searchFields: string | undefined) {
   const q = (query ?? "").trim();
   const fields: Field[] = searchFields === "username" || searchFields === "name" ? [searchFields] : ["username", "name"];
-  return { like: q ? `%${q}%` : null, fields };
+  return { like: q ? `%${escapeLike(q)}%` : null, fields };
 }
 
 /** Build the ilike OR-filter over the given username/name columns, or undefined when no query. */

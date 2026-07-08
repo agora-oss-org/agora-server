@@ -26,4 +26,7 @@ describe("validateSpaceReputationParams", () => {
     expect(() => validateSpaceReputationParams({ spaceReputationId: "none", spaceReputationDescendants: "true" }, "context")).toThrow();
     expect(() => validateSpaceReputationParams({ spaceReputationId: UUID, spaceReputationDescendants: "true" }, "context")).not.toThrow();
   });
+  it("descendants=true with an ABSENT id throws", () => {
+    expect(() => validateSpaceReputationParams({ spaceReputationDescendants: "true" }, "context")).toThrow();
+  });
 });

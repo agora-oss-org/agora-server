@@ -207,6 +207,13 @@ describe("matchUsersSchema", () => {
     expect(r.query).toBe("art");
     expect(r.excludeSelf).toBe(true);
   });
+  it("rejects an invalid mode", () => {
+    expect(() => matchUsersSchema.parse({ mode: "sideways" })).toThrow();
+  });
+  it("rejects a limit over 100 or non-positive", () => {
+    expect(() => matchUsersSchema.parse({ mode: "passive", limit: 101 })).toThrow();
+    expect(() => matchUsersSchema.parse({ mode: "passive", limit: 0 })).toThrow();
+  });
 });
 
 describe("space visibility", () => {

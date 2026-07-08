@@ -160,7 +160,9 @@ signs an RS256 JWT (issuer=projectId, aud="replyke.com", sub=userData.id, claim 
 | GET/POST/DELETE | `/comments/:id/reactions` (GET = paginated reactor list, `useFetchCommentReactions`) | ✅ |
 
 ### users
-Every user-direct (`/users/*`) handler below now VALIDATES two optional query params —
+On the `/users/:id*` handlers (profile read/update, follow, follower/following lists + counts,
+suspensions — marked "params validated" below; NOT `/by-username`, `/by-foreign-id`,
+`/check-username`, or `/suggestions`), two optional query params are now VALIDATED —
 `spaceReputationId: uuid|"none"|"context"` and `spaceReputationDescendants: "true"` — via
 `validateSpaceReputationParams` (`"context"` → `400 space-reputation/context-not-allowed` on these
 user-direct endpoints; `spaceReputationDescendants` without an explicit uuid id →
