@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Space-reputation enrichment (SDK v7.8.2 #6):** user-embedding endpoints now accept
+  `spaceReputationId` (`<uuid>` | `"none"`) and `spaceReputationDescendants`, attaching a space-scoped
+  `spaceReputation` to returned/embedded users (`"none"` aliases global reputation; `<uuid>` reads the
+  `space_reputation` store with optional descendant rollup). Covered: entities, comments, reaction
+  listings, chat, spaces team/members, search, reports, follows, connections, and the users module.
+  The `"context"` mode validates but is not yet computed (emits nothing); user-direct routes reject
+  `"context"` with `400`.
+- **Fail-closed space-read gate on space-scoped reputation.** Space-scoped `spaceReputation`
+  enrichment is gated by space read-access — a caller who cannot read a members-only space receives
+  no `spaceReputation` for it (fail closed), mirroring the `GET /spaces/:id/members` visibility rule.
+  Public spaces, the space owner, active members, and operators/project-admins still get the value.
+
 ## [0.19.0] - 2026-07-07
 
 ### Fixed
