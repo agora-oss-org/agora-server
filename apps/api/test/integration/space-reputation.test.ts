@@ -354,3 +354,41 @@ describe("space-reputation enrichment — space-read access gate", () => {
     expect(asOutsider.body.spaceReputation).toBe(42);
   });
 });
+
+describe("space-reputation enrichment — embedded (entities/comments)", () => {
+  const projects: string[] = [];
+  afterAll(async () => { for (const p of projects) await deleteProject(p); });
+
+  async function seedSpace(projectId: string, ownerId: string): Promise<string> {
+    const [s] = await getDb().insert(spaces).values({
+      projectId, shortId: `sre_${randomUUID().slice(0, 8)}`, name: "rep-space-embed", userId: ownerId,
+    }).returning();
+    return s!.id;
+  }
+  async function setRep(projectId: string, spaceId: string, userId: string, reputation: number) {
+    await getDb().insert(spaceReputation).values({ projectId, spaceId, userId, reputation });
+  }
+
+  it("an entity's author carries spaceReputation on the single-GET", async () => {
+    const pid = await createProject(); projects.push(pid);
+    const author = await createUser(pid);
+    const spaceId = await seedSpace(pid, author.id);
+    await setRep(pid, spaceId, author.id, 8);
+    const created = await api("POST", `${base(pid)}/entities`, { token: author.token, body: { spaceId, title: "t", content: "c" } });
+    const id = created.body.id;
+    const got = await api("GET", `${base(pid)}/entities/${id}?include=user&spaceReputationId=${spaceId}`, { token: author.token });
+    expect(got.body.user.spaceReputation).toBe(8);
+  });
+
+  it("a comment's author carries spaceReputation on the single-GET", async () => {
+    const pid = await createProject(); projects.push(pid);
+    const author = await createUser(pid);
+    const spaceId = await seedSpace(pid, author.id);
+    await setRep(pid, spaceId, author.id, 5);
+    const { body: entity } = await api("POST", `${base(pid)}/entities`, { token: author.token, body: { spaceId, title: "t" } });
+    const created = await api("POST", `${base(pid)}/comments`, { token: author.token, body: { entityId: entity.id, content: "c" } });
+    const id = created.body.id;
+    const got = await api("GET", `${base(pid)}/comments/${id}?include=user&spaceReputationId=${spaceId}`, { token: author.token });
+    expect(got.body.comment.user.spaceReputation).toBe(5);
+  });
+});
