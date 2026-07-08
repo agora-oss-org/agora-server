@@ -18,4 +18,4 @@ neo4j/plugins/*.jar
 deploy/proxy/certs/*
 !deploy/proxy/certs/.gitkeep
 
-docs/superpowers/
+# docs/superpowers/
