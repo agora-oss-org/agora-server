@@ -1,4 +1,4 @@
--- apps/api/drizzle/0060_push_notification_preferences.sql
+-- apps/api/drizzle/0062_push_notification_preferences.sql
 -- Per-user push opt-OUT set (SDK useNotificationPreferences). One row per (project,user); the push
 -- dispatch bridge skips an event whose type is in disabled_types. New table ⇒ ships its own RLS
 -- deny-all (the 0017 enablement guard only covers tables that existed then). Idempotent.
