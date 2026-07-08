@@ -5,6 +5,7 @@ import type { Context } from "hono";
 import type { User, SpaceReputationDirective } from "@agora-server/contract";
 import type { Variables } from "../http/context.js";
 import { loadSpaceReputations, validateSpaceReputationParams } from "./space-reputation.js";
+import { assertCanReadSpace } from "./space-access.js";
 
 export type UserLike = User & Record<string, unknown>;
 
@@ -72,6 +73,13 @@ export async function enrichSpaceReputation<T>(
   }
   const pid = projectId ?? c.get("projectId");
   if (!pid) return payload;
+  // Fail closed: never expose per-space reputation for a space the caller can't read (private-space
+  // participation oracle). Public/space-less/operator/owner/member all pass; denial → emit no field.
+  try {
+    await assertCanReadSpace(c, directive.spaceId, pid);
+  } catch {
+    return payload;
+  }
   const ids = [...new Set(users.map((u) => u.id))];
   const map = await loadSpaceReputations(pid, directive.spaceId, directive.includeDescendants, ids);
   stampReputations(users, directive, map);
