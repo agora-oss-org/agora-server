@@ -47,6 +47,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `mentions[]` on entity/comment/message writes is validated server-side (`lib/mentions.ts`): tokens
   are dropped unless they resolve to a real in-project profile/space, and display fields are refreshed
   to canonical values — closing a cross-tenant mention/notification vector.
+- Space-scoped reputation: a trigger-maintained `space_reputation` store (the space-partitioned twin of
+  `profiles.reputation`) plus a `loadSpaceReputations` read batcher with recursive-CTE descendant rollup.
+  Maintained forward-only; feed-level and message reactions contribute to no space. This is the engine
+  behind the SDK v7.8.2 space-reputation enrichment (wire contract owned by that branch).
 
 ### Changed
 - **Admin: view-only settings banner now reads as a warning.** The "View-only mode — settings changes
