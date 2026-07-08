@@ -51,6 +51,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `profiles.reputation`) plus a `loadSpaceReputations` read batcher with recursive-CTE descendant rollup.
   Maintained forward-only; feed-level and message reactions contribute to no space. This is the engine
   behind the SDK v7.8.2 space-reputation enrichment (wire contract owned by that branch).
+- **Push-notification preferences.** `GET`/`PUT /push-notifications/preferences` (`{ disabledTypes:
+  PushEventType[] }`, full-replace upsert on `PUT`, unknown type → `400`) let a user opt out of
+  specific push types over the new 20-value `PUSH_EVENT_TYPES` enum; `dispatchNotificationPush` now
+  skips a disabled type before fanning out to devices (migration `0062`,
+  `push_notification_preferences` table).
+- **Conversation mute.** `POST /chat/conversations/:id/mute` (self only; body `{ duration:
+  "8h"|"24h"|"1w"|"forever"|null }`, `null` clears the mute) persists `mutedUntil`/`mutedForever` on
+  the caller's own `ConversationMember` row and returns it as `{ currentMember }` (migration `0061`,
+  `conversation_members.muted_forever`). A per-conversation push-suppression helper
+  (`isConversationMutedForUser`) is implemented in `lib/push/index.ts` but is **not yet wired to any
+  call site** — no chat `message` push-dispatch path exists yet, so muting only persists state today;
+  wiring the message-push call site is a follow-up.
+- **Space visibility.** `visibility: public|unlisted|private` (default `public`) on `POST`/`PATCH
+  /spaces`, persisted and emitted on every space response (migration `0060`). **Persist + emit only
+  this cycle** — no listing/discovery filtering is applied (an `unlisted`/`private` space is not hidden
+  from any list); discoverability filtering is a follow-up.
+- **Follows/connections text search.** `?query=&searchFields=username|name` on `GET
+  /follows/followers`, `GET /follows/following`, `GET /connections`, and `GET
+  /users/:userId/connections` ILIKE-filters the resolved page of profiles. The filter runs **after**
+  id-pagination, so `pagination.totalCount` reflects the unfiltered edge/connection count and a
+  filtered page can come back shorter than `limit`.
+- **Search `includeChildSpaces`.** `POST /search/content` and `POST /search/ask` accept
+  `includeChildSpaces?: boolean` — combined with `spaceId`, search scopes to `{self ∪ descendants}` via
+  a recursive CTE (`lib/space-tree.ts`) instead of a single space (migration `0063`, `match_content`
+  RPC gained `p_space_ids`).
+- **User-match request stub.** `POST /match/users` (body `{ mode: passive|directed, query?, ... }` —
+  `directed` requires a non-empty `query`, else `400`) validates the request contract and always
+  returns `{ results: [] }`, so `useMatchUsers` settles cleanly. The real facet/embedding matching
+  engine is unimplemented and is a separate future spec.
+- **Space-reputation param validation.** Every user-direct `/users/*` endpoint now validates
+  `spaceReputationId: uuid|"none"|"context"` + `spaceReputationDescendants: "true"`
+  (`"context"` → `400` on these user-direct endpoints; `spaceReputationDescendants` without an
+  explicit uuid → `400`). **Validation only** — no response is enriched with a space-scoped
+  reputation value yet; the real tally/rollup + enrichment is a separate future spec.
 
 ### Changed
 - **Admin: view-only settings banner now reads as a warning.** The "View-only mode — settings changes

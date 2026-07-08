@@ -9,6 +9,29 @@ import { REACTION_TYPES } from "./reactions.js";
 const mentions = z.array(z.unknown()).nullish();
 const metadata = z.record(z.string(), z.unknown()).nullish();
 
+// ─── conversation mute (SDK MUTE_DURATIONS) ─────────────────────────────────
+export const MUTE_DURATIONS = ["8h", "24h", "1w", "forever"] as const;
+export type MuteDuration = (typeof MUTE_DURATIONS)[number];
+export const muteDuration = z.enum(MUTE_DURATIONS);
+// duration:null clears the mute; a choice never a timestamp — the server resolves muted_until.
+export const muteConversationSchema = z.object({ duration: muteDuration.nullable() });
+
+// ─── user matching (SDK useMatchUsers) — request contract only (engine is a future spec) ─────────
+export const matchUsersSchema = z
+  .object({
+    mode: z.enum(["passive", "directed"]),
+    query: z.string().optional(),
+    limit: z.number().int().positive().max(100).optional(),
+    spaceId: z.string().uuid().optional(),
+    includeChildSpaces: z.boolean().optional(),
+    includeSampleContent: z.boolean().optional(),
+    excludeSelf: z.boolean().optional(),
+  })
+  .refine((v) => v.mode !== "directed" || (typeof v.query === "string" && v.query.trim().length > 0), {
+    message: "directed mode requires a non-empty query",
+    path: ["query"],
+  });
+
 export const createEntitySchema = z.object({
   title: z.string().nullish(),
   content: z.string().nullish(),
@@ -136,6 +159,8 @@ export const updateProfileSchema = z
 const readingPerm = z.enum(["anyone", "members"]);
 const postingPerm = z.enum(["anyone", "members", "admins"]);
 export const spaceSortByEnum = z.enum(["newest", "members", "alphabetical"]);
+export const spaceVisibility = z.enum(["public", "unlisted", "private"]);
+export type SpaceVisibility = z.infer<typeof spaceVisibility>;
 
 export const createSpaceSchema = z.object({
   name: z.string().min(1).max(120),
@@ -143,6 +168,7 @@ export const createSpaceSchema = z.object({
   description: z.string().max(2000).optional(),
   readingPermission: readingPerm.optional(),
   postingPermission: postingPerm.optional(),
+  visibility: spaceVisibility.optional(),
   requireJoinApproval: z.boolean().optional(),
   parentSpaceId: z.string().uuid().optional(),
   metadata,
@@ -155,6 +181,7 @@ export const updateSpaceSchema = z
     description: z.string().max(2000).nullable().optional(),
     readingPermission: readingPerm.optional(),
     postingPermission: postingPerm.optional(),
+    visibility: spaceVisibility.optional(),
     requireJoinApproval: z.boolean().optional(),
     parentSpaceId: z.string().uuid().nullable().optional(), // reparent; null = make top-level
     metadata,

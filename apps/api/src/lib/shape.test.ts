@@ -3,6 +3,8 @@ import {
   shapeUser,
   shapeEntity,
   shapeComment,
+  shapeSpace,
+  shapeConversationMember,
   generateShortId,
   parseInclude,
   parseBoolFlag,
@@ -208,5 +210,43 @@ describe("parseBoolFlag", () => {
 describe("REACTION_TYPES", () => {
   it("is exactly the 8 contract reaction types", () => {
     expect(REACTION_TYPES).toEqual(["upvote", "downvote", "like", "love", "wow", "sad", "angry", "funny"]);
+  });
+});
+
+function spaceRow(over: Record<string, unknown> = {}) {
+  return {
+    id: "s1", projectId: "p1", shortId: "abc", slug: null, name: "S", description: null,
+    avatarFileId: null, bannerFileId: null, userId: null,
+    readingPermission: "anyone", postingPermission: "members", requireJoinApproval: false,
+    visibility: "unlisted", parentSpaceId: null, depth: 0, metadata: {}, membersCount: 0,
+    childSpacesCount: 0, readReceiptsEnabled: false,
+    createdAt: new Date(0), updatedAt: new Date(0), deletedAt: null,
+    ...over,
+  } as any;
+}
+
+describe("shapeSpace visibility", () => {
+  it("emits the stored visibility", () => {
+    expect((shapeSpace(spaceRow()) as any).visibility).toBe("unlisted");
+  });
+  it("defaults legacy null to 'public'", () => {
+    expect((shapeSpace(spaceRow({ visibility: null })) as any).visibility).toBe("public");
+  });
+});
+
+function memberRow(over: Record<string, unknown> = {}) {
+  return {
+    id: "m1", projectId: "p1", conversationId: "c1", userId: "u1", role: "member",
+    lastReadAt: null, mutedUntil: null, mutedForever: true, isActive: true, leftAt: null,
+    createdAt: new Date(0), updatedAt: new Date(0), ...over,
+  } as any;
+}
+
+describe("shapeConversationMember mutedForever", () => {
+  it("emits mutedForever from the row", () => {
+    expect((shapeConversationMember(memberRow()) as any).mutedForever).toBe(true);
+  });
+  it("defaults a missing value to false", () => {
+    expect((shapeConversationMember(memberRow({ mutedForever: undefined })) as any).mutedForever).toBe(false);
   });
 });

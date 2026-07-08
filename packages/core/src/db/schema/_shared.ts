@@ -20,6 +20,9 @@ export const readingPermission = pgEnum("reading_permission", ["anyone", "member
 export const postingPermission = pgEnum("posting_permission", ["anyone", "members", "admins"]);
 export const spaceMemberRole = pgEnum("space_member_role", ["admin", "moderator", "member"]);
 export const spaceMemberStatus = pgEnum("space_member_status", ["pending", "active", "banned", "rejected"]);
+// spaceVisibility: discoverability axis (SDK v7.8.2, PR #43) — distinct from reading/posting
+// permission. Persist + emit only this cycle; no listing/discovery filtering yet.
+export const spaceVisibility = pgEnum("space_visibility", ["public", "unlisted", "private"]);
 export const conversationType = pgEnum("conversation_type", ["direct", "group", "space"]);
 export const convMemberRole = pgEnum("conv_member_role", ["admin", "member"]);
 export const connectionStatus = pgEnum("connection_status", ["pending", "connected", "declined"]);

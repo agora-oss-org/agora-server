@@ -131,6 +131,7 @@ export const spaceRoutes = new Hono<{ Variables: Variables }>()
       projectId: c.var.projectId, userId: c.var.auth!.userId, shortId: generateShortId(),
       name: body.name, slug: body.slug, description: body.description,
       readingPermission: body.readingPermission, postingPermission: body.postingPermission,
+      visibility: body.visibility,
       requireJoinApproval: body.requireJoinApproval, parentSpaceId: body.parentSpaceId, depth,
       metadata: body.metadata,
     }).returning();
@@ -223,6 +224,7 @@ export const spaceRoutes = new Hono<{ Variables: Variables }>()
     if (body.description !== undefined) patch.description = body.description;
     if (body.readingPermission !== undefined) patch.readingPermission = body.readingPermission;
     if (body.postingPermission !== undefined) patch.postingPermission = body.postingPermission;
+    if (body.visibility !== undefined) patch.visibility = body.visibility;
     if (body.requireJoinApproval !== undefined) patch.requireJoinApproval = body.requireJoinApproval;
     if (body.metadata !== undefined) patch.metadata = body.metadata;
 

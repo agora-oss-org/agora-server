@@ -8,9 +8,19 @@ import { getDb } from "../db/index.js";
 import { follows, profiles } from "../db/schema/index.js";
 import { readPagination, paginate } from "../http/envelope.js";
 import { shapeUser } from "../lib/shape.js";
+import { normalizeUserSearch, userSearchCondition } from "../lib/user-search.js";
 
 // Page of the users on the other side of the auth user's follow edges.
-async function selfFollowList(projectId: string, userId: string, kind: "followers" | "following", page: number, limit: number, offset: number) {
+async function selfFollowList(
+  projectId: string,
+  userId: string,
+  kind: "followers" | "following",
+  page: number,
+  limit: number,
+  offset: number,
+  query?: string,
+  searchFields?: string,
+) {
   const matchCol = kind === "followers" ? follows.followedId : follows.followerId;
   const pickCol = kind === "followers" ? follows.followerId : follows.followedId;
   const [{ n } = { n: 0 }] = await getDb().select({ n: count() }).from(follows)
@@ -19,8 +29,10 @@ async function selfFollowList(projectId: string, userId: string, kind: "follower
     .where(and(eq(follows.projectId, projectId), eq(matchCol, userId)))
     .limit(limit).offset(offset);
   const ids = rows.map((r) => r.pid);
+  const { like, fields } = normalizeUserSearch(query, searchFields);
+  const searchCond = userSearchCondition(like, fields, { username: profiles.username, name: profiles.name });
   const users = ids.length
-    ? await getDb().select().from(profiles).where(and(eq(profiles.projectId, projectId), inArray(profiles.id, ids)))
+    ? await getDb().select().from(profiles).where(and(eq(profiles.projectId, projectId), inArray(profiles.id, ids), searchCond))
     : [];
   const byId = new Map(users.map((u) => [u.id, shapeUser(u)]));
   return paginate(ids.map((i) => byId.get(i)).filter(Boolean), n, page, limit);
@@ -29,11 +41,11 @@ async function selfFollowList(projectId: string, userId: string, kind: "follower
 export const followRoutes = new Hono<{ Variables: Variables }>()
   .get("/followers", requireAuth, async (c) => {
     const { page, limit, offset } = readPagination(c);
-    return c.json(await selfFollowList(c.var.projectId, c.var.auth!.userId, "followers", page, limit, offset));
+    return c.json(await selfFollowList(c.var.projectId, c.var.auth!.userId, "followers", page, limit, offset, c.req.query("query"), c.req.query("searchFields")));
   })
   .get("/following", requireAuth, async (c) => {
     const { page, limit, offset } = readPagination(c);
-    return c.json(await selfFollowList(c.var.projectId, c.var.auth!.userId, "following", page, limit, offset));
+    return c.json(await selfFollowList(c.var.projectId, c.var.auth!.userId, "following", page, limit, offset, c.req.query("query"), c.req.query("searchFields")));
   })
   .get("/followers-count", requireAuth, async (c) => {
     const [r] = await getDb().select({ n: count() }).from(follows)

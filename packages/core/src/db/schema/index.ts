@@ -10,4 +10,5 @@ export * from "./events.js";
 export * from "./auth.js";
 export * from "./steward.js";
 export * from "./secure-chat.js";
+export * from "./notifications-prefs.js";
 // re-export inferred row types are available via table.$inferSelect at call sites

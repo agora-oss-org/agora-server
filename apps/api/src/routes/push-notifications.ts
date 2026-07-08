@@ -5,9 +5,9 @@ import { and, eq, sql } from "drizzle-orm";
 import type { Variables } from "../http/context.js";
 import { requireAuth } from "../middleware/auth.js";
 import { getDb } from "../db/index.js";
-import { pushDevices } from "../db/schema/index.js";
+import { pushDevices, pushNotificationPreferences } from "../db/schema/index.js";
 import { parseBody } from "../lib/validation.js";
-import { pushDeviceSchema, type PushDeviceIdentifier } from "@agora-server/contract";
+import { pushDeviceSchema, updateNotificationPreferencesSchema, type PushDeviceIdentifier } from "@agora-server/contract";
 import { getVapidKeys } from "../lib/push/vapid.js";
 
 // Upsert: native dedupes on (project,user,platform,token); web on (project,user,endpoint).
@@ -63,6 +63,25 @@ export const pushNotificationRoutes = new Hono<{ Variables: Variables }>()
     const ident = parseBody(pushDeviceSchema, await c.req.json().catch(() => ({})), "push-notifications");
     await deregisterDevice(c.var.projectId, c.var.auth!.userId, ident);
     return c.body(null, 204);
+  })
+  .get("/preferences", requireAuth, async (c) => {
+    const [row] = await getDb().select({ disabledTypes: pushNotificationPreferences.disabledTypes })
+      .from(pushNotificationPreferences)
+      .where(and(eq(pushNotificationPreferences.projectId, c.var.projectId), eq(pushNotificationPreferences.userId, c.var.auth!.userId)))
+      .limit(1);
+    return c.json({ disabledTypes: row?.disabledTypes ?? [] });
+  })
+  .put("/preferences", requireAuth, async (c) => {
+    const body = parseBody(updateNotificationPreferencesSchema, await c.req.json().catch(() => ({})), "push-notifications");
+    const disabledTypes = [...new Set(body.disabledTypes)];
+    const [row] = await getDb().insert(pushNotificationPreferences)
+      .values({ projectId: c.var.projectId, userId: c.var.auth!.userId, disabledTypes, updatedAt: new Date() })
+      .onConflictDoUpdate({
+        target: [pushNotificationPreferences.projectId, pushNotificationPreferences.userId],
+        set: { disabledTypes, updatedAt: new Date() },
+      })
+      .returning({ disabledTypes: pushNotificationPreferences.disabledTypes });
+    return c.json({ disabledTypes: row!.disabledTypes });
   })
   // Intentionally UNAUTHENTICATED (public key, fetched pre-sign-in). Covered by the edge rate-limiter.
   .get("/vapid-public-key", async (c) => {

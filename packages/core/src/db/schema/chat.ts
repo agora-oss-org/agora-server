@@ -41,6 +41,7 @@ export const conversationMembers = pgTable("conversation_members", {
   role: convMemberRole("role"),
   lastReadAt: timestamp("last_read_at", { withTimezone: true }),
   mutedUntil: timestamp("muted_until", { withTimezone: true }),
+  mutedForever: boolean("muted_forever").notNull().default(false),
   isActive: boolean("is_active").notNull().default(true),
   leftAt: timestamp("left_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
