@@ -48,19 +48,25 @@ async function isOwnerOrActiveMember(
  * Assert the caller may READ content that lives in `spaceId`. No-ops for space-less content, public
  * spaces, operators, and the space owner / active members. Throws 403 (spaces/members-only) otherwise.
  * An unknown/deleted space is treated as "not gated" — the caller's own content lookup will 404.
+ * `projectId` optionally overrides `c.var.projectId` — needed by root-mounted routers (e.g. connections,
+ * space-reputation enrichment) where the project isn't resolved onto the request context.
  */
-export async function assertCanReadSpace(c: Ctx, spaceId: string | null | undefined): Promise<void> {
+export async function assertCanReadSpace(
+  c: Ctx,
+  spaceId: string | null | undefined,
+  projectId: string = c.var.projectId,
+): Promise<void> {
   if (!spaceId) return;
   if (c.var.auth && isProjectAdmin(c.var.auth)) return;
   const [space] = await getDb()
     .select({ userId: spaces.userId, readingPermission: spaces.readingPermission })
     .from(spaces)
-    .where(and(eq(spaces.projectId, c.var.projectId), eq(spaces.id, spaceId), isNull(spaces.deletedAt)))
+    .where(and(eq(spaces.projectId, projectId), eq(spaces.id, spaceId), isNull(spaces.deletedAt)))
     .limit(1);
   if (!space) return; // unknown/deleted space — let the content lookup 404 on its own
   if (space.readingPermission === "anyone") return;
   const uid = c.var.auth?.userId;
-  if (uid && (await isOwnerOrActiveMember(c.var.projectId, spaceId, uid, space.userId))) return;
+  if (uid && (await isOwnerOrActiveMember(projectId, spaceId, uid, space.userId))) return;
   throw Errors.forbidden("spaces/members-only", "This space is members-only");
 }
 

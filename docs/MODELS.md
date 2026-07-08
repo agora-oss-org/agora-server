@@ -22,7 +22,9 @@ moderationStatus, moderatedAt?, moderatedById?, moderatedByType?, moderationReas
 UserFull: `id, projectId, foreignId?, role(admin|moderator|visitor), email?, name?, username?, avatar?,
 avatarFileId?, bannerFileId?, avatarFile?, bannerFile?, bio?(≤300), birthdate?, location?(GeoJSON),
 metadata(jsonb), secureMetadata(jsonb, never exposed in public), reputation, isVerified, isActive,
-lastActive, createdAt, updatedAt`
+lastActive, createdAt, updatedAt, spaceReputation?`
+- `spaceReputation?` (number): space-scoped reputation, present only when the request supplies
+  `spaceReputationId` (v7.8.2 #6); absent for spaces the caller can't read.
 - **User** (public) = UserFull minus `email, secureMetadata, isVerified, isActive, lastActive, updatedAt`
 - **AuthUser** = UserFull minus `secureMetadata`, plus `suspensions[]{reason?, startDate, endDate?}`, `authMethods[]`
 - `GET /users/suggestions?query=` — username/name substring search, bare `User[]`.

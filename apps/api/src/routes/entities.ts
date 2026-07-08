@@ -36,6 +36,8 @@ import { getFeedConfig } from "../lib/feed-config.js";
 import { assertCanReadSpace, assertCanReadEntity, assertCanPostInSpace, readableEntitiesFilter } from "../lib/space-access.js";
 import { removedPolicy, excludeRemovedSql, shouldHide } from "../lib/moderation-visibility.js";
 import { rerankCandidates } from "../lib/rerank.js";
+import { spaceRepGate } from "../middleware/space-rep.js";
+import { enrichSpaceReputation } from "../lib/space-reputation-enrich.js";
 import {
   parseBody,
   createEntitySchema,
@@ -44,6 +46,7 @@ import {
 } from "../lib/validation.js";
 
 export const entityRoutes = new Hono<{ Variables: Variables }>()
+  .use("*", spaceRepGate("context"))
   // ── feed ────────────────────────────────────────────────────────────────
   .get("/", async (c) => {
     const projectId = c.var.projectId;
@@ -124,7 +127,7 @@ export const entityRoutes = new Hono<{ Variables: Variables }>()
       })
     );
     // Echo the resolved ranking clock so clients can pin it across paginated requests.
-    return c.json({ ...paginate(shaped, total, page, limit), rankAnchor });
+    return c.json(await enrichSpaceReputation(c, { ...paginate(shaped, total, page, limit), rankAnchor }));
   })
   .post("/", requireAuth, async (c) => {
     const projectId = c.var.projectId;
@@ -194,7 +197,7 @@ export const entityRoutes = new Hono<{ Variables: Variables }>()
     const shaped = shapeEntity(row, fileRows.length ? { files: fileRows.map(shapeFile) } : {});
     logger.info({ projectId, entityId: row.id, userId, spaceId: row.spaceId ?? null, isDraft: row.isDraft, files: fileRows.length }, "entity: created");
     webhooks.broadcast(projectId, "entity.created.complete", shaped);
-    return c.json(shaped, 201);
+    return c.json(await enrichSpaceReputation(c, shaped), 201);
   })
   .get("/drafts", requireAuth, async (c) => {
     const projectId = c.var.projectId;
@@ -214,7 +217,7 @@ export const entityRoutes = new Hono<{ Variables: Variables }>()
       .limit(limit)
       .offset(offset);
     const total = await countWhere(where);
-    return c.json(paginate(rows.map((r) => shapeEntity(r)), total, page, limit));
+    return c.json(await enrichSpaceReputation(c, paginate(rows.map((r) => shapeEntity(r)), total, page, limit)));
   })
   .get("/by-foreign-id", async (c) => {
     const foreignId = c.req.query("foreignId");
@@ -222,12 +225,12 @@ export const entityRoutes = new Hono<{ Variables: Variables }>()
     const createIfMissing = parseBoolFlag(c.req.query("createIfNotFound"))
       ? () => createForeignEntity(c, foreignId)
       : undefined;
-    return c.json(await lookupEntity(c, eq(entities.foreignId, foreignId), createIfMissing));
+    return c.json(await enrichSpaceReputation(c, await lookupEntity(c, eq(entities.foreignId, foreignId), createIfMissing)));
   })
   .get("/by-short-id", async (c) => {
     const shortId = c.req.query("shortId");
     if (!shortId) throw Errors.badRequest("entities/missing-short-id", "shortId is required", "shortId");
-    return c.json(await lookupEntity(c, eq(entities.shortId, shortId)));
+    return c.json(await enrichSpaceReputation(c, await lookupEntity(c, eq(entities.shortId, shortId))));
   })
   .get("/is-entity-saved", requireAuth, async (c) => {
     const projectId = c.var.projectId;
@@ -251,7 +254,7 @@ export const entityRoutes = new Hono<{ Variables: Variables }>()
   })
   .get("/:id", async (c) => {
     const id = c.req.param("id");
-    return c.json(await lookupEntity(c, eq(entities.id, id)));
+    return c.json(await enrichSpaceReputation(c, await lookupEntity(c, eq(entities.id, id))));
   })
   .patch("/:id", requireAuth, async (c) => {
     const row = await ownedEntity(c);
@@ -272,7 +275,7 @@ export const entityRoutes = new Hono<{ Variables: Variables }>()
     const shaped = shapeEntity(updated!);
     logger.info({ projectId: c.var.projectId, entityId: row.id, userId: row.userId, fields: Object.keys(patch) }, "entity: updated");
     webhooks.broadcast(c.var.projectId, "entity.updated.complete", shaped);
-    return c.json(shaped);
+    return c.json(await enrichSpaceReputation(c, shaped));
   })
   .delete("/:id", requireAuth, async (c) => {
     const row = await ownedEntity(c);
@@ -293,7 +296,7 @@ export const entityRoutes = new Hono<{ Variables: Variables }>()
     const row = await ownedEntity(c);
     const [updated] = await getDb().update(entities).set({ isDraft: false }).where(eq(entities.id, row.id)).returning();
     logger.info({ projectId: c.var.projectId, entityId: row.id, userId: row.userId }, "entity: published");
-    return c.json(shapeEntity(updated!));
+    return c.json(await enrichSpaceReputation(c, shapeEntity(updated!)));
   })
   // ── read receipts ───────────────────────────────────────────────────────
   // Record that the caller read this post (corporate-tier per-space receipts, docs/SOCIAL-GRAPH.md §4).
@@ -353,7 +356,7 @@ export const entityRoutes = new Hono<{ Variables: Variables }>()
       id: r.id, userId: r.userId, reactionType: r.reactionType,
       createdAt: r.createdAt.toISOString(), user: userMap.get(r.userId) ?? null,
     }));
-    return c.json(paginate(data, n, page, limit));
+    return c.json(await enrichSpaceReputation(c, paginate(data, n, page, limit)));
   })
   .post("/:id/reactions", requireAuth, async (c) => {
     await assertCanReadEntity(c, c.req.param("id")); // can't react to content you can't read

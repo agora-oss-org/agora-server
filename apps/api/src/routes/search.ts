@@ -16,6 +16,8 @@ import { allow } from "../lib/embed-throttle.js";
 import { streamText, llmEnabled } from "../lib/llm.js";
 import { isProjectAdmin } from "../lib/project-roles.js";
 import { resolveSpaceSubtree } from "../lib/space-tree.js";
+import { spaceRepGate } from "../middleware/space-rep.js";
+import { enrichSpaceReputation } from "../lib/space-reputation-enrich.js";
 
 // Mirrors the SDK's ContentSearchResult (interfaces/models): a shaped Entity | Comment | ChatMessage.
 type ContentSearchResult = { sourceType: SourceType; similarity: number; record: unknown };
@@ -149,6 +151,7 @@ function buildPrompt(q: string, sources: ContentSearchResult[]): string {
 }
 
 export const searchRoutes = new Hono<{ Variables: Variables }>()
+  .use("*", spaceRepGate("context"))
   // POST per the SDK's useSearchContent: body { query, sourceTypes?, spaceId?, limit? } →
   // returns a BARE array of ContentSearchResult { sourceType, similarity, record }.
   .post("/content", async (c) => {
@@ -161,7 +164,7 @@ export const searchRoutes = new Hono<{ Variables: Variables }>()
       { projectId: c.var.projectId, queryLength: q.length, sourceTypes: body.sourceTypes ?? null, spaceId: body.spaceId ?? null, results: Array.isArray(results) ? results.length : undefined },
       "search: content query",
     );
-    return c.json(results);
+    return c.json(await enrichSpaceReputation(c, results));
   })
   // POST per the SDK's useAskContent: body { query, sourceTypes?, spaceId?, conversationId?, limit? }.
   // Streams SSE: "token" {content} (repeated) → "sources" (ContentSearchResult[]) → "done" | "error".
@@ -181,7 +184,7 @@ export const searchRoutes = new Hono<{ Variables: Variables }>()
         for await (const delta of streamText({ system: ASK_SYSTEM, prompt })) {
           await stream.writeSSE({ event: "token", data: JSON.stringify({ content: delta }) });
         }
-        await stream.writeSSE({ event: "sources", data: JSON.stringify(sources) });
+        await stream.writeSSE({ event: "sources", data: JSON.stringify(await enrichSpaceReputation(c, sources)) });
         await stream.writeSSE({ event: "done", data: "" });
       } catch (err: any) {
         await stream.writeSSE({ event: "error", data: JSON.stringify({ error: err?.message ?? "Ask failed" }) });
@@ -217,5 +220,5 @@ export const searchRoutes = new Hono<{ Variables: Variables }>()
     const results = rows
       .map((r) => ({ similarity: relevance(q, r.username, r.name), record: shapeUser(r) }))
       .sort((a, b) => b.similarity - a.similarity);
-    return c.json(results);
+    return c.json(await enrichSpaceReputation(c, results));
   });

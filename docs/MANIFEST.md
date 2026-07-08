@@ -160,19 +160,36 @@ signs an RS256 JWT (issuer=projectId, aud="replyke.com", sub=userData.id, claim 
 | GET/POST/DELETE | `/comments/:id/reactions` (GET = paginated reactor list, `useFetchCommentReactions`) | ✅ |
 
 ### users
-On the `/users/:id*` handlers (profile read/update, follow, follower/following lists + counts,
-suspensions — marked "params validated" below; NOT `/by-username`, `/by-foreign-id`,
-`/check-username`, or `/suggestions`), two optional query params are now VALIDATED —
-`spaceReputationId: uuid|"none"|"context"` and `spaceReputationDescendants: "true"` — via
-`validateSpaceReputationParams` (`"context"` → `400 space-reputation/context-not-allowed` on these
-user-direct endpoints; `spaceReputationDescendants` without an explicit uuid id →
-`400 space-reputation/descendants-needs-uuid`). **Validation only — enrichment is deferred**: no
-response currently carries a space-scoped reputation value; a real tally/rollup + per-response
-enrichment is a separate future spec.
+The `users` router mounts `spaceRepGate("user-direct")` **router-wide** (`.use("*", …)`), so two
+optional query params — `spaceReputationId: uuid|"none"|"context"` and
+`spaceReputationDescendants: "true"` — are VALIDATED via `validateSpaceReputationParams`/
+`resolveDirective` on **every** `/users/*` endpoint: profile read/update, follow, follower/following
+lists + counts, suspensions, `/by-username`, `/by-foreign-id`, `/suggestions`, and `/check-username`.
+Enrichment (`enrichSpaceReputation`, v7.8.2 #6) then stamps `spaceReputation` on every response that
+embeds a full `User` object — that's all of the above **except** `/check-username`, whose
+`{available}` response carries no user. The `uuid`
+and `"none"` modes are fully implemented: `"none"` aliases the user's global `reputation`; a `<uuid>`
+reads the `space_reputation` store for that space (`spaceReputationDescendants=true` rolls up the
+space's subtree via a recursive CTE), stamping `spaceReputation` on every full-`User` object in the
+response. Space-mode enrichment is **gated by space read-access** (`assertCanReadSpace`) — a caller
+who can't read the target space (members-only, not a member) silently gets NO `spaceReputation`
+field for it (fail closed), mirroring `GET /spaces/:id/members` visibility; public spaces, the space
+owner, active members, and operators/project-admins are unaffected. `"context"` is accepted on
+context-class endpoints (see below) but is still **deferred** — it resolves to no enrichment (no
+response field) rather than an error. On these user-direct endpoints `"context"` is instead
+**rejected**: `400 space-reputation/context-not-allowed`; `spaceReputationDescendants` without an
+explicit uuid id → `400 space-reputation/descendants-needs-uuid`.
+
+**Coverage.** The same params + enrichment are wired identically (endpoint-class `"context"`) across
+entities, comments (incl. reaction listings), chat, spaces (team/members), search, reports, follows,
+and connections — accepted wherever those routers' responses embed a full `User` object. Only the
+`users` section above annotates this per-endpoint; the domain tables below don't call it out
+row-by-row. Out of scope: events, steward, admin, roles, collections, misc, social,
+push-notifications, match, `/db`, auth, storage.
 | Method | Path | Status |
 |---|---|---|
-| GET | `/users/:id` (`spaceReputationId?`/`spaceReputationDescendants?` — validated, not yet enriched) | ✅ |
-| PATCH | `/users/:id` (update profile; same params validated) | ✅ |
+| GET | `/users/:id` (`spaceReputationId?`/`spaceReputationDescendants?` — validated + enriched, `"context"` rejected) | ✅ |
+| PATCH | `/users/:id` (update profile; same params validated + enriched) | ✅ |
 | GET | `/users/by-foreign-id` | ✅ |
 | GET | `/users/by-username` | ✅ |
 | GET | `/users/check-username` | ✅ |
@@ -180,8 +197,8 @@ enrichment is a separate future spec.
 | GET | `/users/:id/follow` (follow status; params validated) | ✅ |
 | POST | `/users/:id/follow` (params validated) | ✅ |
 | DELETE | `/users/:id/follow` (params validated) | ✅ |
-| GET | `/users/:id/followers` (params validated) | ✅ |
-| GET | `/users/:id/following` (params validated) | ✅ |
+| GET | `/users/:id/followers` (params validated + enriched) | ✅ |
+| GET | `/users/:id/following` (params validated + enriched) | ✅ |
 | GET | `/users/:id/followers-count` (params validated) | ✅ |
 | GET | `/users/:id/following-count` (params validated) | ✅ |
 | GET | `/users/:id/connections-count` (params validated) | ✅ (also exposed at the `/v7` root `/users/:userId/connections-count` via the connections module) |

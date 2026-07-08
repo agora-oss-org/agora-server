@@ -17,8 +17,15 @@ export interface User {
   location: unknown | null;
   metadata: Record<string, unknown>;
   reputation: number;
+  spaceReputation?: number; // space-scoped reputation, attached when the SDK requests it (v7.8.2 #6)
   createdAt: string;
 }
+
+// The resolved space-reputation request directive (from spaceReputationId/spaceReputationDescendants).
+// null (not represented here) means "no enrichment"; the mode discriminates global vs a specific space.
+export type SpaceReputationDirective =
+  | { mode: "global" }
+  | { mode: "space"; spaceId: string; includeDescendants: boolean };
 
 export interface Entity {
   id: string;

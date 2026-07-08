@@ -9,6 +9,8 @@ import { follows, profiles } from "../db/schema/index.js";
 import { readPagination, paginate } from "../http/envelope.js";
 import { shapeUser } from "../lib/shape.js";
 import { normalizeUserSearch, userSearchCondition } from "../lib/user-search.js";
+import { spaceRepGate } from "../middleware/space-rep.js";
+import { enrichSpaceReputation } from "../lib/space-reputation-enrich.js";
 
 // Page of the users on the other side of the auth user's follow edges.
 async function selfFollowList(
@@ -39,13 +41,14 @@ async function selfFollowList(
 }
 
 export const followRoutes = new Hono<{ Variables: Variables }>()
+  .use("*", spaceRepGate("context"))
   .get("/followers", requireAuth, async (c) => {
     const { page, limit, offset } = readPagination(c);
-    return c.json(await selfFollowList(c.var.projectId, c.var.auth!.userId, "followers", page, limit, offset, c.req.query("query"), c.req.query("searchFields")));
+    return c.json(await enrichSpaceReputation(c, await selfFollowList(c.var.projectId, c.var.auth!.userId, "followers", page, limit, offset, c.req.query("query"), c.req.query("searchFields"))));
   })
   .get("/following", requireAuth, async (c) => {
     const { page, limit, offset } = readPagination(c);
-    return c.json(await selfFollowList(c.var.projectId, c.var.auth!.userId, "following", page, limit, offset, c.req.query("query"), c.req.query("searchFields")));
+    return c.json(await enrichSpaceReputation(c, await selfFollowList(c.var.projectId, c.var.auth!.userId, "following", page, limit, offset, c.req.query("query"), c.req.query("searchFields"))));
   })
   .get("/followers-count", requireAuth, async (c) => {
     const [r] = await getDb().select({ n: count() }).from(follows)

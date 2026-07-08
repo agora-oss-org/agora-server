@@ -28,8 +28,11 @@ import { sanitizeMentions } from "../lib/mentions.js";
 import { indexContentAsync } from "../lib/embeddings.js";
 import { assertCanReadEntity, assertCanReadComment } from "../lib/space-access.js";
 import { removedPolicy, excludeRemovedSql, shouldHide } from "../lib/moderation-visibility.js";
+import { spaceRepGate } from "../middleware/space-rep.js";
+import { enrichSpaceReputation } from "../lib/space-reputation-enrich.js";
 
 export const commentRoutes = new Hono<{ Variables: Variables }>()
+  .use("*", spaceRepGate("context"))
   .get("/", async (c) => {
     const projectId = c.var.projectId;
     // SDK sends absent filters as the literal "null"/"undefined" — treat those as unset.
@@ -77,7 +80,7 @@ export const commentRoutes = new Hono<{ Variables: Variables }>()
         ...(userMap ? { user: r.userId ? userMap.get(r.userId) ?? null : null } : {}),
       })
     );
-    return c.json(paginate(shaped, total, page, limit));
+    return c.json(await enrichSpaceReputation(c, paginate(shaped, total, page, limit)));
   })
   .post("/", requireAuth, async (c) => {
     const projectId = c.var.projectId;
@@ -109,7 +112,7 @@ export const commentRoutes = new Hono<{ Variables: Variables }>()
     const shaped = shapeComment(row);
     logger.info({ projectId, commentId: row.id, entityId: row.entityId, userId: row.userId, parentId: row.parentId ?? null }, "comment: created");
     webhooks.broadcast(projectId, "comment.created.complete", shaped);
-    return c.json(shaped, 201);
+    return c.json(await enrichSpaceReputation(c, shaped), 201);
   })
   .get("/by-foreign-id", async (c) => {
     const projectId = c.var.projectId;
@@ -126,7 +129,7 @@ export const commentRoutes = new Hono<{ Variables: Variables }>()
     if (shouldHide(removed, row.moderationStatus)) throw Errors.notFound("comments/not-found", "Comment not found");
     const shaped = await hydrateOne(c, row);
     // SDK's useFetchCommentByForeignId expects { comment }.
-    return c.json({ comment: shaped });
+    return c.json(await enrichSpaceReputation(c, { comment: shaped }));
   })
   // Full nested subtree for an entity (or under a root comment) via the fetch_comment_thread RPC.
   // Server-only convenience: returns { data: Comment[] } where each comment carries a `replies` array.
@@ -173,7 +176,7 @@ export const commentRoutes = new Hono<{ Variables: Variables }>()
       const parent = r.depth > 0 && r.parent_id ? nodeById.get(r.parent_id) : null;
       (parent ? parent.replies : roots).push(node);
     }
-    return c.json({ data: roots });
+    return c.json(await enrichSpaceReputation(c, { data: roots }));
   })
   .get("/:id", async (c) => {
     const projectId = c.var.projectId;
@@ -189,7 +192,7 @@ export const commentRoutes = new Hono<{ Variables: Variables }>()
     if (shouldHide(removed, row.moderationStatus)) throw Errors.notFound("comments/not-found", "Comment not found");
     const shaped = await hydrateOne(c, row);
     // SDK's useFetchComment expects { comment }.
-    return c.json({ comment: shaped });
+    return c.json(await enrichSpaceReputation(c, { comment: shaped }));
   })
   .patch("/:id", requireAuth, async (c) => {
     const row = await ownedComment(c);
@@ -206,7 +209,7 @@ export const commentRoutes = new Hono<{ Variables: Variables }>()
     const shaped = shapeComment(updated!);
     logger.info({ projectId: c.var.projectId, commentId: row.id, entityId: updated!.entityId, userId: row.userId, fields: Object.keys(patch) }, "comment: updated");
     webhooks.broadcast(c.var.projectId, "comment.updated.complete", shaped);
-    return c.json(shaped);
+    return c.json(await enrichSpaceReputation(c, shaped));
   })
   .delete("/:id", requireAuth, async (c) => {
     const row = await ownedComment(c);
@@ -244,7 +247,7 @@ export const commentRoutes = new Hono<{ Variables: Variables }>()
       id: r.id, userId: r.userId, reactionType: r.reactionType,
       createdAt: r.createdAt.toISOString(), user: userMap.get(r.userId) ?? null,
     }));
-    return c.json(paginate(data, n, page, limit));
+    return c.json(await enrichSpaceReputation(c, paginate(data, n, page, limit)));
   })
   .post("/:id/reactions", requireAuth, async (c) => {
     await assertCanReadComment(c, c.req.param("id")); // can't react to content you can't read

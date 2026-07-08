@@ -11,6 +11,8 @@ import { shapeReport, loadReportParticipants } from "../lib/shape.js";
 import { parseBody, createReportSchema } from "../lib/validation.js";
 import { Errors } from "../http/errors.js";
 import { isProjectAdmin, requireProjectAdmin } from "../lib/project-roles.js";
+import { spaceRepGate } from "../middleware/space-rep.js";
+import { enrichSpaceReputation } from "../lib/space-reputation-enrich.js";
 
 // The set of space ids a user may moderate: spaces they own (space.userId) + memberships with an
 // active admin/moderator role. Used to scope the pending-reports queue for non-operators.
@@ -38,6 +40,7 @@ async function scopeReports(c: any, base: ReturnType<typeof and>): Promise<{ whe
 }
 
 export const reportRoutes = new Hono<{ Variables: Variables }>()
+  .use("*", spaceRepGate("context"))
   .post("/", requireAuth, async (c) => {
     const body = parseBody(createReportSchema, await c.req.json().catch(() => ({})), "reports");
     const [row] = await getDb().insert(reports).values({
@@ -50,7 +53,7 @@ export const reportRoutes = new Hono<{ Variables: Variables }>()
       spaceId: body.spaceId,
     }).returning();
     logger.info({ projectId: c.var.projectId, reportId: row!.id, reporterId: c.var.auth!.userId, targetType: body.targetType, targetId: body.targetId, spaceId: body.spaceId ?? null, reason: body.reason }, "report: filed");
-    return c.json(shapeReport(row!), 201);
+    return c.json(await enrichSpaceReputation(c, shapeReport(row!)), 201);
   })
   // Open (unresolved) reports — the moderation inbox. A deployment operator sees every unresolved
   // report in the project (incl. project-level reports with no space); a normal user sees only those
@@ -64,7 +67,7 @@ export const reportRoutes = new Hono<{ Variables: Variables }>()
       .orderBy(desc(reports.createdAt)).limit(limit).offset(offset);
     const { authorByReport, reporterByReport } = await loadReportParticipants(c.var.projectId, rows);
     const data = rows.map((r) => shapeReport(r, { author: authorByReport.get(r.id), reporter: reporterByReport.get(r.id) }));
-    return c.json(paginate(data, n, page, limit));
+    return c.json(await enrichSpaceReputation(c, paginate(data, n, page, limit)));
   })
   // Resolved/moderated reports — same role scope as the pending queue. Most-recently-resolved first.
   .get("/moderated", requireAuth, async (c) => {
@@ -76,7 +79,7 @@ export const reportRoutes = new Hono<{ Variables: Variables }>()
       .orderBy(desc(reports.resolvedAt)).limit(limit).offset(offset);
     const { authorByReport, reporterByReport } = await loadReportParticipants(c.var.projectId, rows);
     const data = rows.map((r) => shapeReport(r, { author: authorByReport.get(r.id), reporter: reporterByReport.get(r.id) }));
-    return c.json(paginate(data, n, page, limit));
+    return c.json(await enrichSpaceReputation(c, paginate(data, n, page, limit)));
   })
   // Operator-only: action a report by id, regardless of space. The space-scoped flow
   // (PATCH /spaces/:id/.../moderation + /spaces/:id/reports/...) needs a spaceId, so PROJECT-LEVEL

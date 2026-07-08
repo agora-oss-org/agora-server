@@ -16,15 +16,8 @@ import { parseBody, updateProfileSchema } from "../lib/validation.js";
 import { notifyOnFollow } from "../lib/notifications.js";
 import * as webhooks from "../lib/webhooks.js";
 import { requireProjectAdmin } from "../lib/project-roles.js";
-import { validateSpaceReputationParams } from "../lib/space-reputation.js";
-
-// Shared param check for every user-direct (/users/*) handler — "context" is not a valid
-// spaceReputationId here (that's only for context endpoints); enrichment itself is deferred.
-const checkSpaceRep = (c: { req: { query: (k: string) => string | undefined } }) =>
-  validateSpaceReputationParams(
-    { spaceReputationId: c.req.query("spaceReputationId"), spaceReputationDescendants: c.req.query("spaceReputationDescendants") },
-    "user-direct",
-  );
+import { spaceRepGate } from "../middleware/space-rep.js";
+import { enrichSpaceReputation } from "../lib/space-reputation-enrich.js";
 
 async function findUser(projectId: string, col: typeof profiles.id | typeof profiles.username | typeof profiles.foreignId, value: string) {
   const [row] = await getDb()
@@ -36,19 +29,20 @@ async function findUser(projectId: string, col: typeof profiles.id | typeof prof
 }
 
 export const userRoutes = new Hono<{ Variables: Variables }>()
+  .use("*", spaceRepGate("user-direct"))
   .get("/by-foreign-id", async (c) => {
     const foreignId = c.req.query("foreignId");
     if (!foreignId) throw Errors.badRequest("users/missing-foreign-id", "foreignId is required", "foreignId");
     const row = await findUser(c.var.projectId, profiles.foreignId, foreignId);
     if (!row) throw Errors.notFound("users/not-found", "User not found");
-    return c.json(shapeUser(row));
+    return c.json(await enrichSpaceReputation(c, shapeUser(row)));
   })
   .get("/by-username", async (c) => {
     const username = c.req.query("username");
     if (!username) throw Errors.badRequest("users/missing-username", "username is required", "username");
     const row = await findUser(c.var.projectId, profiles.username, username);
     if (!row) throw Errors.notFound("users/not-found", "User not found");
-    return c.json(shapeUser(row));
+    return c.json(await enrichSpaceReputation(c, shapeUser(row)));
   })
   .get("/check-username", async (c) => {
     const username = c.req.query("username");
@@ -71,16 +65,14 @@ export const userRoutes = new Hono<{ Variables: Variables }>()
       ))
       .orderBy(desc(profiles.reputation))
       .limit(limit);
-    return c.json(rows.map(shapeUser)); // bare User[] — matches the SDK's useFetchUserSuggestions
+    return c.json(await enrichSpaceReputation(c, rows.map(shapeUser))); // bare User[] — matches the SDK's useFetchUserSuggestions
   })
   .get("/:id", async (c) => {
-    checkSpaceRep(c);
     const row = await findUser(c.var.projectId, profiles.id, c.req.param("id"));
     if (!row) throw Errors.notFound("users/not-found", "User not found");
-    return c.json(shapeUser(row));
+    return c.json(await enrichSpaceReputation(c, shapeUser(row)));
   })
   .patch("/:id", requireAuth, async (c) => {
-    checkSpaceRep(c);
     const id = c.req.param("id");
     if (id !== c.var.auth!.userId) throw Errors.forbidden("users/not-self", "Can only update your own profile");
     const body = parseBody(updateProfileSchema, await c.req.json().catch(() => ({})), "users");
@@ -111,11 +103,10 @@ export const userRoutes = new Hono<{ Variables: Variables }>()
     if (!row) throw Errors.notFound("users/not-found", "User not found");
     const shaped = shapeUser(row);
     webhooks.broadcast(c.var.projectId, "user.updated.complete", shaped);
-    return c.json(shaped);
+    return c.json(await enrichSpaceReputation(c, shaped));
   })
   // ── follow relationship ───────────────────────────────────────────────────
   .get("/:id/follow", requireAuth, async (c) => {
-    checkSpaceRep(c);
     const [row] = await getDb()
       .select({ id: follows.id })
       .from(follows)
@@ -128,7 +119,6 @@ export const userRoutes = new Hono<{ Variables: Variables }>()
     return c.json({ isFollowing: !!row, followId: row?.id ?? null });
   })
   .post("/:id/follow", requireAuth, async (c) => {
-    checkSpaceRep(c);
     const followedId = c.req.param("id");
     const followerId = c.var.auth!.userId;
     if (followedId === followerId) throw Errors.badRequest("users/self-follow", "Cannot follow yourself");
@@ -149,7 +139,6 @@ export const userRoutes = new Hono<{ Variables: Variables }>()
     return c.json({ id: row.id, followedId }, 201);
   })
   .delete("/:id/follow", requireAuth, async (c) => {
-    checkSpaceRep(c);
     await getDb().delete(follows).where(and(
       eq(follows.projectId, c.var.projectId),
       eq(follows.followerId, c.var.auth!.userId),
@@ -158,29 +147,24 @@ export const userRoutes = new Hono<{ Variables: Variables }>()
     return c.json({ success: true });
   })
   .get("/:id/followers", async (c) => {
-    checkSpaceRep(c);
     const { page, limit, offset } = readPagination(c);
-    return c.json(await followList(c.var.projectId, "followers", c.req.param("id"), page, limit, offset));
+    return c.json(await enrichSpaceReputation(c, await followList(c.var.projectId, "followers", c.req.param("id"), page, limit, offset)));
   })
   .get("/:id/following", async (c) => {
-    checkSpaceRep(c);
     const { page, limit, offset } = readPagination(c);
-    return c.json(await followList(c.var.projectId, "following", c.req.param("id"), page, limit, offset));
+    return c.json(await enrichSpaceReputation(c, await followList(c.var.projectId, "following", c.req.param("id"), page, limit, offset)));
   })
   .get("/:id/followers-count", async (c) => {
-    checkSpaceRep(c);
     const [r] = await getDb().select({ n: count() }).from(follows)
       .where(and(eq(follows.projectId, c.var.projectId), eq(follows.followedId, c.req.param("id"))));
     return c.json({ count: r?.n ?? 0 });
   })
   .get("/:id/following-count", async (c) => {
-    checkSpaceRep(c);
     const [r] = await getDb().select({ n: count() }).from(follows)
       .where(and(eq(follows.projectId, c.var.projectId), eq(follows.followerId, c.req.param("id"))));
     return c.json({ count: r?.n ?? 0 });
   })
   .get("/:id/connections-count", async (c) => {
-    checkSpaceRep(c);
     const id = c.req.param("id");
     const [r] = await getDb().select({ n: count() }).from(connections)
       .where(and(
@@ -194,7 +178,6 @@ export const userRoutes = new Hono<{ Variables: Variables }>()
   // Suspending blocks the user on every authed request (middleware/auth.ts) and revokes their refresh
   // families. Operators and project owners bypass enforcement, so they can always lift.
   .get("/:id/suspensions", requireAuth, async (c) => {
-    checkSpaceRep(c);
     requireProjectAdmin(c);
     const target = await loadTarget(c.var.projectId, c.req.param("id"));
     const rows = await listSuspensions(target.id);
