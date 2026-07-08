@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Unreachable tenant DB now returns a retryable `503`, not `500`.** When a per-tenant request routes
+  to a Postgres DSN that is well-formed but unreachable (host down, connection refused, DNS failure,
+  connect timeout, or a dropped socket), the `onError` handler in **both `@agora/api` and
+  `@agora/secure-chat`** (which ride the same per-tenant DB seam) now maps the driver's connection error
+  to `503 project/db-unavailable` — matching the resolver's own unavailable path and signalling a
+  transient infra outage clients can back off and retry. Previously the raw connection error fell through to
+  `500 common/internal`, mislabelling a downstream outage as an application bug. The classifier
+  (`isDbConnectionError`, `@agora/core/db`) is narrow: only connection/reachability codes map: query and
+  constraint errors (e.g. an FK or syntax violation) still surface as `500` so real defects aren't
+  masked. Only the driver error `code` is logged (never the DSN, which carries the tenant DB password).
 - **Events host/invite `userId` validation.** `POST /events/:id/hosts`, `POST /events/:id/invites`, and
   the `hostIds` on `POST /events` now verify each supplied user is a real profile **in the same project**
   before writing. Previously a non-existent id produced a raw FK `500` and — a cross-tenant hole — a
