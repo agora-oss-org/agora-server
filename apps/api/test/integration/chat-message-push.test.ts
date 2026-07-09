@@ -32,8 +32,10 @@ describe("chat-message push fan-out (integration)", () => {
 
   // Reset any mute/opt-out state bob accrued in a prior case, so cases are order-independent.
   beforeEach(async () => {
-    await api("POST", `${B}/chat/conversations/${conversationId}/mute`, { token: bob.token, body: { duration: null } });
-    await api("PUT", `${B}/push-notifications/preferences`, { token: bob.token, body: { disabledTypes: [] } });
+    const clearedMute = await api("POST", `${B}/chat/conversations/${conversationId}/mute`, { token: bob.token, body: { duration: null } });
+    expect(clearedMute.status).toBe(200);
+    const clearedPrefs = await api("PUT", `${B}/push-notifications/preferences`, { token: bob.token, body: { disabledTypes: [] } });
+    expect(clearedPrefs.status).toBe(200);
   });
 
   it("dispatches to a member who is neither muted nor opted-out", async () => {
