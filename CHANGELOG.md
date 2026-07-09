@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Chat push notifications** — sending a chat message now fans out a background push notification to
+  every other active member of the conversation. Respects the recipient's per-conversation mute and the
+  global chat-push opt-out (`push_notification_preferences`). Payload is PII-free (generic copy,
+  `data.type = "message"`); no-op when no push provider is configured.
 - **Space-reputation enrichment (SDK v7.8.2 #6):** user-embedding endpoints now accept
   `spaceReputationId` (`<uuid>` | `"none"`) and `spaceReputationDescendants`, attaching a space-scoped
   `spaceReputation` to returned/embedded users (`"none"` aliases global reputation; `<uuid>` reads the

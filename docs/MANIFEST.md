@@ -331,12 +331,12 @@ lock). Removing the last host is rejected (`400 events/last-host`); a hidden gue
 | POST | `/chat/conversations/:id/messages/:id/report` | ✅ |
 | GET | `/chat/spaces/:id/conversation` | ✅ |
 
-`/mute` persists `mutedUntil`/`mutedForever` on the caller's own `ConversationMember` row. A
-per-conversation push-suppression helper (`isConversationMutedForUser` / `dispatchChatMessagePush` in
-`lib/push/index.ts`) is implemented but **currently unreachable** — no chat `message` push-dispatch
-call site is wired into the message-send handler yet, so muting today has no observable effect on
-push delivery (there's nothing dispatching a `message` push to suppress). Wiring that call site is a
-follow-up.
+`/mute` persists `mutedUntil`/`mutedForever` on the caller's own `ConversationMember` row. On a
+successful `POST /chat/conversations/:id/messages`, `dispatchChatMessagePush` (`lib/push/index.ts`)
+fans out a `message` push to every other active conversation member, suppressed per-recipient by
+`/mute` and by the recipient's global chat-push opt-out (`push_notification_preferences`) — the only
+two gates. The payload is PII-free (generic copy, `data.type = "message"`) and this is a no-op when no
+push provider is configured; no `app_notifications` inbox row is written for chat messages.
 
 ### collections
 | Method | Path | Status |
