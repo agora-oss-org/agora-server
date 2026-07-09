@@ -20,6 +20,7 @@ import * as webhooks from "../lib/webhooks.js";
 import { isProjectAdmin } from "../lib/project-roles.js";
 import { spaceRepGate } from "../middleware/space-rep.js";
 import { enrichSpaceReputation } from "../lib/space-reputation-enrich.js";
+import { discoverableSpacesSql, assertSpaceVisibleById } from "../lib/space-visibility.js";
 
 type SpaceRow = typeof spaces.$inferSelect;
 type Membership = typeof spaceMembers.$inferSelect;
@@ -97,6 +98,9 @@ export const spaceRoutes = new Hono<{ Variables: Variables }>()
       conds.push(inArray(spaces.id, getDb().select({ id: spaceMembers.spaceId }).from(spaceMembers)
         .where(and(eq(spaceMembers.projectId, c.var.projectId), eq(spaceMembers.userId, uid), eq(spaceMembers.status, "active")))));
     }
+
+    const disc = discoverableSpacesSql(c);
+    if (disc) conds.push(disc);
 
     const sortByRaw = q("sortBy");
     if (sortByRaw !== undefined && !spaceSortByEnum.safeParse(sortByRaw).success) {
@@ -286,8 +290,12 @@ export const spaceRoutes = new Hono<{ Variables: Variables }>()
     return c.json({ data: chain.map((s) => shapeSpace(s)) });
   })
   .get("/:id/children", async (c) => {
+    await assertSpaceVisibleById(c, c.req.param("id"));
     const { page, limit, offset } = readPagination(c);
-    const where = and(eq(spaces.projectId, c.var.projectId), eq(spaces.parentSpaceId, c.req.param("id")), isNull(spaces.deletedAt));
+    const conds = [eq(spaces.projectId, c.var.projectId), eq(spaces.parentSpaceId, c.req.param("id")), isNull(spaces.deletedAt)];
+    const disc = discoverableSpacesSql(c);
+    if (disc) conds.push(disc);
+    const where = and(...conds);
     const [{ n } = { n: 0 }] = await getDb().select({ n: count() }).from(spaces).where(where);
     const rows = await getDb().select().from(spaces).where(where).orderBy(desc(spaces.createdAt)).limit(limit).offset(offset);
     return c.json(paginate(rows.map((r) => shapeSpace(r)), n, page, limit));
