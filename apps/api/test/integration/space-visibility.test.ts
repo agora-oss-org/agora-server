@@ -168,3 +168,41 @@ describe("space visibility — direct fetch & breadcrumb (integration)", () => {
     expect(res.body.data.map((s: any) => s.id)).toEqual([privateId, deepChildId]);
   });
 });
+
+describe("space visibility — sub-resources (integration)", () => {
+  let projectId: string, B: string;
+  let owner: { id: string; token: string };
+  let member: { id: string; token: string };
+  let stranger: { id: string; token: string };
+  let privateId: string;
+
+  const createSpace = (token: string, body: Record<string, unknown>) =>
+    api("POST", `${B}/spaces`, { token, body: { name: "S", ...body } });
+
+  beforeAll(async () => {
+    projectId = await createProject();
+    B = base(projectId);
+    [owner, member, stranger] = await Promise.all([createUser(projectId), createUser(projectId), createUser(projectId)]);
+    privateId = (await createSpace(owner.token, { visibility: "private", slug: `prv3-${projectId.slice(0, 8)}` })).body.id;
+    await getDb().insert(spaceMembers).values({ projectId, spaceId: privateId, userId: member.id, role: "member", status: "active" });
+  });
+
+  afterAll(async () => { if (projectId) await deleteProject(projectId); });
+
+  for (const sub of ["members", "team", "rules"]) {
+    it(`GET /spaces/:id/${sub} — 404 for a stranger on a private space`, async () => {
+      const res = await api("GET", `${B}/spaces/${privateId}/${sub}`, { token: stranger.token });
+      expect(res.status).toBe(404);
+      expect(res.body.code).toBe("spaces/not-found");
+    });
+    it(`GET /spaces/:id/${sub} — 200 for an active member`, async () => {
+      expect((await api("GET", `${B}/spaces/${privateId}/${sub}`, { token: member.token })).status).toBe(200);
+    });
+  }
+
+  it("GET /spaces/:id/membership/me — 404 for a stranger on a private space", async () => {
+    const res = await api("GET", `${B}/spaces/${privateId}/membership/me`, { token: stranger.token });
+    expect(res.status).toBe(404);
+    expect(res.body.code).toBe("spaces/not-found");
+  });
+});

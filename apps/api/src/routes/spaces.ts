@@ -324,6 +324,7 @@ export const spaceRoutes = new Hono<{ Variables: Variables }>()
   })
   .get("/:id/membership/me", requireAuth, async (c) => {
     const space = await getSpace(c);
+    await assertSpaceVisible(c, space);
     const uid = c.var.auth!.userId;
     if (space.userId === uid) {
       return c.json({ isMember: true, role: "admin", status: "active", joinedAt: null,
@@ -346,6 +347,7 @@ export const spaceRoutes = new Hono<{ Variables: Variables }>()
       } });
   })
   .get("/:id/members", async (c) => {
+    await assertSpaceVisibleById(c, c.req.param("id"));
     const { page, limit, offset } = readPagination(c);
     // Optional filters (SDK's useFetchSpaceMembers sends these; e.g. status=pending for join requests).
     const statusQ = c.req.query("status");
@@ -362,6 +364,7 @@ export const spaceRoutes = new Hono<{ Variables: Variables }>()
     return c.json(await enrichSpaceReputation(c, paginate(data, n, page, limit)));
   })
   .get("/:id/team", async (c) => {
+    await assertSpaceVisibleById(c, c.req.param("id"));
     const rows = await getDb().select({ m: spaceMembers, p: profiles })
       .from(spaceMembers).innerJoin(profiles, eq(profiles.id, spaceMembers.userId))
       .where(and(
@@ -439,6 +442,7 @@ export const spaceRoutes = new Hono<{ Variables: Variables }>()
   })
   // ── rules ───────────────────────────────────────────────────────────────
   .get("/:id/rules", async (c) => {
+    await assertSpaceVisibleById(c, c.req.param("id"));
     const rows = await getDb().select().from(spaceRules)
       .where(and(eq(spaceRules.projectId, c.var.projectId), eq(spaceRules.spaceId, c.req.param("id"))))
       .orderBy(asc(spaceRules.order));
@@ -465,6 +469,7 @@ export const spaceRoutes = new Hono<{ Variables: Variables }>()
     return c.json({ data: rows.map(shapeRule), count: rows.length });
   })
   .get("/:id/rules/:ruleId", async (c) => {
+    await assertSpaceVisibleById(c, c.req.param("id"));
     const [row] = await getDb().select().from(spaceRules)
       .where(and(eq(spaceRules.spaceId, c.req.param("id")), eq(spaceRules.id, c.req.param("ruleId")))).limit(1);
     if (!row) throw Errors.notFound("spaces/rule-not-found", "Rule not found");
