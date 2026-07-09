@@ -56,18 +56,21 @@ export async function isConversationMutedForUser(projectId: string, conversation
   return m ? isConversationMuted(m, new Date()) : false;
 }
 
-/** Fire-and-forget bridge for chat `message` push: same suppressed-payload + global-opt-out gate as
- *  `dispatchNotificationPush`, plus a per-conversation mute check the generic bridge can't do (it only
- *  receives `type`, not a conversation id). */
-export function dispatchChatMessagePush(projectId: string, userId: string, conversationId: string): void {
+/** Awaitable chat `message` push: same suppressed-payload + global-opt-out gate as the generic bridge,
+ *  plus a per-conversation mute check. Exported so the decision is testable; the request path uses the
+ *  fire-and-forget `dispatchChatMessagePush` wrapper below. */
+export async function sendChatMessagePush(projectId: string, userId: string, conversationId: string): Promise<void> {
   const payload = notificationPushPayload("message");
   if (!payload) return; // suppressed type → in-app only
-  (async () => {
-    const disabled = await loadDisabledTypes(projectId, userId);
-    if (isTypeDisabled(disabled, "message")) return; // global chat-push opt-out (#1)
-    if (await isConversationMutedForUser(projectId, conversationId, userId)) return; // per-conversation mute (#2)
-    await dispatchToUser(projectId, userId, payload);
-  })().catch((err) => {
+  const disabled = await loadDisabledTypes(projectId, userId);
+  if (isTypeDisabled(disabled, "message")) return; // global chat-push opt-out (#1)
+  if (await isConversationMutedForUser(projectId, conversationId, userId)) return; // per-conversation mute (#2)
+  await dispatchToUser(projectId, userId, payload);
+}
+
+/** Fire-and-forget bridge for chat `message` push — never blocks/throws into the request. */
+export function dispatchChatMessagePush(projectId: string, userId: string, conversationId: string): void {
+  sendChatMessagePush(projectId, userId, conversationId).catch((err) => {
     logger.error("push: chat message dispatch failed");
     logger.debug({ err, conversationId }, "push: chat message dispatch failed");
   });

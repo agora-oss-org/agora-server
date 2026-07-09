@@ -27,6 +27,7 @@ import { logger } from "../lib/logger.js";
 import { indexContentAsync } from "../lib/embeddings.js";
 import * as webhooks from "../lib/webhooks.js";
 import { sanitizeMentions } from "../lib/mentions.js";
+import { dispatchChatMessagePush } from "../lib/push/index.js";
 import { spaceRepGate } from "../middleware/space-rep.js";
 import { enrichSpaceReputation } from "../lib/space-reputation-enrich.js";
 
@@ -408,6 +409,10 @@ export const chatRoutes = new Hono<{ Variables: Variables }>()
     const memberRows = await getDb().select({ userId: conversationMembers.userId }).from(conversationMembers)
       .where(and(eq(conversationMembers.conversationId, convo.id), eq(conversationMembers.isActive, true)));
     emitMessageCreated(convo.id, c.var.projectId, memberRows.map((m) => m.userId), shaped);
+    // Fan out background push to every OTHER active member (fire-and-forget; honors mute + opt-out).
+    for (const m of memberRows) {
+      if (m.userId !== c.var.auth!.userId) dispatchChatMessagePush(c.var.projectId, m.userId, convo.id);
+    }
     webhooks.broadcast(c.var.projectId, "message.created.complete", shaped);
     if (row!.parentMessageId) {
       const [parent] = await getDb().select({ n: chatMessages.threadReplyCount }).from(chatMessages).where(eq(chatMessages.id, row!.parentMessageId)).limit(1);

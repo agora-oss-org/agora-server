@@ -55,6 +55,7 @@ const PUSH_TITLES: Record<string, string> = {
   "connection-request": "New connection request",
   "connection-accepted": "Connection accepted",
   "space-membership-approved": "Membership approved",
+  "message": "New message",
 };
 
 export function notificationPushPayload(type: string): PushPayload | null {

@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Chat push notifications** — sending a chat message now fans out a background push notification to
+  every other active member of the conversation. Respects the recipient's per-conversation mute and the
+  global chat-push opt-out (`push_notification_preferences`). Payload is PII-free (generic copy,
+  `data.type = "message"`); no-op when no push provider is configured.
 - **Space-reputation enrichment (SDK v7.8.2 #6):** user-embedding endpoints now accept
   `spaceReputationId` (`<uuid>` | `"none"`) and `spaceReputationDescendants`, attaching a space-scoped
   `spaceReputation` to returned/embedded users (`"none"` aliases global reputation; `<uuid>` reads the
@@ -19,6 +23,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   enrichment is gated by space read-access — a caller who cannot read a members-only space receives
   no `spaceReputation` for it (fail closed), mirroring the `GET /spaces/:id/members` visibility rule.
   Public spaces, the space owner, active members, and operators/project-admins still get the value.
+
+### Fixed
+- **Space `visibility` is now enforced on discovery.** `unlisted` and `private` spaces are hidden from
+  `GET /spaces`, `POST /search/spaces`, and `GET /spaces/:id/children`; a `private` space returns
+  `404 spaces/not-found` on direct fetch (`GET /spaces/:id`, `/by-slug`, `/by-short-id`) and on its
+  `/breadcrumb`, `/members`, `/team`, `/rules`, and `/membership/me` reads for anyone who is not the
+  owner, an active member, or a project-admin — closing a hole where private spaces were fully
+  discoverable (persist-only since migration `0060`). `unlisted` stays link-shareable (fetchable by
+  id/slug/short-id, just not listed). Content-read access (`readingPermission`) is unchanged and
+  independent.
 
 ## [0.19.0] - 2026-07-07
 

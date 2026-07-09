@@ -84,4 +84,11 @@ describe("notificationPushPayload", () => {
       "steward-content-removed", "steward-mediation-invite",
     ]) expect(notificationPushPayload(t)).toBeNull();
   });
+  it("produces a payload for the chat 'message' type", () => {
+    expect(notificationPushPayload("message")).toEqual({
+      title: "New message",
+      body: "Open the app to see what's new.",
+      data: { type: "message" },
+    });
+  });
 });
