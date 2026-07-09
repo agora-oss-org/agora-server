@@ -234,9 +234,14 @@ than `limit` rows even when more matches exist on later pages.
 
 ### spaces
 `POST`/`PATCH /spaces` accept an optional `visibility: public|unlisted|private` (default `public`;
-migration `0060`), persisted and emitted on every space response. **Persist + emit only this cycle —
-no listing/discovery filtering is applied** (an `unlisted`/`private` space is not hidden from
-`GET /spaces`, search, or any other list); that's a future addition.
+migration `0060`), persisted and emitted on every space response. Discovery surfaces now enforce
+`visibility`: `GET /spaces`, `POST /search/spaces`, and `GET /spaces/:id/children` exclude
+`unlisted`/`private` spaces the caller can't see; `GET /spaces/:id`, `/by-slug`, `/by-short-id`, and
+the `/:id/{breadcrumb,members,team,rules,membership/me}` reads return `404 spaces/not-found` for a
+hidden `private` space. `unlisted` remains directly link-shareable (fetchable by id/slug/short-id, just
+not listed). Visibility is independent of content-read access (`readingPermission`). A "viewer" who sees
+a private space = owner ∨ active member ∨ project-admin. `GET /spaces/check-slug` is intentionally
+not gated.
 | Method | Path | Status |
 |---|---|---|
 | GET | `/spaces` (list; `parentSpaceId` (absent → root spaces only), `searchAny` (ILIKE across name/slug/description), `searchName`/`searchSlug`/`searchDescription` (field-specific ILIKE, combine with AND), `sortBy` ∈ `newest`\|`members`\|`alphabetical` (default `newest`; invalid value → `400 spaces/invalid-filter`), `memberOf=true` (restrict to spaces the caller is an ACTIVE member of; literal `"true"` only), `include=files` (attaches each space's `files[]`), pagination) | ✅ |
