@@ -108,3 +108,63 @@ describe("space visibility — children (integration)", () => {
     expect(res.body.code).toBe("spaces/not-found");
   });
 });
+
+describe("space visibility — direct fetch & breadcrumb (integration)", () => {
+  let projectId: string, B: string;
+  let owner: { id: string; token: string };
+  let member: { id: string; token: string };
+  let stranger: { id: string; token: string };
+  let adminToken: string;
+  let publicId: string, unlistedId: string, privateId: string, privateSlug: string;
+  let deepChildId: string; // public child under the private parent, for breadcrumb truncation
+
+  const createSpace = (token: string, body: Record<string, unknown>) =>
+    api("POST", `${B}/spaces`, { token, body: { name: "S", ...body } });
+
+  beforeAll(async () => {
+    projectId = await createProject();
+    B = base(projectId);
+    [owner, member, stranger] = await Promise.all([createUser(projectId), createUser(projectId), createUser(projectId)]);
+    adminToken = await signToken((await createUser(projectId)).id, "visitor", false, false, false, true);
+    const sfx = projectId.slice(0, 8);
+    publicId = (await createSpace(owner.token, { visibility: "public", slug: `pub2-${sfx}` })).body.id;
+    unlistedId = (await createSpace(owner.token, { visibility: "unlisted", slug: `unl2-${sfx}` })).body.id;
+    privateSlug = `prv2-${sfx}`;
+    privateId = (await createSpace(owner.token, { visibility: "private", slug: privateSlug })).body.id;
+    // Public child under the private parent → breadcrumb should truncate the private ancestor for a stranger.
+    deepChildId = (await createSpace(owner.token, { visibility: "public", parentSpaceId: privateId, slug: `deep-${sfx}` })).body.id;
+    await getDb().insert(spaceMembers).values({ projectId, spaceId: privateId, userId: member.id, role: "member", status: "active" });
+  });
+
+  afterAll(async () => { if (projectId) await deleteProject(projectId); });
+
+  it("GET /spaces/:id — public 200 for anyone", async () => {
+    expect((await api("GET", `${B}/spaces/${publicId}`)).status).toBe(200);
+  });
+  it("GET /spaces/:id — unlisted 200 for a stranger (link-shareable)", async () => {
+    expect((await api("GET", `${B}/spaces/${unlistedId}`, { token: stranger.token })).status).toBe(200);
+  });
+  it("GET /spaces/:id — private 404 for a stranger and for anonymous", async () => {
+    expect((await api("GET", `${B}/spaces/${privateId}`, { token: stranger.token })).status).toBe(404);
+    expect((await api("GET", `${B}/spaces/${privateId}`)).status).toBe(404);
+  });
+  it("GET /spaces/:id — private 200 for owner, active member, admin", async () => {
+    expect((await api("GET", `${B}/spaces/${privateId}`, { token: owner.token })).status).toBe(200);
+    expect((await api("GET", `${B}/spaces/${privateId}`, { token: member.token })).status).toBe(200);
+    expect((await api("GET", `${B}/spaces/${privateId}`, { token: adminToken })).status).toBe(200);
+  });
+  it("GET /spaces/by-slug — private 404 for a stranger, 200 for owner", async () => {
+    expect((await api("GET", `${B}/spaces/by-slug?slug=${privateSlug}`, { token: stranger.token })).status).toBe(404);
+    expect((await api("GET", `${B}/spaces/by-slug?slug=${privateSlug}`, { token: owner.token })).status).toBe(200);
+  });
+  it("breadcrumb of a public child under a private parent — stranger sees the child only (ancestor truncated)", async () => {
+    const res = await api("GET", `${B}/spaces/${deepChildId}/breadcrumb`, { token: stranger.token });
+    expect(res.status).toBe(200);
+    const ids = res.body.data.map((s: any) => s.id);
+    expect(ids).toEqual([deepChildId]); // private parent truncated
+  });
+  it("breadcrumb — owner sees the full chain (private parent → child)", async () => {
+    const res = await api("GET", `${B}/spaces/${deepChildId}/breadcrumb`, { token: owner.token });
+    expect(res.body.data.map((s: any) => s.id)).toEqual([privateId, deepChildId]);
+  });
+});

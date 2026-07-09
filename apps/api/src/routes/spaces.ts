@@ -20,7 +20,7 @@ import * as webhooks from "../lib/webhooks.js";
 import { isProjectAdmin } from "../lib/project-roles.js";
 import { spaceRepGate } from "../middleware/space-rep.js";
 import { enrichSpaceReputation } from "../lib/space-reputation-enrich.js";
-import { discoverableSpacesSql, assertSpaceVisibleById } from "../lib/space-visibility.js";
+import { discoverableSpacesSql, assertSpaceVisible, assertSpaceVisibleById, spaceVisibleToViewer } from "../lib/space-visibility.js";
 
 type SpaceRow = typeof spaces.$inferSelect;
 type Membership = typeof spaceMembers.$inferSelect;
@@ -157,6 +157,7 @@ export const spaceRoutes = new Hono<{ Variables: Variables }>()
     const [row] = await getDb().select().from(spaces)
       .where(and(eq(spaces.projectId, c.var.projectId), eq(spaces.shortId, shortId), isNull(spaces.deletedAt))).limit(1);
     if (!row) throw Errors.notFound("spaces/not-found", "Space not found");
+    await assertSpaceVisible(c, row);
     return c.json(shapeSpace(row));
   })
   .get("/by-slug", async (c) => {
@@ -165,6 +166,7 @@ export const spaceRoutes = new Hono<{ Variables: Variables }>()
     const [row] = await getDb().select().from(spaces)
       .where(and(eq(spaces.projectId, c.var.projectId), eq(spaces.slug, slug), isNull(spaces.deletedAt))).limit(1);
     if (!row) throw Errors.notFound("spaces/not-found", "Space not found");
+    await assertSpaceVisible(c, row);
     return c.json(shapeSpace(row));
   })
   .get("/check-slug", async (c) => {
@@ -215,6 +217,7 @@ export const spaceRoutes = new Hono<{ Variables: Variables }>()
   })
   .get("/:id", async (c) => {
     const space = await getSpace(c);
+    await assertSpaceVisible(c, space);
     const uid = c.var.auth?.userId;
     const isMember = uid ? !!(await membershipOf(c.var.projectId, space.id, uid)) : undefined;
     return c.json(shapeSpace(space, { isMember }));
@@ -280,10 +283,12 @@ export const spaceRoutes = new Hono<{ Variables: Variables }>()
   .get("/:id/breadcrumb", async (c) => {
     // Walk up the parent chain (depth is small).
     let current = await getSpace(c);
+    await assertSpaceVisible(c, current); // gate the target (404 if hidden private)
     const chain: SpaceRow[] = [current];
     while (current.parentSpaceId) {
       const [p] = await getDb().select().from(spaces).where(eq(spaces.id, current.parentSpaceId)).limit(1);
       if (!p) break;
+      if (!(await spaceVisibleToViewer(c, p))) break; // truncate at the first hidden ancestor
       chain.unshift(p);
       current = p;
     }
