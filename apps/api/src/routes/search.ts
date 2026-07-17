@@ -18,6 +18,7 @@ import { isProjectAdmin } from "../lib/project-roles.js";
 import { resolveSpaceSubtree } from "../lib/space-tree.js";
 import { spaceRepGate } from "../middleware/space-rep.js";
 import { enrichSpaceReputation } from "../lib/space-reputation-enrich.js";
+import { discoverableSpacesSql } from "../lib/space-visibility.js";
 
 // Mirrors the SDK's ContentSearchResult (interfaces/models): a shaped Entity | Comment | ChatMessage.
 type ContentSearchResult = { sourceType: SourceType; similarity: number; record: unknown };
@@ -199,7 +200,8 @@ export const searchRoutes = new Hono<{ Variables: Variables }>()
       .where(and(
         eq(spaces.projectId, c.var.projectId),
         isNull(spaces.deletedAt),
-        or(ilike(spaces.name, like), ilike(spaces.slug, like), ilike(spaces.description, like))
+        or(ilike(spaces.name, like), ilike(spaces.slug, like), ilike(spaces.description, like)),
+        discoverableSpacesSql(c),
       ))
       .limit(limit);
     const results = rows

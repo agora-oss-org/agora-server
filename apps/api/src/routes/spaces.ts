@@ -20,6 +20,7 @@ import * as webhooks from "../lib/webhooks.js";
 import { isProjectAdmin } from "../lib/project-roles.js";
 import { spaceRepGate } from "../middleware/space-rep.js";
 import { enrichSpaceReputation } from "../lib/space-reputation-enrich.js";
+import { discoverableSpacesSql, assertSpaceVisible, assertSpaceVisibleById, spaceVisibleToViewer } from "../lib/space-visibility.js";
 
 type SpaceRow = typeof spaces.$inferSelect;
 type Membership = typeof spaceMembers.$inferSelect;
@@ -98,6 +99,9 @@ export const spaceRoutes = new Hono<{ Variables: Variables }>()
         .where(and(eq(spaceMembers.projectId, c.var.projectId), eq(spaceMembers.userId, uid), eq(spaceMembers.status, "active")))));
     }
 
+    const disc = discoverableSpacesSql(c);
+    if (disc) conds.push(disc);
+
     const sortByRaw = q("sortBy");
     if (sortByRaw !== undefined && !spaceSortByEnum.safeParse(sortByRaw).success) {
       throw Errors.badRequest("spaces/invalid-filter", "Invalid 'sortBy' filter", "sortBy");
@@ -153,6 +157,7 @@ export const spaceRoutes = new Hono<{ Variables: Variables }>()
     const [row] = await getDb().select().from(spaces)
       .where(and(eq(spaces.projectId, c.var.projectId), eq(spaces.shortId, shortId), isNull(spaces.deletedAt))).limit(1);
     if (!row) throw Errors.notFound("spaces/not-found", "Space not found");
+    await assertSpaceVisible(c, row);
     return c.json(shapeSpace(row));
   })
   .get("/by-slug", async (c) => {
@@ -161,6 +166,7 @@ export const spaceRoutes = new Hono<{ Variables: Variables }>()
     const [row] = await getDb().select().from(spaces)
       .where(and(eq(spaces.projectId, c.var.projectId), eq(spaces.slug, slug), isNull(spaces.deletedAt))).limit(1);
     if (!row) throw Errors.notFound("spaces/not-found", "Space not found");
+    await assertSpaceVisible(c, row);
     return c.json(shapeSpace(row));
   })
   .get("/check-slug", async (c) => {
@@ -211,6 +217,7 @@ export const spaceRoutes = new Hono<{ Variables: Variables }>()
   })
   .get("/:id", async (c) => {
     const space = await getSpace(c);
+    await assertSpaceVisible(c, space);
     const uid = c.var.auth?.userId;
     const isMember = uid ? !!(await membershipOf(c.var.projectId, space.id, uid)) : undefined;
     return c.json(shapeSpace(space, { isMember }));
@@ -276,18 +283,24 @@ export const spaceRoutes = new Hono<{ Variables: Variables }>()
   .get("/:id/breadcrumb", async (c) => {
     // Walk up the parent chain (depth is small).
     let current = await getSpace(c);
+    await assertSpaceVisible(c, current); // gate the target (404 if hidden private)
     const chain: SpaceRow[] = [current];
     while (current.parentSpaceId) {
       const [p] = await getDb().select().from(spaces).where(eq(spaces.id, current.parentSpaceId)).limit(1);
       if (!p) break;
+      if (!(await spaceVisibleToViewer(c, p))) break; // truncate at the first hidden ancestor
       chain.unshift(p);
       current = p;
     }
     return c.json({ data: chain.map((s) => shapeSpace(s)) });
   })
   .get("/:id/children", async (c) => {
+    await assertSpaceVisibleById(c, c.req.param("id"));
     const { page, limit, offset } = readPagination(c);
-    const where = and(eq(spaces.projectId, c.var.projectId), eq(spaces.parentSpaceId, c.req.param("id")), isNull(spaces.deletedAt));
+    const conds = [eq(spaces.projectId, c.var.projectId), eq(spaces.parentSpaceId, c.req.param("id")), isNull(spaces.deletedAt)];
+    const disc = discoverableSpacesSql(c);
+    if (disc) conds.push(disc);
+    const where = and(...conds);
     const [{ n } = { n: 0 }] = await getDb().select({ n: count() }).from(spaces).where(where);
     const rows = await getDb().select().from(spaces).where(where).orderBy(desc(spaces.createdAt)).limit(limit).offset(offset);
     return c.json(paginate(rows.map((r) => shapeSpace(r)), n, page, limit));
@@ -317,8 +330,16 @@ export const spaceRoutes = new Hono<{ Variables: Variables }>()
         permissions: { canPost: true, canModerate: true, canRead: true, isAdmin: true, isModerator: true } });
     }
     const m = await membershipOf(c.var.projectId, space.id, uid);
-    if (!m) return c.json({ isMember: false, role: null, status: null, joinedAt: null,
-      permissions: { canPost: space.postingPermission === "anyone", canModerate: false, canRead: space.readingPermission === "anyone", isAdmin: false, isModerator: false } });
+    // Discovery gate, with a deliberate exemption for the caller's OWN row: a caller who HOLDS a
+    // membership row (pending, rejected, or banned) already knows this space exists — they applied or
+    // were invited — so they may read their own status (a pending applicant must be able to poll it).
+    // A caller with NO row gets the full gate, so a hidden private space still 404s for a stranger and
+    // this never becomes an existence oracle. Only the caller's own row is ever exposed here.
+    if (!m) {
+      await assertSpaceVisible(c, space);
+      return c.json({ isMember: false, role: null, status: null, joinedAt: null,
+        permissions: { canPost: space.postingPermission === "anyone", canModerate: false, canRead: space.readingPermission === "anyone", isAdmin: false, isModerator: false } });
+    }
     // Only an *active* member gains read/write/moderation beyond what anyone gets. A pending
     // (awaiting approval), rejected, or banned membership row must NOT unlock members-only access.
     const isActive = m.status === "active";
@@ -333,6 +354,7 @@ export const spaceRoutes = new Hono<{ Variables: Variables }>()
       } });
   })
   .get("/:id/members", async (c) => {
+    await assertSpaceVisibleById(c, c.req.param("id"));
     const { page, limit, offset } = readPagination(c);
     // Optional filters (SDK's useFetchSpaceMembers sends these; e.g. status=pending for join requests).
     const statusQ = c.req.query("status");
@@ -349,6 +371,7 @@ export const spaceRoutes = new Hono<{ Variables: Variables }>()
     return c.json(await enrichSpaceReputation(c, paginate(data, n, page, limit)));
   })
   .get("/:id/team", async (c) => {
+    await assertSpaceVisibleById(c, c.req.param("id"));
     const rows = await getDb().select({ m: spaceMembers, p: profiles })
       .from(spaceMembers).innerJoin(profiles, eq(profiles.id, spaceMembers.userId))
       .where(and(
@@ -426,6 +449,7 @@ export const spaceRoutes = new Hono<{ Variables: Variables }>()
   })
   // ── rules ───────────────────────────────────────────────────────────────
   .get("/:id/rules", async (c) => {
+    await assertSpaceVisibleById(c, c.req.param("id"));
     const rows = await getDb().select().from(spaceRules)
       .where(and(eq(spaceRules.projectId, c.var.projectId), eq(spaceRules.spaceId, c.req.param("id"))))
       .orderBy(asc(spaceRules.order));
@@ -452,6 +476,7 @@ export const spaceRoutes = new Hono<{ Variables: Variables }>()
     return c.json({ data: rows.map(shapeRule), count: rows.length });
   })
   .get("/:id/rules/:ruleId", async (c) => {
+    await assertSpaceVisibleById(c, c.req.param("id"));
     const [row] = await getDb().select().from(spaceRules)
       .where(and(eq(spaceRules.spaceId, c.req.param("id")), eq(spaceRules.id, c.req.param("ruleId")))).limit(1);
     if (!row) throw Errors.notFound("spaces/rule-not-found", "Rule not found");
