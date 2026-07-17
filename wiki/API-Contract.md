@@ -24,8 +24,10 @@ noticing.
 - **URL shape is fixed:** `/v7/:projectId/<domain>/...`.
 - **Envelopes are contract.** Lists return `{ data, pagination }`; errors return `{ error, code, field? }`.
   (The connections module uses a different pagination shape — see MANIFEST.)
-- **Auth:** anonymous reads, authenticated writes. Agora mints short-lived access tokens + rotating
-  refresh tokens (see [[Security]]).
+- **Auth:** private by default — every `/v7/:projectId/*` request requires a valid token (the auth
+  wall); anonymous → `401`, suspended → `403 auth/suspended`, except the pre-sign-in allowlist
+  (`/auth/*`, OAuth authorize/callback, `/projects/lean`, the VAPID public key, the dev JWT-signing
+  stub). Agora mints short-lived access tokens + rotating refresh tokens (see [[Security]]).
 - **Realtime is socket.io** — event names stay byte-identical to the SDK's socket types. Beyond chat
   message fan-out, every authenticated socket auto-joins a per-user room and receives a
   `notification:created` event, so the bell/badge updates live for every notification type. The same

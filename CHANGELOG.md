@@ -24,6 +24,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   no `spaceReputation` for it (fail closed), mirroring the `GET /spaces/:id/members` visibility rule.
   Public spaces, the space owner, active members, and operators/project-admins still get the value.
 
+### Changed
+- **BREAKING — private by default.** Every `/v7/:projectId/*` endpoint now requires an
+  authenticated account (`authWall`, group-mounted). Anonymous → `401`; suspended → `403
+  auth/suspended`. The only anonymous surface is the pre-sign-in allowlist: `/auth/*`,
+  `/oauth/authorize`, `/oauth/callback`, `/projects/lean`, `/push-notifications/vapid-public-key`,
+  `/crypto/sign-testing-jwt/v2`. Deployments serving anonymous readers (public widget embeds) break
+  by design; signed-in SDK users are unaffected. Ships in the next MAJOR version.
+- RLS: the `0008` anon public-read policies are dropped and `anon`'s `SELECT` grants revoked
+  (migration `0064`) — the DB now states the same private-by-default posture as the API.
+
 ### Fixed
 - **Space `visibility` is now enforced on discovery.** `unlisted` and `private` spaces are hidden from
   `GET /spaces`, `POST /search/spaces`, and `GET /spaces/:id/children`; a `private` space returns

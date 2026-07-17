@@ -1,6 +1,12 @@
 # Search Auth + Fail-Closed Abuse Defaults — Design
 
-> **Status:** design, pending approval. Scope: `apps/api` + `packages/core`.
+> **Status:** SUPERSEDED (2026-07-17). Change 1 (search auth) is subsumed by the auth wall
+> (`2026-07-17-auth-wall-private-by-default-design.md`); Changes 2–4 (per-user budgets, fail-closed
+> limiter defaults, breaker) move to the forthcoming abuse-deterrence spec, which must also fix two
+> review findings: the integration suite shares one rate-limit bucket (`clientIp` falls back to
+> "unknown" with no XFF header — pin `RATE_LIMIT_MAX=0`/`RATE_LIMIT_AUTH_MAX=0` in
+> `vitest.integration.config.ts` env), and the same "unknown" bucket makes per-IP defaults a
+> deployment-wide cap when no proxy writes XFF (needs a startup warning + docs).
 > **Origin:** surfaced while reviewing the admin's client-side `VITE_SETTINGS_READ_ONLY` guard. That
 > work (a server-side read-only tier) is a **separate, deferred sub-project** — see "Out of scope".
 

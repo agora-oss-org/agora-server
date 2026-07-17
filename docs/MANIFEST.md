@@ -55,6 +55,15 @@ path segment after `/v7`.
 - external auth: verify an **RS256** JWT against a per-project public key — claims
   `sub`, `iss` (project id), `aud: "replyke.com"`, `userData` — then mint your own pair
 
+**Private by default (auth wall).** EVERY endpoint under `/v7/:projectId/*` requires a valid
+`Authorization: Bearer` token — anonymous → `401`, suspended account → `403 auth/suspended` — with
+exactly one exception set, the pre-sign-in allowlist (`AUTH_WALL_ALLOWLIST`,
+`packages/core/src/middleware/auth.ts`): `/auth/*`, `/oauth/authorize`, `/oauth/callback`,
+`/projects/lean`, `/push-notifications/vapid-public-key`, `/crypto/sign-testing-jwt/v2`.
+Per-route auth notes below are therefore redundant for project-scoped routes and kept only where
+a stricter role (operator/project-admin/host) applies. The root-mounted connections module and the
+secure-chat service require auth on every route independently of the wall.
+
 **Pagination envelope** (offset-based, `?page=&limit=`):
 ```json
 { "data": [ ... ],
@@ -245,6 +254,8 @@ unlocks nothing else about the space. `unlisted` remains directly link-shareable
 id/slug/short-id, just not listed). Visibility is independent of content-read access
 (`readingPermission`). A "viewer" who sees a private space = owner ∨ active member ∨ project-admin.
 `GET /spaces/check-slug` is intentionally not gated.
+Since the auth wall, `readingPermission: "anyone"` means *any authenticated user* — no space
+content is reachable anonymously.
 | Method | Path | Status |
 |---|---|---|
 | GET | `/spaces` (list; `parentSpaceId` (absent → root spaces only), `searchAny` (ILIKE across name/slug/description), `searchName`/`searchSlug`/`searchDescription` (field-specific ILIKE, combine with AND), `sortBy` ∈ `newest`\|`members`\|`alphabetical` (default `newest`; invalid value → `400 spaces/invalid-filter`), `memberOf=true` (restrict to spaces the caller is an ACTIVE member of; literal `"true"` only), `include=files` (attaches each space's `files[]`), pagination) | ✅ |
@@ -421,6 +432,7 @@ is unconditionally `[]`. The real engine is a separate future spec.
 > `{ data, pagination }`.
 
 ### search
+All search endpoints sit behind the auth wall (anonymous → `401`) like every other project-scoped route.
 All search endpoints are **POST** with a JSON body `{ query, limit?, ... }` and return a **bare
 array** of `{ similarity, record }` results (NOT a `{ data, pagination }` envelope) — confirmed
 against the SDK's `useSearchContent`/`useAskContent`/`useSearchSpaces`/`useSearchUsers`.
