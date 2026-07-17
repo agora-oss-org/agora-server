@@ -38,8 +38,12 @@ describe("user suspensions", () => {
     // operator is unaffected
     expect((await api("GET", `${B}/app-notifications`, { token: operator.token })).status).toBe(200);
 
-    // public read (optionalAuth) still works for the suspended user
-    expect((await api("GET", `${B}/entities`, { token: user.token })).status).toBe(200);
+    // /entities is behind the auth wall now (requireAuth semantics, not optionalAuth) — a
+    // suspended user's token still authenticates, but the suspension gate applies here too.
+    // Was "public read still works for the suspended user" pre-wall; inverted per the sweep.
+    const walledRead = await api("GET", `${B}/entities`, { token: user.token });
+    expect(walledRead.status).toBe(403);
+    expect(walledRead.body.code).toBe("auth/suspended");
 
     // lift → access restored
     const lift = await api("DELETE", `${B}/users/${user.id}/suspend`, { token: operator.token });

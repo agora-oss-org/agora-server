@@ -36,7 +36,7 @@ describe("entities + comments + reactions (integration)", () => {
     expect(created.body.shortId).toMatch(/^[A-Za-z0-9_-]{10}$/);
     expect(typeof created.body.createdAt).toBe("string"); // ISO, not a Date
 
-    const got = await api("GET", `${base(projectId)}/entities/${created.body.id}`);
+    const got = await api("GET", `${base(projectId)}/entities/${created.body.id}`, { token: owner.token });
     expect(got.status).toBe(200);
     expect(got.body.id).toBe(created.body.id);
   });
@@ -92,11 +92,11 @@ describe("entities + comments + reactions (integration)", () => {
     expect(comment.status).toBe(201);
     expect(comment.body).toMatchObject({ entityId: entity.id, content: "first!", userId: other.id });
 
-    const refetched = await api("GET", `${base(projectId)}/entities/${entity.id}`);
+    const refetched = await api("GET", `${base(projectId)}/entities/${entity.id}`, { token: owner.token });
     expect(refetched.body.repliesCount).toBe(1);
 
     // it shows up in the one-level thread listing
-    const list = await api("GET", `${base(projectId)}/comments?entityId=${entity.id}`);
+    const list = await api("GET", `${base(projectId)}/comments?entityId=${entity.id}`, { token: owner.token });
     expect(list.body.data).toHaveLength(1);
     expect(list.body.pagination).toMatchObject({ totalItems: 1, hasMore: false });
   });
@@ -121,7 +121,7 @@ describe("entities + comments + reactions (integration)", () => {
     });
     const del = await api("DELETE", `${base(projectId)}/entities/${entity.id}`, { token: owner.token });
     expect(del.status).toBe(200);
-    const gone = await api("GET", `${base(projectId)}/entities/${entity.id}`);
+    const gone = await api("GET", `${base(projectId)}/entities/${entity.id}`, { token: owner.token });
     expect(gone.status).toBe(404);
   });
 
@@ -134,13 +134,23 @@ describe("entities + comments + reactions (integration)", () => {
   // by-foreign-id + createIfNotFound (SDK EntityProvider / CommentSection lazy-anchor path).
   describe("by-foreign-id createIfNotFound", () => {
     it("404s for a missing foreignId without the flag", async () => {
-      const res = await api("GET", `${base(projectId)}/entities/by-foreign-id?foreignId=missing-no-flag`);
+      const res = await api("GET", `${base(projectId)}/entities/by-foreign-id?foreignId=missing-no-flag`, { token: owner.token });
       expect(res.status).toBe(404);
       expect(res.body.code).toBe("entities/not-found");
     });
 
-    it("lazily creates an AUTHORLESS anchor on first view, even unauthenticated", async () => {
+    // Was "even unauthenticated" pre-wall (this read auto-vivifies an AUTHORLESS anchor for the
+    // SDK's CommentSection on an anonymous page view). The auth wall now blocks it pre-handler —
+    // inverted per the sweep rules: anonymous asserts 401, authed keeps the original behavior.
+    // Flagged in the task report: whether anonymous lazy-anchor creation should stay reachable
+    // (e.g. via the allowlist) is a product decision, not something this sweep should force.
+    it("anonymous → 401 (was: lazily creates an AUTHORLESS anchor, even unauthenticated)", async () => {
       const res = await api("GET", `${base(projectId)}/entities/by-foreign-id?foreignId=homepage&createIfNotFound=true`);
+      expect(res.status).toBe(401);
+    });
+
+    it("authed: lazily creates an AUTHORLESS anchor on first view", async () => {
+      const res = await api("GET", `${base(projectId)}/entities/by-foreign-id?foreignId=homepage&createIfNotFound=true`, { token: owner.token });
       expect(res.status).toBe(200);
       expect(res.body).toMatchObject({ foreignId: "homepage", projectId, userId: null });
       expect(res.body.shortId).toMatch(/^[A-Za-z0-9_-]{10}$/);
@@ -148,8 +158,8 @@ describe("entities + comments + reactions (integration)", () => {
     });
 
     it("is idempotent — a second create-on-read returns the SAME entity", async () => {
-      const first = await api("GET", `${base(projectId)}/entities/by-foreign-id?foreignId=idem&createIfNotFound=true`);
-      const second = await api("GET", `${base(projectId)}/entities/by-foreign-id?foreignId=idem&createIfNotFound=true`);
+      const first = await api("GET", `${base(projectId)}/entities/by-foreign-id?foreignId=idem&createIfNotFound=true`, { token: owner.token });
+      const second = await api("GET", `${base(projectId)}/entities/by-foreign-id?foreignId=idem&createIfNotFound=true`, { token: owner.token });
       expect(first.status).toBe(200);
       expect(second.status).toBe(200);
       expect(second.body.id).toBe(first.body.id); // no duplicate row — unique (project_id, foreign_id)
@@ -158,7 +168,7 @@ describe("entities + comments + reactions (integration)", () => {
     it("is race-safe under concurrent first-views (one row wins, all callers agree)", async () => {
       const hits = await Promise.all(
         Array.from({ length: 6 }, () =>
-          api("GET", `${base(projectId)}/entities/by-foreign-id?foreignId=race&createIfNotFound=true`)
+          api("GET", `${base(projectId)}/entities/by-foreign-id?foreignId=race&createIfNotFound=true`, { token: owner.token })
         )
       );
       expect(hits.every((h) => h.status === 200)).toBe(true);
@@ -167,11 +177,11 @@ describe("entities + comments + reactions (integration)", () => {
     });
 
     it("does not leak createIfNotFound across projects (scoped by project_id)", async () => {
-      await api("GET", `${base(projectId)}/entities/by-foreign-id?foreignId=scoped&createIfNotFound=true`);
+      await api("GET", `${base(projectId)}/entities/by-foreign-id?foreignId=scoped&createIfNotFound=true`, { token: owner.token });
       const otherProject = await createProject();
       try {
         // Same foreignId, different project → still 404 without the flag (no cross-tenant bleed).
-        const res = await api("GET", `${base(otherProject)}/entities/by-foreign-id?foreignId=scoped`);
+        const res = await api("GET", `${base(otherProject)}/entities/by-foreign-id?foreignId=scoped`, { token: owner.token });
         expect(res.status).toBe(404);
       } finally {
         await deleteProject(otherProject);
