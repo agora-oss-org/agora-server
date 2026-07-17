@@ -180,8 +180,18 @@ describe("entities + comments + reactions (integration)", () => {
       await api("GET", `${base(projectId)}/entities/by-foreign-id?foreignId=scoped&createIfNotFound=true`, { token: owner.token });
       const otherProject = await createProject();
       try {
-        // Same foreignId, different project → still 404 without the flag (no cross-tenant bleed).
-        const res = await api("GET", `${base(otherProject)}/entities/by-foreign-id?foreignId=scoped`, { token: owner.token });
+        // A project-A token used against project B's base path is now rejected at the auth wall
+        // itself (401) — the wall binds a token to the project it was minted for (createUser stamps
+        // `pid`), so this no longer reaches the handler's own project-scoping at all. See
+        // auth-wall.test.ts "auth wall — project binding" for the dedicated wall-level assertion.
+        const crossProjectToken = await api("GET", `${base(otherProject)}/entities/by-foreign-id?foreignId=scoped`, { token: owner.token });
+        expect(crossProjectToken.status).toBe(401);
+
+        // The subject this test actually proves — by-foreign-id lookups are scoped by project_id,
+        // not just gated by auth — needs a token that's valid FOR project B: same foreignId, no
+        // cross-tenant bleed, still 404 without the create flag.
+        const otherProjectUser = await createUser(otherProject);
+        const res = await api("GET", `${base(otherProject)}/entities/by-foreign-id?foreignId=scoped`, { token: otherProjectUser.token });
         expect(res.status).toBe(404);
       } finally {
         await deleteProject(otherProject);

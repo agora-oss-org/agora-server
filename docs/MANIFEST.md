@@ -253,7 +253,7 @@ can poll their request); a caller with no row still gets the `404`. The exemptio
 unlocks nothing else about the space. `unlisted` remains directly link-shareable (fetchable by
 id/slug/short-id, just not listed). Visibility is independent of content-read access
 (`readingPermission`). A "viewer" who sees a private space = owner ∨ active member ∨ project-admin.
-`GET /spaces/check-slug` is intentionally not gated.
+`GET /spaces/check-slug` is intentionally not visibility-gated.
 Since the auth wall, `readingPermission: "anyone"` means *any authenticated user* — no space
 content is reachable anonymously.
 | Method | Path | Status |

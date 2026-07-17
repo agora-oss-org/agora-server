@@ -98,13 +98,18 @@ export function isWallAllowlisted(relPath: string): boolean {
 
 /** Group-mount gate: allowlisted paths get optionalAuth semantics (token attached when present,
  *  anonymous allowed, no suspension check — matching today's anonymous-flow behavior); everything
- *  else gets requireAuth semantics exactly. */
+ *  else gets requireAuth semantics exactly, PLUS a project-binding check: a token minted for a
+ *  different project must not pass the wall here (enforceAuthed only verifies the signature/
+ *  suspension, not which project the request is scoped to). The `auth.projectId &&` guard keeps
+ *  pre-`pid`-claim tokens working until they rotate out. */
 export const authWall = createMiddleware<{ Variables: Variables }>(async (c, next) => {
   if (isWallAllowlisted(projectRelativePath(c.req.path))) {
     const token = bearer(c);
     c.set("auth", token ? await verify(token) : null);
     return next();
   }
-  c.set("auth", await enforceAuthed(c));
+  const auth = await enforceAuthed(c);
+  if (auth.projectId && auth.projectId !== c.var.projectId) throw Errors.unauthorized();
+  c.set("auth", auth);
   await next();
 });

@@ -43,6 +43,11 @@ export default defineConfig({
       // the worker it routes uploads at a MinIO that isn't running here. Tests only mock Supabase
       // Storage, so pin the default provider.
       STORAGE_PROVIDER: "supabase",
+      // Hermetic for the same reason: a developer's .env may point REDIS_URL at a live Redis (the
+      // secure-chat/scale compose profiles). Leaked into the worker it would swap both the
+      // suspension index and the rate-limit store under the suite. Forced unset, both fall back
+      // to their in-process/no-op defaults.
+      REDIS_URL: "",
     },
   },
 });

@@ -31,7 +31,10 @@ export async function api(method: string, path: string, init: Init = {}) {
  *  `steward` stamps the `steward` claim the auth middleware reads back as `isSteward`; `owner`/`admin`
  *  stamp the `powner`/`padmin` claims read back as `isProjectOwner`/`isProjectAdmin`. These extra
  *  params let SETUP mint owner/admin tokens directly (defaults false → existing call sites unchanged);
- *  they bypass the DB resolver, so prove real claim propagation via the refresh path separately. */
+ *  they bypass the DB resolver, so prove real claim propagation via the refresh path separately.
+ *  `projectId` stamps the `pid` claim (mirrors `lib/tokens.ts` `mintSession`) so tests can mint a
+ *  token bound to a specific project and prove the auth wall's project-binding check; omitted →
+ *  no `pid` claim, matching pre-`pid`-claim tokens (existing call sites unchanged). */
 export function signToken(
   userId: string,
   role = "visitor",
@@ -39,8 +42,9 @@ export function signToken(
   steward = false,
   owner = false,
   admin = false,
+  projectId?: string,
 ) {
-  return new SignJWT({ role, operator, steward, powner: owner, padmin: admin })
+  return new SignJWT({ role, operator, steward, powner: owner, padmin: admin, ...(projectId ? { pid: projectId } : {}) })
     .setProtectedHeader({ alg: "HS256" })
     .setSubject(userId)
     .setExpirationTime("1h")
@@ -60,7 +64,10 @@ export async function createUser(projectId: string, role = "visitor") {
     .insert(profiles)
     .values({ projectId, role: role as any, username: `u_${randomUUID().slice(0, 8)}` })
     .returning();
-  return { id: u!.id, token: await signToken(u!.id, role) };
+  // Stamp `pid` = projectId, mirroring real `mintSession` tokens — every token minted in
+  // production carries the project it was issued for, so fixture tokens should too (the auth
+  // wall's project-binding check is otherwise never exercised by realistic tokens).
+  return { id: u!.id, token: await signToken(u!.id, role, false, false, false, false, projectId) };
 }
 
 /** Deletes the project; FK cascades wipe its entities/comments/reactions/profiles. */

@@ -1,7 +1,8 @@
 // The auth wall end-to-end: every project-scoped read 401s anonymously and passes authed;
 // the pre-sign-in allowlist stays reachable with no token; suspended accounts 403 on walled
-// paths but still reach the allowlist (so they can refresh/appeal). The NEGATIVE cases are
-// the point (CLAUDE.md → security-relevant logic).
+// paths but still reach the allowlist (it's the pre-sign-in surface and simply isn't
+// suspension-gated — optionalAuth semantics by design, not a deliberate carve-out for
+// suspended accounts). The NEGATIVE cases are the point (CLAUDE.md → security-relevant logic).
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { api, base, createProject, createUser, deleteProject, signToken } from "./helpers.js";
 
@@ -91,6 +92,27 @@ describe("auth wall — allowlist stays anonymous", () => {
   it("POST /oauth/authorize reaches the handler anonymously (not 401)", async () => {
     const r = await api("POST", `${B}/oauth/authorize`, { body: { provider: "google", redirectAfterAuth: "https://example.com" } });
     expect(r.status).not.toBe(401); // oauth/not-configured (503/400) is fine — it got past the wall
+  });
+});
+
+describe("auth wall — project binding", () => {
+  it("a token minted for project A 401s on project B's base path", async () => {
+    const otherProject = await createProject();
+    try {
+      // createUser stamps `pid` = projectId (mirrors real mintSession tokens).
+      const scoped = await createUser(projectId);
+
+      // Sanity: the same token works on its OWN project.
+      const same = await api("GET", `${B}/entities`, { token: scoped.token });
+      expect(same.status).toBe(200);
+
+      // Cross-project: same valid signature, wrong project base path → rejected at the wall,
+      // not the handler (would otherwise 200/404 depending on the route's own scoping).
+      const cross = await api("GET", `${base(otherProject)}/entities`, { token: scoped.token });
+      expect(cross.status).toBe(401);
+    } finally {
+      await deleteProject(otherProject);
+    }
   });
 });
 
