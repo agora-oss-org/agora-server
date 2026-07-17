@@ -6,7 +6,9 @@
 //
 // Design (kept deliberately simple — see the brainstorm that produced it):
 //   • Groups are processed in a fixed DEPENDENCY ORDER so every reference resolves by construction:
-//       users → spaces → memberships → follows → posts → comments → connections → reactions
+//       users → roles → spaces → memberships → follows → posts → comments → connections → reactions
+//     (roles straight after users: a project_roles grant is profile-keyed, and the profile only exists
+//     once that user has signed in.)
 //     (follows before posts is deliberate, not just dependency order — it means a post's author is
 //     already followed by its seeded followers when the post is created, so the demo data reads as a
 //     real social feed instead of posts predating the relationships that would surface them.)
@@ -188,6 +190,44 @@ async function seedUsers() {
   }
 }
 
+// ── 1b. roles ────────────────────────────────────────────────────────────────
+// Grant the per-project trust tier (project_roles: owner|admin|steward) to any manifest user carrying
+// a `roles` array. Runs immediately after users because the grant is PROFILE-keyed and a profile only
+// materialises on that first sign-in above.
+//
+// Written straight to the DB rather than through POST /roles on purpose: that route is owner-gated, and
+// a freshly-seeded project has no owner yet to authorise the first grant — this is the bootstrap. The
+// grant lands in the access JWT at mint/refresh, so it takes effect on the user's next token refresh
+// (the token captured during seedUsers predates it — expected, not a bug).
+// Idempotent via the project_roles_unique (project_id, profile_id, role) constraint.
+const PROJECT_ROLES = ["owner", "admin", "steward"]; // keep in sync with the `project_role` pg enum
+
+async function seedRoles() {
+  const granted = (realized.users ?? []).filter((u) => u.roles?.length);
+  phase("roles", granted.length);
+  if (!granted.length) return;
+
+  const sql = postgres(process.env.DATABASE_URL, { max: 1, prepare: false, onnotice() {} });
+  try {
+    for (const u of granted) {
+      if (!u.id) die(`user "${u.handle}": no profile id yet (dependency-order bug)`);
+      for (const role of u.roles) {
+        // Reject an unknown tier loudly — never coerce a typo into a silent non-grant (or an enum error).
+        if (!PROJECT_ROLES.includes(role)) {
+          die(`user "${u.handle}": unknown role "${role}" (expected ${PROJECT_ROLES.join(" | ")})`);
+        }
+        await sql`
+          insert into project_roles (project_id, profile_id, role)
+          values (${PROJECT_ID}, ${u.id}, ${role}::project_role)
+          on conflict (project_id, profile_id, role) do nothing`;
+        console.log(`  ✓ ${u.handle.padEnd(6)} ${role}`);
+      }
+    }
+  } finally {
+    await sql.end();
+  }
+}
+
 // ── 2. spaces ───────────────────────────────────────────────────────────────
 async function seedSpaces() {
   const spaces = realized.spaces ?? [];
@@ -344,6 +384,7 @@ async function main() {
   console.log(`   target   : ${BASE}/v7/${PROJECT_ID}`);
 
   await seedUsers();
+  await seedRoles();
   await seedSpaces();
   await seedMemberships();
   await seedFollows();
@@ -355,7 +396,9 @@ async function main() {
   const counts = ["users", "spaces", "memberships", "follows", "posts", "comments", "connections", "reactions"]
     .map((g) => `${(realized[g] ?? []).length} ${g}`)
     .join(", ");
-  console.log(`\n✅ seed complete — ${counts}.`);
+  // roles isn't a top-level group — it's a per-user field, so it's counted across users.
+  const roles = (realized.users ?? []).reduce((n, u) => n + (u.roles?.length ?? 0), 0);
+  console.log(`\n✅ seed complete — ${counts}, ${roles} role grant(s).`);
 }
 
 main().catch((e) => die(e.message));

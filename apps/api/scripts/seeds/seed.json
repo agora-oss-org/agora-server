@@ -1,10 +1,11 @@
 {
   "meta": {
     "defaultPassword": "SeedPass123!",
-    "description": "Hand-authored seed manifest for the Agora seed engine. Run ONCE on a clean DB via `pnpm seed:graph`. Handles are manifest-local reference keys; the field name implies the namespace (author -> users, entity -> posts). Reactions discriminate target via on:{post|comment}."
+    "description": "Hand-authored seed manifest for the Agora seed engine. Run ONCE on a clean DB via `pnpm seed`. Handles are manifest-local reference keys; the field name implies the namespace (author -> users, entity -> posts). Reactions discriminate target via on:{post|comment}. A user may override meta.defaultPassword with `password`, and carry a `roles` array (owner|admin|steward) granted as a project_roles row after sign-in."
   },
 
   "users": [
+    { "handle": "demoadmin", "email": "demo-admin@agora-oss.org", "password": "DemoAdmin123!", "roles": ["owner"], "name": "Demo Admin", "username": "demoadmin", "bio": "Keeper of the demo garden.", "avatar": "https://i.pravatar.cc/300?u=demoadmin" },
     { "handle": "alice", "email": "alice@seed.test", "name": "Alice Rivera",  "username": "alicerivera", "bio": "Bike commuter & film photographer.",    "avatar": "https://i.pravatar.cc/300?u=alice" },
     { "handle": "bob",   "email": "bob@seed.test",   "name": "Bob Chen",      "username": "bobchen",  "bio": "Coffee nerd. Cold brew evangelist.",        "avatar": "https://i.pravatar.cc/300?u=bob" },
     { "handle": "cara",  "email": "cara@seed.test",  "name": "Cara Diaz",     "username": "caradiaz", "bio": "Sourdough, ferments, and slow mornings.",   "avatar": "https://i.pravatar.cc/300?u=cara" },

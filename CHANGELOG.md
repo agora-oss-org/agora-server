@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Seeded demo admin + manifest role grants.** The seed manifest (`apps/api/scripts/seeds/seed.json`)
+  now declares `demo-admin@agora-oss.org` (password `DemoAdmin123!`), granted `owner` on the seed
+  project. Two new manifest fields drive it: a per-user `password` (overriding `meta.defaultPassword`)
+  and a `roles` array (`owner` | `admin` | `steward`), applied by a new `roles` phase in
+  `03-seed-engine.mjs` that writes `project_roles` rows straight to the DB — the bootstrap grant, since
+  `POST /roles` is owner-gated and a fresh project has no owner to authorise it. Idempotent via
+  `project_roles_unique`; an unknown role aborts the run. `00-seed-auth-admin.mjs` and its existing
+  `agora-admin@gmail.com` login are unchanged. Runs behind the `01-confirm-demo-data` gate, so
+  declining demo data skips it.
 - **Chat push notifications** — sending a chat message now fans out a background push notification to
   every other active member of the conversation. Respects the recipient's per-conversation mute and the
   global chat-push opt-out (`push_notification_preferences`). Payload is PII-free (generic copy,
