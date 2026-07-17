@@ -1,5 +1,6 @@
 // /v7/:projectId/match/* — user matching. v7.8.2 ships the request CONTRACT only; the facet/embedding
-// engine is a separate future spec (see docs/superpowers/specs/2026-07-07-sdk-v7.8.2-sync-design.md §4.6).
+// engine is unbuilt and its design is NOT yet written (see docs/SDK-V7.8.2-SERVER-SPEC.md §5 for the
+// full request/response contract + why it was deferred — start there, and with a design, not code).
 // The stub validates the body and resolves to "no matches" so useMatchUsers settles cleanly.
 import { Hono } from "hono";
 import type { Variables } from "../http/context.js";
