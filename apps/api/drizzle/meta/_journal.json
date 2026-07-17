@@ -449,6 +449,13 @@
 			"when": 1781934611661,
 			"tag": "0063_match_content_space_subtree",
 			"breakpoints": true
+		},
+		{
+			"idx": 64,
+			"version": "7",
+			"when": 1781934611662,
+			"tag": "0064_auth_wall_revoke_public_read",
+			"breakpoints": true
 		}
 	]
 }
