@@ -40,7 +40,7 @@ describe("spaces permissions + membership (integration)", () => {
 
     // membersCount reflects the trigger only on a fresh read — the create response is the
     // space row snapshotted before the creator's membership row is inserted.
-    const fetched = await api("GET", `${B}/spaces/${res.body.id}`);
+    const fetched = await api("GET", `${B}/spaces/${res.body.id}`, { token: owner.token });
     expect(fetched.body.membersCount).toBe(1); // creator auto-joined as admin via trigger
 
     const me = await api("GET", `${B}/spaces/${res.body.id}/membership/me`, { token: owner.token });
@@ -52,7 +52,7 @@ describe("spaces permissions + membership (integration)", () => {
     const join = await api("POST", `${B}/spaces/${space.id}/join`, { token: alice.token });
     expect(join.body.membership.status).toBe("active");
 
-    const fetched = await api("GET", `${B}/spaces/${space.id}`);
+    const fetched = await api("GET", `${B}/spaces/${space.id}`, { token: owner.token });
     expect(fetched.body.membersCount).toBe(2);
   });
 

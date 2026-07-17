@@ -30,16 +30,16 @@ describe("users + follows (integration)", () => {
   });
 
   it("username lookup + availability", async () => {
-    const { body: user } = await api("GET", `${B}/users/${alice.id}`);
+    const { body: user } = await api("GET", `${B}/users/${alice.id}`, { token: alice.token });
     const uname = user.username as string;
 
-    const byName = await api("GET", `${B}/users/by-username?username=${uname}`);
+    const byName = await api("GET", `${B}/users/by-username?username=${uname}`, { token: alice.token });
     expect(byName.body.id).toBe(alice.id);
 
-    const taken = await api("GET", `${B}/users/check-username?username=${uname}`);
+    const taken = await api("GET", `${B}/users/check-username?username=${uname}`, { token: alice.token });
     expect(taken.body.available).toBe(false);
 
-    const free = await api("GET", `${B}/users/check-username?username=defo_free_${Date.now()}`);
+    const free = await api("GET", `${B}/users/check-username?username=defo_free_${Date.now()}`, { token: alice.token });
     expect(free.body.available).toBe(true);
   });
 
@@ -56,15 +56,15 @@ describe("users + follows (integration)", () => {
     const status = await api("GET", `${B}/users/${bob.id}/follow`, { token: alice.token });
     expect(status.body.isFollowing).toBe(true);
 
-    const followers = await api("GET", `${B}/users/${bob.id}/followers-count`);
-    const following = await api("GET", `${B}/users/${alice.id}/following-count`);
+    const followers = await api("GET", `${B}/users/${bob.id}/followers-count`, { token: alice.token });
+    const following = await api("GET", `${B}/users/${alice.id}/following-count`, { token: alice.token });
     expect(followers.body.count).toBe(1);
     expect(following.body.count).toBe(1);
 
-    const bobFollowers = await api("GET", `${B}/users/${bob.id}/followers`);
+    const bobFollowers = await api("GET", `${B}/users/${bob.id}/followers`, { token: alice.token });
     expect(bobFollowers.body.data.map((u: any) => u.id)).toContain(alice.id);
 
-    const aliceFollowing = await api("GET", `${B}/users/${alice.id}/following`);
+    const aliceFollowing = await api("GET", `${B}/users/${alice.id}/following`, { token: alice.token });
     expect(aliceFollowing.body.data.map((u: any) => u.id)).toContain(bob.id);
 
     // the auth user's own follow graph (follows router, /v7/:projectId/follows/*)
@@ -77,7 +77,7 @@ describe("users + follows (integration)", () => {
   it("re-following is idempotent (count stays 1)", async () => {
     const again = await api("POST", `${B}/users/${bob.id}/follow`, { token: alice.token });
     expect(again.status).toBe(200); // not 201 — already following
-    const count = await api("GET", `${B}/users/${bob.id}/followers-count`);
+    const count = await api("GET", `${B}/users/${bob.id}/followers-count`, { token: alice.token });
     expect(count.body.count).toBe(1);
   });
 
@@ -87,7 +87,7 @@ describe("users + follows (integration)", () => {
 
     const status = await api("GET", `${B}/users/${bob.id}/follow`, { token: alice.token });
     expect(status.body.isFollowing).toBe(false);
-    const count = await api("GET", `${B}/users/${bob.id}/followers-count`);
+    const count = await api("GET", `${B}/users/${bob.id}/followers-count`, { token: alice.token });
     expect(count.body.count).toBe(0);
   });
 });

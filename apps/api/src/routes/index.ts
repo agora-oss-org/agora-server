@@ -3,7 +3,7 @@
 import { Hono } from "hono";
 import type { Variables } from "../http/context.js";
 import { resolveProject } from "../middleware/project.js";
-import { optionalAuth } from "../middleware/auth.js";
+import { authWall } from "../middleware/auth.js";
 import { meterUsage } from "../middleware/metrics.js";
 
 import { authRoutes } from "./auth.js";
@@ -33,7 +33,9 @@ export function mountRoutes() {
   // Project-scoped app: every request resolves :projectId, then attaches optional auth.
   const project = new Hono<{ Variables: Variables }>();
   project.use("*", meterUsage);                  // time + count every request (reads projectId after next())
-  project.use("*", resolveProject, optionalAuth);
+  // The auth wall: every project-scoped request requires an authenticated account except the
+  // pre-sign-in allowlist (AUTH_WALL_ALLOWLIST). Private by default — fail closed for new routes.
+  project.use("*", resolveProject, authWall);
 
   project.route("/auth", authRoutes);
   project.route("/entities", entityRoutes);

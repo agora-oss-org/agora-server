@@ -270,7 +270,10 @@ feature**, materially larger than the rest of this doc.
 Exact TS: `MatchFacetRef`, `SampleContent`, `MatchedFacet`, `UserMatchResult` in `useMatchUsers.ts`.
 
 ### Server today
-No `/match/*` route. `/search/users` (in `search.ts`) is an unrelated simple `ilike` name search that
+**The stub shipped** (v7.8.2, `apps/api/src/routes/match.ts`): `POST /match/users` is auth-gated,
+validates the body against `matchUsersSchema` (`packages/contract`, incl. the `directed`-requires-a
+-non-empty-`query` → `400` rule), and returns `{ "results": [] }` unconditionally. **The engine behind it
+does not exist.** `/search/users` (in `search.ts`) is an unrelated simple `ilike` name search that
 returns `{ similarity, record }[]` — **not** a substitute (different path, shape, and semantics).
 
 ### Implement / defer
@@ -278,6 +281,25 @@ Real implementation needs a per-user interest/activity facet model + vector simi
 scorer/embedding stack — see `docs/SCORER.md`, `docs/SCORER-REQUIREMENTS.md`). **Recommended: defer**,
 or ship a **stub** that returns `{ "results": [] }` (200) so the hook resolves cleanly to "no matches"
 rather than erroring, until the matching engine lands. Track as its own feature.
+
+> **⚠️ Status (2026-07-17): the engine design is NOT written.** This document specifies the **contract
+> only** — the wire format above is settled and SDK-authoritative. There is no design doc for the engine;
+> an earlier in-code comment pointed at a `docs/superpowers/specs/2026-07-07-sdk-v7.8.2-sync-design.md`
+> that was never committed and no longer exists. **This section (§5) is the surviving source of truth.**
+> Picking this up starts with a **brainstorm + spec**, not implementation. Open design questions, none
+> of which are answered anywhere yet:
+> - **Facet derivation.** What is a "facet", and how is it derived per user? Only *entities* are embedded
+>   today (`lib/embeddings.ts` → Voyage `voyage-3.5` @ 1024-dim, pgvector); comments and messages are not.
+> - **`hotness` + decay.** The response carries a per-facet `hotness`; its definition and decay are undefined.
+> - **Storage.** Needs a facets table (`vector(1024)` + hotness) → a new migration; nothing exists.
+> - **Scoring.** How per-facet `similarity` composes into the overall `score`, and how `passive` (match on
+>   the asker's own facets) differs from `directed` (match on `query`).
+> - **Where it runs.** Derivation is batch-shaped work — likely `services/scorer` or a cron, not the
+>   request path. Undecided.
+> - **Privacy.** Matching surfaces *who is interested in what*, and `includeSampleContent` returns other
+>   users' content. Needs a visibility story that composes with space `visibility`
+>   (`lib/space-visibility.ts`), space `readingPermission`, and moderation visibility — none of which the
+>   contract above accounts for.
 
 ### Compat
 Old/stub server → `useMatchUsers` sets `error` (on 404) or returns empty (on stub). No other feature

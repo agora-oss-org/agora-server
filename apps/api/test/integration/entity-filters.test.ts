@@ -88,12 +88,12 @@ describe("entity feed filters + sort (integration)", () => {
     expect(await feed("metadataFilters[doesNotInclude][category]=food")).toEqual([id.misc]);
   });
 
-  it("followedOnly: only entities by followed users (and nothing when unauthenticated)", async () => {
+  it("followedOnly: only entities by followed users (and 401 when unauthenticated)", async () => {
     await api("POST", `${B}/users/${followee.id}/follow`, { token: owner.token });
     expect(await feed("followedOnly=true")).toEqual([id.byFollowee]);
-    // unauthenticated → no results
+    // unauthenticated → walled off before the handler ever sees the query
     const anon = await api("GET", `${B}/entities?followedOnly=true`);
-    expect(anon.body.data).toHaveLength(0);
+    expect(anon.status).toBe(401);
   });
 
   it("timeFrame: excludes entities older than the window", async () => {

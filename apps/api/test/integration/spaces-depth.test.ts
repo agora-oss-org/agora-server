@@ -54,10 +54,10 @@ describe("spaces depth (integration)", () => {
     const a = (await mkSpace({ name: "Root" })).body;
     const b = (await mkSpace({ name: "Mid", parentSpaceId: a.id })).body;
 
-    const crumb = await api("GET", `${B}/spaces/${b.id}/breadcrumb`);
+    const crumb = await api("GET", `${B}/spaces/${b.id}/breadcrumb`, { token: owner.token });
     expect(crumb.body.data.map((s: any) => s.id)).toEqual([a.id, b.id]);
 
-    const kids = await api("GET", `${B}/spaces/${a.id}/children`);
+    const kids = await api("GET", `${B}/spaces/${a.id}/children`, { token: owner.token });
     expect(kids.body.data.map((s: any) => s.id)).toContain(b.id);
   });
 
@@ -74,7 +74,7 @@ describe("spaces depth (integration)", () => {
     const reordered = await api("PATCH", `${B}/spaces/${space.id}/rules/reorder`, { token: owner.token, body: { order: [r2.id, r1.id] } });
     expect(reordered.body.data.map((r: any) => r.id)).toEqual([r2.id, r1.id]);
 
-    const one = await api("GET", `${B}/spaces/${space.id}/rules/${r1.id}`);
+    const one = await api("GET", `${B}/spaces/${space.id}/rules/${r1.id}`, { token: owner.token });
     expect(one.body.title).toBe("First");
 
     const patched = await api("PATCH", `${B}/spaces/${space.id}/rules/${r1.id}`, { token: owner.token, body: { title: "First (edited)" } });
@@ -82,7 +82,7 @@ describe("spaces depth (integration)", () => {
 
     const del = await api("DELETE", `${B}/spaces/${space.id}/rules/${r2.id}`, { token: owner.token });
     expect(del.status).toBe(200);
-    const after = await api("GET", `${B}/spaces/${space.id}/rules`);
+    const after = await api("GET", `${B}/spaces/${space.id}/rules`, { token: owner.token });
     expect(after.body.data.map((r: any) => r.id)).toEqual([r1.id]);
   });
 
@@ -109,11 +109,11 @@ describe("spaces depth (integration)", () => {
     const slug = `s-${Date.now()}`;
     const space = (await mkSpace({ name: "Slugged", slug })).body;
 
-    const bySlug = await api("GET", `${B}/spaces/by-slug?slug=${slug}`);
+    const bySlug = await api("GET", `${B}/spaces/by-slug?slug=${slug}`, { token: owner.token });
     expect(bySlug.body.id).toBe(space.id);
 
-    expect((await api("GET", `${B}/spaces/check-slug?slug=${slug}`)).body.available).toBe(false);
-    expect((await api("GET", `${B}/spaces/check-slug?slug=free-${Date.now()}`)).body.available).toBe(true);
+    expect((await api("GET", `${B}/spaces/check-slug?slug=${slug}`, { token: owner.token })).body.available).toBe(false);
+    expect((await api("GET", `${B}/spaces/check-slug?slug=free-${Date.now()}`, { token: owner.token })).body.available).toBe(true);
   });
 
   it("leave removes membership", async () => {

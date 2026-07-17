@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Seeded demo admin + manifest role grants.** The seed manifest (`apps/api/scripts/seeds/seed.json`)
+  now declares `demo-admin@agora-oss.org` (password `DemoAdmin123!`), granted `owner` on the seed
+  project. Two new manifest fields drive it: a per-user `password` (overriding `meta.defaultPassword`)
+  and a `roles` array (`owner` | `admin` | `steward`), applied by a new `roles` phase in
+  `03-seed-engine.mjs` that writes `project_roles` rows straight to the DB — the bootstrap grant, since
+  `POST /roles` is owner-gated and a fresh project has no owner to authorise it. Idempotent via
+  `project_roles_unique`; an unknown role aborts the run. `00-seed-auth-admin.mjs` and its existing
+  `agora-admin@gmail.com` login are unchanged. Runs behind the `01-confirm-demo-data` gate, so
+  declining demo data skips it. Documented in `docs/DEVELOPMENT.md` and `apps/api/README.md` (the two
+  seeded admins and how they differ).
 - **Chat push notifications** — sending a chat message now fans out a background push notification to
   every other active member of the conversation. Respects the recipient's per-conversation mute and the
   global chat-push opt-out (`push_notification_preferences`). Payload is PII-free (generic copy,
@@ -24,7 +34,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   no `spaceReputation` for it (fail closed), mirroring the `GET /spaces/:id/members` visibility rule.
   Public spaces, the space owner, active members, and operators/project-admins still get the value.
 
+### Changed
+- **BREAKING — private by default.** Every `/v7/:projectId/*` endpoint now requires an
+  authenticated account (`authWall`, group-mounted). Anonymous → `401`; suspended → `403
+  auth/suspended`. The only anonymous surface is the pre-sign-in allowlist: `/auth/*`,
+  `/oauth/authorize`, `/oauth/callback`, `/projects/lean`, `/push-notifications/vapid-public-key`,
+  `/crypto/sign-testing-jwt/v2`. Deployments serving anonymous readers (public widget embeds) break
+  by design; signed-in SDK users are unaffected. Pre-1.0, the minor bump carries breaking changes —
+  this lands in 0.20.0.
+- RLS: the `0008` anon public-read policies are dropped and `anon`'s `SELECT` grants revoked
+  (migration `0064`) — the DB now states the same private-by-default posture as the API.
+
 ### Fixed
+- **Docs referenced a removed script.** `apps/api/README.md`, `seed.mjs`, `03-seed-engine.mjs`, and
+  `seed.json` told you to run the graph seeder via `pnpm seed:graph`, which no longer exists — corrected
+  to `pnpm seed` / `node scripts/seeds/03-seed-engine.mjs` (the engine's header also named a
+  `seed-engine.mjs` path that had been renamed).
 - **Space `visibility` is now enforced on discovery.** `unlisted` and `private` spaces are hidden from
   `GET /spaces`, `POST /search/spaces`, and `GET /spaces/:id/children`; a `private` space returns
   `404 spaces/not-found` on direct fetch (`GET /spaces/:id`, `/by-slug`, `/by-short-id`) and on its

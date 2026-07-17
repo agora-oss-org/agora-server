@@ -303,7 +303,7 @@ describe("space-reputation enrichment — space-read access gate", () => {
     await getDb().insert(spaceReputation).values({ projectId, spaceId, userId, reputation });
   }
 
-  it("fails closed for an anonymous or non-member caller on a members-only space", async () => {
+  it("fails closed for a non-member caller on a members-only space; anonymous is walled off entirely", async () => {
     const pid = await createProject(); projects.push(pid);
     const owner = await createUser(pid);
     const outsider = await createUser(pid);
@@ -314,9 +314,9 @@ describe("space-reputation enrichment — space-read access gate", () => {
     expect(asOutsider.status).toBe(200);
     expect(asOutsider.body.spaceReputation).toBeUndefined();
 
+    // anonymous never reaches the enrichment gate — the auth wall 401s first
     const anon = await api("GET", `${base(pid)}/users/${owner.id}?spaceReputationId=${spaceId}`);
-    expect(anon.status).toBe(200);
-    expect(anon.body.spaceReputation).toBeUndefined();
+    expect(anon.status).toBe(401);
   });
 
   it("still lets the space owner see their own members-only space's reputation", async () => {

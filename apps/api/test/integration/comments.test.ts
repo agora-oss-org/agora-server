@@ -32,17 +32,17 @@ describe("comments depth (integration)", () => {
     expect(reply.body.parentId).toBe(root.body.id);
 
     // top level (no parentId) shows the root, not the reply
-    const top = await api("GET", `${B}/comments?entityId=${entityId}`);
+    const top = await api("GET", `${B}/comments?entityId=${entityId}`, { token: owner.token });
     const topIds = top.body.data.map((c: any) => c.id);
     expect(topIds).toContain(root.body.id);
     expect(topIds).not.toContain(reply.body.id);
 
     // one level down shows the reply
-    const replies = await api("GET", `${B}/comments?entityId=${entityId}&parentId=${root.body.id}`);
+    const replies = await api("GET", `${B}/comments?entityId=${entityId}&parentId=${root.body.id}`, { token: owner.token });
     expect(replies.body.data.map((c: any) => c.id)).toEqual([reply.body.id]);
 
     // parent.replies_count bumped by trigger
-    const refetched = await api("GET", `${B}/comments/${root.body.id}`);
+    const refetched = await api("GET", `${B}/comments/${root.body.id}`, { token: owner.token });
     expect(refetched.body.comment.repliesCount).toBe(1);
   });
 
@@ -62,7 +62,7 @@ describe("comments depth (integration)", () => {
   it("looks up a comment by foreign id", async () => {
     const fid = `cmt_${Date.now()}`;
     const { body: created } = await mkComment(owner.token, { content: "x", foreignId: fid });
-    const found = await api("GET", `${B}/comments/by-foreign-id?foreignId=${fid}`);
+    const found = await api("GET", `${B}/comments/by-foreign-id?foreignId=${fid}`, { token: owner.token });
     expect(found.status).toBe(200);
     expect(found.body.comment.id).toBe(created.id);
   });
@@ -82,7 +82,7 @@ describe("comments depth (integration)", () => {
     const { body: comment } = await mkComment(owner.token, { content: "ephemeral" });
     const del = await api("DELETE", `${B}/comments/${comment.id}`, { token: owner.token });
     expect(del.status).toBe(200);
-    const gone = await api("GET", `${B}/comments/${comment.id}`);
+    const gone = await api("GET", `${B}/comments/${comment.id}`, { token: owner.token });
     expect(gone.status).toBe(404);
   });
 });

@@ -54,6 +54,7 @@ SpaceDetailed adds: `memberPermissions?, parentSpace?(SpacePreview), childSpaces
 `postingPermission` — persisted + emitted on create/update/read this cycle. **No listing/discovery
 filtering is applied yet** (an `unlisted`/`private` space is not currently hidden from any list) —
 that's a future addition.
+`readingPermission: "anyone"` = any *authenticated* user (the auth wall bars anonymous reads entirely).
 
 ## SpaceMember
 `id, projectId, spaceId, userId, role(admin|moderator|member), status(pending|active|banned|rejected),

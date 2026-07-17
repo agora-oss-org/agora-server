@@ -104,10 +104,9 @@ describe("event RSVP/guest-list visibility gate (integration)", () => {
   });
   afterAll(async () => { if (projectId) await deleteProject(projectId); });
 
-  it("anonymous cannot list RSVPs of an invite-only event (403 not-visible)", async () => {
+  it("anonymous cannot list RSVPs of an invite-only event (401, the wall — never reaches the handler's 403)", async () => {
     const res = await api("GET", `${B}/events/${eventId}/rsvps`);
-    expect(res.status).toBe(403);
-    expect(res.body.code).toBe("events/not-visible");
+    expect(res.status).toBe(401);
   });
 
   it("a stranger cannot list RSVPs of an invite-only event (403 not-visible)", async () => {

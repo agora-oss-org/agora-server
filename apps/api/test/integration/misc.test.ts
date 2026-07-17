@@ -26,13 +26,13 @@ describe("misc routes (integration)", () => {
 
   describe("utils/get-metadata SSRF guard", () => {
     it("rejects a missing url", async () => {
-      const res = await api("GET", `${B}/utils/get-metadata`);
+      const res = await api("GET", `${B}/utils/get-metadata`, { token: user.token });
       expect(res.status).toBe(400);
       expect(res.body.code).toBe("utils/missing-url");
     });
 
     it("rejects a malformed url", async () => {
-      const res = await api("GET", `${B}/utils/get-metadata?url=${encodeURIComponent("not a url")}`);
+      const res = await api("GET", `${B}/utils/get-metadata?url=${encodeURIComponent("not a url")}`, { token: user.token });
       expect(res.status).toBe(400);
       expect(res.body.code).toBe("utils/bad-url");
     });
@@ -52,7 +52,7 @@ describe("misc routes (integration)", () => {
         "http://0x7f.0.0.1/",      // hex-encoded 127.0.0.1
       ];
       for (const url of blocked) {
-        const res = await api("GET", `${B}/utils/get-metadata?url=${encodeURIComponent(url)}`);
+        const res = await api("GET", `${B}/utils/get-metadata?url=${encodeURIComponent(url)}`, { token: user.token });
         expect(res.status, url).toBe(400);
         expect(["utils/blocked-url", "utils/bad-url"], url).toContain(res.body.code);
       }

@@ -276,6 +276,12 @@ url=$(grep '^DATABASE_URL=' .env | cut -d= -f2-); psql "$url" -v ON_ERROR_STOP=1
 #   seeders (not auto-discovered). See apps/api/README.md → "Seeding".
 pnpm seed            # the manifest graph world (03-seed-engine.mjs, NOT idempotent) runs inside it,
                      # gated by the same 01-confirm-demo-data prompt (the old `seed:graph` script is gone)
+#   TWO seeded admins, different layers: `agora-admin@gmail.com`/`DemoPass123!` (00, always seeded,
+#   privileged only via OPERATOR_EMAILS) and `demo-admin@agora-oss.org`/`DemoAdmin123!` (a seed.json
+#   users[] entry with roles:["owner"] → a project_roles owner grant, so it's BEHIND the demo-data gate).
+#   A manifest user may carry `roles` (owner|admin|steward) + a per-user `password`; the engine's roles
+#   phase writes project_roles DIRECTLY (POST /roles is owner-gated — a fresh project has no owner to
+#   authorise the first grant). Grants land in the JWT at mint/refresh → effective next token refresh.
 
 pnpm genesis         # (also at root) DESTRUCTIVE: drop → rebuild from migrations → seed.sql → Neo4j reset
 pnpm genesis:test    # same against TEST_DATABASE_URL (disposable test project; non-interactive/CI-safe)

@@ -11,8 +11,10 @@ underneath as a verified backstop.
 
 - **Tokens** — short-lived access tokens (30 m) + refresh tokens (30 d) with rotation, reuse-detection,
   and a 30 s racing-tabs grace window. Auth/crypto stays in the vetted libs (jose, pinned alg).
-- **Anonymous reads, authenticated writes** — public content is readable without a token (matching the
-  contract); every mutation is `requireAuth`.
+- **Private by default (auth wall)** — every `/v7/:projectId/*` request requires a valid token;
+  anonymous → `401`, suspended → `403 auth/suspended`. The only anonymous surface is the pre-sign-in
+  allowlist (`/auth/*`, OAuth authorize/callback, `/projects/lean`, the VAPID public key, the dev
+  JWT-signing stub); every mutation is (as before) `requireAuth`. See [[API & Contract|API-Contract]].
 - **Space privacy** — a members-only space is invisible to non-members on every path (feed, single
   reads, reactions, comment creation, semantic search).
 - **Private chat** — conversation messages are readable only by active members, enforced on the REST
@@ -31,7 +33,9 @@ underneath as a verified backstop.
 - **Content deletion defaults to hard** (`CONTENT_DELETE_MODE=hard`) — a delete truly removes the row
   *and* its uploaded media from storage, rather than tombstoning and orphaning the objects in the
   bucket. `soft` keeps the recoverable-tombstone behavior. A privacy-forward default; set per deploy.
-- **RLS backstop** — denies `anon`/`authenticated` any private-space, removed, or draft row directly.
+- **RLS backstop** — since the auth wall, `anon` has no `SELECT` grants at all (the `0008` public-read
+  policies were revoked in migration `0064`); `authenticated` still denies any private-space, removed,
+  or draft row directly.
 
 ## Principles enforced in every change
 

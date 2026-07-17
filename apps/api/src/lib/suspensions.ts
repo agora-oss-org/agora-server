@@ -24,6 +24,7 @@ export async function suspendUser(profileId: string, opts: { reason?: string | n
     profileId,
     reason: opts.reason ?? null,
     endDate: opts.endDate ?? null,
+    startDate: new Date(), // pin to the Node clock — matches isActiveSuspension's comparand (avoids Postgres-vs-Node skew)
   }).returning();
   await revokeAllForProfile(profileId);
   await addSuspended(profileId); // Redis index write-through for instant enforcement (no-op if disabled)

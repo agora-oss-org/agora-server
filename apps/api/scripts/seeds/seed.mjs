@@ -22,8 +22,11 @@ const here = dirname(fileURLToPath(import.meta.url));
 const SELF = "seed.mjs";
 const STOP_CODE = 78; // a gate seeder exits with this to halt the run cleanly (keep in sync with the gate)
 // The manifest-driven seed engine (`03-seed-engine.mjs`) runs here too (gated by 01-confirm-demo-data),
-// and standalone via `pnpm seed:graph`. ⚠ It is NOT idempotent — re-running duplicates its graph world
-// (and toggles its reactions off), so wipe the DB before a re-seed.
+// and standalone via `node scripts/seeds/03-seed-engine.mjs`. It reads `seed.json` — which is also where
+// the `demo-admin@agora-oss.org` login (a users[] entry with roles:["owner"]) is declared, so that admin
+// is seeded only when the gate is accepted. ⚠ The engine is NOT idempotent — re-running duplicates its
+// graph world (and toggles its reactions off), so wipe the DB before a re-seed. (Its users + role grants
+// are safe to re-run; the posts and reactions are what duplicate.)
 const EXCLUDE = new Set([SELF]);
 
 const all = readdirSync(here).filter((f) => f.endsWith(".mjs") && !EXCLUDE.has(f)).sort();

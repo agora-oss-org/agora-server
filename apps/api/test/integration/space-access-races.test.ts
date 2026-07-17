@@ -177,7 +177,7 @@ describe("Space access enforcement + boundaries (integration)", () => {
       // Owner deletes (soft); the space then reads 404
       const ownerOk = await api("DELETE", `${B}/spaces/${space.id}`, { token: owner.token });
       expect(ownerOk.status).toBe(200);
-      const gone = await api("GET", `${B}/spaces/${space.id}`);
+      const gone = await api("GET", `${B}/spaces/${space.id}`, { token: owner.token });
       expect(gone.status).toBe(404);
     });
   });
@@ -194,7 +194,7 @@ describe("Space access enforcement + boundaries (integration)", () => {
       const me = await api("GET", `${B}/spaces/${space.id}/membership/me`, { token: bob.token });
       expect(me.body).toMatchObject({ isMember: true, status: "active" });
 
-      const fetched = await api("GET", `${B}/spaces/${space.id}`);
+      const fetched = await api("GET", `${B}/spaces/${space.id}`, { token: owner.token });
       expect(fetched.body.membersCount).toBe(2); // owner + bob, not owner + bob + bob
     });
   });

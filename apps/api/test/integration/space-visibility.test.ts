@@ -38,12 +38,9 @@ describe("space visibility — listings & search (integration)", () => {
 
   const idsIn = (body: any) => new Set(body.data.map((s: any) => s.id));
 
-  it("GET /spaces: anonymous sees only public", async () => {
+  it("GET /spaces: anonymous → 401 (the wall — visibility filtering never runs unauthenticated)", async () => {
     const res = await api("GET", `${B}/spaces?limit=100`);
-    const ids = idsIn(res.body);
-    expect(ids.has(publicId)).toBe(true);
-    expect(ids.has(unlistedId)).toBe(false);
-    expect(ids.has(privateId)).toBe(false);
+    expect(res.status).toBe(401);
   });
 
   it("GET /spaces: a stranger sees only public", async () => {
@@ -138,15 +135,16 @@ describe("space visibility — direct fetch & breadcrumb (integration)", () => {
 
   afterAll(async () => { if (projectId) await deleteProject(projectId); });
 
-  it("GET /spaces/:id — public 200 for anyone", async () => {
-    expect((await api("GET", `${B}/spaces/${publicId}`)).status).toBe(200);
+  it("GET /spaces/:id — public 200 for any authed caller; anonymous → 401 (the wall)", async () => {
+    expect((await api("GET", `${B}/spaces/${publicId}`, { token: stranger.token })).status).toBe(200);
+    expect((await api("GET", `${B}/spaces/${publicId}`)).status).toBe(401);
   });
   it("GET /spaces/:id — unlisted 200 for a stranger (link-shareable)", async () => {
     expect((await api("GET", `${B}/spaces/${unlistedId}`, { token: stranger.token })).status).toBe(200);
   });
-  it("GET /spaces/:id — private 404 for a stranger and for anonymous", async () => {
+  it("GET /spaces/:id — private 404 for a stranger; anonymous → 401 (the wall, before the 404 gate)", async () => {
     expect((await api("GET", `${B}/spaces/${privateId}`, { token: stranger.token })).status).toBe(404);
-    expect((await api("GET", `${B}/spaces/${privateId}`)).status).toBe(404);
+    expect((await api("GET", `${B}/spaces/${privateId}`)).status).toBe(401);
   });
   it("GET /spaces/:id — private 200 for owner, active member, admin", async () => {
     expect((await api("GET", `${B}/spaces/${privateId}`, { token: owner.token })).status).toBe(200);
