@@ -1,8 +1,8 @@
 // Seed engine — reads a declarative manifest (seed.json) and creates the whole world it describes
-// (users, spaces, memberships, posts, comments, follows, connections, reactions) by driving the
+// (users, roles, spaces, memberships, posts, comments, follows, connections, reactions) by driving the
 // normal Agora HTTP API as each acting user. Run ONCE on a clean DB:
-//   pnpm seed:graph            # from repo root  (→ node scripts/seeds/seed-engine.mjs)
-//   node scripts/seeds/seed-engine.mjs [path/to/manifest.json]
+//   pnpm seed                                        # from apps/api — runs this inside the orchestrator
+//   node scripts/seeds/03-seed-engine.mjs [path/to/manifest.json]   # standalone
 //
 // Design (kept deliberately simple — see the brainstorm that produced it):
 //   • Groups are processed in a fixed DEPENDENCY ORDER so every reference resolves by construction:

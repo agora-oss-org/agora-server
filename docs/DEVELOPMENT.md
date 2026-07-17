@@ -141,6 +141,29 @@ Non-interactive (CI): `ADMIN_EMAIL=… ADMIN_PASSWORD=… SEED_DEMO_DATA=1 pnpm 
 
 The project id for the seeded tenant is `11111111-1111-1111-1111-111111111111`.
 
+### Two seeded admins
+
+They come from different layers and are **not** interchangeable:
+
+| Login | Seeded by | Power | Always seeded? |
+|---|---|---|---|
+| `agora-admin@gmail.com` / `DemoPass123!` | `00-seed-auth-admin` | god-view only if you add it to `OPERATOR_EMAILS` | ✅ yes — runs before the gate |
+| `demo-admin@agora-oss.org` / `DemoAdmin123!` | `03-seed-engine` (from `seed.json`) | `project_roles` **owner** grant — within-project god-view, no `.env` edit | ❌ no — behind the demo-data gate |
+
+The first is the account the post-seeders sign in as to author content. The second is a
+manifest-declared user (`seed.json` → `users[]`) carrying a `roles: ["owner"]` grant, applied by the
+engine's `roles` phase. That phase writes `project_roles` **directly to the DB** because `POST /roles`
+is owner-gated and a fresh project has no owner to authorise the first grant — it's the bootstrap.
+
+Two consequences worth knowing:
+
+- **The owner grant lands on the next token refresh.** Role flags are stamped into the access JWT at
+  mint/refresh, and the token the engine captures at sign-in predates the grant. First real login gets it.
+- **Answering "no" at the gate means no `demo-admin`** — it lives in the demo world, not the admin layer.
+
+Any manifest user can carry `roles` (`owner` | `admin` | `steward`) and a per-user `password`
+overriding `meta.defaultPassword`. An unknown role aborts the run rather than silently not granting.
+
 ---
 
 ## 4. Develop — the loop

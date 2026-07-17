@@ -16,7 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `POST /roles` is owner-gated and a fresh project has no owner to authorise it. Idempotent via
   `project_roles_unique`; an unknown role aborts the run. `00-seed-auth-admin.mjs` and its existing
   `agora-admin@gmail.com` login are unchanged. Runs behind the `01-confirm-demo-data` gate, so
-  declining demo data skips it.
+  declining demo data skips it. Documented in `docs/DEVELOPMENT.md` and `apps/api/README.md` (the two
+  seeded admins and how they differ).
 - **Chat push notifications** — sending a chat message now fans out a background push notification to
   every other active member of the conversation. Respects the recipient's per-conversation mute and the
   global chat-push opt-out (`push_notification_preferences`). Payload is PII-free (generic copy,
@@ -44,6 +45,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (migration `0064`) — the DB now states the same private-by-default posture as the API.
 
 ### Fixed
+- **Docs referenced a removed script.** `apps/api/README.md`, `seed.mjs`, `03-seed-engine.mjs`, and
+  `seed.json` told you to run the graph seeder via `pnpm seed:graph`, which no longer exists — corrected
+  to `pnpm seed` / `node scripts/seeds/03-seed-engine.mjs` (the engine's header also named a
+  `seed-engine.mjs` path that had been renamed).
 - **Space `visibility` is now enforced on discovery.** `unlisted` and `private` spaces are hidden from
   `GET /spaces`, `POST /search/spaces`, and `GET /spaces/:id/children`; a `private` space returns
   `404 spaces/not-found` on direct fetch (`GET /spaces/:id`, `/by-slug`, `/by-short-id`) and on its

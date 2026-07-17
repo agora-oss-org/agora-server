@@ -146,9 +146,22 @@ seeders in `scripts/seeds/` in order:
 - **The demo-data gate.** `01-confirm-demo-data.mjs` asks whether to seed the demo CONTENT. Answer
   **no** and the run stops there (admin already created) — the remaining content seeders are skipped
   cleanly, not failed.
+- **The second admin: `demo-admin@agora-oss.org` / `DemoAdmin123!`.** Distinct from the account above,
+  and seeded by a different layer — it's a **manifest user** (`seed.json` → `users[]`) carrying
+  `roles: ["owner"]`, created by `03-seed-engine.mjs`, so it lives **behind the demo-data gate**
+  (answer "no" → no demo-admin). Its power is a `project_roles` **owner** grant: within-project
+  god-view with no `.env` edit, unlike `00`'s account which is only privileged if you add it to
+  `OPERATOR_EMAILS`. The grant is written straight to the DB because `POST /roles` is owner-gated and a
+  fresh project has no owner to authorise the first grant — this is the bootstrap. Role flags are
+  stamped into the access JWT at mint/refresh, so the grant takes effect on the **next token refresh**
+  (the engine's sign-in token predates it). Any manifest user can carry `roles`
+  (`owner` | `admin` | `steward`) and a per-user `password` overriding `meta.defaultPassword`; an
+  unknown role aborts the run. Idempotent via `project_roles_unique`.
 - **Demo content** (`02`–`04` + `seed-*-post.mjs`) is each idempotent (skips if its row exists), so the
   content layer is safe to re-run. **Exception:** the graph world (`03-seed-engine.mjs`, also runnable
-  standalone via `pnpm seed:graph`) is **not** idempotent — re-running duplicates it; genesis first.
+  standalone via `node scripts/seeds/03-seed-engine.mjs`) is **not** idempotent — re-running duplicates
+  it; genesis first. (Its users and role grants *are* safe to re-run; it's the posts and reactions that
+  duplicate and toggle.)
 
 **Non-interactive / CI.** Every prompt has an env override, so `pnpm seed` runs unattended:
 
