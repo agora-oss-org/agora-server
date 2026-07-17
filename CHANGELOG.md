@@ -24,11 +24,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Space `visibility` is now enforced on discovery.** `unlisted` and `private` spaces are hidden from
   `GET /spaces`, `POST /search/spaces`, and `GET /spaces/:id/children`; a `private` space returns
   `404 spaces/not-found` on direct fetch (`GET /spaces/:id`, `/by-slug`, `/by-short-id`) and on its
-  `/breadcrumb`, `/members`, `/team`, `/rules`, and `/membership/me` reads for anyone who is not the
-  owner, an active member, or a project-admin — closing a hole where private spaces were fully
-  discoverable (persist-only since migration `0060`). `unlisted` stays link-shareable (fetchable by
-  id/slug/short-id, just not listed). Content-read access (`readingPermission`) is unchanged and
-  independent.
+  `/breadcrumb`, `/members`, `/team`, and `/rules` reads for anyone who is not the owner, an active
+  member, or a project-admin — closing a hole where private spaces were fully discoverable
+  (persist-only since migration `0060`). `GET /spaces/:id/membership/me` applies the same gate, except
+  that a caller who already holds a membership row (`pending`/`rejected`/`banned`) may always read
+  their OWN status — so a pending applicant can poll their request — while a caller with no row still
+  gets the `404`. `unlisted` stays link-shareable (fetchable by id/slug/short-id, just not listed).
+  Content-read access (`readingPermission`) is unchanged and independent.
 
 ## [0.19.0] - 2026-07-07
 
@@ -131,16 +133,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Behavior-unchanged groundwork for external per-tenant database routing.
 - `AuthContext` (contract) gained `projectId: string | null`; `signAccessToken` (internal) now
   takes `projectId` as its first parameter.
-
-### Fixed
-- **Space `visibility` is now enforced on discovery.** `unlisted` and `private` spaces are hidden from
-  `GET /spaces`, `POST /search/spaces`, and `GET /spaces/:id/children`; a `private` space returns
-  `404 spaces/not-found` on direct fetch (`GET /spaces/:id`, `/by-slug`, `/by-short-id`) and on its
-  `/breadcrumb`, `/members`, `/team`, `/rules`, and `/membership/me` reads for anyone who is not the
-  owner, an active member, or a project-admin — closing a hole where private spaces were fully
-  discoverable (persist-only since migration `0060`). `unlisted` stays link-shareable (fetchable by
-  id/slug/short-id, just not listed). Content-read access (`readingPermission`) is unchanged and
-  independent.
 
 ## [0.17.0] - 2026-07-05
 

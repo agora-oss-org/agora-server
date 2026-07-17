@@ -324,15 +324,22 @@ export const spaceRoutes = new Hono<{ Variables: Variables }>()
   })
   .get("/:id/membership/me", requireAuth, async (c) => {
     const space = await getSpace(c);
-    await assertSpaceVisible(c, space);
     const uid = c.var.auth!.userId;
     if (space.userId === uid) {
       return c.json({ isMember: true, role: "admin", status: "active", joinedAt: null,
         permissions: { canPost: true, canModerate: true, canRead: true, isAdmin: true, isModerator: true } });
     }
     const m = await membershipOf(c.var.projectId, space.id, uid);
-    if (!m) return c.json({ isMember: false, role: null, status: null, joinedAt: null,
-      permissions: { canPost: space.postingPermission === "anyone", canModerate: false, canRead: space.readingPermission === "anyone", isAdmin: false, isModerator: false } });
+    // Discovery gate, with a deliberate exemption for the caller's OWN row: a caller who HOLDS a
+    // membership row (pending, rejected, or banned) already knows this space exists — they applied or
+    // were invited — so they may read their own status (a pending applicant must be able to poll it).
+    // A caller with NO row gets the full gate, so a hidden private space still 404s for a stranger and
+    // this never becomes an existence oracle. Only the caller's own row is ever exposed here.
+    if (!m) {
+      await assertSpaceVisible(c, space);
+      return c.json({ isMember: false, role: null, status: null, joinedAt: null,
+        permissions: { canPost: space.postingPermission === "anyone", canModerate: false, canRead: space.readingPermission === "anyone", isAdmin: false, isModerator: false } });
+    }
     // Only an *active* member gains read/write/moderation beyond what anyone gets. A pending
     // (awaiting approval), rejected, or banned membership row must NOT unlock members-only access.
     const isActive = m.status === "active";

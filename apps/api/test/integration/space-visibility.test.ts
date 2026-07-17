@@ -174,6 +174,7 @@ describe("space visibility — sub-resources (integration)", () => {
   let owner: { id: string; token: string };
   let member: { id: string; token: string };
   let stranger: { id: string; token: string };
+  let pending: { id: string; token: string }; // applied to the private space, not yet approved
   let privateId: string;
 
   const createSpace = (token: string, body: Record<string, unknown>) =>
@@ -182,9 +183,13 @@ describe("space visibility — sub-resources (integration)", () => {
   beforeAll(async () => {
     projectId = await createProject();
     B = base(projectId);
-    [owner, member, stranger] = await Promise.all([createUser(projectId), createUser(projectId), createUser(projectId)]);
+    [owner, member, stranger, pending] = await Promise.all([
+      createUser(projectId), createUser(projectId), createUser(projectId), createUser(projectId),
+    ]);
     privateId = (await createSpace(owner.token, { visibility: "private", slug: `prv3-${projectId.slice(0, 8)}` })).body.id;
     await getDb().insert(spaceMembers).values({ projectId, spaceId: privateId, userId: member.id, role: "member", status: "active" });
+    // `pending` applied but isn't approved yet — may read their OWN row, nothing else.
+    await getDb().insert(spaceMembers).values({ projectId, spaceId: privateId, userId: pending.id, role: "member", status: "pending" });
   });
 
   afterAll(async () => { if (projectId) await deleteProject(projectId); });
@@ -204,5 +209,21 @@ describe("space visibility — sub-resources (integration)", () => {
     const res = await api("GET", `${B}/spaces/${privateId}/membership/me`, { token: stranger.token });
     expect(res.status).toBe(404);
     expect(res.body.code).toBe("spaces/not-found");
+  });
+
+  // A pending applicant already knows the space exists (they applied), so they may poll their OWN
+  // status — otherwise "apply → can't check status" is a dead end. The exemption is row-scoped only.
+  it("GET /spaces/:id/membership/me — a pending applicant reads their OWN row on a private space", async () => {
+    const res = await api("GET", `${B}/spaces/${privateId}/membership/me`, { token: pending.token });
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe("pending");
+    expect(res.body.isMember).toBe(false); // pending unlocks nothing
+  });
+
+  it("the membership/me exemption does NOT unlock any other private-space read for a pending applicant", async () => {
+    expect((await api("GET", `${B}/spaces/${privateId}`, { token: pending.token })).status).toBe(404);
+    for (const sub of ["members", "team", "rules"]) {
+      expect((await api("GET", `${B}/spaces/${privateId}/${sub}`, { token: pending.token })).status).toBe(404);
+    }
   });
 });
