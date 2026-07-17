@@ -140,15 +140,15 @@ How Agora is *designed* to be secure — useful context for both operators and r
   all authorization (ownership, space roles, operator/steward checks, moderation visibility) is enforced
   **in the request handlers**, not in the database. Treat the API as the only thing standing between a
   client and the data.
-- **Private by default (auth wall).** Every `/v7/:projectId/*` request requires an authenticated account. The gate is `authWall`
-  (`packages/core/src/middleware/auth.ts`), mounted group-wide; its `AUTH_WALL_ALLOWLIST` constant is
-  the API's entire anonymous surface (the pre-sign-in flows: `/auth/*`, OAuth authorize/callback,
-  `/projects/lean`, the VAPID public key, and the dev JWT-signing stub). New routes are authed by
-  default — fail closed. Adding an allowlist entry is a security decision requiring spec rationale;
-  a unit test pins the list's exact contents. The RLS `0008` anon public-read policies were revoked
-  (`0064`) so the DB layer states the same posture. Uploaded media remains fetchable by unguessable
-  URL (see the storage section) — the one anonymous-readable artifact class, queued for a signed-URL
-  follow-up.
+- **Private by default (auth wall).** Every `/v7/:projectId/*` request requires an authenticated
+  account. The gate is `authWall` (`packages/core/src/middleware/auth.ts`), mounted group-wide; its
+  `AUTH_WALL_ALLOWLIST` constant is the API's entire anonymous surface (the pre-sign-in flows:
+  `/auth/*`, OAuth authorize/callback, `/projects/lean`, the VAPID public key, and the dev
+  JWT-signing stub). New routes are authed by default — fail closed. Adding an allowlist entry is a
+  security decision requiring spec rationale; a unit test pins the list's exact contents. The RLS
+  `0008` anon public-read policies were revoked (`0064`) so the DB layer states the same posture.
+  Uploaded media remains fetchable by unguessable URL (see the storage section) — the one
+  anonymous-readable artifact class, queued for a signed-URL follow-up.
 - **Row-Level Security is defense-in-depth.** Every table has RLS enabled with a **deny-all backstop**.
   The `0008` anon public-read policies were revoked (migration `0064`, alongside the auth wall) and
   `anon`'s `SELECT` grants pulled with them — `anon` now has no read access at all. The only remaining

@@ -39,6 +39,10 @@ export default defineConfig({
       // additionally save/unset/restores env.CRON_SECRET around its disabled-path assertion —
       // this force-empty is the belt to that braces). No integration test needs it set.
       CRON_SECRET: "",
+      // Hermetic: a developer's .env may set STORAGE_PROVIDER=s3 for local MinIO dev; leaked into
+      // the worker it routes uploads at a MinIO that isn't running here. Tests only mock Supabase
+      // Storage, so pin the default provider.
+      STORAGE_PROVIDER: "supabase",
     },
   },
 });
