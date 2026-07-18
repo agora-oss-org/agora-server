@@ -1,7 +1,10 @@
 // Orchestrator — runs every sibling seed script (`*.mjs` in this folder, except itself) in sequence.
 //   node scripts/seeds/seed.mjs            # or: pnpm seed
 // Ordering: the admin-login seeder (`00-seed-auth-admin.mjs`) runs FIRST, since every post seeder
-// signs in as that user; if it fails the run aborts (the posts can't authenticate). The remaining
+// signs in as that user; if it fails the run aborts (the posts can't authenticate).
+// Credentials: the admin email + password are resolved ONCE here (via helpers/resolve-admin-creds.mjs)
+// and injected into every child's env, so a password TYPED at the prompt reaches the post-seeders too
+// (they'd otherwise fall back to the demo default and 401). 00 inherits the env and doesn't re-prompt. The remaining
 // seeders run by filename — each is independent and idempotent (skips if its row exists), so a single
 // image-fetch failure is reported but doesn't stop the rest. Exit code is non-zero if any seeder failed.
 //
@@ -13,10 +16,12 @@
 // (run separately: psql "$DATABASE_URL" -f scripts/seeds/seed.sql) — the post seeders need the
 // project row to exist, and the admin seed (`00-seed-auth-admin.mjs`) needs DATABASE_URL (native) and/or
 // SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY (supabase).
+import "dotenv/config";
 import { readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { spawnSync } from "node:child_process";
+import { resolveAdminCreds, credsEnv } from "./helpers/resolve-admin-creds.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const SELF = "seed.mjs";
@@ -42,12 +47,28 @@ if (ordered.length === 0) {
 
 console.log(`🌱 Seeding — ${ordered.length} script(s) in ${here}`);
 
+// ── Resolve the admin credentials ONCE, up front, and propagate them to EVERY child ───────────────
+// The admin seeder (00-seed-auth-admin.mjs) and the post-seeders (seed-*-post.mjs) must sign in with the
+// SAME credentials. A password TYPED at 00's prompt lives only in 00's child process — it can't flow back
+// up to this orchestrator or across to its sibling seeders, so the post-seeders would fall back to the
+// hardcoded demo default and 401. Resolving here (env ADMIN_*/DEMO_* wins over the prompt) and injecting
+// credsEnv(...) into each child's env means the resolved password reaches all of them. Because these env
+// vars are now set, 00 inherits them and does NOT re-prompt.
+let childEnv = process.env;
+try {
+  const creds = await resolveAdminCreds();
+  childEnv = { ...process.env, ...credsEnv(creds) };
+} catch (err) {
+  console.error(`✗ could not resolve admin credentials: ${err.message}`);
+  process.exit(1);
+}
+
 const failures = [];
 let ran = 0;
 let stopped = null; // set to the gate filename if a seeder requested a clean STOP
 for (const file of ordered) {
   console.log(`\n──▶ ${file}`);
-  const res = spawnSync(process.execPath, [join(here, file)], { stdio: "inherit", env: process.env });
+  const res = spawnSync(process.execPath, [join(here, file)], { stdio: "inherit", env: childEnv });
   // Clean STOP (gate opt-out) — halt the run, but it's not a failure.
   if (res.status === STOP_CODE) {
     stopped = file;

@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Seed: a custom admin password now propagates to the post-seeders.** When `00-seed-auth-admin.mjs`
+  prompted for a password and you typed one (instead of accepting the `DemoPass123!` default), the
+  post-seeders (`04-seed-homepage-comments.mjs`, every `seed-*-post.mjs`) still signed in with the
+  hardcoded default and failed with `401 auth/invalid-credentials` — the typed password lived only in the
+  `00` child process and never reached its siblings. Credential resolution is now factored into a shared
+  `scripts/seeds/helpers/resolve-admin-creds.mjs` (env `ADMIN_*`/`DEMO_*` wins over the prompt); the
+  `seed.mjs` orchestrator resolves once up front and injects the resolved creds into every child's env, so
+  the same password signs in everywhere (`00` inherits the env and no longer re-prompts). Covered by
+  `scripts/seeds/helpers/resolve-admin-creds.test.mjs`.
 - **Settings-read-only cap now covers the per-space read-receipts toggle.** `PATCH
   /admin/social/read-receipts/spaces/:spaceId` mutates settings (`spaces.readReceiptsEnabled`) but was
   not behind `assertSettingsWritable`, so a settings-read-only principal that also held the operator
