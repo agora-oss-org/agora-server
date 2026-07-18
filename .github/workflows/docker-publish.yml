@@ -85,7 +85,9 @@ jobs:
           # Only deploy/proxy/Dockerfile declares these ARGs; other matrix images ignore them (harmless).
           build-args: |
             VITE_SOCIAL_GRAPH_ENABLED=${{ vars.VITE_SOCIAL_GRAPH_ENABLED }}
-            VITE_SETTINGS_READ_ONLY=${{ vars.VITE_SETTINGS_READ_ONLY }}
+            VITE_SETTINGS_READ_ONLY=${{ secrets.VITE_SETTINGS_READ_ONLY }}
+            VITE_DEMO_EMAIL=${{ vars.VITE_DEMO_EMAIL }}
+            VITE_DEMO_PASSWORD=${{ secrets.VITE_DEMO_PASSWORD }}
           outputs: type=image,name=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.image.name }},push-by-digest=true,name-canonical=true,push=true
           # Registry cache (GHCR buildcache tag) — far faster than the gha backend for the large
           # torch/transformers layers, and not subject to the Actions cache 10GB eviction churn.

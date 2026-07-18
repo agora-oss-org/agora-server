@@ -27,6 +27,13 @@ ARG VITE_SOCIAL_GRAPH_ENABLED=
 ENV VITE_SOCIAL_GRAPH_ENABLED=$VITE_SOCIAL_GRAPH_ENABLED
 ARG VITE_SETTINGS_READ_ONLY=
 ENV VITE_SETTINGS_READ_ONLY=$VITE_SETTINGS_READ_ONLY
+# Optional one-click "Log in as admin" button on the login screen — shown only when BOTH are set,
+# inlined into the bundle here (the admin SPA has no runtime config seam). Point them at the
+# deployment's seeded demo operator account; leave empty and only the ordinary sign-in form shows.
+ARG VITE_DEMO_EMAIL=
+ENV VITE_DEMO_EMAIL=$VITE_DEMO_EMAIL
+ARG VITE_DEMO_PASSWORD=
+ENV VITE_DEMO_PASSWORD=$VITE_DEMO_PASSWORD
 RUN pnpm --filter @agora-server/contract build && pnpm --filter @agora/admin build
 
 # ── Runtime: Caddy serving the static build + routing every service ─────────────
