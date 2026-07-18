@@ -310,7 +310,7 @@ there (or `.env.selfhost.example`; see README → "Environment files"). (Optiona
 are validated as optional: `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` + `SUPABASE_ANON_KEY`
 (Auth + Storage), `VOYAGE_API_KEY` (semantic search), `RATE_LIMIT_MAX`/`RATE_LIMIT_AUTH_MAX` (edge
 rate limiting, off unless set), `OPERATOR_USER_IDS`/`OPERATOR_EMAILS` (deployment-operator allowlist),
-`SETTINGS_READONLY_EMAILS` (comma-separated emails; full operator view but blocked from the five
+`OPERATOR_RO_EMAILS` (comma-separated emails; full operator view but blocked from the five
 settings-save endpoints — `403 settings/read-only`; powers the shared demo login),
 `NEO4J_URI`/`NEO4J_AUTH` (social graph — both scorer writes and API reads; unset →
 scorer skips edge writes, `/social/*` endpoints return 503),
@@ -337,7 +337,7 @@ power is now a separate DB grant (project owner/admin, below). The hierarchy is
 `operator ⊇ owner ⊇ admin ⊇ steward ⊇ member` — an operator satisfies every within-project predicate,
 so single-project deployments are unaffected.
 
-**Settings-read-only operators.** `SETTINGS_READONLY_EMAILS` (comma-separated, case-insensitive emails)
+**Settings-read-only operators.** `OPERATOR_RO_EMAILS` (comma-separated, case-insensitive emails)
 marks accounts that get the full operator/admin view but are server-blocked
 (`assertSettingsWritable(c)`, after the project-admin gate) from persisting any of the five
 settings-save endpoints (`PATCH /settings/feed|moderator|steward|social`, `PATCH /webhooks/config`) —

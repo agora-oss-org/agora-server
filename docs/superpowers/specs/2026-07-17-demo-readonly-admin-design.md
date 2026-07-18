@@ -98,7 +98,7 @@ in the env templates (`.env.dev.example`, `.env.selfhost.example`). The account'
 `roles:["owner"]` grant stays (redundant but harmless under operator; leaving it avoids churn and keeps
 the account meaningful if operator status is ever removed).
 
-### Rename `agora-admin@gmail.com` → `agora-admin@agora-oss.org`
+### Rename `agora-admin@agora-oss.org` → `agora-admin@agora-oss.org`
 
 The default seeded-admin email moves onto the project's own domain. **Live surfaces only:**
 

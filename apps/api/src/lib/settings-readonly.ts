@@ -9,7 +9,7 @@ import { env } from "./env.js";
 
 const split = (s?: string) => (s ?? "").split(",").map((x) => x.trim()).filter(Boolean);
 
-const readonlyEmails = new Set(split(env.SETTINGS_READONLY_EMAILS).map((e) => e.toLowerCase()));
+const readonlyEmails = new Set(split(env.OPERATOR_RO_EMAILS).map((e) => e.toLowerCase()));
 
 /** True when a profile's email is in the settings-read-only allowlist. */
 export function isSettingsReadonly(profile: { email?: string | null }): boolean {

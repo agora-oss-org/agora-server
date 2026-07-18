@@ -432,7 +432,7 @@ services:
       # domain (e.g. https://example.com/v7). Must be ABSOLUTE — the SDK derives the socket.io origin
       # via new URL(baseUrl), so a relative path would throw.
       AGORA_DEMO_API_BASE_URL: ${AGORA_DEMO_API_BASE_URL:-http://localhost/v7}
-      AGORA_DEMO_EMAIL: ${AGORA_DEMO_EMAIL:-agora-admin@gmail.com}
+      AGORA_DEMO_EMAIL: ${AGORA_DEMO_EMAIL:-agora-admin@agora-oss.org}
       AGORA_DEMO_PASSWORD: ${AGORA_DEMO_PASSWORD:-DemoPass123!}
       # Optional operator link back to the admin SPA (empty hides the button); secure-chat SDK trace
       # toggle; Umami analytics (both empty = no-op). The published image's nginx entrypoint reads all

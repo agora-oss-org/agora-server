@@ -98,19 +98,19 @@ exceptions:
   - subject: AGORA_BOOT_MODULE
     target: wiki/Deployment.md
     reason: hosting-layer seam; documented in SELF-HOSTING.md + CLAUDE.md, not a user-facing self-host knob
-  # SETTINGS_READONLY_EMAILS is an operator-tier allowlist var, same class as OPERATOR_EMAILS (which
+  # OPERATOR_RO_EMAILS is an operator-tier allowlist var, same class as OPERATOR_EMAILS (which
   # also has no explicit compose entry or root-README mention). docker-compose.dev.yml never runs an
   # `agora` container (dev runs the API on the host via `pnpm dev`, loading .env directly) — there is no
   # compose service to declare it on. docker-compose.yml's `agora` service uses `env_file: .env`, so it
   # (like OPERATOR_EMAILS) passes through automatically without an explicit `environment:` entry.
   # docker-compose.prod.yml enumerates every var explicitly (no env_file) and DOES declare it there.
-  - subject: SETTINGS_READONLY_EMAILS
+  - subject: OPERATOR_RO_EMAILS
     target: docker-compose.dev.yml
     reason: no `agora` service in dev compose (API runs on the host); nothing to declare it on
-  - subject: SETTINGS_READONLY_EMAILS
+  - subject: OPERATOR_RO_EMAILS
     target: docker-compose.yml
     reason: passed via env_file, same as OPERATOR_EMAILS; no explicit compose entry needed
-  - subject: SETTINGS_READONLY_EMAILS
+  - subject: OPERATOR_RO_EMAILS
     target: README.md
     reason: operator-tier config knob documented in CLAUDE.md + docs/CHEAT-SHEET.md, same as
       OPERATOR_EMAILS (also absent from the top-level README's quickstart/env-file overview)

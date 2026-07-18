@@ -486,7 +486,7 @@ on validate replies). Covered events: entity/comment/space/message/user `.create
 | POST | `/webhooks/test` (signed test ping → `{ configured, ok, status? }`) | ✅ |
 
 The five settings-save endpoints (`PATCH /settings/feed|moderator|steward|social`, `PATCH /webhooks/config`)
-return `403 settings/read-only` for a settings-read-only principal (`SETTINGS_READONLY_EMAILS`); the read
+return `403 settings/read-only` for a settings-read-only principal (`OPERATOR_RO_EMAILS`); the read
 actions and `POST /webhooks/test` + `POST /admin/social/constellation/recompute` remain available.
 
 ### roles (per-project role grants; server-side admin surface, not an SDK hook)

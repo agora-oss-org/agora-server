@@ -190,7 +190,7 @@ If you override `AGORA_DEMO_EMAIL`/`AGORA_DEMO_PASSWORD` in `.env`, seed that sa
 **The shared public demo login is settings-read-only.** The second seeded admin,
 `demo-admin@agora-oss.org` / `DemoAdmin123!` (a `seed.json` manifest user with a `project_roles` owner
 grant — created by the demo-content seeders, see `apps/api/README.md` → "Seeding"), is listed in
-`SETTINGS_READONLY_EMAILS` in `.env.selfhost.example`. That account gets the full operator/admin view
+`OPERATOR_RO_EMAILS` in `.env.selfhost.example`. That account gets the full operator/admin view
 but is server-blocked (`403 settings/read-only`) from the five settings-save endpoints — safe to hand
 out as a public demo login without risking the deployment's own config.
 

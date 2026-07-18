@@ -152,7 +152,7 @@ export interface AuthContext {
   isProjectAdmin: boolean; // per-project admin (DB grant) — within-project moderation/config
   isSteward: boolean; // conflict-resolution steward (DB grant) — gates the Steward routes/tab
   // Agora extension: true when this identity is a settings-read-only principal (env allowlist,
-  // SETTINGS_READONLY_EMAILS) — blocked from the five settings-save endpoints (the demo login).
+  // OPERATOR_RO_EMAILS) — blocked from the five settings-save endpoints (the demo login).
   settingsReadonly: boolean;
 }
 

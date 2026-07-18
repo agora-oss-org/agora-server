@@ -16,7 +16,7 @@
 - **Guard placement:** `assertSettingsWritable(c)` is called on the line **immediately after** `await requireProjectAdmin(c);` — admin-gate first, read-only cap last.
 - **Scope is settings-saves only** — never a global read-only. `settingsReadonly` gates only those five endpoints.
 - **`AuthContext` lives in `packages/contract/src/types.ts`** (re-exported by core). `AuthUser` (the `isOperator` block near line 107) is NOT changed — the demo cap is server-side only; the admin UI uses the separate deployment-wide `VITE_SETTINGS_READ_ONLY` flag.
-- **Email rename target:** `agora-admin@gmail.com` → `agora-admin@agora-oss.org`, **live surfaces only**.
+- **Email rename target:** `agora-admin@agora-oss.org` → `agora-admin@agora-oss.org`, **live surfaces only**.
 - **NEVER touch** `docs/PENTEST.md` (repo owner's file), and **do not rewrite** shipped `CHANGELOG.md` history or `docs/superpowers/plans/2026-07-01-env-config-cleanup.md` (historical records).
 - **Before "done":** `pnpm -r build` (contract→core→apps), `pnpm -r typecheck`, and `pnpm test` (unit) must pass; the new integration test must pass against `TEST_DATABASE_URL`.
 - **Logging:** shared `logger` only; `info`/`error` message-only, raw payloads on `debug`, Pino data-object-first.
@@ -567,7 +567,7 @@ In `.env.prod.example`, after the `OPERATOR_EMAILS=<you@your.domain>` line (line
 SETTINGS_READONLY_EMAILS=
 ```
 
-- [ ] **Step 2: Rename the email in the seed scripts.** These use `process.env.DEMO_EMAIL || "agora-admin@gmail.com"` (the post seeders + `04-seed-homepage-comments.mjs` + the supabase auth helper) or a `const DEMO_EMAIL = "agora-admin@gmail.com"` (`00-seed-auth-admin.mjs`). Rename the literal only:
+- [ ] **Step 2: Rename the email in the seed scripts.** These use `process.env.DEMO_EMAIL || "agora-admin@agora-oss.org"` (the post seeders + `04-seed-homepage-comments.mjs` + the supabase auth helper) or a `const DEMO_EMAIL = "agora-admin@agora-oss.org"` (`00-seed-auth-admin.mjs`). Rename the literal only:
 
 ```bash
 cd /Users/jenova/projects/jenova-marie/agora-server
@@ -609,7 +609,7 @@ Expected: the five live docs no longer contain the old email; `docs/PENTEST.md`,
   stay available. Powers the shared public demo login `demo-admin@agora-oss.org`.
 
 ### Changed
-- Default seeded-admin email renamed `agora-admin@gmail.com` → `agora-admin@agora-oss.org` (templates +
+- Default seeded-admin email renamed `agora-admin@agora-oss.org` → `agora-admin@agora-oss.org` (templates +
   seed scripts + docs). Existing deployments are unaffected (their `.env` is already set); only the
   template default and fresh seeds change.
 ```

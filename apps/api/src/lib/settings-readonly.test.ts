@@ -1,13 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-// settings-readonly.ts builds its email allowlist Set at import time from env.SETTINGS_READONLY_EMAILS.
+// settings-readonly.ts builds its email allowlist Set at import time from env.OPERATOR_RO_EMAILS.
 // Each case clears the var, resets the module registry, assigns the test env, and re-imports.
 const ORIGINAL_ENV = { ...process.env };
 
 async function loadIsSettingsReadonly(value?: string) {
   vi.resetModules();
-  delete process.env.SETTINGS_READONLY_EMAILS;
-  if (value !== undefined) process.env.SETTINGS_READONLY_EMAILS = value;
+  delete process.env.OPERATOR_RO_EMAILS;
+  if (value !== undefined) process.env.OPERATOR_RO_EMAILS = value;
   return (await import("./settings-readonly.js")).isSettingsReadonly;
 }
 

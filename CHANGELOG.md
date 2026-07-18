@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Renamed the settings-read-only allowlist env var `SETTINGS_READONLY_EMAILS` → `OPERATOR_RO_EMAILS`
+  (introduced in 0.20.0). Deployments that set the old name must rename it; behavior is unchanged.
+
 ## [0.20.0] - 2026-07-17
 
 ### Added
@@ -17,7 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `03-seed-engine.mjs` that writes `project_roles` rows straight to the DB — the bootstrap grant, since
   `POST /roles` is owner-gated and a fresh project has no owner to authorise it. Idempotent via
   `project_roles_unique`; an unknown role aborts the run. `00-seed-auth-admin.mjs` and its existing
-  `agora-admin@gmail.com` login are unchanged. Runs behind the `01-confirm-demo-data` gate, so
+  `agora-admin@agora-oss.org` login are unchanged. Runs behind the `01-confirm-demo-data` gate, so
   declining demo data skips it. Documented in `docs/DEVELOPMENT.md` and `apps/api/README.md` (the two
   seeded admins and how they differ).
 - **Chat push notifications** — sending a chat message now fans out a background push notification to
@@ -51,7 +55,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   this lands in 0.20.0.
 - RLS: the `0008` anon public-read policies are dropped and `anon`'s `SELECT` grants revoked
   (migration `0064`) — the DB now states the same private-by-default posture as the API.
-- Default seeded-admin email renamed `agora-admin@gmail.com` → `agora-admin@agora-oss.org` (templates +
+- Default seeded-admin email renamed `agora-admin@agora-oss.org` → `agora-admin@agora-oss.org` (templates +
   seed scripts + docs). Existing deployments are unaffected (their `.env` is already set); only the
   template default and fresh seeds change.
 
@@ -421,9 +425,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`docker-compose.yml`'s demo-seeding instructions pointed at nonexistent scripts and the wrong
   email.** The comment above the `demo` service referenced `scripts/seeds/seed-native-admin.mjs` /
   `seed-demo-user.mjs` (neither exists — the real entry point is `00-seed-auth-admin.mjs`) and told
-  self-hosters to seed `agora-admin@gmail.com`, while `docs/SELF-HOSTING.md` separately asserted the
+  self-hosters to seed `agora-admin@agora-oss.org`, while `docs/SELF-HOSTING.md` separately asserted the
   demo signs in as `agora-demo@gmail.com` — neither matched the demo's now-runtime-retargeted
-  `AGORA_DEMO_EMAIL`/`AGORA_DEMO_PASSWORD` (defaulted here to `agora-admin@gmail.com`, matching
+  `AGORA_DEMO_EMAIL`/`AGORA_DEMO_PASSWORD` (defaulted here to `agora-admin@agora-oss.org`, matching
   `00-seed-auth-admin.mjs`'s own default), so following either doc left the demo's pre-filled login
   401ing. Both docs now agree, and `.env.selfhost.example`'s `AGORA_DEMO_UMAMI_URLL` typo (extra `L`,
   didn't match the entrypoint's actual `AGORA_DEMO_UMAMI_URL`) is fixed.
@@ -1636,7 +1640,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   commute, watercolor), each with a reliable `picsum.photos` default image overridable via a per-post
   `*_IMAGE_URL` env. The many `seed:*` npm scripts are **consolidated into a single `pnpm seed`**
   (`node scripts/seeds/seed.mjs`); individual seeders remain runnable directly. The seeded/operator
-  default user is now **`agora-admin@gmail.com`** (was `agora-demo@gmail.com`). `seed.sql` is still run
+  default user is now **`agora-admin@agora-oss.org`** (was `agora-demo@gmail.com`). `seed.sql` is still run
   separately via psql (`-f scripts/seeds/seed.sql`).
 - **Umami: trace logging on every event emit.** The API's `trackEvent` logs `umami: sending event`
   (name + endpoint + website) at `trace` and `umami: event sent` on success; the admin's `track()`

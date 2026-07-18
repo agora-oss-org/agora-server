@@ -374,7 +374,7 @@ REFRESH_TOKEN_TTL=2592000
 REFRESH_TOKEN_GRACE_SECONDS=30
 CORS_ORIGIN=*
 # Make the seeded admin a deployment operator (god-view). Matches the demo seed user.
-OPERATOR_EMAILS=agora-admin@gmail.com
+OPERATOR_EMAILS=agora-admin@agora-oss.org
 
 # ═══ Front door (Caddy) — plain HTTP for local dev ═════════════════════════
 SERVER_NAME=:80
@@ -659,7 +659,7 @@ Expected: prints `AGORA_ENV : selfhost` + `Target kind : LOCAL`, then drops/rebu
 - [ ] **Step 4: Seed the native admin + demo content**
 
 ```bash
-docker compose exec -e ADMIN_EMAIL=agora-admin@gmail.com -e ADMIN_PASSWORD=DemoPass123! -e SEED_DEMO_DATA=1 \
+docker compose exec -e ADMIN_EMAIL=agora-admin@agora-oss.org -e ADMIN_PASSWORD=DemoPass123! -e SEED_DEMO_DATA=1 \
   agora node scripts/seeds/seed.mjs
 ```
 Expected: admin user created (native), demo posts seeded. Fix any seeder failure at root (e.g. native-auth seeder needs `DEFAULT_AUTH_PROVIDER=native` — verify it's in the template).
@@ -671,7 +671,7 @@ curl -fsS http://localhost/v7/health && echo " OK: API health"
 # Sign in as the seeded admin through the front door:
 curl -fsS -X POST http://localhost/v7/11111111-1111-1111-1111-111111111111/auth/sign-in \
   -H 'content-type: application/json' \
-  -d '{"email":"agora-admin@gmail.com","password":"DemoPass123!"}' | grep -o '"accessToken"' && echo " OK: login"
+  -d '{"email":"agora-admin@agora-oss.org","password":"DemoPass123!"}' | grep -o '"accessToken"' && echo " OK: login"
 ```
 Expected: health OK; login returns an `accessToken`. Then open `http://localhost` (admin SPA) and confirm a seeded post renders and its image loads from `/media` (proves MinIO storage + bucket bootstrap). Fix media/storage failures at root (likely `lib/storage/s3.ts` bucket/policy on first upload, or `S3_PUBLIC_URL`).
 

@@ -159,7 +159,7 @@ the `auth` roles. So "self-hosted" drops the Supabase *service*, not the Supabas
 | Semantic search (embeddings) | `VOYAGE_API_KEY` | ◻️ | [dashboard.voyageai.com](https://dashboard.voyageai.com) → *API Keys*. Unset → search falls back to ILIKE. |
 | RAG `/search/ask` | `ANTHROPIC_API_KEY` | ◻️ | [console.anthropic.com](https://console.anthropic.com). |
 | Operators (god-view) | `OPERATOR_EMAILS` / `OPERATOR_USER_IDS` | ◻️ | **You choose** — your admin email(s) / profile UUID(s), comma-separated. Unset → no operators. |
-| Settings-read-only operator (shared demo login) | `SETTINGS_READONLY_EMAILS` | ◻️ | **You choose** — comma-separated emails that get full operator view but a `403 settings/read-only` on the five settings-save endpoints. Unset → feature off. |
+| Settings-read-only operator (shared demo login) | `OPERATOR_RO_EMAILS` | ◻️ | **You choose** — comma-separated emails that get full operator view but a `403 settings/read-only` on the five settings-save endpoints. Unset → feature off. |
 | Cron jobs | `CRON_SECRET` | ◻️ | Gates `POST /internal/cron/*` (503 until set). `openssl rand -base64 32`. |
 | Content-delete semantics | `CONTENT_DELETE_MODE` | ◻️ | `hard` (default) → deleting an entity/comment/message/event truly `DELETE`s the row (FK cascade) **and** removes its media from storage. `soft` → recoverable tombstone, media kept. |
 | OAuth callbacks behind a proxy | `PUBLIC_BASE_URL` | ◻️ | Your public origin, e.g. `https://api.example.com` — used to build absolute OAuth callback URLs. |

@@ -35,7 +35,7 @@ const schema = z.object({
   OPERATOR_EMAILS: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
   // Accounts allowed a settings-read-only operator view (the shared demo login). Comma-separated,
   // case-insensitive emails; empty/unset = no read-only principals. See lib/settings-readonly.ts.
-  SETTINGS_READONLY_EMAILS: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
+  OPERATOR_RO_EMAILS: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
   // The server's own public origin (scheme + host), e.g. https://api.example.com. Used to build
   // absolute callback URLs (OAuth) when the server runs behind a TLS-terminating reverse proxy,
   // where the raw request origin is the internal http://<internal-host>. When unset the server
