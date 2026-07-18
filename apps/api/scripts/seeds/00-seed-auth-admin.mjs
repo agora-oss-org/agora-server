@@ -26,35 +26,10 @@ import "dotenv/config";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import readline from "node:readline";
+import { resolveAdminCreds, credsEnv } from "./helpers/resolve-admin-creds.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const argv = process.argv.slice(2); // forwarded verbatim to each helper (--test/--reset/--force)
-
-const DEMO_EMAIL = "agora-admin@agora-oss.org";
-const DEMO_PASSWORD = "DemoPass123!";
-
-// Prompt on the TTY. The query label is always shown; with { hidden: true } the typed keystrokes that
-// FOLLOW are not echoed (password entry — the visible default hint stays, the secret you type doesn't).
-// Returns the trimmed line; rejects when there's no interactive terminal (caller falls back to a default).
-function ask(query, { hidden = false } = {}) {
-  if (!process.stdin.isTTY || !process.stdout.isTTY) {
-    return Promise.reject(new Error("no TTY"));
-  }
-  return new Promise((resolve) => {
-    const rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: true });
-    let muted = false;
-    rl._writeToOutput = (str) => {
-      if (!muted) rl.output.write(str);
-    };
-    rl.question(query, (answer) => {
-      rl.close();
-      if (hidden) process.stdout.write("\n");
-      resolve(answer.trim());
-    });
-    if (hidden) muted = true;
-  });
-}
 
 function fail(msg) {
   console.error(`✗ ${msg}`);
@@ -62,39 +37,14 @@ function fail(msg) {
 }
 
 // ── Resolve the shared credentials ONCE ─────────────────────────────────────────────────────────
-// Email: ADMIN_EMAIL / DEMO_EMAIL env wins; else prompt (empty = demo default).
-let email = (process.env.ADMIN_EMAIL || process.env.DEMO_EMAIL)?.trim().toLowerCase();
-if (!email) {
-  email = (await ask(`Admin email [${DEMO_EMAIL}]: `).catch(() => "")) || DEMO_EMAIL;
-  email = email.toLowerCase();
-}
-if (!email.includes("@")) fail("A valid email is required.");
-
-// Password: ADMIN_PASSWORD / DEMO_PASSWORD env wins; else prompt. Enter = demo default (hint shown);
-// a typed password is hidden (echo off) and confirmed twice (hidden entry → guard against a typo).
-let password = process.env.ADMIN_PASSWORD || process.env.DEMO_PASSWORD;
-if (!password) {
-  const typed = await ask(`Admin password [${DEMO_PASSWORD}]: `, { hidden: true }).catch(() => "");
-  if (!typed) {
-    password = DEMO_PASSWORD;
-    console.warn("⚠ using the known demo password — change it for any non-demo deployment.");
-  } else {
-    const confirm = await ask("Confirm password: ", { hidden: true }).catch(() => "");
-    if (typed !== confirm) fail("Passwords don't match.");
-    password = typed;
-  }
-}
-if (password.length < 8) fail("Password must be at least 8 characters.");
+// Delegated to the shared resolver so the `seed.mjs` orchestrator resolves the SAME way and can
+// propagate the result to the post-seeders (a typed password must reach them, not the demo default).
+// Env (ADMIN_*/DEMO_*) wins over the prompt; a typed password is hidden + confirmed twice.
+const { email, password } = await resolveAdminCreds().catch((err) => fail(err.message));
 
 // Hand the resolved creds to both helpers via env (both names so each reads its own): native reads
 // ADMIN_*, supabase reads DEMO_*. Set non-interactively so neither helper re-prompts.
-const childEnv = {
-  ...process.env,
-  ADMIN_EMAIL: email,
-  ADMIN_PASSWORD: password,
-  DEMO_EMAIL: email,
-  DEMO_PASSWORD: password,
-};
+const childEnv = { ...process.env, ...credsEnv({ email, password }) };
 
 const helpers = [
   { label: "native", file: "helpers/seed-native-auth-admin.mjs" },
