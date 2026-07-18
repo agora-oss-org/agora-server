@@ -70,6 +70,9 @@ A few deploy-significant knobs beyond the data plane:
 - **Push notifications** — set the `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` trio to
   enable Web Push dispatch (unset → push is a no-op); FCM/APNs providers are credential-gated. See
   [[API & Contract|API-Contract]].
+- **Settings-read-only operator** — `SETTINGS_READONLY_EMAILS` (comma-separated emails) marks accounts
+  that get the full operator/admin view but a `403 settings/read-only` on the five settings-save
+  endpoints. Powers a shared demo login without risking the deployment's own config. Unset = off.
 
 ## The front door (Caddy)
 

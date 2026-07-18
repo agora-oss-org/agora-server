@@ -138,7 +138,7 @@ seeders in `scripts/seeds/` in order:
 - **The admin account.** `00-seed-auth-admin.mjs` asks for an email + password **once**, then seeds the
   backend the project is configured for (`projects.auth_provider`): a native `auth_credentials` row
   (in-API argon2) or a confirmed Supabase user. The other backend is skipped automatically. Press
-  **Enter** at the password prompt to accept the demo default (`agora-admin@gmail.com` /
+  **Enter** at the password prompt to accept the demo default (`agora-admin@agora-oss.org` /
   `DemoPass123!`) — what the demo app and the post-seeders sign in as; a password you **type** is hidden.
   Re-running is safe: it reports "already exists" and changes nothing (pass `--reset` to set a new
   native password). It needs privileged credentials — `DATABASE_URL` (native) and/or

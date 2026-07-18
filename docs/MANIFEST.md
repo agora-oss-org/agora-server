@@ -485,6 +485,10 @@ on validate replies). Covered events: entity/comment/space/message/user `.create
 | PATCH | `/settings/feed` (project-admin; deep-merge `feed_config`; cache-invalidated) | ✅ |
 | POST | `/webhooks/test` (signed test ping → `{ configured, ok, status? }`) | ✅ |
 
+The five settings-save endpoints (`PATCH /settings/feed|moderator|steward|social`, `PATCH /webhooks/config`)
+return `403 settings/read-only` for a settings-read-only principal (`SETTINGS_READONLY_EMAILS`); the read
+actions and `POST /webhooks/test` + `POST /admin/social/constellation/recompute` remain available.
+
 ### roles (per-project role grants; server-side admin surface, not an SDK hook)
 Per-project role management (`owner | admin | steward`), the within-project tier between member and
 the deployment platform-operator. Grants live in `project_roles` and are folded into the access JWT

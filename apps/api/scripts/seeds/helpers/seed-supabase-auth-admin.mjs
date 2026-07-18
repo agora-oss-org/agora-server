@@ -87,7 +87,7 @@ if (!url || !key) {
   process.exit(1);
 }
 
-const email = process.env.DEMO_EMAIL || "agora-admin@gmail.com";
+const email = process.env.DEMO_EMAIL || "agora-admin@agora-oss.org";
 const password = process.env.DEMO_PASSWORD || "DemoPass123!";
 
 const admin = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });

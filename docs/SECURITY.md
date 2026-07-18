@@ -181,6 +181,11 @@ How Agora is *designed* to be secure — useful context for both operators and r
   private-space access) accept owner/admin; **deployment** powers (running config, DB size, server
   resources) stay operator-only. Role grants take effect on the user's next token
   refresh (see the revocation-latency limitation below).
+- **Settings-read-only principals** (`SETTINGS_READONLY_EMAILS`): a shared demo/operator login can hold
+  the full operator view yet is server-blocked (`assertSettingsWritable`, after the project-admin gate)
+  from persisting any of the five settings-save endpoints. Per-identity and server-enforced —
+  independent of, and stricter than, the client-side `VITE_SETTINGS_READ_ONLY` display flag. Additive;
+  no existing gate is relaxed.
 - **Internal endpoints & webhooks** (cron, moderation apply, webhook signatures) are gated by secrets
   compared in **constant time** (`crypto.timingSafeEqual`); webhooks are **HMAC-SHA256 signed** with a
   timestamp, in both directions.
