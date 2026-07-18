@@ -34,7 +34,9 @@ export async function api(method: string, path: string, init: Init = {}) {
  *  they bypass the DB resolver, so prove real claim propagation via the refresh path separately.
  *  `projectId` stamps the `pid` claim (mirrors `lib/tokens.ts` `mintSession`) so tests can mint a
  *  token bound to a specific project and prove the auth wall's project-binding check; omitted →
- *  no `pid` claim, matching pre-`pid`-claim tokens (existing call sites unchanged). */
+ *  no `pid` claim, matching pre-`pid`-claim tokens (existing call sites unchanged).
+ *  `settingsReadonly` stamps the claim the settings-save guard reads back (default false — existing
+ *  call sites unchanged). */
 export function signToken(
   userId: string,
   role = "visitor",
@@ -43,8 +45,9 @@ export function signToken(
   owner = false,
   admin = false,
   projectId?: string,
+  settingsReadonly = false,
 ) {
-  return new SignJWT({ role, operator, steward, powner: owner, padmin: admin, ...(projectId ? { pid: projectId } : {}) })
+  return new SignJWT({ role, operator, steward, powner: owner, padmin: admin, ...(projectId ? { pid: projectId } : {}), ...(settingsReadonly ? { settingsReadonly: true } : {}) })
     .setProtectedHeader({ alg: "HS256" })
     .setSubject(userId)
     .setExpirationTime("1h")

@@ -377,7 +377,7 @@ function SocialGraphForm({ view }: { view: SocialConfigView }) {
                   <Button
                     type="button"
                     variant="outline"
-                    disabled={recompute.isPending || SETTINGS_READ_ONLY}
+                    disabled={recompute.isPending}
                     onClick={() => recompute.mutate()}
                   >
                     {recompute.isPending ? "Recomputing…" : "Recompute constellation now"}
