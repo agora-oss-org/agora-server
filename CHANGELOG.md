@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`ROADMAP.md`** (repo root) — the living index of designed-but-unbuilt work: ready-to-execute
+  spec+plan pairs (space-scoped stewards, store Phase 1), committed follow-ons, the design backlog
+  (`docs/PROPOSED.md`), and the research horizon (`docs/PRIVACY-ROADMAP.md`). Pointers + status only;
+  content stays in the linked docs. The space-scoped-stewards spec + plan land alongside it
+  (`docs/superpowers/specs/2026-07-17-space-scoped-stewards-design.md`,
+  `docs/superpowers/plans/2026-07-17-space-scoped-stewards.md`).
+
 ## [0.21.0] - 2026-07-17
 
 ### Fixed
