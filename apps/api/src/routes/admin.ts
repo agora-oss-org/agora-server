@@ -29,7 +29,7 @@ import { getDb } from "../db/index.js";
 import {
   profiles, reports, spaces, spaceMembers, entities, comments, files, apiUsage, communityStatsHourly,
 } from "../db/schema/index.js";
-import { isProjectAdmin, requireProjectAdmin } from "../lib/project-roles.js";
+import { isProjectAdmin, requireProjectAdmin, assertSettingsWritable } from "../lib/project-roles.js";
 
 // Spaces where the user is an active admin/moderator (their moderation scope when not an operator).
 async function moderatedSpaceIds(projectId: string, userId: string): Promise<string[]> {
@@ -361,6 +361,7 @@ export const adminRoutes = new Hono<{ Variables: Variables }>()
   // tracking stays an operator+corporate action ("the operator chooses; the platform enforces").
   .patch("/social/read-receipts/spaces/:spaceId", requireAuth, async (c) => {
     if (!c.var.auth!.isOperator) throw Errors.forbidden("admin/operator-required", "Operator access required");
+    assertSettingsWritable(c); // this write flips spaces.readReceiptsEnabled — a settings-read-only principal is blocked
     const cfg = await getSocialConfig(c.var.projectId);
     if (!cfg.readReceiptsAllowed) {
       throw Errors.badRequest("social/read-receipts-disabled", "Read receipts are not enabled for this project");

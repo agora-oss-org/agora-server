@@ -15,7 +15,7 @@ import { spaceRepGate } from "../middleware/space-rep.js";
 import { enrichSpaceReputation } from "../lib/space-reputation-enrich.js";
 
 // The set of space ids a user may moderate: spaces they own (space.userId) + memberships with an
-// active admin/moderator role. Used to scope the pending-reports queue for non-operators.
+// active admin/moderator role. Used to scope the pending-reports queue for non-project-admins.
 async function moderatedSpaceIds(projectId: string, userId: string): Promise<string[]> {
   const [owned, member] = await Promise.all([
     getDb().select({ id: spaces.id }).from(spaces)
@@ -29,9 +29,9 @@ async function moderatedSpaceIds(projectId: string, userId: string): Promise<str
   return [...new Set([...owned.map((r) => r.id), ...member.map((r) => r.id)])];
 }
 
-// Narrow a base report condition to what the caller may see: operators see everything; everyone
-// else is limited to reports in spaces they moderate. `empty: true` means "no visible reports"
-// (a non-operator who moderates nothing) — the caller should short-circuit to an empty page.
+// Narrow a base report condition to what the caller may see: project admins (operator ‖ owner ‖ admin)
+// see everything; everyone else is limited to reports in spaces they moderate. `empty: true` means "no
+// visible reports" (a non-admin who moderates nothing) — the caller should short-circuit to an empty page.
 async function scopeReports(c: any, base: ReturnType<typeof and>): Promise<{ where: ReturnType<typeof and>; empty: boolean }> {
   if (isProjectAdmin(c.var.auth)) return { where: base, empty: false };
   const spaceIds = await moderatedSpaceIds(c.var.projectId, c.var.auth.userId);
@@ -55,9 +55,9 @@ export const reportRoutes = new Hono<{ Variables: Variables }>()
     logger.info({ projectId: c.var.projectId, reportId: row!.id, reporterId: c.var.auth!.userId, targetType: body.targetType, targetId: body.targetId, spaceId: body.spaceId ?? null, reason: body.reason }, "report: filed");
     return c.json(await enrichSpaceReputation(c, shapeReport(row!)), 201);
   })
-  // Open (unresolved) reports — the moderation inbox. A deployment operator sees every unresolved
-  // report in the project (incl. project-level reports with no space); a normal user sees only those
-  // filed against content in spaces they own or moderate. Newest first.
+  // Open (unresolved) reports — the moderation inbox. A project admin (operator ‖ owner ‖ admin) sees
+  // every unresolved report in the project (incl. project-level reports with no space); a plain
+  // space-moderator sees only those filed against content in spaces they own or moderate. Newest first.
   .get("/pending", requireAuth, async (c) => {
     const { page, limit, offset } = readPagination(c);
     const { where, empty } = await scopeReports(c, and(eq(reports.projectId, c.var.projectId), isNull(reports.resolvedAt)));
@@ -81,11 +81,11 @@ export const reportRoutes = new Hono<{ Variables: Variables }>()
     const data = rows.map((r) => shapeReport(r, { author: authorByReport.get(r.id), reporter: reporterByReport.get(r.id) }));
     return c.json(await enrichSpaceReputation(c, paginate(data, n, page, limit)));
   })
-  // Operator-only: action a report by id, regardless of space. The space-scoped flow
-  // (PATCH /spaces/:id/.../moderation + /spaces/:id/reports/...) needs a spaceId, so PROJECT-LEVEL
-  // reports (no space) can't be resolved there. Operators have the project-wide god-view, so they
-  // moderate the target + resolve the report here in one call. action: removed | approved | dismiss
-  // (dismiss resolves without touching the content). Mirrors the space moderation fields exactly.
+  // Project-admin-gated (operator ‖ owner ‖ admin): action a report by id, regardless of space. The
+  // space-scoped flow (PATCH /spaces/:id/.../moderation + /spaces/:id/reports/...) needs a spaceId, so
+  // PROJECT-LEVEL reports (no space) can't be resolved there. A project admin has the project-wide
+  // god-view, so they moderate the target + resolve the report here in one call. action: removed |
+  // approved | dismiss (dismiss resolves without touching the content). Mirrors the space moderation fields.
   .patch("/:id/resolve", requireAuth, async (c) => {
     requireProjectAdmin(c);
     const body = (await c.req.json().catch(() => ({}))) as { action?: string; reason?: string };
@@ -112,6 +112,6 @@ export const reportRoutes = new Hono<{ Variables: Variables }>()
     }
     await getDb().update(reports).set({ resolvedAt: new Date(), resolvedById: c.var.auth!.userId })
       .where(and(eq(reports.projectId, c.var.projectId), eq(reports.id, report.id)));
-    logger.info({ projectId: c.var.projectId, reportId: report.id, operatorId: c.var.auth!.userId, action, targetType: report.targetType, targetId: report.targetId }, "report: resolved by operator");
+    logger.info({ projectId: c.var.projectId, reportId: report.id, actorId: c.var.auth!.userId, action, targetType: report.targetType, targetId: report.targetId }, "report: resolved by project admin");
     return c.json({ success: true });
   });

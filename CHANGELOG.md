@@ -7,7 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Settings-read-only cap now covers the per-space read-receipts toggle.** `PATCH
+  /admin/social/read-receipts/spaces/:spaceId` mutates settings (`spaces.readReceiptsEnabled`) but was
+  not behind `assertSettingsWritable`, so a settings-read-only principal that also held the operator
+  claim could flip it. It now returns `403 settings/read-only` like the other settings-save endpoints,
+  making the "read-only principal changes nothing" invariant hold by the gate rather than by accident of
+  the operator check. Covered by `test/integration/settings-readonly.test.ts`.
+
 ### Changed
+- Report resolution telemetry (`PATCH /reports/:id/resolve`) now logs `actorId` (message `report:
+  resolved by project admin`) instead of `operatorId` / `resolved by operator` — the endpoint has been
+  project-admin-gated (operator ‖ owner ‖ admin) since the project-roles fold, so the actor is often a
+  project owner/admin, not the deployment operator. Stale operator-era comments in `routes/reports.ts`
+  were corrected to match; no behavior change.
 - Renamed the settings-read-only allowlist env var `SETTINGS_READONLY_EMAILS` → `OPERATOR_RO_EMAILS`
   (introduced in 0.20.0). Deployments that set the old name must rename it; behavior is unchanged.
 

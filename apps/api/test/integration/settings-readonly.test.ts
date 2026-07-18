@@ -1,6 +1,7 @@
 // The settings-read-only cap: a demo operator (operator claim + settingsReadonly claim) is blocked on
 // the five settings-SAVE endpoints (403 settings/read-only) but stays free everywhere else — the two
 // non-destructive actions and ordinary member writes. A plain operator (no cap) saves normally.
+import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { api, base, createProject, createUser, deleteProject, signToken } from "./helpers.js";
 
@@ -45,6 +46,22 @@ describe("settings read-only cap", () => {
       expect(res.status).not.toBe(403); // 200 on success; never the settings/read-only 403
     });
   }
+
+  // The per-space read-receipts toggle is a sixth settings-mutating endpoint (it flips
+  // spaces.readReceiptsEnabled). It lives in the /admin/social namespace, not /settings, so it's not
+  // in the `locked` table above — but the same cap must apply: a read-only principal cannot change it.
+  // The cap fires before the space lookup, so any spaceId serves.
+  const rrPath = `/admin/social/read-receipts/spaces/${randomUUID()}`;
+  it("blocks the read-only principal on the read-receipts toggle", async () => {
+    const res = await api("PATCH", `${B}${rrPath}`, { token: demo.token, body: { enabled: true } });
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe("settings/read-only");
+  });
+
+  it("allows a plain operator through the cap on the read-receipts toggle", async () => {
+    const res = await api("PATCH", `${B}${rrPath}`, { token: op.token, body: { enabled: true } });
+    expect(res.status).not.toBe(403); // 400 read-receipts-disabled is fine; never the settings/read-only 403
+  });
 
   // Scope proof: the cap is settings-SAVES only — the read-only principal keeps its other powers.
   it("still lets the read-only principal run the two non-destructive actions", async () => {
