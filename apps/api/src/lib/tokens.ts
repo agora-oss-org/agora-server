@@ -23,7 +23,8 @@ export interface SessionTokens {
 
 /** Sign a 30-minute access JWT (HS256). sub=profileId; verified by middleware/auth.ts.
  *  `operator` carries the deployment-operator flag, `steward` the conflict-resolution role, and
- *  `powner`/`padmin` the per-project owner/admin grants, so handlers read all of them without a DB
+ *  `powner`/`padmin` the per-project owner/admin grants, and `settingsReadonly` the demo settings-lock
+ *  (blocks the five settings-save endpoints), so handlers read all of them without a DB
  *  hit. `projectId` is stamped as the `pid` claim, so root-mounted routes can learn their project
  *  from the token alone (c.var.auth.projectId). */
 export async function signAccessToken(projectId: string, profileId: string, role: string, operator = false, steward = false, owner = false, admin = false, settingsReadonly = false): Promise<string> {
@@ -49,8 +50,8 @@ async function issueRefreshToken(projectId: string, profileId: string, familyId:
 }
 
 /** Mint a full session (access + refresh). Starts a new family unless one is supplied (rotation).
- *  `operator` + `steward` + `owner`/`admin` flow into the access-token claims (caller computes them
- *  from the profile + project roles). */
+ *  `operator` + `steward` + `owner`/`admin` + `settingsReadonly` flow into the access-token claims
+ *  (caller computes them from the profile + project roles). */
 export async function mintSession(projectId: string, profileId: string, role: string, operator = false, steward = false, owner = false, admin = false, settingsReadonly = false, familyId?: string): Promise<SessionTokens> {
   const family = familyId ?? randomUUID();
   const [accessToken, refreshToken] = await Promise.all([

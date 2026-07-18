@@ -28,7 +28,7 @@ describe("settings read-only cap", () => {
   const locked: Array<[string, string, Record<string, unknown>]> = [
     ["PATCH", "/settings/feed", { gravity: 1.5 }],
     ["PATCH", "/settings/moderator", { blockAutoActionThreshold: 0.9 }],
-    ["PATCH", "/settings/steward", { notifyPolicy: "both" }],
+    ["PATCH", "/settings/steward", { notifyPolicy: "symmetric" }],
     ["PATCH", "/settings/social", { graphEnabled: false }],
     ["PATCH", "/webhooks/config", { url: "https://example.com/hook" }],
   ];
