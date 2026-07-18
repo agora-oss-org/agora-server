@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-07-17
+
 ### Fixed
 - **Seed: a custom admin password now propagates to the post-seeders.** When `00-seed-auth-admin.mjs`
   prompted for a password and you typed one (instead of accepting the `DemoPass123!` default), the
@@ -2205,7 +2207,8 @@ cloud Supabase — no stubbed endpoints remain.
   (`@agora/*`), a repointed fork of `@replyke/core`.
 - Backlog: rate limiting, refresh-token cleanup sweep, RLS write policies, turnkey deploy guide.
 
-[Unreleased]: https://github.com/jenova-marie/agora/compare/v0.20.0...HEAD
+[Unreleased]: https://github.com/jenova-marie/agora/compare/v0.21.0...HEAD
+[0.21.0]: https://github.com/jenova-marie/agora/compare/v0.20.0...v0.21.0
 [0.20.0]: https://github.com/jenova-marie/agora/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/jenova-marie/agora/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/jenova-marie/agora/compare/v0.17.0...v0.18.0
