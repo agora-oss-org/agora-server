@@ -31,7 +31,7 @@ import readline from "node:readline";
 const here = dirname(fileURLToPath(import.meta.url));
 const argv = process.argv.slice(2); // forwarded verbatim to each helper (--test/--reset/--force)
 
-const DEMO_EMAIL = "agora-admin@gmail.com";
+const DEMO_EMAIL = "agora-admin@agora-oss.org";
 const DEMO_PASSWORD = "DemoPass123!";
 
 // Prompt on the TTY. The query label is always shown; with { hidden: true } the typed keystrokes that

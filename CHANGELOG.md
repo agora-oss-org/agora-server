@@ -33,6 +33,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   enrichment is gated by space read-access — a caller who cannot read a members-only space receives
   no `spaceReputation` for it (fail closed), mirroring the `GET /spaces/:id/members` visibility rule.
   Public spaces, the space owner, active members, and operators/project-admins still get the value.
+- **Settings-read-only operator** — `SETTINGS_READONLY_EMAILS` (comma-separated emails) marks accounts
+  that get the full operator/admin view but are blocked (`403 settings/read-only`) from the five
+  settings-save endpoints (`PATCH /settings/feed|moderator|steward|social`, `PATCH /webhooks/config`).
+  Non-destructive actions (`POST /webhooks/test`, constellation recompute) and ordinary member writes
+  stay available. Powers the shared public demo login `demo-admin@agora-oss.org`.
 
 ### Changed
 - **BREAKING — private by default.** Every `/v7/:projectId/*` endpoint now requires an
@@ -44,6 +49,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   this lands in 0.20.0.
 - RLS: the `0008` anon public-read policies are dropped and `anon`'s `SELECT` grants revoked
   (migration `0064`) — the DB now states the same private-by-default posture as the API.
+- Default seeded-admin email renamed `agora-admin@gmail.com` → `agora-admin@agora-oss.org` (templates +
+  seed scripts + docs). Existing deployments are unaffected (their `.env` is already set); only the
+  template default and fresh seeds change.
 
 ### Fixed
 - **Docs referenced a removed script.** `apps/api/README.md`, `seed.mjs`, `03-seed-engine.mjs`, and

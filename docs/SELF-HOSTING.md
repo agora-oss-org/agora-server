@@ -174,7 +174,7 @@ the bundle loads. For a real domain, set `AGORA_DEMO_API_BASE_URL=https://<your-
 (it must be absolute — the SDK derives the socket.io origin from it). Pin a version with
 `AGORA_DEMO_IMAGE` instead of `latest`.
 
-**Seed the demo login first.** The demo's login form pre-fills `agora-admin@gmail.com` / `DemoPass123!`
+**Seed the demo login first.** The demo's login form pre-fills `agora-admin@agora-oss.org` / `DemoPass123!`
 against project `11111111-1111-1111-1111-111111111111` — like the API URL, that prefill is
 runtime-retargeted (`AGORA_DEMO_EMAIL`/`AGORA_DEMO_PASSWORD` in `.env`, defaulted in
 `docker-compose.yml` to match what `00-seed-auth-admin.mjs` itself defaults to). Seed that credential
@@ -186,6 +186,13 @@ runtime-retargeted (`AGORA_DEMO_EMAIL`/`AGORA_DEMO_PASSWORD` in `.env`, defaulte
 
 If you override `AGORA_DEMO_EMAIL`/`AGORA_DEMO_PASSWORD` in `.env`, seed that same address instead
 (`ADMIN_EMAIL=... ADMIN_PASSWORD=... docker compose run --rm agora node scripts/seeds/00-seed-auth-admin.mjs`).
+
+**The shared public demo login is settings-read-only.** The second seeded admin,
+`demo-admin@agora-oss.org` / `DemoAdmin123!` (a `seed.json` manifest user with a `project_roles` owner
+grant — created by the demo-content seeders, see `apps/api/README.md` → "Seeding"), is listed in
+`SETTINGS_READONLY_EMAILS` in `.env.selfhost.example`. That account gets the full operator/admin view
+but is server-blocked (`403 settings/read-only`) from the five settings-save endpoints — safe to hand
+out as a public demo login without risking the deployment's own config.
 
 `00-seed-auth-admin.mjs` seeds whichever backend the project uses — native (selfhost) or, on a
 Supabase-backed deploy, a confirmed Supabase auth user. The full demo experience (secure chat tab) also

@@ -96,7 +96,7 @@ defaults work behind the bundled nginx image (and the dev proxy).
 # VITE_DEMO_URL=https://demo.example.com/
 
 # Dev-only: prefill the login form with the seeded demo user. Leave unset in any real deployment.
-# VITE_DEMO_EMAIL=agora-admin@gmail.com
+# VITE_DEMO_EMAIL=agora-admin@agora-oss.org
 # VITE_DEMO_PASSWORD=DemoPass123!
 ```
 

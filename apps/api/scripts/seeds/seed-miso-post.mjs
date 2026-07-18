@@ -10,7 +10,7 @@ import { fetchSeedImageBytes } from "./lib/seed-images.mjs";
 
 const BASE = (process.env.API_BASE_URL || "http://localhost:4000").replace(/\/$/, "").replace(/\/v7$/, "");
 const PROJECT_ID = process.env.PROJECT_ID || "11111111-1111-1111-1111-111111111111";
-const EMAIL = process.env.DEMO_EMAIL || "agora-admin@gmail.com";
+const EMAIL = process.env.DEMO_EMAIL || "agora-admin@agora-oss.org";
 const PASSWORD = process.env.DEMO_PASSWORD || "DemoPass123!";
 
 // Original copy (not reproduced from any source) — a friendly demo post.

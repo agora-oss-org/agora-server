@@ -209,7 +209,7 @@ the published contract — defeating the point. Its `vite.config.ts` auto-aliase
 `../agora-sdk/packages/*/dist` build when present, so SDK-fork dev still works without publishing.
 
 **Run all three locally:** start the server (`cd apps/api && pnpm dev` → `:4000`), seed a confirmed
-demo user (`node scripts/seeds/00-seed-auth-admin.mjs` → `agora-admin@gmail.com` / `DemoPass123!`), then run the
+demo user (`node scripts/seeds/00-seed-auth-admin.mjs` → `agora-admin@agora-oss.org` / `DemoPass123!`), then run the
 demo (`cd ../agora-demo && npm run dev` → `:5173`, points at the server via `VITE_API_BASE_URL`).
 Project id is the seed UUID `11111111-1111-1111-1111-111111111111`.
 
@@ -276,7 +276,7 @@ url=$(grep '^DATABASE_URL=' .env | cut -d= -f2-); psql "$url" -v ON_ERROR_STOP=1
 #   seeders (not auto-discovered). See apps/api/README.md → "Seeding".
 pnpm seed            # the manifest graph world (03-seed-engine.mjs, NOT idempotent) runs inside it,
                      # gated by the same 01-confirm-demo-data prompt (the old `seed:graph` script is gone)
-#   TWO seeded admins, different layers: `agora-admin@gmail.com`/`DemoPass123!` (00, always seeded,
+#   TWO seeded admins, different layers: `agora-admin@agora-oss.org`/`DemoPass123!` (00, always seeded,
 #   privileged only via OPERATOR_EMAILS) and `demo-admin@agora-oss.org`/`DemoAdmin123!` (a seed.json
 #   users[] entry with roles:["owner"] → a project_roles owner grant, so it's BEHIND the demo-data gate).
 #   A manifest user may carry `roles` (owner|admin|steward) + a per-user `password`; the engine's roles
@@ -310,6 +310,8 @@ there (or `.env.selfhost.example`; see README → "Environment files"). (Optiona
 are validated as optional: `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` + `SUPABASE_ANON_KEY`
 (Auth + Storage), `VOYAGE_API_KEY` (semantic search), `RATE_LIMIT_MAX`/`RATE_LIMIT_AUTH_MAX` (edge
 rate limiting, off unless set), `OPERATOR_USER_IDS`/`OPERATOR_EMAILS` (deployment-operator allowlist),
+`SETTINGS_READONLY_EMAILS` (comma-separated emails; full operator view but blocked from the five
+settings-save endpoints — `403 settings/read-only`; powers the shared demo login),
 `NEO4J_URI`/`NEO4J_AUTH` (social graph — both scorer writes and API reads; unset →
 scorer skips edge writes, `/social/*` endpoints return 503),
 `CONTENT_DELETE_MODE` (`hard` default — content deletes truly `DELETE` the row + cascade dependents +
@@ -334,6 +336,15 @@ The operator is the **platform-operator** (cross-tenant, the hosting provider); 
 power is now a separate DB grant (project owner/admin, below). The hierarchy is
 `operator ⊇ owner ⊇ admin ⊇ steward ⊇ member` — an operator satisfies every within-project predicate,
 so single-project deployments are unaffected.
+
+**Settings-read-only operators.** `SETTINGS_READONLY_EMAILS` (comma-separated, case-insensitive emails)
+marks accounts that get the full operator/admin view but are server-blocked
+(`assertSettingsWritable(c)`, after the project-admin gate) from persisting any of the five
+settings-save endpoints (`PATCH /settings/feed|moderator|steward|social`, `PATCH /webhooks/config`) —
+`403 settings/read-only`. Non-destructive actions (`POST /webhooks/test`, constellation recompute) and
+ordinary member writes stay available. Resolved by `lib/settings-readonly.ts`, stamped as the
+`settingsReadonly` JWT claim, read back as `c.var.auth.settingsReadonly`. Powers the shared public demo
+login `demo-admin@agora-oss.org`. Unset/empty → feature off.
 
 **Project owners/admins (per-project god-view).** The within-project tier between member and the
 platform-operator — a **DB-backed grant** in `project_roles` (`role ∈ owner|admin|steward`, migrations

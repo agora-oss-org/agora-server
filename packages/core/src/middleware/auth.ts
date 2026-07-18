@@ -27,6 +27,7 @@ async function verify(token: string): Promise<AuthContext | null> {
       isSteward: payload.steward === true,
       isProjectOwner: payload.powner === true,
       isProjectAdmin: payload.padmin === true,
+      settingsReadonly: payload.settingsReadonly === true,
     };
   } catch {
     return null;

@@ -25,6 +25,11 @@ export function requireProjectOwner(c: Ctx): void {
 export function requireProjectAdmin(c: Ctx): void {
   if (!isProjectAdmin(c.var.auth!)) throw Errors.forbidden("roles/admin-only", "Project admin access required");
 }
+/** Block a settings-read-only principal (the demo login) from persisting settings. Call AFTER
+ *  requireProjectAdmin — the caller is already a confirmed admin; this is the narrowest final gate. */
+export function assertSettingsWritable(c: Ctx): void {
+  if (c.var.auth!.settingsReadonly) throw Errors.forbidden("settings/read-only", "This account cannot change settings");
+}
 
 // ── Resolution (cached) ──
 const TTL_MS = 30_000;

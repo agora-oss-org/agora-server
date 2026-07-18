@@ -133,7 +133,7 @@ pnpm seed
 
 `pnpm seed` orchestrates `scripts/seeds/*.mjs` in order: `00-seed-auth-admin` (prompts **once** for
 email + password → seeds the project's configured `auth_provider` backend; press Enter for the demo
-default `agora-admin@gmail.com` / `DemoPass123!`) → `01-confirm-demo-data` (a **gate** — answer "no"
+default `agora-admin@agora-oss.org` / `DemoPass123!`) → `01-confirm-demo-data` (a **gate** — answer "no"
 and it stops cleanly) → the demo content seeders. Re-running is safe (idempotent), **except** the graph
 world (`03-seed-engine.mjs`, run inside `pnpm seed`) which is not — wipe first.
 
@@ -147,7 +147,7 @@ They come from different layers and are **not** interchangeable:
 
 | Login | Seeded by | Power | Always seeded? |
 |---|---|---|---|
-| `agora-admin@gmail.com` / `DemoPass123!` | `00-seed-auth-admin` | god-view only if you add it to `OPERATOR_EMAILS` | ✅ yes — runs before the gate |
+| `agora-admin@agora-oss.org` / `DemoPass123!` | `00-seed-auth-admin` | god-view only if you add it to `OPERATOR_EMAILS` | ✅ yes — runs before the gate |
 | `demo-admin@agora-oss.org` / `DemoAdmin123!` | `03-seed-engine` (from `seed.json`) | `project_roles` **owner** grant — within-project god-view, no `.env` edit | ❌ no — behind the demo-data gate |
 
 The first is the account the post-seeders sign in as to author content. The second is a

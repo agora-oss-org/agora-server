@@ -17,6 +17,7 @@ import { defaultUsername } from "../lib/profiles.js";
 import { mintSession, rotateRefreshToken, revokeRefreshToken, revokeAllForProfile } from "../lib/tokens.js";
 import { requestAccountDeletion, verifyAccountDeletionCode, resolveDeletionMode } from "../lib/account-deletion.js";
 import { isOperator } from "../lib/operators.js";
+import { isSettingsReadonly } from "../lib/settings-readonly.js";
 import { getProjectRoles } from "../lib/project-roles.js";
 import { shapeAuthUser } from "../lib/shape.js";
 import { logger } from "../lib/logger.js";
@@ -78,16 +79,16 @@ async function authBits(projectId: string, profile: ProfileRow) {
   const roles = await getProjectRoles(projectId, profile.id);
   const owner = roles.has("owner");
   const admin = roles.has("admin");
-  return { operator: isOperator(profile), owner, admin, steward: roles.has("steward") || admin || owner };
+  return { operator: isOperator(profile), owner, admin, steward: roles.has("steward") || admin || owner, settingsReadonly: isSettingsReadonly(profile) };
 }
 
 // Build the auth response: AuthUser + a fresh token pair.
 async function sessionResponse(projectId: string, profile: ProfileRow) {
-  const [suspensions, { operator, owner, admin, steward }] = await Promise.all([
+  const [suspensions, { operator, owner, admin, steward, settingsReadonly }] = await Promise.all([
     getDb().select().from(userSuspensions).where(eq(userSuspensions.profileId, profile.id)),
     authBits(projectId, profile),
   ]);
-  const { accessToken, refreshToken } = await mintSession(projectId, profile.id, profile.role, operator, steward, owner, admin);
+  const { accessToken, refreshToken } = await mintSession(projectId, profile.id, profile.role, operator, steward, owner, admin, settingsReadonly);
   return { user: shapeAuthUser(profile, suspensions, operator, steward, owner, admin), accessToken, refreshToken };
 }
 
@@ -170,7 +171,7 @@ export const authRoutes = new Hono<{ Variables: Variables }>()
     await revokeAllForProfile(profile.id);
     logger.info({ projectId, userId: profile.id }, "auth: password changed (all sessions revoked)");
     const b = await authBits(projectId, profile);
-    return c.json({ success: true, ...(await mintSession(projectId, profile.id, profile.role, b.operator, b.steward, b.owner, b.admin)) });
+    return c.json({ success: true, ...(await mintSession(projectId, profile.id, profile.role, b.operator, b.steward, b.owner, b.admin, b.settingsReadonly)) });
   })
   .post("/request-password-reset", async (c) => {
     const body = parseBody(emailSchema, await c.req.json().catch(() => ({})), "auth");

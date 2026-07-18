@@ -21,7 +21,7 @@ import { parseBody, oauthAuthorizeSchema, signTestingJwtSchema, webhookConfigSch
 import type { SocialPrivacyTier } from "@agora-server/contract";
 import { invalidateSocialConfig, socialConfigView } from "../lib/social-config.js";
 import { invalidateSocialWeather } from "../lib/social-weather.js";
-import { isProjectAdmin } from "../lib/project-roles.js";
+import { isProjectAdmin, assertSettingsWritable } from "../lib/project-roles.js";
 
 type ProfileRow = typeof profiles.$inferSelect;
 
@@ -117,6 +117,7 @@ export const miscRoutes = new Hono<{ Variables: Variables }>()
   })
   .patch("/webhooks/config", requireAuth, async (c) => {
     await requireProjectAdmin(c);
+    assertSettingsWritable(c);
     const body = parseBody(webhookConfigSchema, await c.req.json().catch(() => ({})), "webhooks");
     const patch: Record<string, unknown> = {};
     if (body.url !== undefined) patch.webhookUrl = body.url; // null clears
@@ -142,6 +143,7 @@ export const miscRoutes = new Hono<{ Variables: Variables }>()
   // PATCH deep-merges the provided keys into projects.feed_config (top-level + reactionWeights merge).
   .patch("/settings/feed", requireAuth, async (c) => {
     await requireProjectAdmin(c);
+    assertSettingsWritable(c);
     const body = parseBody(feedConfigSchema, await c.req.json().catch(() => ({})), "feed");
     const [row] = await getDb().select({ feedConfig: projects.feedConfig }).from(projects).where(eq(projects.id, c.var.projectId)).limit(1);
     const current = (row?.feedConfig && typeof row.feedConfig === "object" ? row.feedConfig : {}) as Record<string, any>;
@@ -164,6 +166,7 @@ export const miscRoutes = new Hono<{ Variables: Variables }>()
   })
   .patch("/settings/steward", requireAuth, async (c) => {
     await requireProjectAdmin(c);
+    assertSettingsWritable(c);
     const body = parseBody(stewardConfigSchema, await c.req.json().catch(() => ({})), "steward");
     const [row] = await getDb().select({ stewardConfig: projects.stewardConfig }).from(projects).where(eq(projects.id, c.var.projectId)).limit(1);
     const next = { ...((row?.stewardConfig && typeof row.stewardConfig === "object" ? row.stewardConfig : {}) as Record<string, unknown>), ...body };
@@ -181,6 +184,7 @@ export const miscRoutes = new Hono<{ Variables: Variables }>()
   })
   .patch("/settings/moderator", requireAuth, async (c) => {
     await requireProjectAdmin(c);
+    assertSettingsWritable(c);
     const body = parseBody(moderatorConfigSchema, await c.req.json().catch(() => ({})), "moderator");
     // The tuning lives in the moderator_config JSONB (merge-on-write: null clears a key → the scorer
     // falls back to its env default).
@@ -219,6 +223,7 @@ export const miscRoutes = new Hono<{ Variables: Variables }>()
   })
   .patch("/settings/social", requireAuth, async (c) => {
     await requireProjectAdmin(c);
+    assertSettingsWritable(c);
     const body = parseBody(socialConfigSchema, await c.req.json().catch(() => ({})), "social");
     const [row] = await getDb()
       .select({ socialConfig: projects.socialConfig })

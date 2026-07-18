@@ -66,6 +66,7 @@ services:
       # ── operators (admin god-view allowlist) ──────────────────────────────────
       OPERATOR_EMAILS: ${OPERATOR_EMAILS:-}
       OPERATOR_USER_IDS: ${OPERATOR_USER_IDS:-}
+      SETTINGS_READONLY_EMAILS: ${SETTINGS_READONLY_EMAILS:-}
       # ── rate limiting ─────────────────────────────────────────────────────────
       RATE_LIMIT_TRUSTED_HOPS: ${RATE_LIMIT_TRUSTED_HOPS:-1}
       RATE_LIMIT_MAX: ${RATE_LIMIT_MAX:-}
