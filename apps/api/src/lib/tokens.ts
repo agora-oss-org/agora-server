@@ -8,6 +8,7 @@ import { getDb } from "../db/index.js";
 import { refreshTokens, profiles } from "../db/schema/index.js";
 import { env } from "./env.js";
 import { isOperator } from "./operators.js";
+import { isSettingsReadonly } from "./settings-readonly.js";
 import { getProjectRoles } from "./project-roles.js";
 import { logger } from "./logger.js";
 import { Errors } from "../http/errors.js";
@@ -25,8 +26,8 @@ export interface SessionTokens {
  *  `powner`/`padmin` the per-project owner/admin grants, so handlers read all of them without a DB
  *  hit. `projectId` is stamped as the `pid` claim, so root-mounted routes can learn their project
  *  from the token alone (c.var.auth.projectId). */
-export async function signAccessToken(projectId: string, profileId: string, role: string, operator = false, steward = false, owner = false, admin = false): Promise<string> {
-  return new SignJWT({ role, operator, steward, powner: owner, padmin: admin, pid: projectId })
+export async function signAccessToken(projectId: string, profileId: string, role: string, operator = false, steward = false, owner = false, admin = false, settingsReadonly = false): Promise<string> {
+  return new SignJWT({ role, operator, steward, powner: owner, padmin: admin, settingsReadonly, pid: projectId })
     .setProtectedHeader({ alg: "HS256" })
     .setSubject(profileId)
     .setIssuedAt()
@@ -50,10 +51,10 @@ async function issueRefreshToken(projectId: string, profileId: string, familyId:
 /** Mint a full session (access + refresh). Starts a new family unless one is supplied (rotation).
  *  `operator` + `steward` + `owner`/`admin` flow into the access-token claims (caller computes them
  *  from the profile + project roles). */
-export async function mintSession(projectId: string, profileId: string, role: string, operator = false, steward = false, owner = false, admin = false, familyId?: string): Promise<SessionTokens> {
+export async function mintSession(projectId: string, profileId: string, role: string, operator = false, steward = false, owner = false, admin = false, settingsReadonly = false, familyId?: string): Promise<SessionTokens> {
   const family = familyId ?? randomUUID();
   const [accessToken, refreshToken] = await Promise.all([
-    signAccessToken(projectId, profileId, role, operator, steward, owner, admin),
+    signAccessToken(projectId, profileId, role, operator, steward, owner, admin, settingsReadonly),
     issueRefreshToken(projectId, profileId, family),
   ]);
   return { accessToken, refreshToken };
@@ -91,8 +92,8 @@ export async function rotateRefreshToken(projectId: string, raw: string): Promis
   if (row.rotatedAt) {
     if (now <= row.rotatedAt.getTime() + graceMs) {
       logger.debug({ projectId, profileId: row.profileId, familyId: row.familyId }, "auth: refresh replay within grace window");
-      const { role, operator, owner, admin, steward } = await profileAuthBits(projectId, row.profileId);
-      return { ...(await mintSession(projectId, row.profileId, role, operator, steward, owner, admin, row.familyId)), profileId: row.profileId };
+      const { role, operator, owner, admin, steward, settingsReadonly } = await profileAuthBits(projectId, row.profileId);
+      return { ...(await mintSession(projectId, row.profileId, role, operator, steward, owner, admin, settingsReadonly, row.familyId)), profileId: row.profileId };
     }
     logger.warn({ projectId, profileId: row.profileId, familyId: row.familyId }, "auth: rotated refresh token reused past grace — revoking family");
     await revokeFamily(row.familyId);
@@ -106,8 +107,8 @@ export async function rotateRefreshToken(projectId: string, raw: string): Promis
   // Normal rotation: spend this token, mint a successor in the same family.
   await getDb().update(refreshTokens).set({ rotatedAt: new Date() }).where(eq(refreshTokens.id, row.id));
   logger.debug({ projectId, profileId: row.profileId, familyId: row.familyId }, "auth: refresh rotated");
-  const { role, operator, owner, admin, steward } = await profileAuthBits(projectId, row.profileId);
-  return { ...(await mintSession(projectId, row.profileId, role, operator, steward, owner, admin, row.familyId)), profileId: row.profileId };
+  const { role, operator, owner, admin, steward, settingsReadonly } = await profileAuthBits(projectId, row.profileId);
+  return { ...(await mintSession(projectId, row.profileId, role, operator, steward, owner, admin, settingsReadonly, row.familyId)), profileId: row.profileId };
 }
 
 /** Sign-out: revoke the family of the presented refresh token (this session). */
@@ -128,10 +129,10 @@ export async function revokeAllForProfile(profileId: string): Promise<void> {
 // Re-derive role + operator + per-project owner/admin/steward status for a profile (used on refresh,
 // where we only hold the profile id). Project roles are project-scoped, so this needs the projectId
 // too. `steward` folds the hierarchy operator ⊇ owner ⊇ admin ⊇ steward (an owner/admin is a steward).
-async function profileAuthBits(projectId: string, profileId: string): Promise<{ role: string; operator: boolean; owner: boolean; admin: boolean; steward: boolean }> {
+async function profileAuthBits(projectId: string, profileId: string): Promise<{ role: string; operator: boolean; owner: boolean; admin: boolean; steward: boolean; settingsReadonly: boolean }> {
   const [p] = await getDb().select({ id: profiles.id, role: profiles.role, email: profiles.email })
     .from(profiles).where(eq(profiles.id, profileId)).limit(1);
-  if (!p) return { role: "visitor", operator: false, owner: false, admin: false, steward: false };
+  if (!p) return { role: "visitor", operator: false, owner: false, admin: false, steward: false, settingsReadonly: false };
   const roles = await getProjectRoles(projectId, p.id);
   return {
     role: p.role,
@@ -139,5 +140,6 @@ async function profileAuthBits(projectId: string, profileId: string): Promise<{ 
     owner: roles.has("owner"),
     admin: roles.has("admin"),
     steward: roles.has("steward") || roles.has("admin") || roles.has("owner"),
+    settingsReadonly: isSettingsReadonly(p),
   };
 }

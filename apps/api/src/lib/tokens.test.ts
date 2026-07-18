@@ -52,4 +52,18 @@ describe("signAccessToken", () => {
     const wrong = new TextEncoder().encode("a-totally-different-secret-value-here");
     await expect(jwtVerify(token, wrong)).rejects.toThrow();
   });
+
+  it("defaults the settingsReadonly claim to false", async () => {
+    const token = await signAccessToken(projectId, "p", "visitor");
+    const { payload } = await jwtVerify(token, secret);
+    expect(payload.settingsReadonly).toBe(false);
+  });
+
+  it("carries settingsReadonly = true when requested", async () => {
+    // positional: (projectId, profileId, role, operator, steward, owner, admin, settingsReadonly)
+    const token = await signAccessToken(projectId, "p", "visitor", true, false, false, false, true);
+    const { payload } = await jwtVerify(token, secret);
+    expect(payload.settingsReadonly).toBe(true);
+    expect(payload.operator).toBe(true);
+  });
 });
