@@ -157,6 +157,32 @@ seeders in `scripts/seeds/` in order:
   (the engine's sign-in token predates it). Any manifest user can carry `roles`
   (`owner` | `admin` | `steward`) and a per-user `password` overriding `meta.defaultPassword`; an
   unknown role aborts the run. Idempotent via `project_roles_unique`.
+- **Internet-public post.** A manifest post may carry `"public": true`, which the engine's
+  **visibility** phase publishes through the real privileged action
+  (`PATCH /entities/:id/visibility`) — so the seed exercises the same authority and ladder checks a
+  human operator hits, rather than writing `is_public` directly. The phase runs *after* comments, so
+  a post is only world-readable once its thread is whole, and it re-signs-in a user holding
+  `owner`/`admin` first (the token cached during the users phase predates the role grant and would
+  `403`). The post must already be community-public — spaceless, or in a `readingPermission:
+  "anyone"` space — or the ladder rejects it with `400 entities/not-community-public`.
+- **Pinned entity id.** A post may carry a fixed `"id"` so links can be hardcoded. Nothing in the API
+  accepts a client-supplied id and rewriting one afterwards is unsafe — five tables FK `entities.id`
+  with no `ON UPDATE`, and the embedding write is fire-and-forget — so **pinned posts are inserted
+  straight into the DB**, the same escape hatch the roles grant uses. Consequences: a pinned post
+  can't also carry `image`, and it isn't queued for embedding (so it won't appear in semantic
+  search). Everything downstream — comments, reactions, publishing — still goes through the normal
+  HTTP API. *The shipped manifest doesn't use this;* the default public entity is the homepage
+  anchor below, which is addressable by the stabler `foreignId` instead.
+- **The shipped internet-public entity is the homepage anchor** (`04-seed-homepage-comments.mjs`),
+  not a manifest post. It is created/found by `foreignId: "homepage-comments"` (stable across
+  installs — `useEntity({ foreignId: "homepage-comments" })`), published internet-public through the
+  same `PATCH /entities/:id/visibility` action, and seeded with a short thread by manifest users so
+  the public surface has something to show. Each step is independently idempotent: creation skips if
+  the anchor exists, publishing skips if it's already public, the thread skips if any comment
+  exists. Publishing needs the seed admin to be an operator — `OPERATOR_EMAILS` in the dev and
+  selfhost templates already contains `agora-admin@agora-oss.org`; a deployment that changed it gets
+  a warning and an unpublished (but working) anchor rather than a failed seed. Its uuid is **not**
+  fixed — the script prints it, along with the ready-to-curl anonymous URLs.
 - **Demo content** (`02`–`04` + `seed-*-post.mjs`) is each idempotent (skips if its row exists), so the
   content layer is safe to re-run. **Exception:** the graph world (`03-seed-engine.mjs`, also runnable
   standalone via `node scripts/seeds/03-seed-engine.mjs`) is **not** idempotent — re-running duplicates

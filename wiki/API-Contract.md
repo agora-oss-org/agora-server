@@ -54,8 +54,10 @@ and `/v7/:projectId/...` shape (contract in `docs/MANIFEST.md`):
   against the space's reading permission) flips an entity onto the visibility ladder's top rung.
   Once `public: true`, the entity + its comments become readable with **no auth token** via
   `GET /v7/:projectId/public/entities/:id` (+ `/comments`, `/comments/thread`) — the only anonymous
-  prefix on the auth wall besides `/auth/*`. Every `/public/*` route re-derives the gate live and
-  404s (never 403s) the instant it goes false. Because the surface exists to be embedded by third
+  prefix on the auth wall besides `/auth/*`. An anchor can also be addressed by the host app's own
+  key — `GET /public/entities/by-foreign-id?foreignId=…` — which is the walled lookup's anonymous
+  mirror, minus `createIfNotFound` (this surface never creates a row). Every `/public/*` route
+  re-derives the gate live and 404s (never 403s) the instant it goes false. Because the surface exists to be embedded by third
   parties, its success responses are shared-cacheable (`s-maxage=300`) and `ETag`-revalidated while
   staying browser-revalidated (`max-age=0`) — so an un-publish reaches anyone who reloads
   immediately, and a CDN within 300s.

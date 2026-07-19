@@ -8,6 +8,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **The seeded homepage anchor is now internet-public, with a thread.**
+  `04-seed-homepage-comments.mjs` publishes `foreignId: "homepage-comments"` through the real
+  `PATCH /entities/:id/visibility` action and seeds a short conversation on it (manifest users, one
+  nested reply), so a homepage embed can render real comments to signed-out visitors via
+  `/public/entities/:id`. Each step is separately idempotent (create / publish / thread), and the
+  script prints the anonymous URLs. Publishing requires the seed admin to be an operator — the dev
+  and selfhost `.env` templates already list `agora-admin@agora-oss.org`; anything else warns and
+  leaves the anchor unpublished rather than failing the seed.
+- **`GET /v7/:projectId/public/entities/by-foreign-id`** — the anonymous mirror of the walled
+  by-foreign-id lookup, so an embed can address a published anchor by the host app's own stable key
+  instead of a uuid that differs per install. Same gate, same shaping, same PII redaction and cache
+  policy as `/public/entities/:id` (both now share `shapePublicEntity` and a single gated loader, so
+  the two paths can't drift). **Deliberately no `createIfNotFound`:** the walled route's flag lazily
+  inserts an authorless anchor, which on an unauthenticated read-only surface would be a
+  row-creation primitive — an unknown key just `404`s. Security note: a `foreignId` is guessable
+  where a uuid isn't, so published entities become enumerable by probing keys; accepted because the
+  gate is unchanged (only explicitly-published content is reachable) and a miss returns the same
+  `404` as a non-public hit, so no unpublished row's existence or id is ever revealed.
+- **Seed manifest: internet-public posts + pinned entity ids.** A `seed.json` post may now carry
+  `"public": true` — published by a new engine **visibility** phase through the same real action,
+  running after comments so a post only goes world-readable once its thread is whole, and
+  re-signing-in an `owner`/`admin` user first because the token cached during the users phase
+  predates the role grant. A post may also carry a fixed `"id"` for a hardcodable anonymous link;
+  pinned posts are inserted directly into the DB (nothing accepts a client-supplied id, and
+  rewriting one afterwards would violate the five FKs on `entities.id` and race the fire-and-forget
+  embedding write), so they can't also carry `image` and aren't queued for embedding. The shipped
+  manifest uses neither — the homepage anchor above is the default public entity.
+- **`docs/PUBLIC-API.md`** — the guide to the internet-public entity/comments surface: the visibility
+  ladder, the publishing action and its authority matrix, the anonymous `/public/*` endpoints with
+  their exact query params and envelopes, the read gate, PII redaction, CORS, the caching/takedown
+  window, and the deliberate v1 limitations (including why the SDK can't consume it yet).
+  Cross-linked from `MANIFEST.md` §public and `SECURITY.md`.
 - **`ROADMAP.md`** (repo root) — the living index of designed-but-unbuilt work: ready-to-execute
   spec+plan pairs (space-scoped stewards, store Phase 1), committed follow-ons, the design backlog
   (`docs/PROPOSED.md`), and the research horizon (`docs/PRIVACY-ROADMAP.md`). Pointers + status only;

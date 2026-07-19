@@ -6,7 +6,10 @@
 //
 // Design (kept deliberately simple — see the brainstorm that produced it):
 //   • Groups are processed in a fixed DEPENDENCY ORDER so every reference resolves by construction:
-//       users → roles → spaces → memberships → follows → posts → comments → connections → reactions
+//       users → roles → spaces → memberships → follows → posts → comments → visibility →
+//       connections → reactions
+//     (visibility after comments: publishing is the last step, so a post is only world-readable once
+//     its thread is whole. See seedVisibility.)
 //     (roles straight after users: a project_roles grant is profile-keyed, and the profile only exists
 //     once that user has signed in.)
 //     (follows before posts is deliberate, not just dependency order — it means a post's author is
@@ -280,10 +283,34 @@ async function seedFollows() {
 async function seedPosts() {
   const posts = realized.posts ?? [];
   phase("posts", posts.length);
+  // One connection for every pinned post (see the `p.id` branch below), opened only if any exist.
+  const pinned = posts.some((p) => p.id);
+  const sql = pinned ? postgres(process.env.DATABASE_URL, { max: 1, prepare: false, onnotice() {} }) : null;
+  try {
   for (const p of posts) {
     const ctx = `post "${p.handle}"`;
     const token = tokenFor(p.author, ctx);
     const spaceId = p.space !== undefined ? refId("spaces", p.space, ctx) : undefined;
+
+    // A manifest-pinned `id` means this post must land on a KNOWN uuid, so docs, demos, and the
+    // anonymous `/public/entities/<id>` link can hardcode it instead of looking it up. Nothing in
+    // the API accepts a client-supplied id, and rewriting one afterwards is NOT safe: five tables
+    // FK entities.id with ON DELETE CASCADE but no ON UPDATE, and the embedding write is
+    // fire-and-forget, so a rewrite would race it. Pinned posts are therefore inserted straight
+    // into the DB — the same escape hatch (and the same rationale shape) as the roles phase.
+    // Trade-off: this skips the create handler, so no embedding is queued and the post won't turn
+    // up in semantic search. Everything downstream — comments, reactions, publishing — still goes
+    // through the normal HTTP API.
+    if (p.id) {
+      if (p.image) die(`${ctx}: "id" (direct insert) and "image" (multipart upload) can't be combined`);
+      const authorId = refId("users", p.author, ctx);
+      await sql`
+        insert into entities (id, project_id, short_id, foreign_id, user_id, space_id, title, content)
+        values (${p.id}, ${PROJECT_ID}, ${p.handle}, ${p.handle}, ${authorId},
+                ${spaceId ?? null}, ${p.title ?? null}, ${p.content ?? null})`;
+      console.log(`  ✓ ${p.handle.padEnd(10)} "${p.title ?? ""}"  by ${p.author}  📌 ${p.id}`);
+      continue;
+    }
 
     let created;
     if (p.image) {
@@ -313,6 +340,54 @@ async function seedPosts() {
     }
     p.id = created.id;
     console.log(`  ✓ ${p.handle.padEnd(10)} "${p.title ?? ""}"  by ${p.author}${p.space ? ` in ${p.space}` : ""}${p.image ? "  📷" : ""}`);
+  }
+  } finally {
+    if (sql) await sql.end();
+  }
+}
+
+// ── 5b. visibility ──────────────────────────────────────────────────────────
+// Push any post carrying `"public": true` onto the visibility ladder's top rung, via the REAL
+// privileged action (PATCH /entities/:id/visibility) so the seed exercises the same authority and
+// ladder validation a human operator would hit — rather than writing is_public directly.
+//
+// Runs AFTER comments on purpose: publishing is the last step, so the thread is already whole the
+// moment it becomes world-readable (and a reader following the link never catches a half-seeded
+// post). Nothing about comment creation depends on the flag.
+//
+// The ladder rejects `public: true` for anything not already community-public, so a pinned post
+// must be spaceless or live in a `reading_permission: 'anyone'` space — a members-only space here
+// is a manifest error and will surface as a loud 400 entities/not-community-public.
+async function seedVisibility() {
+  const pub = (realized.posts ?? []).filter((p) => p.public);
+  phase("visibility", pub.length);
+  if (!pub.length) return;
+
+  // The action is gated on operator / project-admin / space-owner / space-admin. The token cached
+  // during seedUsers was minted BEFORE the roles phase granted owner/admin, and a grant only lands
+  // in the JWT at mint/refresh — so that cached token still carries no claim and would 403. Sign in
+  // again here to mint one that does.
+  const publisher = (realized.users ?? []).find((u) => u.roles?.some((r) => r === "owner" || r === "admin"));
+  if (!publisher) {
+    die('visibility: no manifest user carries an "owner" or "admin" role — nobody can publish a post');
+  }
+  const session = await http("POST", api("/auth/sign-in"), {
+    json: {
+      email: publisher.email.trim().toLowerCase(),
+      password: publisher.password || DEFAULT_PASSWORD,
+    },
+    label: `re-sign-in ${publisher.handle} (fresh role claims)`,
+  });
+  if (!session.accessToken) die(`visibility: re-sign-in for ${publisher.handle} returned no token`);
+
+  for (const p of pub) {
+    const ctx = `post "${p.handle}" visibility`;
+    await http("PATCH", api(`/entities/${refId("posts", p.handle, ctx)}/visibility`), {
+      token: session.accessToken,
+      json: { public: true },
+      label: ctx,
+    });
+    console.log(`  ✓ ${p.handle.padEnd(10)} internet-public  →  /v7/${PROJECT_ID}/public/entities/${p.id}`);
   }
 }
 
@@ -390,6 +465,7 @@ async function main() {
   await seedFollows();
   await seedPosts();
   await seedComments();
+  await seedVisibility();
   await seedConnections();
   await seedReactions();
 
@@ -398,7 +474,9 @@ async function main() {
     .join(", ");
   // roles isn't a top-level group — it's a per-user field, so it's counted across users.
   const roles = (realized.users ?? []).reduce((n, u) => n + (u.roles?.length ?? 0), 0);
-  console.log(`\n✅ seed complete — ${counts}, ${roles} role grant(s).`);
+  // ditto `public` — a per-post field, not a group.
+  const published = (realized.posts ?? []).filter((p) => p.public).length;
+  console.log(`\n✅ seed complete — ${counts}, ${roles} role grant(s), ${published} internet-public.`);
 }
 
 main().catch((e) => die(e.message));

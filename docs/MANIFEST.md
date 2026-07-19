@@ -463,7 +463,8 @@ and scopes the search to that set instead of the single space.
 Mounted at `/v7/:projectId/public/*` — the only project-scoped prefix on the auth-wall allowlist
 besides `/auth/`. GET-only, anonymous, CORS `*`. Every route independently re-derives
 `entity.public AND space-is-public` (live, fail-closed) and returns `404 entities/not-found`
-otherwise — never 403.
+otherwise — never 403. **Full guide: `docs/PUBLIC-API.md`** (ladder, publishing authority, gate,
+redaction, CORS/caching, limitations).
 
 **Caching.** Success responses carry `Cache-Control: public, max-age=0, s-maxage=300,
 must-revalidate` and an `ETag`; a matching `If-None-Match` gets a `304` (which keeps its
@@ -476,6 +477,7 @@ origin would only fragment shared caches). Error responses on every surface are 
 | Method | Path | Notes |
 |---|---|---|
 | GET | `/public/entities/:id` | shaped Entity; `?include=user,files`. `?include=user` is PII-redacted: `birthdate`/`metadata` always come back `null`/`{}` on this anonymous surface (username/name/avatar/bio unaffected) |
+| GET | `/public/entities/by-foreign-id` | same shaped Entity, addressed by the host app's key; `?foreignId=` (required, missing → `400 entities/missing-foreign-id`) `&include=user,files`. **No `createIfNotFound`** — unlike the walled twin, this surface never creates a row |
 | GET | `/public/entities/:id/comments` | one-level list, `{ data, pagination }`; `?parentId=&page=&limit=&sortBy=&sortDir=`. A malformed `parentId` 404s (never 500s) |
 | GET | `/public/entities/:id/comments/thread` | nested subtree `{ data }`; `?rootId=&limit=&offset=`. `?parentId=` is accepted as an alias for `rootId` (mirrors the walled `/comments/thread`); a malformed/garbage value is treated as absent (serves the whole thread) rather than 500ing |
 

@@ -3,7 +3,7 @@
 // Security-first: the negative cases (403/404/400, the no-existence-oracle posture) are the point.
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { randomUUID } from "node:crypto";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { getDb } from "../../src/db/index.js";
 import { entities, comments, spaces, spaceMembers, profiles } from "../../src/db/schema/index.js";
 import { api, base, createProject, createUser, deleteProject, signToken } from "./helpers.js";
@@ -398,5 +398,103 @@ describe("GET /public/* — cache policy", () => {
     expect(walled.status).toBe(401); // still walled
     // Error envelopes are globally no-store now (app.ts errorJson), never shared-cacheable.
     expect(walled.headers.get("cache-control")).toBe("no-store");
+  });
+});
+
+// Anonymous foreign-id resolution: lets an embed address a published anchor by the host app's own
+// stable key instead of a per-install uuid. The gate is unchanged, so the negatives are the point —
+// a guessable key must not become an existence oracle, and must not gain a write primitive.
+describe("GET /public/entities/by-foreign-id", () => {
+  const byFid = (fid: string, qs = "") =>
+    api("GET", `${base(projectId)}/public/entities/by-foreign-id?foreignId=${encodeURIComponent(fid)}${qs}`, {});
+
+  async function makeForeign(fid: string, opts: Parameters<typeof makeEntity>[0] = {}) {
+    const e = await makeEntity(opts);
+    await getDb().update(entities).set({ foreignId: fid }).where(eq(entities.id, e.id));
+    return e;
+  }
+
+  it("resolves a published anchor by its foreignId (not swallowed by /entities/:id)", async () => {
+    const author = await createUser(projectId);
+    const e = await makeForeign("homepage-comments", { isPublic: true, userId: author.id });
+    const res = await byFid("homepage-comments");
+    expect(res.status).toBe(200);
+    expect(res.body.id).toBe(e.id);
+    expect(res.body.public).toBe(true);
+    // Static route declared above /:id — a param route of equal segment count would otherwise
+    // capture "by-foreign-id" as an id and 404 on the uuid check.
+    expect(res.body.foreignId).toBe("homepage-comments");
+  });
+
+  it("404s an unknown foreignId AND an existing-but-unpublished one, identically", async () => {
+    // The load-bearing negative: not-found and not-public must be indistinguishable, or a guessable
+    // key becomes an existence oracle for private content.
+    await makeForeign("private-anchor", { isPublic: false });
+    const unknown = await byFid("no-such-anchor");
+    const unpublished = await byFid("private-anchor");
+    expect(unknown.status).toBe(404);
+    expect(unpublished.status).toBe(404);
+    expect(unpublished.body).toEqual(unknown.body);
+  });
+
+  it("404s once the space goes members-only (same live backstop as the uuid route)", async () => {
+    const s = await makeSpace("anyone");
+    await makeForeign("space-anchor", { spaceId: s.id, isPublic: true });
+    expect((await byFid("space-anchor")).status).toBe(200);
+    await getDb().update(spaces).set({ readingPermission: "members" }).where(eq(spaces.id, s.id));
+    expect((await byFid("space-anchor")).status).toBe(404);
+  });
+
+  it("404s a draft, a soft-deleted, and a moderation-removed anchor", async () => {
+    await makeForeign("fid-draft", { isPublic: true, isDraft: true });
+    await makeForeign("fid-deleted", { isPublic: true, deletedAt: new Date() });
+    await makeForeign("fid-removed", { isPublic: true, moderationStatus: "removed" });
+    for (const fid of ["fid-draft", "fid-deleted", "fid-removed"]) {
+      expect((await byFid(fid)).status).toBe(404);
+    }
+  });
+
+  it("never creates a row, even with ?createIfNotFound=true", async () => {
+    // The walled route's flag lazily INSERTs an authorless anchor. Honouring it here would hand
+    // anonymous callers a row-creation primitive on an unauthenticated surface.
+    const res = await byFid("should-not-be-created", "&createIfNotFound=true");
+    expect(res.status).toBe(404);
+    const rows = await getDb().select().from(entities)
+      .where(and(eq(entities.projectId, projectId), eq(entities.foreignId, "should-not-be-created")));
+    expect(rows).toHaveLength(0);
+  });
+
+  it("400s a missing foreignId (malformed input, not an existence answer)", async () => {
+    const res = await api("GET", `${base(projectId)}/public/entities/by-foreign-id`, {});
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe("entities/missing-foreign-id");
+  });
+
+  it("applies the same PII redaction and cache policy as the uuid route", async () => {
+    const author = await createUser(projectId);
+    await getDb().update(profiles)
+      .set({ birthdate: "1990-01-01", metadata: { secret: "nope" } })
+      .where(eq(profiles.id, author.id));
+    await makeForeign("redact-anchor", { isPublic: true, userId: author.id });
+    const res = await byFid("redact-anchor", "&include=user");
+    expect(res.status).toBe(200);
+    expect(res.body.user.birthdate).toBeNull();
+    expect(res.body.user.metadata).toEqual({});
+    expect(res.body.user.username).toBeTruthy();
+    expect(res.headers.get("cache-control")).toBe("public, max-age=0, s-maxage=300, must-revalidate");
+  });
+
+  it("does not resolve across projects", async () => {
+    const other = await createProject();
+    try {
+      const [e] = await getDb().insert(entities).values({
+        projectId: other, shortId: randomUUID().slice(0, 10), content: "elsewhere",
+        foreignId: "cross-project", isPublic: true,
+      }).returning();
+      expect(e).toBeTruthy();
+      expect((await byFid("cross-project")).status).toBe(404);
+    } finally {
+      await deleteProject(other);
+    }
   });
 });

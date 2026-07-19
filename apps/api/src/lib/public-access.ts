@@ -7,7 +7,7 @@
 // un-exposes it even while is_public is still true. Always 404, never 403 — the anonymous
 // surface must not reveal that a non-public entity exists.
 import { z } from "zod";
-import { and, eq } from "drizzle-orm";
+import { and, eq, type SQL } from "drizzle-orm";
 import { getDb } from "../db/index.js";
 import { entities, spaces } from "../db/schema/index.js";
 import { Errors } from "../http/errors.js";
@@ -39,15 +39,15 @@ export function isInternetPublic(
 const uuid = z.string().uuid();
 export const notFound = () => Errors.notFound("entities/not-found", "Entity not found");
 
-/** Load + gate; returns the entity row or throws 404. A malformed id 404s (not 500s) — this
- *  surface is probed by anonymous strangers. */
-export async function assertEntityInternetPublic(projectId: string, entityId: string) {
-  if (!uuid.safeParse(entityId).success) throw notFound();
+/** Load one entity by an arbitrary predicate and apply the gate. ALWAYS throws the SAME 404 —
+ *  missing, private, draft, deleted, removed and members-only-space are deliberately
+ *  indistinguishable, so no lookup key here can become an existence oracle. */
+async function loadGated(projectId: string, predicate: SQL) {
   const [row] = await getDb()
     .select({ entity: entities, spaceReading: spaces.readingPermission, spaceDeletedAt: spaces.deletedAt })
     .from(entities)
     .leftJoin(spaces, and(eq(spaces.id, entities.spaceId), eq(spaces.projectId, projectId)))
-    .where(and(eq(entities.projectId, projectId), eq(entities.id, entityId)))
+    .where(and(eq(entities.projectId, projectId), predicate))
     .limit(1);
   if (!row) throw notFound();
   const space = row.spaceReading
@@ -59,4 +59,25 @@ export async function assertEntityInternetPublic(projectId: string, entityId: st
     space,
   )) throw notFound();
   return e;
+}
+
+/** Load + gate by uuid; returns the entity row or throws 404. A malformed id 404s (not 500s) —
+ *  this surface is probed by anonymous strangers. */
+export async function assertEntityInternetPublic(projectId: string, entityId: string) {
+  if (!uuid.safeParse(entityId).success) throw notFound();
+  return loadGated(projectId, eq(entities.id, entityId));
+}
+
+/** Load + gate by the host app's own key (`foreign_id`), so an anonymous embed can address a
+ *  published anchor by the stable handle it already uses on the walled surface
+ *  (GET /entities/by-foreign-id) instead of a per-install uuid.
+ *
+ *  A foreign_id is guessable where a uuid is not, which is a deliberate, bounded trade: the gate is
+ *  unchanged, so this can only ever resolve content someone explicitly published, and a miss is the
+ *  same 404 as a non-public hit — the real uuid of a private entity is never revealed. What it does
+ *  concede is that public entities become enumerable by guessing keys, which softens the
+ *  "by-direct-link only" stance in docs/PUBLIC-API.md §9. Accepted: the content is public by
+ *  definition, and no unpublished row is reachable through it. */
+export async function assertForeignIdInternetPublic(projectId: string, foreignId: string) {
+  return loadGated(projectId, eq(entities.foreignId, foreignId));
 }

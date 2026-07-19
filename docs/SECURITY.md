@@ -149,7 +149,8 @@ How Agora is *designed* to be secure — useful context for both operators and r
   `0008` anon public-read policies were revoked (`0064`) so the DB layer states the same posture.
   Uploaded media remains fetchable by unguessable URL (see the storage section) — the one
   anonymous-readable artifact class, queued for a signed-URL follow-up.
-- **`/v7/:projectId/public/*` — the second deliberate hole (internet-public entities).** GET-only;
+- **`/v7/:projectId/public/*` — the second deliberate hole (internet-public entities).** Full guide:
+  `docs/PUBLIC-API.md`. GET-only;
   each route independently re-derives `entity.public AND space-is-public` live (the gate itself is
   never cached) and 404s (never 403s) the moment any of that goes false — soft-delete, moderation
   removal, or the space going members-only un-exposes a post even while its `public` flag is still

@@ -13,9 +13,10 @@ import type { Variables } from "../http/context.js";
 import { getDb } from "../db/index.js";
 import { comments } from "../db/schema/index.js";
 import { readPagination, paginate } from "../http/envelope.js";
+import { Errors } from "../http/errors.js";
 import { resolveCommentSort, commentOrderBy } from "../lib/comment-sort.js";
 import { markDeprecated } from "../http/deprecation.js";
-import { assertEntityInternetPublic, notFound } from "../lib/public-access.js";
+import { assertEntityInternetPublic, assertForeignIdInternetPublic, notFound } from "../lib/public-access.js";
 import { publicCacheControl } from "../lib/public-cache.js";
 import { shapeComment, shapeEntity, parseInclude, loadUsers, loadEntityFiles } from "../lib/shape.js";
 import type { User } from "@agora-server/contract";
@@ -26,6 +27,26 @@ import type { User } from "@agora-server/contract";
 // the original design (docs/superpowers/specs/2026-07-18-internet-public-entities-design.md §3).
 function redactPublicUser(user: User | null): User | null {
   return user ? { ...user, birthdate: null, metadata: {} } : null;
+}
+
+/** Shape a gated entity with the surface's `?include=` support. Shared by both entity routes so the
+ *  uuid and foreign-id paths can never drift on redaction or includes. */
+async function shapePublicEntity(
+  c: Parameters<typeof parseInclude>[0],
+  projectId: string,
+  row: Awaited<ReturnType<typeof assertEntityInternetPublic>>,
+) {
+  const include = parseInclude(c);
+  const opts: Parameters<typeof shapeEntity>[1] = {};
+  if (include.has("user") && row.userId) {
+    const users = await loadUsers(projectId, [row.userId]);
+    opts.user = redactPublicUser(users.get(row.userId) ?? null);
+  }
+  if (include.has("files")) {
+    const fileMap = await loadEntityFiles(projectId, [row.id]);
+    opts.files = fileMap.get(row.id) ?? [];
+  }
+  return shapeEntity(row, opts);
 }
 
 export const publicRoutes = new Hono<{ Variables: Variables }>()
@@ -48,20 +69,26 @@ export const publicRoutes = new Hono<{ Variables: Variables }>()
   // body instead of the full thread. Retain X-Source-Code through the 304 — AGPL §13 advertises the
   // corresponding source on every response, and hono's default retained list would drop it.
   .use("*", etag({ retainedHeaders: [...RETAINED_304_HEADERS, "x-source-code"] }))
+  // MUST stay above /entities/:id — Hono matches in declaration order, so a later static route of
+  // the same segment count is swallowed by the param route (see CLAUDE.md, Handler conventions).
+  // The anonymous mirror of the walled GET /entities/by-foreign-id: lets an embed address a
+  // published anchor by the host app's own stable key instead of a per-install uuid.
+  // NOTE: deliberately NO `createIfNotFound`. The walled route's flag lazily INSERTS an authorless
+  // anchor; this surface is read-only and unauthenticated, so honouring it would hand anonymous
+  // callers a row-creation primitive. An unknown foreignId just 404s.
+  .get("/entities/by-foreign-id", async (c) => {
+    const projectId = c.var.projectId;
+    const foreignId = c.req.query("foreignId");
+    // Missing param is malformed input, not an existence question — 400 reveals nothing about any
+    // entity, and mirrors the walled route's own error.
+    if (!foreignId) throw Errors.badRequest("entities/missing-foreign-id", "foreignId is required", "foreignId");
+    const row = await assertForeignIdInternetPublic(projectId, foreignId);
+    return c.json(await shapePublicEntity(c, projectId, row));
+  })
   .get("/entities/:id", async (c) => {
     const projectId = c.var.projectId;
     const row = await assertEntityInternetPublic(projectId, c.req.param("id"));
-    const include = parseInclude(c);
-    const opts: Parameters<typeof shapeEntity>[1] = {};
-    if (include.has("user") && row.userId) {
-      const users = await loadUsers(projectId, [row.userId]);
-      opts.user = redactPublicUser(users.get(row.userId) ?? null);
-    }
-    if (include.has("files")) {
-      const fileMap = await loadEntityFiles(projectId, [row.id]);
-      opts.files = fileMap.get(row.id) ?? [];
-    }
-    return c.json(shapeEntity(row, opts));
+    return c.json(await shapePublicEntity(c, projectId, row));
   })
   // Paginated one-level comment list (mirrors the walled GET /comments?entityId=; parentId pages replies).
   .get("/entities/:id/comments", async (c) => {
