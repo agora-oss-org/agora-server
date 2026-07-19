@@ -65,6 +65,7 @@ function entityRow(over: Record<string, any> = {}) {
     scoreUpdatedAt: new Date("2026-01-02T00:00:00.000Z"),
     metadata: {},
     isDraft: false,
+    isPublic: false,
     moderationStatus: null,
     moderatedAt: null,
     moderatedById: null,
@@ -147,6 +148,11 @@ describe("shapeEntity", () => {
     expect(e.userReaction).toBe("love");
     expect(e.isSaved).toBe(true);
     expect(e.user?.id).toBe("u1");
+  });
+
+  it("emits the internet-visibility flag as `public`", () => {
+    expect(shapeEntity(entityRow({ isPublic: true })).public).toBe(true);
+    expect(shapeEntity(entityRow({ isPublic: false })).public).toBe(false);
   });
 });
 

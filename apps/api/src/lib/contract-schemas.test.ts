@@ -10,7 +10,7 @@ import {
   createCollectionSchema,
   moderationSchema,
 } from "./validation.js";
-import { createEventSchema, updateEventSchema, rsvpSchema, rsvpStatusEnum, pushDeviceSchema, commentSortBySchema, sortDirSchema } from "@agora-server/contract";
+import { createEventSchema, updateEventSchema, rsvpSchema, rsvpStatusEnum, pushDeviceSchema, commentSortBySchema, sortDirSchema, entityVisibilitySchema } from "@agora-server/contract";
 
 describe("SDK contract — request field names (Class 1)", () => {
   describe("change-password: SDK sends `password` for the current password", () => {
@@ -131,5 +131,16 @@ describe("pushDeviceSchema", () => {
     expect(pushDeviceSchema.safeParse({ platform: "ios" }).success).toBe(false);
     expect(pushDeviceSchema.safeParse({ platform: "web", token: "abc" }).success).toBe(false);
     expect(pushDeviceSchema.safeParse({ platform: "desktop", token: "abc" }).success).toBe(false);
+  });
+});
+
+describe("entityVisibilitySchema", () => {
+  it("accepts a boolean public flag", () => {
+    expect(entityVisibilitySchema.parse({ public: true })).toEqual({ public: true });
+    expect(entityVisibilitySchema.parse({ public: false })).toEqual({ public: false });
+  });
+  it("rejects missing/non-boolean", () => {
+    expect(entityVisibilitySchema.safeParse({}).success).toBe(false);
+    expect(entityVisibilitySchema.safeParse({ public: "yes" }).success).toBe(false);
   });
 });

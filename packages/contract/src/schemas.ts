@@ -56,6 +56,9 @@ export const updateEntitySchema = z
   })
   .refine((v) => Object.keys(v).length > 0, { message: "No updatable fields provided" });
 
+/** PATCH /entities/:id/visibility — privileged internet-visibility action (Agora extension). */
+export const entityVisibilitySchema = z.object({ public: z.boolean() });
+
 export const createCommentSchema = z.object({
   entityId: z.string().uuid(),
   parentId: z.string().uuid().nullish(),
