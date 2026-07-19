@@ -150,10 +150,19 @@ How Agora is *designed* to be secure — useful context for both operators and r
   Uploaded media remains fetchable by unguessable URL (see the storage section) — the one
   anonymous-readable artifact class, queued for a signed-URL follow-up.
 - **`/v7/:projectId/public/*` — the second deliberate hole (internet-public entities).** GET-only;
-  each route independently re-derives `entity.public AND space-is-public` live (no cache) and
-  404s (never 403s) the moment any of that goes false — soft-delete, moderation removal, or the
-  space going members-only instantly un-exposes a post even while its `public` flag is still
-  `true`. Responses set `Access-Control-Allow-Origin: *` with no credentials (both a route-local
+  each route independently re-derives `entity.public AND space-is-public` live (the gate itself is
+  never cached) and 404s (never 403s) the moment any of that goes false — soft-delete, moderation
+  removal, or the space going members-only un-exposes a post even while its `public` flag is still
+  `true`. **Takedown is instant at the origin and for any reader who reloads, but bounded — not
+  instant — at shared caches.** Success responses carry
+  `Cache-Control: public, max-age=0, s-maxage=300, must-revalidate` plus an `ETag`
+  (`lib/public-cache.ts`): `max-age=0` forces every browser to revalidate, so a reload always
+  reflects a takedown, while a CDN/proxy may keep serving a stored copy for **up to 300s** after
+  one. That window is the deliberate, ratified cost of making embeds cacheable; deployments needing
+  a hard-instant takedown should front the surface with a cache they can purge, or drop
+  `s-maxage`. Error responses are never cacheable — `no-store` is set on every error envelope
+  (`app.ts`), which matters most for the gate's own 404: a cached one would keep a
+  freshly-published post invisible at the edge for the whole window. Responses set `Access-Control-Allow-Origin: *` with no credentials (both a route-local
   post-`next()` override in `routes/public.ts` for normal responses, and, since hono's app-wide
   `cors()` short-circuits `OPTIONS` before routing, a matching case in the app-level `cors()`
   origin callback for the preflight itself — see `app.ts`) so third-party origins can embed the

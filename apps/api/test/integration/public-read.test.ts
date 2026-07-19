@@ -330,3 +330,73 @@ describe("OPTIONS /public/* — CORS preflight (final review Fix 3)", () => {
     expect(res.headers.get("access-control-allow-origin")).toBe("*");
   });
 });
+
+// Shared-cache policy for the anonymous surface (lib/public-cache.ts). The gate is re-derived per
+// request precisely so a takedown un-exposes a post; s-maxage is the bounded window in which the
+// edge may still serve it, ratified at 300s. max-age=0 keeps every browser reload authoritative.
+describe("GET /public/* — cache policy", () => {
+  it("makes a 200 shared-cacheable, browser-revalidated, and NOT origin-fragmented", async () => {
+    const author = await createUser(projectId);
+    const e = await makeEntity({ isPublic: true, userId: author.id });
+
+    for (const p of [`/entities/${e.id}`, `/entities/${e.id}/comments`, `/entities/${e.id}/comments/thread`]) {
+      const res = await anon(p);
+      expect(res.status).toBe(200);
+      expect(res.headers.get("cache-control")).toBe("public, max-age=0, s-maxage=300, must-revalidate");
+      expect(res.headers.get("etag")).toBeTruthy();
+      // ACAO here is unconditionally "*", so varying by Origin would fragment every shared cache
+      // by embedding site for nothing. This is the bug the policy fix removed.
+      expect(res.headers.get("vary")).toBeNull();
+    }
+  });
+
+  it("answers a matching If-None-Match with a bodyless 304 that keeps CORS and freshness usable", async () => {
+    const author = await createUser(projectId);
+    const e = await makeEntity({ isPublic: true, userId: author.id });
+    const first = await anon(`/entities/${e.id}`);
+    const tag = first.headers.get("etag")!;
+    expect(tag).toBeTruthy();
+
+    const res = await api("GET", `${base(projectId)}/public/entities/${e.id}`, {
+      headers: { "if-none-match": tag, origin: "https://third-party.example" },
+    });
+    expect(res.status).toBe(304);
+    expect(res.body).toBeNull();
+    // hono's etag() strips every header outside its retained list on a 304. Without the ordering
+    // fix (cache/CORS block registered BEFORE etag, so its post-next runs last) a cross-origin
+    // embed's revalidation would come back with no ACAO and the browser would block it.
+    expect(res.headers.get("access-control-allow-origin")).toBe("*");
+    // A 304 revalidates the stored 200 — it must carry that entry's freshness forward, not evict it.
+    expect(res.headers.get("cache-control")).toBe("public, max-age=0, s-maxage=300, must-revalidate");
+    // AGPL §13: the source advert survives the 304 via the explicit retainedHeaders extension.
+    expect(res.headers.get("x-source-code")).toBeTruthy();
+  });
+
+  it("re-fetches in full when the ETag no longer matches", async () => {
+    const author = await createUser(projectId);
+    const e = await makeEntity({ isPublic: true, userId: author.id });
+    const res = await api("GET", `${base(projectId)}/public/entities/${e.id}`, {
+      headers: { "if-none-match": '"stale-etag"' },
+    });
+    expect(res.status).toBe(200);
+    expect(res.body.id).toBe(e.id);
+  });
+
+  it("never lets a shared cache hold a gate 404 — publishing would look broken", async () => {
+    // The gate 404s a not-yet-published entity. If that 404 were cacheable, flipping public:true
+    // would leave the post invisible at the edge for the whole window.
+    const e = await makeEntity({ isPublic: false });
+    const res = await anon(`/entities/${e.id}`);
+    expect(res.status).toBe(404);
+    expect(res.headers.get("cache-control")).toBe("no-store");
+  });
+
+  it("does not leak the shared-cache policy onto the walled surface", async () => {
+    const author = await createUser(projectId);
+    const e = await makeEntity({ isPublic: true, userId: author.id });
+    const walled = await api("GET", `${base(projectId)}/entities/${e.id}`, {});
+    expect(walled.status).toBe(401); // still walled
+    // Error envelopes are globally no-store now (app.ts errorJson), never shared-cacheable.
+    expect(walled.headers.get("cache-control")).toBe("no-store");
+  });
+});

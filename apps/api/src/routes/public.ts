@@ -6,6 +6,7 @@
 // and nothing here branches on c.var.auth (privileged viewers use the normal walled surface).
 // Removed comments are ALWAYS hidden: an anonymous caller is never privileged. 404, never 403.
 import { Hono } from "hono";
+import { etag, RETAINED_304_HEADERS } from "hono/etag";
 import { z } from "zod";
 import { and, count, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
 import type { Variables } from "../http/context.js";
@@ -15,6 +16,7 @@ import { readPagination, paginate } from "../http/envelope.js";
 import { resolveCommentSort, commentOrderBy } from "../lib/comment-sort.js";
 import { markDeprecated } from "../http/deprecation.js";
 import { assertEntityInternetPublic, notFound } from "../lib/public-access.js";
+import { publicCacheControl } from "../lib/public-cache.js";
 import { shapeComment, shapeEntity, parseInclude, loadUsers, loadEntityFiles } from "../lib/shape.js";
 import type { User } from "@agora-server/contract";
 
@@ -27,13 +29,25 @@ function redactPublicUser(user: User | null): User | null {
 }
 
 export const publicRoutes = new Hono<{ Variables: Variables }>()
-  // Third-party embed CORS: this surface is anonymous, read-only, and serves only internet-public
-  // data — allow any origin, never credentials. Post-next override beats the app-level CORS_ORIGIN.
+  // Third-party embed CORS + shared-cache policy. Registered BEFORE etag() so its post-next block
+  // runs LAST (post phases unwind in reverse): etag() converts a matched request into a 304 and
+  // strips every header outside its retained list — including ACAO — so this block must get the
+  // final word, or a cross-origin embed's revalidation would come back without ACAO and be blocked
+  // by the browser.
   .use("*", async (c, next) => {
     await next();
+    // Anonymous, read-only, internet-public data only — any origin, never credentials.
     c.res.headers.set("Access-Control-Allow-Origin", "*");
     c.res.headers.delete("Access-Control-Allow-Credentials");
+    // (The matching `Vary: Origin` strip lives in app.ts, next to the cors() that stages it — this
+    // router is a mounted sub-app, so Hono re-merges the parent's staged headers over anything
+    // deleted here.)
+    c.res.headers.set("Cache-Control", publicCacheControl(c.res.status));
   })
+  // Conditional requests: a browser revalidating on every read (max-age=0) gets a 304 with an empty
+  // body instead of the full thread. Retain X-Source-Code through the 304 — AGPL §13 advertises the
+  // corresponding source on every response, and hono's default retained list would drop it.
+  .use("*", etag({ retainedHeaders: [...RETAINED_304_HEADERS, "x-source-code"] }))
   .get("/entities/:id", async (c) => {
     const projectId = c.var.projectId;
     const row = await assertEntityInternetPublic(projectId, c.req.param("id"));

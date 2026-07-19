@@ -465,6 +465,14 @@ besides `/auth/`. GET-only, anonymous, CORS `*`. Every route independently re-de
 `entity.public AND space-is-public` (live, fail-closed) and returns `404 entities/not-found`
 otherwise — never 403.
 
+**Caching.** Success responses carry `Cache-Control: public, max-age=0, s-maxage=300,
+must-revalidate` and an `ETag`; a matching `If-None-Match` gets a `304` (which keeps its
+`Cache-Control` and `Access-Control-Allow-Origin: *`, so cross-origin revalidation works). Browsers
+therefore revalidate on every read while shared caches may serve a stored copy for up to 300s —
+consequently a takedown propagates to the edge within that window, not instantly. Unlike the rest
+of the API this prefix sets **no `Vary: Origin`** (its ACAO is unconditionally `*`, so varying by
+origin would only fragment shared caches). Error responses on every surface are `no-store`.
+
 | Method | Path | Notes |
 |---|---|---|
 | GET | `/public/entities/:id` | shaped Entity; `?include=user,files`. `?include=user` is PII-redacted: `birthdate`/`metadata` always come back `null`/`{}` on this anonymous surface (username/name/avatar/bio unaffected) |

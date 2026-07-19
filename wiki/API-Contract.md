@@ -55,7 +55,10 @@ and `/v7/:projectId/...` shape (contract in `docs/MANIFEST.md`):
   Once `public: true`, the entity + its comments become readable with **no auth token** via
   `GET /v7/:projectId/public/entities/:id` (+ `/comments`, `/comments/thread`) — the only anonymous
   prefix on the auth wall besides `/auth/*`. Every `/public/*` route re-derives the gate live and
-  404s (never 403s) the instant it goes false.
+  404s (never 403s) the instant it goes false. Because the surface exists to be embedded by third
+  parties, its success responses are shared-cacheable (`s-maxage=300`) and `ETag`-revalidated while
+  staying browser-revalidated (`max-age=0`) — so an un-publish reaches anyone who reloads
+  immediately, and a CDN within 300s.
 
 New contract-affecting behavior is announced in-band: legacy sort aliases (e.g. `sortBy=new`) now emit
 an **RFC 8594 `Deprecation`** response header rather than breaking, so SDK consumers get a migration

@@ -29,6 +29,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   thread") instead of 500ing on an invalid `::uuid` cast; the visibility action now applies the
   same moderation-visibility gate as the walled single-entity read, and a former member of a
   since-deleted members-only space gets the correct 404 (not 403) posture.
+- **`/public/*` responses are now cacheable by CDNs and revalidated by `ETag`.** The anonymous
+  surface exists to be embedded by third-party sites, but shipped uncacheable, so every embed
+  impression hit the origin. Success responses now carry
+  `Cache-Control: public, max-age=0, s-maxage=300, must-revalidate` plus an `ETag`
+  (`lib/public-cache.ts`), and a matching `If-None-Match` returns a bodyless `304` that retains its
+  `Cache-Control`, `Access-Control-Allow-Origin: *` and `X-Source-Code` (so cross-origin
+  revalidation isn't blocked and the AGPL §13 source advert survives). **Security note:** the gate
+  itself is still re-derived per request and is never cached, and `max-age=0` means any reader who
+  reloads sees a takedown immediately — but a shared cache may serve a stored copy for up to 300s
+  after an un-publish, moderation removal, or space going members-only. That bounded window is a
+  ratified amendment to the design doc's original "live, no cache" property.
+
+### Fixed
+- **`/public/*` no longer sets `Vary: Origin`.** hono's `cors()` appends it in its post phase
+  whenever `origin` is a callback — correct in general, but the public surface's ACAO is
+  unconditionally `*`, so the header only fragmented shared caches one stored entry per embedding
+  site, which would have defeated the `s-maxage` above. Stripped by an app-level middleware
+  registered *before* `cors()` (post phases unwind in reverse, so that is the only position that
+  runs after `cors()` appends it).
+- **Error envelopes are no longer cacheable.** Every error response now sets `Cache-Control:
+  no-store` (`app.ts`). This matters most for the internet-public gate's own `404`: a shared cache
+  holding it would keep a freshly-published entity invisible at the edge for the whole cache
+  window, making publishing appear broken. A thrown `ApiError` unwinds past every middleware's
+  post-`next()` block, so the header is set in the error handler itself.
 
 ## [0.21.0] - 2026-07-17
 

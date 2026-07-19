@@ -128,9 +128,17 @@ assertEntityInternetPublic(projectId, entityId) passes IFF, live:
 
 - **404, never 403** — the anonymous surface must never reveal that a non-public entity exists
   (matching the space-visibility 404-not-403 posture).
-- **Live, no cache, fail-closed.** Flipping the space to members-only, soft-deleting the entity,
-  or a moderation removal instantly un-exposes the post even while `public` is still `true`. The
-  stale `public` flag is harmless because the gate re-derives the conjunction on every request.
+- **Live, fail-closed.** Flipping the space to members-only, soft-deleting the entity, or a
+  moderation removal un-exposes the post even while `public` is still `true`. The stale `public`
+  flag is harmless because the gate re-derives the conjunction on every request.
+  **Amended 2026-07-19 (ratified):** this originally said "live, *no cache*", and the gate itself
+  is still never cached — but responses are now shared-cacheable for 300s
+  (`Cache-Control: public, max-age=0, s-maxage=300, must-revalidate` + `ETag`,
+  `lib/public-cache.ts`), because an embeddable surface that can't be CDN-fronted defeats its own
+  purpose. `max-age=0` keeps every browser reload authoritative, so "instantly un-exposes" still
+  holds at the origin and for readers; at shared caches the guarantee is now **within 300s**.
+  Error responses (including the gate's 404) are `no-store`, so publishing is never delayed by a
+  cached negative.
 - The comment routes additionally scope their queries by `entity_id` exactly as the existing
   comment routes do; comment-side moderation visibility is `hideRemoved = true` unconditionally
   (an anonymous caller is by definition not privileged) — removed comments omitted / pruned by

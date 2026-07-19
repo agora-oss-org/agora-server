@@ -4,6 +4,7 @@
 import crypto from "node:crypto";
 import { Hono, type Context } from "hono";
 import { cors } from "hono/cors";
+import type { ContentfulStatusCode } from "hono/utils/http-status";
 import type { Variables } from "./http/context.js";
 import { isDbConnectionError, resolveDbFor, runWithDb } from "./db/index.js";
 import { ApiError, Errors } from "./http/errors.js";
@@ -45,6 +46,16 @@ export function createApp() {
   // here in the origin callback (Hono's `(origin, c) => string | null`), before routing.
   // Spec: docs/superpowers/specs/2026-07-18-internet-public-entities-design.md §3 (CORS).
   const PUBLIC_SURFACE = /^\/v7\/[^/]+\/public\//;
+  // hono's cors() appends `Vary: Origin` in its POST phase whenever `origin` is a callback — it must
+  // in general, since the ACAO it picks can depend on the request Origin. On the public surface it
+  // never does: the callback below returns "*" unconditionally. Leaving the Vary would fragment
+  // shared caches one stored entry per embedding site, defeating the s-maxage that surface sets
+  // (lib/public-cache.ts). Registered BEFORE cors() ON PURPOSE: post phases unwind in reverse, so
+  // this is the only position whose post-next runs AFTER cors() has appended the header.
+  app.use("*", async (c, next) => {
+    await next();
+    if (PUBLIC_SURFACE.test(c.req.path)) c.res.headers.delete("Vary");
+  });
   app.use("*", cors({
     origin: (origin, c) => {
       if (PUBLIC_SURFACE.test(c.req.path)) return "*";
@@ -176,10 +187,21 @@ export function createApp() {
   // Replyke contract: everything lives under /v7/:projectId
   app.route("/v7", mountRoutes());
 
+  // Error envelopes are never cacheable. A thrown ApiError unwinds past every middleware's
+  // post-next() block (including the /public/* cache-policy block), so the header has to be set
+  // here. It matters most on the anonymous surface: the internet-public gate 404s a not-yet-
+  // published entity, and a shared cache holding that 404 would keep a freshly-published post
+  // invisible at the edge. A cached 503 would likewise outlive the outage that produced it.
+  const errorJson = <T>(c: Context<{ Variables: Variables }>, body: T, status: ContentfulStatusCode) => {
+    const res = c.json(body, status);
+    res.headers.set("Cache-Control", "no-store");
+    return res;
+  };
+
   // Uniform error envelope: { error, code, field? }
   app.onError((err, c) => {
     if (err instanceof ApiError) {
-      return c.json({ error: err.message, code: err.code, ...(err.field ? { field: err.field } : {}) }, err.status);
+      return errorJson(c, { error: err.message, code: err.code, ...(err.field ? { field: err.field } : {}) }, err.status);
     }
     // A tenant DB we could not REACH (host down, refused, DNS, connect timeout, dropped socket) is a
     // transient infra outage, not an application bug — map it to a retryable 503, mirroring the
@@ -190,14 +212,14 @@ export function createApp() {
       logger.warn({ code: (err as { code?: string }).code }, "tenant database unreachable");
       logger.debug({ err }, "tenant database unreachable");
       const e = Errors.unavailable("project/db-unavailable", "Project database unavailable");
-      return c.json({ error: e.message, code: e.code }, e.status);
+      return errorJson(c, { error: e.message, code: e.code }, e.status);
     }
     logger.error("unhandled error");
     logger.debug({ err }, "unhandled error");
-    return c.json({ error: "Internal server error", code: "common/internal" }, 500);
+    return errorJson(c, { error: "Internal server error", code: "common/internal" }, 500);
   });
 
-  app.notFound((c) => c.json({ error: "Not found", code: "common/not-found" }, 404));
+  app.notFound((c) => errorJson(c, { error: "Not found", code: "common/not-found" }, 404));
 
   return app;
 }
