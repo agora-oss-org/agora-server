@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-07-19
+
 ### Added
 - **The seeded homepage anchor is now internet-public, with a thread.**
   `04-seed-homepage-comments.mjs` publishes `foreignId: "homepage-comments"` through the real
@@ -2290,7 +2292,8 @@ cloud Supabase — no stubbed endpoints remain.
   (`@agora/*`), a repointed fork of `@replyke/core`.
 - Backlog: rate limiting, refresh-token cleanup sweep, RLS write policies, turnkey deploy guide.
 
-[Unreleased]: https://github.com/jenova-marie/agora/compare/v0.21.0...HEAD
+[Unreleased]: https://github.com/jenova-marie/agora/compare/v0.22.0...HEAD
+[0.22.0]: https://github.com/jenova-marie/agora/compare/v0.21.0...v0.22.0
 [0.21.0]: https://github.com/jenova-marie/agora/compare/v0.20.0...v0.21.0
 [0.20.0]: https://github.com/jenova-marie/agora/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/jenova-marie/agora/compare/v0.18.0...v0.19.0
