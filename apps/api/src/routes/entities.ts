@@ -15,7 +15,8 @@ import * as webhooks from "../lib/webhooks.js";
 import { notifyOnEntityMentions, notifyOnReaction } from "../lib/notifications.js";
 import { sanitizeMentions } from "../lib/mentions.js";
 import { parseBracketQuery, buildFeedConditions, buildFeedOrder } from "../lib/entity-filters.js";
-import { entities, reactions, collections, collectionEntities, spaces, readReceipts } from "../db/schema/index.js";
+import { entities, reactions, collections, collectionEntities, spaces, spaceMembers, readReceipts } from "../db/schema/index.js";
+import { isProjectAdmin } from "../lib/project-roles.js";
 import { getSocialConfig } from "../lib/social-config.js";
 import { readPagination, paginate } from "../http/envelope.js";
 import { markDeprecated, isDeprecatedEntitySort } from "../http/deprecation.js";
@@ -42,6 +43,7 @@ import {
   parseBody,
   createEntitySchema,
   updateEntitySchema,
+  entityVisibilitySchema,
   reactionSchema,
 } from "../lib/validation.js";
 
@@ -296,6 +298,68 @@ export const entityRoutes = new Hono<{ Variables: Variables }>()
     const row = await ownedEntity(c);
     const [updated] = await getDb().update(entities).set({ isDraft: false }).where(eq(entities.id, row.id)).returning();
     logger.info({ projectId: c.var.projectId, entityId: row.id, userId: row.userId }, "entity: published");
+    return c.json(await enrichSpaceReputation(c, shapeEntity(updated!)));
+  })
+  // Internet-visibility action (visibility-ladder top rung; Agora extension). Named /visibility,
+  // NOT /public, to avoid confusion with the anonymous /public/* read namespace. Privileged:
+  // operator/project-admin (isProjectAdmin folds both in), the space owner, or a space `admin`
+  // member — never the author. 404-posture: a caller who cannot READ the entity must not learn it
+  // exists. Ladder: public:true only for community-public content; public:false always allowed.
+  // Spec: docs/superpowers/specs/2026-07-18-internet-public-entities-design.md
+  .patch("/:id/visibility", requireAuth, async (c) => {
+    const projectId = c.var.projectId;
+    const id = c.req.param("id");
+    const { public: isPublic } = parseBody(entityVisibilitySchema, await c.req.json().catch(() => ({})), "entities");
+    const notFound = () => Errors.notFound("entities/not-found", "Entity not found");
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) throw notFound();
+    const [row] = await getDb()
+      .select({
+        entity: entities,
+        spaceOwnerId: spaces.userId,
+        spaceReading: spaces.readingPermission,
+        spaceDeletedAt: spaces.deletedAt,
+      })
+      .from(entities)
+      .leftJoin(spaces, and(eq(spaces.id, entities.spaceId), eq(spaces.projectId, projectId)))
+      .where(and(eq(entities.projectId, projectId), eq(entities.id, id), isNull(entities.deletedAt)))
+      .limit(1);
+    if (!row) throw notFound();
+
+    const auth = c.var.auth!;
+    let authorized = isProjectAdmin(auth);
+    let membershipRole: string | null = null;
+    if (!authorized && row.entity.spaceId) {
+      if (row.spaceOwnerId && row.spaceOwnerId === auth.userId) authorized = true;
+      else {
+        const [m] = await getDb()
+          .select({ role: spaceMembers.role })
+          .from(spaceMembers)
+          .where(and(
+            eq(spaceMembers.projectId, projectId),
+            eq(spaceMembers.spaceId, row.entity.spaceId),
+            eq(spaceMembers.userId, auth.userId),
+            eq(spaceMembers.status, "active"),
+          ))
+          .limit(1);
+        membershipRole = m?.role ?? null;
+        if (membershipRole === "admin") authorized = true;
+      }
+    }
+    if (!authorized) {
+      // No existence oracle: a caller with no read access to a members-only space's entity gets
+      // the same 404 a nonexistent id gets. A live public space (or spaceless) is readable ⇒ 403.
+      const readable = !row.entity.spaceId || (!row.spaceDeletedAt && row.spaceReading === "anyone") || membershipRole !== null;
+      if (!readable) throw notFound();
+      throw Errors.forbidden("entities/not-authorized", "Not authorized to change this entity's visibility");
+    }
+    if (isPublic) {
+      const communityPublic = !row.entity.spaceId || (!row.spaceDeletedAt && row.spaceReading === "anyone");
+      if (!communityPublic) {
+        throw Errors.badRequest("entities/not-community-public", "Only content in a public space (or no space) can be made internet-public");
+      }
+    }
+    const [updated] = await getDb().update(entities).set({ isPublic }).where(eq(entities.id, row.entity.id)).returning();
+    logger.info({ projectId, entityId: id, userId: auth.userId, public: isPublic }, "entity: internet visibility changed");
     return c.json(await enrichSpaceReputation(c, shapeEntity(updated!)));
   })
   // ── read receipts ───────────────────────────────────────────────────────
