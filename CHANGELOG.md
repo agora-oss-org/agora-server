@@ -13,9 +13,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `PATCH /entities/:id/visibility` action and seeds a short conversation on it (manifest users, one
   nested reply), so a homepage embed can render real comments to signed-out visitors via
   `/public/entities/:id`. Each step is separately idempotent (create / publish / thread), and the
-  script prints the anonymous URLs. Publishing requires the seed admin to be an operator — the dev
-  and selfhost `.env` templates already list `agora-admin@agora-oss.org`; anything else warns and
-  leaves the anchor unpublished rather than failing the seed.
+  script prints the anonymous URLs. Publishing needs operator/project-admin authority and tries both
+  routes to it: the seed admin via `OPERATOR_EMAILS` (env-driven, and often absent from a real
+  `.env` even though the dev/selfhost templates list the address), then the `seed.json` user holding
+  a `roles: ["owner"]` grant — DB-backed by `03-seed-engine`, so it works regardless of env config.
+  Only if both fail does it warn and leave the anchor unpublished rather than failing the seed. The
+  anchor's copy now explains the mechanism itself (it's read both by signed-out homepage visitors
+  and by operators finding it in the admin panel as an ordinary entity).
 - **`GET /v7/:projectId/public/entities/by-foreign-id`** — the anonymous mirror of the walled
   by-foreign-id lookup, so an embed can address a published anchor by the host app's own stable key
   instead of a uuid that differs per install. Same gate, same shaping, same PII redaction and cache

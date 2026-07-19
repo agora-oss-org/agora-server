@@ -29,13 +29,25 @@ const PASSWORD = process.env.DEMO_PASSWORD || "DemoPass123!";
 // The addressable id the homepage embeds: useEntity({ foreignId: "homepage-comments" }).
 const FOREIGN_ID = "homepage-comments";
 
-// Original copy (not reproduced from any source) — the anchor "post" the homepage comments hang off,
-// a warm welcome inviting visitors to join the conversation.
-const TITLE = "Welcome to the conversation 👋";
+// Original copy (not reproduced from any source) — the anchor "post" the homepage comments hang off.
+// It has two audiences at once, so it explains itself to both: a visitor reading the homepage thread
+// with no account, and an operator who finds it in the admin panel as an ordinary entity. The copy is
+// deliberately about the MECHANISM — this is what a public comment thread on Agora *is*.
+const TITLE = "Public comment threads, running live 👋";
 const CONTENT =
-  "Hi, and welcome! 🌸 Thanks for stopping by — I'm so glad you're here. This is a real, working example of Agora's commenting: leave a thought about Agora, reply to someone else, or just drop a 👋. Every voice is welcome, so don't be shy — We'd love to hear from you. 💛";
+  "This is the thread behind Agora's homepage comments — and there's nothing exotic under it. It's an ordinary entity, published to the internet-public tier so anyone can read it without an account, and embedded by the homepage like any site would embed it. It also shows up in the admin panel exactly like every other post: same moderation, same reports, same reactions, same tooling. That's the whole mechanism — publish an entity, embed its thread, administer it like anything else. Leave a comment below if you like: you're looking at the feature and using it at the same time. 💛";
 
 const api = (path) => `${BASE}/v7/${PROJECT_ID}${path}`;
+
+// seed.json supplies the demo cast: the owner-roled user that can publish when the seed admin can't
+// (step 3), and the commenters for the thread (step 4). Optional — running this script standalone,
+// without 03-seed-engine having created those users, degrades to "anchor only" rather than failing.
+let manifest = null;
+try {
+  manifest = JSON.parse(readFileSync(join(here, "seed.json"), "utf8"));
+} catch {
+  console.warn(`⚠ could not read seed.json — no fallback publisher, and no demo thread.`);
+}
 
 // 1. Sign in as the seed user → access token.
 const signIn = await fetch(api("/auth/sign-in"), {
@@ -75,31 +87,61 @@ if (entity) {
 }
 
 // 3. Publish it to the anonymous /public/* surface (idempotent — skip if already there).
-//    Authority is operator / project-admin: the seed admin qualifies via OPERATOR_EMAILS, which the
-//    dev + selfhost .env templates ship containing this address. A deployment that changed it (the
-//    prod template ships a placeholder) gets a loud warning rather than a failed seed — the anchor
-//    itself is still created and usable behind the auth wall.
+//    Authority is operator / project-admin, and there are TWO independent ways to hold it, so we try
+//    both rather than depending on one:
+//      a) the seed admin via OPERATOR_EMAILS — env-driven, and NOT guaranteed: the dev/selfhost
+//         templates list this address but a real .env often doesn't (prod's is a placeholder);
+//      b) a seed.json user carrying roles:["owner"] — a DB-backed project_roles grant written by
+//         03-seed-engine, which runs before this script. Env-independent, so it works on any
+//         deployment that seeded demo data. Its owner claim lands in the JWT at mint, and we sign in
+//         fresh here, so the token we get already carries it.
+//    Only if BOTH are unavailable do we warn — the anchor still exists and works behind the wall.
+async function tryPublish(token) {
+  const res = await fetch(api(`/entities/${entity.id}/visibility`), {
+    method: "PATCH",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ public: true }),
+  });
+  if (res.ok) return { entity: await res.json() };
+  if (res.status === 403) return { forbidden: true };
+  const msg = await res.text().catch(() => "");
+  die(`publish entity failed (${res.status})\n${msg}`);
+}
+
 if (entity.public) {
   console.log(`✓ entity "${FOREIGN_ID}" is already internet-public.`);
 } else {
-  const publish = await fetch(api(`/entities/${entity.id}/visibility`), {
-    method: "PATCH",
-    headers: { ...auth, "Content-Type": "application/json" },
-    body: JSON.stringify({ public: true }),
-  });
-  if (publish.ok) {
-    entity = await publish.json();
+  let published = await tryPublish(accessToken);
+
+  if (published.forbidden) {
+    // Fall back to the manifest's owner-roled user.
+    const owner = manifest?.users?.find((u) => u.roles?.some((r) => r === "owner" || r === "admin"));
+    if (owner) {
+      const session = await fetch(api("/auth/sign-in"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: owner.email.trim().toLowerCase(),
+          password: owner.password || manifest.meta?.defaultPassword || "SeedPass123!",
+        }),
+      }).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+      if (session?.accessToken) {
+        published = await tryPublish(session.accessToken);
+        if (published.entity) console.log(`  (published as ${owner.handle} — ${EMAIL} is not an operator here)`);
+      }
+    }
+  }
+
+  if (published.entity) {
+    entity = published.entity;
     console.log(`✅ published "${FOREIGN_ID}" internet-public`);
-  } else if (publish.status === 403) {
-    console.warn(
-      `⚠ could not publish "${FOREIGN_ID}" internet-public (403): ${EMAIL} is not an operator or\n` +
-      `  project admin on this deployment. The anchor exists and works behind the auth wall; to serve\n` +
-      `  it to signed-out visitors, add the address to OPERATOR_EMAILS (or grant it a project owner/\n` +
-      `  admin role) and re-run this script.`
-    );
   } else {
-    const msg = await publish.text().catch(() => "");
-    die(`publish entity failed (${publish.status})\n${msg}`);
+    console.warn(
+      `⚠ could not publish "${FOREIGN_ID}" internet-public (403). Neither ${EMAIL} (not in\n` +
+      `  OPERATOR_EMAILS) nor a seed.json owner could authorise it. The anchor exists and works\n` +
+      `  behind the auth wall; to serve it to signed-out visitors, add an address to OPERATOR_EMAILS\n` +
+      `  or grant a project owner role, then re-run this script — it will publish in place.`
+    );
   }
 }
 
@@ -110,10 +152,10 @@ if (entity.public) {
 //    Non-fatal throughout — running 04 standalone without 03 means these users don't exist, and an
 //    anchor with no thread still beats a failed seed.
 const THREAD = [
-  { by: "alice", content: "Been looking for something like this for ages — self-hosted, and the comments actually feel like a conversation instead of a form." },
-  { by: "bob",   content: "Same. The fact that I can read this without making an account is the part I keep pointing people at." },
-  { by: "hana",  reply: 1, content: "That's the bit that sold me too. Public by choice, private by default — the right way round." },
-  { by: "cara",  content: "👋 from the other side of the world. Lovely to see a project that treats its community as the feature." },
+  { by: "alice", content: "Reading this without an account is the part that clicked for me — the thread is public, but the rest of the server still isn't." },
+  { by: "bob",   content: "And it's a normal entity underneath, so it lands in the moderation queue like anything else. No separate system to babysit." },
+  { by: "hana",  reply: 1, content: "That's the bit I'd have gotten wrong if I'd built it myself. One pipeline, one place to look." },
+  { by: "cara",  content: "👋 from the other side of the world. Dropping a comment mostly to prove the embed works." },
 ];
 
 const existing = await fetch(api(`/comments?entityId=${entity.id}&limit=1`), { headers: auth })
@@ -122,12 +164,6 @@ const existing = await fetch(api(`/comments?entityId=${entity.id}&limit=1`), { h
 if (existing?.pagination?.totalItems > 0) {
   console.log(`✓ thread already seeded (${existing.pagination.totalItems} comment(s)).`);
 } else {
-  let manifest = null;
-  try {
-    manifest = JSON.parse(readFileSync(join(here, "seed.json"), "utf8"));
-  } catch {
-    console.warn(`⚠ could not read seed.json — skipping the demo thread.`);
-  }
   if (manifest) {
     const password = manifest.meta?.defaultPassword || "SeedPass123!";
     const byHandle = new Map((manifest.users ?? []).map((u) => [u.handle, u]));
