@@ -286,6 +286,30 @@ describe("GET /public/* — anonymous internet-public reads", () => {
     expect(res.body.user.birthdate).toBeNull();
     expect(res.body.user.metadata).toEqual({});
   });
+
+  // Reviewer-confirmed follow-up: the redaction above was applied only to the entity route — the
+  // comment list + thread routes still served the full shaped user (birthdate + metadata) for
+  // ?include=user. Same author, same asserts, on the comment surfaces.
+  it("redacts birthdate + metadata on the comment list and thread routes too", async () => {
+    const author = await createUser(projectId);
+    await getDb().update(profiles)
+      .set({ birthdate: "1990-01-01", metadata: { secret: "shh" } })
+      .where(eq(profiles.id, author.id));
+    const e = await makeEntity({ isPublic: true, userId: author.id });
+    await makeComment(e.id, author.id, { content: "top" });
+
+    const list = await anon(`/entities/${e.id}/comments?include=user`);
+    expect(list.status).toBe(200);
+    expect(list.body.data[0].user.username).toBeTruthy();
+    expect(list.body.data[0].user.birthdate).toBeNull();
+    expect(list.body.data[0].user.metadata).toEqual({});
+
+    const thread = await anon(`/entities/${e.id}/comments/thread?include=user`);
+    expect(thread.status).toBe(200);
+    expect(thread.body.data[0].user.username).toBeTruthy();
+    expect(thread.body.data[0].user.birthdate).toBeNull();
+    expect(thread.body.data[0].user.metadata).toEqual({});
+  });
 });
 
 // Fix 3 (final review): hono's app-wide cors() short-circuits OPTIONS itself (204, no next()), so

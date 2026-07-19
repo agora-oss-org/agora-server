@@ -37,7 +37,7 @@ export function isInternetPublic(
 }
 
 const uuid = z.string().uuid();
-const notFound = () => Errors.notFound("entities/not-found", "Entity not found");
+export const notFound = () => Errors.notFound("entities/not-found", "Entity not found");
 
 /** Load + gate; returns the entity row or throws 404. A malformed id 404s (not 500s) — this
  *  surface is probed by anonymous strangers. */

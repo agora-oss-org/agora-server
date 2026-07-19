@@ -9,14 +9,22 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { and, count, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
 import type { Variables } from "../http/context.js";
-import { Errors } from "../http/errors.js";
 import { getDb } from "../db/index.js";
 import { comments } from "../db/schema/index.js";
 import { readPagination, paginate } from "../http/envelope.js";
 import { resolveCommentSort, commentOrderBy } from "../lib/comment-sort.js";
 import { markDeprecated } from "../http/deprecation.js";
-import { assertEntityInternetPublic } from "../lib/public-access.js";
+import { assertEntityInternetPublic, notFound } from "../lib/public-access.js";
 import { shapeComment, shapeEntity, parseInclude, loadUsers, loadEntityFiles } from "../lib/shape.js";
+import type { User } from "@agora-server/contract";
+
+// Anonymous surface: least-privilege redaction — the internet gets username/name/avatar/bio,
+// never birthdate or the free-form profile metadata jsonb. Applied at every ?include=user site
+// on this router (entity, comment list, comment thread). Spec follow-up: PII redaction wasn't in
+// the original design (docs/superpowers/specs/2026-07-18-internet-public-entities-design.md §3).
+function redactPublicUser(user: User | null): User | null {
+  return user ? { ...user, birthdate: null, metadata: {} } : null;
+}
 
 export const publicRoutes = new Hono<{ Variables: Variables }>()
   // Third-party embed CORS: this surface is anonymous, read-only, and serves only internet-public
@@ -33,11 +41,7 @@ export const publicRoutes = new Hono<{ Variables: Variables }>()
     const opts: Parameters<typeof shapeEntity>[1] = {};
     if (include.has("user") && row.userId) {
       const users = await loadUsers(projectId, [row.userId]);
-      const user = users.get(row.userId) ?? null;
-      // Anonymous surface: least-privilege redaction — the internet gets username/name/avatar/bio,
-      // never birthdate or the free-form profile metadata jsonb. Spec follow-up: PII redaction
-      // wasn't in the original design (docs/superpowers/specs/2026-07-18-internet-public-entities-design.md §3).
-      opts.user = user ? { ...user, birthdate: null, metadata: {} } : null;
+      opts.user = redactPublicUser(users.get(row.userId) ?? null);
     }
     if (include.has("files")) {
       const fileMap = await loadEntityFiles(projectId, [row.id]);
@@ -56,7 +60,7 @@ export const publicRoutes = new Hono<{ Variables: Variables }>()
     // uuid) out of Postgres → 500. This surface is probed by anonymous strangers — malformed input
     // 404s like everything else on the gate, never 500s.
     if (parentIdRaw && !z.string().uuid().safeParse(parentIdRaw).success) {
-      throw Errors.notFound("entities/not-found", "Entity not found");
+      throw notFound();
     }
     const parentId = parentIdRaw ?? null;
     const { page, limit, offset } = readPagination(c);
@@ -82,7 +86,7 @@ export const publicRoutes = new Hono<{ Variables: Variables }>()
     const userMap = include.has("user") ? await loadUsers(projectId, rows.map((r) => r.userId)) : null;
     const shaped = rows.map((r) => shapeComment(r, {
       userReaction: null,
-      ...(userMap ? { user: r.userId ? userMap.get(r.userId) ?? null : null } : {}),
+      ...(userMap ? { user: redactPublicUser(r.userId ? userMap.get(r.userId) ?? null : null) } : {}),
     }));
     return c.json(paginate(shaped, total, page, limit));
   })
@@ -115,7 +119,7 @@ export const publicRoutes = new Hono<{ Variables: Variables }>()
     for (const r of rows) {
       const shaped = shapeComment(r, {
         userReaction: null,
-        ...(userMap ? { user: r.userId ? userMap.get(r.userId) ?? null : null } : {}),
+        ...(userMap ? { user: redactPublicUser(r.userId ? userMap.get(r.userId) ?? null : null) } : {}),
       });
       nodeById.set(r.id, { ...shaped, replies: [] });
     }
