@@ -467,9 +467,9 @@ otherwise — never 403.
 
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/public/entities/:id` | shaped Entity; `?include=user,files` |
-| GET | `/public/entities/:id/comments` | one-level list, `{ data, pagination }`; `?parentId=&page=&limit=&sortBy=` |
-| GET | `/public/entities/:id/comments/thread` | nested subtree `{ data }`; `?rootId=&limit=&offset=` |
+| GET | `/public/entities/:id` | shaped Entity; `?include=user,files`. `?include=user` is PII-redacted: `birthdate`/`metadata` always come back `null`/`{}` on this anonymous surface (username/name/avatar/bio unaffected) |
+| GET | `/public/entities/:id/comments` | one-level list, `{ data, pagination }`; `?parentId=&page=&limit=&sortBy=&sortDir=`. A malformed `parentId` 404s (never 500s) |
+| GET | `/public/entities/:id/comments/thread` | nested subtree `{ data }`; `?rootId=&limit=&offset=`. `?parentId=` is accepted as an alias for `rootId` (mirrors the walled `/comments/thread`); a malformed/garbage value is treated as absent (serves the whole thread) rather than 500ing |
 
 ### social (member-facing garden; Agora extension, not an SDK hook)
 Member-facing social-graph surfaces. All routes require an authenticated member JWT and are

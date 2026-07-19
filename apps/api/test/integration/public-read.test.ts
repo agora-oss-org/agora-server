@@ -5,7 +5,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { getDb } from "../../src/db/index.js";
-import { entities, comments, spaces, spaceMembers } from "../../src/db/schema/index.js";
+import { entities, comments, spaces, spaceMembers, profiles } from "../../src/db/schema/index.js";
 import { api, base, createProject, createUser, deleteProject, signToken } from "./helpers.js";
 
 let projectId: string;
@@ -141,6 +141,26 @@ describe("PATCH /entities/:id/visibility — posture + ladder", () => {
     const e = await makeEntity({ isPublic: true });
     expect((await vis(e.id, undefined, true)).status).toBe(401);
   });
+
+  // Fix 1 (final review): the handler loaded the entity excluding only deletedAt — a
+  // moderation-removed entity's content leaked through to a non-privileged space admin. This is a
+  // read path over moderatable content and must apply the same moderation-visibility gate the
+  // walled single-GET uses (lookupEntity's removedPolicy/shouldHide).
+  it("404s a space admin PATCHing a moderation-removed entity; 200s an operator on the same entity", async () => {
+    const admin = await createUser(projectId);
+    const s = await makeSpace("anyone");
+    await addMember(s.id, admin.id, "admin");
+    const e = await makeEntity({ spaceId: s.id, moderationStatus: "removed" });
+
+    const asAdmin = await vis(e.id, admin.token, false);
+    expect(asAdmin.status).toBe(404);
+    expect(asAdmin.body.code).toBe("entities/not-found");
+
+    const op = await createUser(projectId);
+    const opToken = await signToken(op.id, "visitor", true, false, false, false, projectId);
+    const asOperator = await vis(e.id, opToken, false);
+    expect(asOperator.status).toBe(200);
+  });
 });
 
 const anon = (path: string) => api("GET", `${base(projectId)}/public${path}`, {});
@@ -227,5 +247,62 @@ describe("GET /public/* — anonymous internet-public reads", () => {
     const e = await makeEntity({ isPublic: true });
     expect((await api("GET", `${base(projectId)}/entities/${e.id}`, {})).status).toBe(401);
     expect((await api("GET", `${base(projectId)}/comments?entityId=${e.id}`, {})).status).toBe(401);
+  });
+
+  // Fix 2 (final review): malformed ids reaching raw SQL / a ::uuid cast 500'd instead of 404ing —
+  // a real hole on a surface anonymous strangers probe directly.
+  it("404s (not 500s) a malformed ?parentId on the comments list", async () => {
+    const author = await createUser(projectId);
+    const e = await makeEntity({ isPublic: true, userId: author.id });
+    const res = await anon(`/entities/${e.id}/comments?parentId=not-a-uuid`);
+    expect(res.status).toBe(404);
+    expect(res.body.code).toBe("entities/not-found");
+  });
+
+  it("200s (not 500s) a thread request with a garbage 36-hyphen ?rootId, serving the whole thread", async () => {
+    const author = await createUser(projectId);
+    const e = await makeEntity({ isPublic: true, userId: author.id });
+    await makeComment(e.id, author.id, { content: "top" });
+    const garbage = "-".repeat(36);
+    const res = await anon(`/entities/${e.id}/comments/thread?rootId=${garbage}`);
+    expect(res.status).toBe(200);
+    expect(res.body.data).toHaveLength(1);
+    expect(res.body.data[0].content).toBe("top");
+  });
+
+  // Fix 4 (final review): ?include=user handed the full shaped user, incl. birthdate + the
+  // free-form profile metadata jsonb, to the anonymous internet. Least-privilege default: redact
+  // both on this surface only (the walled surface is untouched).
+  it("redacts birthdate + metadata (but keeps username) on ?include=user", async () => {
+    const author = await createUser(projectId);
+    await getDb().update(profiles)
+      .set({ birthdate: "1990-01-01", metadata: { secret: "shh" } })
+      .where(eq(profiles.id, author.id));
+    const e = await makeEntity({ isPublic: true, userId: author.id });
+
+    const res = await anon(`/entities/${e.id}?include=user`);
+    expect(res.status).toBe(200);
+    expect(res.body.user.username).toBeTruthy();
+    expect(res.body.user.birthdate).toBeNull();
+    expect(res.body.user.metadata).toEqual({});
+  });
+});
+
+// Fix 3 (final review): hono's app-wide cors() short-circuits OPTIONS itself (204, no next()), so
+// public.ts's post-next Access-Control-Allow-Origin override never ran for a CORS preflight — a
+// browser embedding /public/* under a non-"*" CORS_ORIGIN would never see a matching ACAO on the
+// preflight and block the real request. app.ts's cors() origin callback must resolve "*" for the
+// public surface itself, before routing.
+describe("OPTIONS /public/* — CORS preflight (final review Fix 3)", () => {
+  it("answers a third-party preflight with Access-Control-Allow-Origin: *", async () => {
+    const author = await createUser(projectId);
+    const e = await makeEntity({ isPublic: true, userId: author.id });
+    const res = await api("OPTIONS", `${base(projectId)}/public/entities/${e.id}`, {
+      headers: {
+        origin: "https://third-party.example",
+        "access-control-request-method": "GET",
+      },
+    });
+    expect(res.headers.get("access-control-allow-origin")).toBe("*");
   });
 });

@@ -38,7 +38,22 @@ export function createApp() {
   const app = new Hono<{ Variables: Variables }>();
 
   app.use("*", requestLog);
-  app.use("*", cors({ origin: env.CORS_ORIGIN }));
+  // Public-surface CORS preflight fix: hono's cors() short-circuits OPTIONS itself (returns 204
+  // without calling next()), so public.ts's post-next Access-Control-Allow-Origin override never
+  // runs for a preflight — a browser embedding /public/* content under a non-"*" CORS_ORIGIN would
+  // never see a matching ACAO and block the real request. Resolve `*` for the public surface right
+  // here in the origin callback (Hono's `(origin, c) => string | null`), before routing.
+  // Spec: docs/superpowers/specs/2026-07-18-internet-public-entities-design.md §3 (CORS).
+  const PUBLIC_SURFACE = /^\/v7\/[^/]+\/public\//;
+  app.use("*", cors({
+    origin: (origin, c) => {
+      if (PUBLIC_SURFACE.test(c.req.path)) return "*";
+      // Preserve the pre-existing CORS_ORIGIN behavior EXACTLY for every other path: hono's
+      // string-origin resolver returns "*" unconditionally when configured as "*" (no credentials
+      // are ever set here), or an exact match against the configured origin otherwise.
+      return env.CORS_ORIGIN === "*" ? "*" : (origin === env.CORS_ORIGIN ? origin : null);
+    },
+  }));
   // AGPL §13: advertise the corresponding source on every response (cheap header, no body change).
   app.use("*", async (c, next) => {
     c.header("X-Source-Code", SOURCE_URL);

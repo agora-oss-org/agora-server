@@ -7,11 +7,11 @@ These double as the source of truth for the Postgres schema (`db/`). Dates seria
 `id, foreignId?, shortId, projectId, sourceId?, spaceId?, space?, userId?, user?, title?, content?,
 mentions[], attachments[](jsonb), files?[], keywords[], upvotes[] (v6 legacy), downvotes[] (v6 legacy),
 reactionCounts (v7), userReaction?, repliesCount, views, score, scoreUpdatedAt, location?(GeoJSON Point),
-metadata(jsonb ≤10KB), topComment?, isSaved?, createdAt, updatedAt, deletedAt?, isDraft?, public?,
+metadata(jsonb ≤10KB), topComment?, isSaved?, createdAt, updatedAt, deletedAt?, isDraft?, public,
 moderationStatus(approved|removed|null), moderatedAt?, moderatedById?, moderatedByType(client|user), moderationReason?`
 `include`: space | user | topComment | saved | files
-- `public?` (boolean): Internet-visibility flag (Agora extension): `true` ⇒ readable anonymously via
-  `/public/*`. Default `false`.
+- `public` (boolean, required): Internet-visibility flag (Agora extension): `true` ⇒ readable
+  anonymously via `/public/*`. Default `false`.
 
 ## Comment
 `id, projectId, foreignId?, entityId, entity?, userId, user?, parentId?, parentComment?, content?,

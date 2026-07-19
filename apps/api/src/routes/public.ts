@@ -6,8 +6,10 @@
 // and nothing here branches on c.var.auth (privileged viewers use the normal walled surface).
 // Removed comments are ALWAYS hidden: an anonymous caller is never privileged. 404, never 403.
 import { Hono } from "hono";
+import { z } from "zod";
 import { and, count, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
 import type { Variables } from "../http/context.js";
+import { Errors } from "../http/errors.js";
 import { getDb } from "../db/index.js";
 import { comments } from "../db/schema/index.js";
 import { readPagination, paginate } from "../http/envelope.js";
@@ -31,7 +33,11 @@ export const publicRoutes = new Hono<{ Variables: Variables }>()
     const opts: Parameters<typeof shapeEntity>[1] = {};
     if (include.has("user") && row.userId) {
       const users = await loadUsers(projectId, [row.userId]);
-      opts.user = users.get(row.userId) ?? null;
+      const user = users.get(row.userId) ?? null;
+      // Anonymous surface: least-privilege redaction — the internet gets username/name/avatar/bio,
+      // never birthdate or the free-form profile metadata jsonb. Spec follow-up: PII redaction
+      // wasn't in the original design (docs/superpowers/specs/2026-07-18-internet-public-entities-design.md §3).
+      opts.user = user ? { ...user, birthdate: null, metadata: {} } : null;
     }
     if (include.has("files")) {
       const fileMap = await loadEntityFiles(projectId, [row.id]);
@@ -45,7 +51,14 @@ export const publicRoutes = new Hono<{ Variables: Variables }>()
     const entityId = c.req.param("id");
     await assertEntityInternetPublic(projectId, entityId);
     const clean = (v: string | undefined) => (v && v !== "null" && v !== "undefined" ? v : undefined);
-    const parentId = clean(c.req.query("parentId")) ?? null;
+    const parentIdRaw = clean(c.req.query("parentId"));
+    // A malformed parentId would otherwise reach eq(comments.parentId, ...) and 22P02 (invalid
+    // uuid) out of Postgres → 500. This surface is probed by anonymous strangers — malformed input
+    // 404s like everything else on the gate, never 500s.
+    if (parentIdRaw && !z.string().uuid().safeParse(parentIdRaw).success) {
+      throw Errors.notFound("entities/not-found", "Entity not found");
+    }
+    const parentId = parentIdRaw ?? null;
     const { page, limit, offset } = readPagination(c);
     const include = parseInclude(c);
 
@@ -79,7 +92,10 @@ export const publicRoutes = new Hono<{ Variables: Variables }>()
     const entityId = c.req.param("id");
     await assertEntityInternetPublic(projectId, entityId);
     const rootRaw = c.req.query("rootId") ?? c.req.query("parentId") ?? null;
-    const rootId = rootRaw && /^[0-9a-f-]{36}$/i.test(rootRaw) ? rootRaw : null;
+    // A strict uuid check, not the old loose 36-char/hyphen regex (which admitted e.g. 36 hyphens
+    // straight into a ::uuid cast → Postgres 22P02 → 500). Garbage rootId still means "whole
+    // thread" (null), it just can't reach the RPC as garbage.
+    const rootId = rootRaw && z.string().uuid().safeParse(rootRaw).success ? rootRaw : null;
     const { limit, offset } = readPagination(c, { page: 1, limit: 50 });
     const include = parseInclude(c);
 

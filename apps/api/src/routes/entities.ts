@@ -348,10 +348,17 @@ export const entityRoutes = new Hono<{ Variables: Variables }>()
     if (!authorized) {
       // No existence oracle: a caller with no read access to a members-only space's entity gets
       // the same 404 a nonexistent id gets. A live public space (or spaceless) is readable ⇒ 403.
-      const readable = !row.entity.spaceId || (!row.spaceDeletedAt && row.spaceReading === "anyone") || membershipRole !== null;
+      // Membership only counts while the space is still live — a former member of a NOW-deleted
+      // members-only space has no read path, matching the walled-read posture (404, not 403).
+      const readable = !row.entity.spaceId || (!row.spaceDeletedAt && row.spaceReading === "anyone") || (membershipRole !== null && !row.spaceDeletedAt);
       if (!readable) throw notFound();
       throw Errors.forbidden("entities/not-authorized", "Not authorized to change this entity's visibility");
     }
+    // Moderation visibility: a non-privileged caller (authorized here only via space
+    // owner/admin, not project-admin/operator) must not read a removed entity's content through
+    // this action — mirror the walled single-GET gate (lookupEntity, ~:501). Privileged callers
+    // (operator/project-admin, already folded into removedPolicy) still succeed.
+    if (shouldHide(await removedPolicy(c), row.entity.moderationStatus)) throw notFound();
     if (isPublic) {
       const communityPublic = !row.entity.spaceId || (!row.spaceDeletedAt && row.spaceReading === "anyone");
       if (!communityPublic) {

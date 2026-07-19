@@ -134,10 +134,16 @@ assertEntityInternetPublic(projectId, entityId) passes IFF, live:
 - The comment routes additionally scope their queries by `entity_id` exactly as the existing
   comment routes do; comment-side moderation visibility is `hideRemoved = true` unconditionally
   (an anonymous caller is by definition not privileged) — removed comments omitted / pruned by
-  `fetch_comment_thread(..., p_hide_removed => true)`, deleted comments blanked by the shaper.
+  `fetch_comment_thread(..., p_hide_removed => true)`. Deleted comments are OMITTED entirely
+  (`isNull(comments.deletedAt)` in the list query; excluded the same way from the thread's result
+  set) — matching the walled mirror's own list-query filter — rather than blanked-in-place by the
+  shaper as an authenticated read of a deleted comment would be.
 - Shaping: reuse `shapeEntity` / `shapeComment` + `loadUsers` unchanged. With no viewer,
   `userReaction` is `null` and `isSaved` is `false`/absent, which the shapers already produce for
-  an anonymous context. No new shape code.
+  an anonymous context. No new shape code. One redaction IS applied on top of the shaper's normal
+  output: `?include=user`'s `birthdate` and profile `metadata` are nulled/emptied before the
+  response leaves the handler — a least-privilege call made at final review, since the shaped
+  `User` otherwise carries both to the anonymous internet unchanged.
 
 ### Auth wall — the one deliberate hole
 
