@@ -149,6 +149,21 @@ How Agora is *designed* to be secure — useful context for both operators and r
   `0008` anon public-read policies were revoked (`0064`) so the DB layer states the same posture.
   Uploaded media remains fetchable by unguessable URL (see the storage section) — the one
   anonymous-readable artifact class, queued for a signed-URL follow-up.
+- **`/v7/:projectId/public/*` — the second deliberate hole (internet-public entities).** GET-only;
+  each route independently re-derives `entity.public AND space-is-public` live (no cache) and
+  404s (never 403s) the moment any of that goes false — soft-delete, moderation removal, or the
+  space going members-only instantly un-exposes a post even while its `public` flag is still
+  `true`. Responses set `Access-Control-Allow-Origin: *` with no credentials (both a route-local
+  post-`next()` override in `routes/public.ts` for normal responses, and, since hono's app-wide
+  `cors()` short-circuits `OPTIONS` before routing, a matching case in the app-level `cors()`
+  origin callback for the preflight itself — see `app.ts`) so third-party origins can embed the
+  content; the rest of the API keeps the configured `CORS_ORIGIN`. `?include=user` redacts PII
+  before it reaches the anonymous internet: `birthdate` and the free-form profile `metadata` jsonb
+  are always nulled/emptied on this surface (username/name/avatar/bio still ride along). The
+  shared `/v7/*` rate limiter (`lib/rate-limit.ts`) covers this prefix too, but only when
+  `RATE_LIMIT_MAX` is configured — unset, anonymous internet-public reads are unlimited like every
+  other `/v7/*` route. Spec:
+  `docs/superpowers/specs/2026-07-18-internet-public-entities-design.md`.
 - **Row-Level Security is defense-in-depth.** Every table has RLS enabled with a **deny-all backstop**.
   The `0008` anon public-read policies were revoked (migration `0064`, alongside the auth wall) and
   `anon`'s `SELECT` grants pulled with them — `anon` now has no read access at all. The only remaining

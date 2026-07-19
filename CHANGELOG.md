@@ -14,6 +14,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   content stays in the linked docs. The space-scoped-stewards spec + plan land alongside it
   (`docs/superpowers/specs/2026-07-17-space-scoped-stewards-design.md`,
   `docs/superpowers/plans/2026-07-17-space-scoped-stewards.md`).
+- Internet-public entities (visibility-ladder top rung): privileged `PATCH /entities/:id/visibility`
+  (`{ public: boolean }`; operator/project-admin/space-admin only, ladder-validated against the
+  space's reading permission) and an anonymous GET-only `/v7/:projectId/public/*` read surface
+  (entity + comment list + comment thread) that pierces the auth wall via a single allowlisted
+  prefix; every public route re-derives `public AND space-is-public` live and 404s otherwise.
+  New `entities.is_public` column (migration `0065`), `Entity.public` contract field.
+  Final-review hardening: `?include=user` on the anonymous surface now redacts `birthdate` and the
+  profile `metadata` jsonb (least-privilege default — the internet still gets username/name/avatar/
+  bio); the app-level `cors()` origin callback resolves `*` for `/public/*` paths itself so a
+  third-party embed's CORS *preflight* (which hono's `cors()` answers before routing ever reaches
+  `routes/public.ts`'s own override) gets a matching `Access-Control-Allow-Origin` too; malformed
+  `parentId`/`rootId` query params on the public comment routes now 404 (or fall back to "whole
+  thread") instead of 500ing on an invalid `::uuid` cast; the visibility action now applies the
+  same moderation-visibility gate as the walled single-entity read, and a former member of a
+  since-deleted members-only space gets the correct 404 (not 403) posture.
 
 ## [0.21.0] - 2026-07-17
 

@@ -58,6 +58,8 @@ export interface Entity {
   updatedAt: string;
   deletedAt: string | null;
   isDraft: boolean;
+  /** Internet-visibility flag: true ⇒ readable anonymously via the /public/* surface (Agora extension). */
+  public: boolean;
   moderationStatus: string | null;
   moderatedAt: string | null;
   moderatedById: string | null;

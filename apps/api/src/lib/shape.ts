@@ -90,6 +90,7 @@ export function shapeEntity(
     updatedAt: iso(row.updatedAt)!,
     deletedAt: iso(row.deletedAt),
     isDraft: row.isDraft ?? false,
+    public: row.isPublic ?? false,
     moderationStatus: row.moderationStatus ?? null,
     moderatedAt: iso(row.moderatedAt),
     moderatedById: row.moderatedById ?? null,

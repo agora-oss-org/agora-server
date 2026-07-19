@@ -33,6 +33,10 @@ export const entities = pgTable("entities", {
   // location geography(Point,4326) added in custom migration 0001_postgis
   metadata: jsonb("metadata").notNull().default(sql`'{}'::jsonb`),
   isDraft: boolean("is_draft").default(false),
+  // Internet-public flag — the top rung of the visibility ladder (anonymous /public/* surface).
+  // Ladder-validated on write (only community-public content may be flagged); the read gate
+  // re-derives `isPublic AND space-is-public` live, so a stale true is harmless (fail closed).
+  isPublic: boolean("is_public").notNull().default(false),
   moderationStatus: moderationStatus("moderation_status"),
   moderatedAt: timestamp("moderated_at", { withTimezone: true }),
   moderatedById: uuid("moderated_by_id").references(() => profiles.id, { onDelete: "set null" }),

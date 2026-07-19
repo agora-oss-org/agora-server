@@ -75,7 +75,9 @@ export const requireAuth = createMiddleware<{ Variables: Variables }>(async (c, 
 export const AUTH_WALL_ALLOWLIST: { prefixes: readonly string[]; exact: readonly string[] } = {
   // The door itself: sign-up/sign-in/refresh/reset/verify. Its authed members
   // (change-password, account deletion) keep their inner requireAuth.
-  prefixes: ["/auth/"],
+  // /public/ is the anonymous internet-public read surface (GET-only; every route re-gates via
+  // assertEntityInternetPublic). Spec: docs/superpowers/specs/2026-07-18-internet-public-entities-design.md
+  prefixes: ["/auth/", "/public/"],
   exact: [
     "/oauth/authorize",                    // OAuth sign-in starts pre-session
     "/oauth/callback",                     // browser redirect — cannot carry a Bearer header

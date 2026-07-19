@@ -49,6 +49,13 @@ and `/v7/:projectId/...` shape (contract in `docs/MANIFEST.md`):
 - **User matching** (`§match`) — `POST /match/users` currently ships the request contract only
   (validated `passive`/`directed` modes) and always resolves `{ results: [] }`; the real
   facet/embedding matching engine is a future spec.
+- **Internet-public entities** (`§entities`, `§public`) — privileged `PATCH /entities/:id/visibility`
+  (`{ public: boolean }`; operator/project-admin/space-owner/space-admin only, ladder-validated
+  against the space's reading permission) flips an entity onto the visibility ladder's top rung.
+  Once `public: true`, the entity + its comments become readable with **no auth token** via
+  `GET /v7/:projectId/public/entities/:id` (+ `/comments`, `/comments/thread`) — the only anonymous
+  prefix on the auth wall besides `/auth/*`. Every `/public/*` route re-derives the gate live and
+  404s (never 403s) the instant it goes false.
 
 New contract-affecting behavior is announced in-band: legacy sort aliases (e.g. `sortBy=new`) now emit
 an **RFC 8594 `Deprecation`** response header rather than breaking, so SDK consumers get a migration

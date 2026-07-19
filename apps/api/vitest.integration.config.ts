@@ -48,6 +48,11 @@ export default defineConfig({
       // suspension index and the rate-limit store under the suite. Forced unset, both fall back
       // to their in-process/no-op defaults.
       REDIS_URL: "",
+      // Pinned to a specific non-"*" origin (not the "*" default) so the CORS preflight test for
+      // the /public/* surface (final-review Fix 3) actually exercises the bypass: a third-party
+      // Origin that does NOT match this value must still get ACAO "*" on a public-surface OPTIONS
+      // preflight, proving the public-path override — not just the default-permissive "*" config.
+      CORS_ORIGIN: "https://app.example.com",
     },
   },
 });

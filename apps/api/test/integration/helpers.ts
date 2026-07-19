@@ -11,11 +11,13 @@ import { projects, profiles } from "../../src/db/schema/index.js";
 const app = createApp();
 const secret = new TextEncoder().encode(process.env.ACCESS_TOKEN_SECRET);
 
-type Init = { token?: string; body?: unknown };
+type Init = { token?: string; body?: unknown; headers?: Record<string, string> };
 
-/** Drive the app in-process; returns parsed status + body. */
+/** Drive the app in-process; returns parsed status + body. `headers` merges in raw extra headers
+ *  (e.g. Origin / Access-Control-Request-Method for a CORS-preflight probe) on top of the
+ *  token/body-derived ones. */
 export async function api(method: string, path: string, init: Init = {}) {
-  const headers: Record<string, string> = {};
+  const headers: Record<string, string> = { ...init.headers };
   if (init.body !== undefined) headers["content-type"] = "application/json";
   if (init.token) headers["authorization"] = `Bearer ${init.token}`;
   const res = await app.request(path, {
