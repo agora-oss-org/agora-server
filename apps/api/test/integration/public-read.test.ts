@@ -142,3 +142,90 @@ describe("PATCH /entities/:id/visibility — posture + ladder", () => {
     expect((await vis(e.id, undefined, true)).status).toBe(401);
   });
 });
+
+const anon = (path: string) => api("GET", `${base(projectId)}/public${path}`, {});
+
+describe("GET /public/* — anonymous internet-public reads", () => {
+  it("serves a public spaceless entity + its comments + thread, with open CORS", async () => {
+    const author = await createUser(projectId);
+    const e = await makeEntity({ isPublic: true, userId: author.id });
+    const c1 = await makeComment(e.id, author.id, { content: "top" });
+    await makeComment(e.id, author.id, { content: "reply", parentId: c1.id });
+
+    const ent = await anon(`/entities/${e.id}`);
+    expect(ent.status).toBe(200);
+    expect(ent.body.id).toBe(e.id);
+    expect(ent.body.public).toBe(true);
+    expect(ent.body.userReaction).toBeNull();
+    expect(ent.headers.get("access-control-allow-origin")).toBe("*");
+
+    const list = await anon(`/entities/${e.id}/comments`);
+    expect(list.status).toBe(200);
+    expect(list.body.data).toHaveLength(1); // top-level only
+    expect(list.body.data[0].content).toBe("top");
+    expect(list.body.data[0].userReaction).toBeNull();
+    expect(list.body.pagination).toBeTruthy(); // envelope shape itself is pinned by pagination.test.ts
+
+    const thread = await anon(`/entities/${e.id}/comments/thread`);
+    expect(thread.status).toBe(200);
+    expect(thread.body.data).toHaveLength(1);
+    expect(thread.body.data[0].replies).toHaveLength(1);
+    expect(thread.body.data[0].replies[0].content).toBe("reply");
+  });
+
+  it("serves a public entity in a public space", async () => {
+    const s = await makeSpace("anyone");
+    const e = await makeEntity({ spaceId: s.id, isPublic: true });
+    expect((await anon(`/entities/${e.id}`)).status).toBe(200);
+  });
+
+  it("404s all three routes when the flag is off", async () => {
+    const author = await createUser(projectId);
+    const e = await makeEntity({ isPublic: false, userId: author.id });
+    for (const p of [`/entities/${e.id}`, `/entities/${e.id}/comments`, `/entities/${e.id}/comments/thread`]) {
+      const res = await anon(p);
+      expect(res.status).toBe(404);
+      expect(res.body.code).toBe("entities/not-found");
+    }
+  });
+
+  it("404s all three routes when the space has gone members-only (live backstop)", async () => {
+    const s = await makeSpace("anyone");
+    const e = await makeEntity({ spaceId: s.id, isPublic: true });
+    await getDb().update(spaces).set({ readingPermission: "members" }).where(eq(spaces.id, s.id));
+    for (const p of [`/entities/${e.id}`, `/entities/${e.id}/comments`, `/entities/${e.id}/comments/thread`])
+      expect((await anon(p)).status).toBe(404);
+  });
+
+  it("404s a draft, a soft-deleted, and a moderation-removed public entity", async () => {
+    for (const e of [
+      await makeEntity({ isPublic: true, isDraft: true }),
+      await makeEntity({ isPublic: true, deletedAt: new Date() }),
+      await makeEntity({ isPublic: true, moderationStatus: "removed" }),
+    ]) expect((await anon(`/entities/${e.id}`)).status).toBe(404);
+  });
+
+  it("404s malformed and unknown ids (no 500s for probes)", async () => {
+    expect((await anon(`/entities/not-a-uuid`)).status).toBe(404);
+    expect((await anon(`/entities/${randomUUID()}`)).status).toBe(404);
+  });
+
+  it("hides removed comments and deleted comments from the public list and thread", async () => {
+    const author = await createUser(projectId);
+    const e = await makeEntity({ isPublic: true, userId: author.id });
+    await makeComment(e.id, author.id, { content: "visible" });
+    await makeComment(e.id, author.id, { content: "removed", moderationStatus: "removed" });
+    await makeComment(e.id, author.id, { content: "deleted", deletedAt: new Date() });
+
+    const list = await anon(`/entities/${e.id}/comments`);
+    expect(list.body.data.map((x: any) => x.content)).toEqual(["visible"]);
+    const thread = await anon(`/entities/${e.id}/comments/thread`);
+    expect(thread.body.data.map((x: any) => x.content)).toEqual(["visible"]);
+  });
+
+  it("keeps the walled surface walled: anonymous GET /entities/:id is still 401", async () => {
+    const e = await makeEntity({ isPublic: true });
+    expect((await api("GET", `${base(projectId)}/entities/${e.id}`, {})).status).toBe(401);
+    expect((await api("GET", `${base(projectId)}/comments?entityId=${e.id}`, {})).status).toBe(401);
+  });
+});

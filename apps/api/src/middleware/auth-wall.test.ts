@@ -6,7 +6,7 @@ import { AUTH_WALL_ALLOWLIST, projectRelativePath, isWallAllowlisted } from "./a
 
 describe("AUTH_WALL_ALLOWLIST", () => {
   it("pins the exact anonymous surface of the API", () => {
-    expect(AUTH_WALL_ALLOWLIST.prefixes).toEqual(["/auth/"]);
+    expect(AUTH_WALL_ALLOWLIST.prefixes).toEqual(["/auth/", "/public/"]);
     expect(AUTH_WALL_ALLOWLIST.exact).toEqual([
       "/oauth/authorize",
       "/oauth/callback",
@@ -33,6 +33,10 @@ describe("isWallAllowlisted", () => {
     expect(isWallAllowlisted("/auth/sign-in")).toBe(true);
     expect(isWallAllowlisted("/auth/request-new-access-token")).toBe(true);
   });
+  it("admits the /public/ prefix (anonymous internet-public reads)", () => {
+    expect(isWallAllowlisted("/public/entities/abc")).toBe(true);
+    expect(isWallAllowlisted("/public/entities/abc/comments/thread")).toBe(true);
+  });
   it("admits exact members only", () => {
     expect(isWallAllowlisted("/projects/lean")).toBe(true);
     expect(isWallAllowlisted("/oauth/callback")).toBe(true);
@@ -42,6 +46,8 @@ describe("isWallAllowlisted", () => {
   it("rejects near-misses (fail closed)", () => {
     expect(isWallAllowlisted("/authx/anything")).toBe(false);      // prefix must not over-match
     expect(isWallAllowlisted("/auth")).toBe(false);                 // bare /auth is not a route
+    expect(isWallAllowlisted("/publicx/anything")).toBe(false);    // prefix must not over-match
+    expect(isWallAllowlisted("/public")).toBe(false);              // bare /public is not a route
     expect(isWallAllowlisted("/oauth/identities")).toBe(false);     // authed oauth stays walled
     expect(isWallAllowlisted("/projects/lean/extra")).toBe(false);  // exact means exact
     expect(isWallAllowlisted("/entities")).toBe(false);

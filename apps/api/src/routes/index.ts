@@ -9,6 +9,7 @@ import { meterUsage } from "../middleware/metrics.js";
 import { authRoutes } from "./auth.js";
 import { entityRoutes } from "./entities.js";
 import { commentRoutes } from "./comments.js";
+import { publicRoutes } from "./public.js";
 import { userRoutes } from "./users.js";
 import { followRoutes } from "./follows.js";
 import { connectionRoutes } from "./connections.js";
@@ -40,6 +41,8 @@ export function mountRoutes() {
   project.route("/auth", authRoutes);
   project.route("/entities", entityRoutes);
   project.route("/comments", commentRoutes);
+  // Anonymous internet-public reads (GET-only; the one allowlisted project prefix besides /auth/).
+  project.route("/public", publicRoutes);
   project.route("/users", userRoutes);
   project.route("/follows", followRoutes);
   project.route("/spaces", spaceRoutes);
