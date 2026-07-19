@@ -14,6 +14,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   content stays in the linked docs. The space-scoped-stewards spec + plan land alongside it
   (`docs/superpowers/specs/2026-07-17-space-scoped-stewards-design.md`,
   `docs/superpowers/plans/2026-07-17-space-scoped-stewards.md`).
+- Internet-public entities (visibility-ladder top rung): privileged `PATCH /entities/:id/visibility`
+  (`{ public: boolean }`; operator/project-admin/space-admin only, ladder-validated against the
+  space's reading permission) and an anonymous GET-only `/v7/:projectId/public/*` read surface
+  (entity + comment list + comment thread) that pierces the auth wall via a single allowlisted
+  prefix; every public route re-derives `public AND space-is-public` live and 404s otherwise.
+  New `entities.is_public` column (migration `0065`), `Entity.public` contract field.
 
 ## [0.21.0] - 2026-07-17
 

@@ -155,6 +155,7 @@ signs an RS256 JWT (issuer=projectId, aud="replyke.com", sub=userData.id, claim 
 | GET | `/entities/is-entity-saved` | ✅ |
 | GET/POST/DELETE | `/entities/:id/reactions` (GET = paginated reactor list, `useFetchEntityReactions`) | ✅ |
 | POST | `/entities/:id/read` (record a member read for receipt tracking; gate: auth → space read access → `space.readReceiptsEnabled + cfg.readReceiptsAllowed`; idempotent upsert; → `{ recorded: true, readAt }`) | ✅ |
+| PATCH | `/entities/:id/visibility` | 🔶 Agora ext. Body `{ public: boolean }`. Privileged: operator ‖ project owner/admin ‖ space owner/admin. Ladder: `public:true` requires a community-public entity (400 `entities/not-community-public`); 404-posture for unreadable entities. |
 
 ### comments
 | Method | Path | Status |
@@ -457,6 +458,18 @@ and scopes the search to that set instead of the single space.
 | Method | Path | Status |
 |---|---|---|
 | GET | `/utils/get-metadata` (URL/OG metadata fetch) | ✅ |
+
+### public (Agora extension — anonymous internet-public reads)
+Mounted at `/v7/:projectId/public/*` — the only project-scoped prefix on the auth-wall allowlist
+besides `/auth/`. GET-only, anonymous, CORS `*`. Every route independently re-derives
+`entity.public AND space-is-public` (live, fail-closed) and returns `404 entities/not-found`
+otherwise — never 403.
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/public/entities/:id` | shaped Entity; `?include=user,files` |
+| GET | `/public/entities/:id/comments` | one-level list, `{ data, pagination }`; `?parentId=&page=&limit=&sortBy=` |
+| GET | `/public/entities/:id/comments/thread` | nested subtree `{ data }`; `?rootId=&limit=&offset=` |
 
 ### social (member-facing garden; Agora extension, not an SDK hook)
 Member-facing social-graph surfaces. All routes require an authenticated member JWT and are
