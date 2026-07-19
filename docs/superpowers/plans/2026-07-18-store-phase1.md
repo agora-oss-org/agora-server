@@ -28,7 +28,7 @@
 - Modify: `packages/contract/src/index.ts` — export `./store.js`
 - Modify: `packages/core/src/db/schema/_shared.ts` — five store enums
 - Create: `packages/core/src/db/schema/store.ts`; modify `packages/core/src/db/schema/index.ts`
-- Create: `apps/api/drizzle/0065_store_phase1.sql`; modify `apps/api/drizzle/meta/_journal.json`
+- Create: `apps/api/drizzle/0066_store_phase1.sql`; modify `apps/api/drizzle/meta/_journal.json`
 - Create: `apps/api/src/lib/store-config.ts` — cached resolver (mirrors `social-config.ts`)
 - Create: `apps/api/src/lib/store-shape.ts` (+ `store-shape.test.ts`) — shapers + `buildCosmetics` + `attachCosmetics`
 - Create: `apps/api/src/lib/store-earn.ts` (+ `store-earn.test.ts`) — `earnAmount`, `creditEarnAsync`, `clawbackEarnAsync`
@@ -384,7 +384,7 @@ export const storeEquipSlot = pgEnum("store_equip_slot", ["avatar_decoration", "
 
 ```ts
 // Store Phase 1: catalog, append-only coin ledger, trigger-maintained balances, inventory, equipped.
-// Balance/sold_count maintenance + purchase/gift/earn/stipend serialization live in drizzle/0065
+// Balance/sold_count maintenance + purchase/gift/earn/stipend serialization live in drizzle/0066
 // (hand-written SQL) — handlers never write coin_balances or sold_count directly.
 import { sql } from "drizzle-orm";
 import {
@@ -489,20 +489,20 @@ git commit -s -m "feat(core): store schema — catalog, coin ledger, balances, i
 
 ---
 
-### Task 3: Migration `0065_store_phase1` — DDL, RLS, balance trigger, serialized SQL functions
+### Task 3: Migration `0066_store_phase1` — DDL, RLS, balance trigger, serialized SQL functions
 
 **Files:**
-- Create: `apps/api/drizzle/0065_store_phase1.sql`
+- Create: `apps/api/drizzle/0066_store_phase1.sql`
 - Modify: `apps/api/drizzle/meta/_journal.json`
 
 **Interfaces:**
 - Consumes: Task 2's table/enum names (SQL must byte-match them).
 - Produces (called by later tasks via `db.execute(sql\`...\`)`): `purchase_store_item(p_project uuid, p_buyer uuid, p_item uuid, p_key text) returns text` — `'ok' | 'duplicate' | 'not_available' | 'sold_out' | 'already_owned' | 'insufficient_balance'`; `store_gift_coins(p_project, p_from, p_to, p_amount int, p_key) returns text` — `'ok' | 'duplicate' | 'invalid' | 'insufficient_balance'`; `store_gift_item(p_project, p_from, p_to, p_item, p_key) returns text` — `'ok' | 'duplicate' | 'invalid' | 'not_owned' | 'already_owned'`; `store_credit_earn(p_project, p_profile, p_amount int, p_daily_cap int, p_key) returns int` (coins actually granted, 0 if capped/duplicate); `store_claim_stipend(p_project, p_profile, p_amount int) returns text` — `'ok' | 'cooldown' | 'disabled'`. Trigger `coin_txn_balance` maintains `coin_balances`.
 
-- [ ] **Step 1: Write the migration** — `apps/api/drizzle/0065_store_phase1.sql` (idempotent throughout; enums guarded because `CREATE TYPE` has no `IF NOT EXISTS`):
+- [ ] **Step 1: Write the migration** — `apps/api/drizzle/0066_store_phase1.sql` (idempotent throughout; enums guarded because `CREATE TYPE` has no `IF NOT EXISTS`):
 
 ```sql
--- apps/api/drizzle/0065_store_phase1.sql
+-- apps/api/drizzle/0066_store_phase1.sql
 -- Store Phase 1 (spec docs/superpowers/specs/2026-07-17-store-marketplace-design.md §3):
 -- catalog + append-only coin ledger + trigger-maintained balances + serialized purchase/gift/
 -- earn/stipend functions. Every table ships its own RLS deny-all (0017's guard was one-time).
@@ -759,20 +759,20 @@ import json
 p = "drizzle/meta/_journal.json"
 j = json.load(open(p))
 last = j["entries"][-1]
-assert last["tag"] != "0065_store_phase1", "already added"
+assert last["tag"] != "0066_store_phase1", "already added"
 e = dict(last)
-e.update(idx=last["idx"] + 1, when=last["when"] + 1, tag="0065_store_phase1")
+e.update(idx=last["idx"] + 1, when=last["when"] + 1, tag="0066_store_phase1")
 j["entries"].append(e)
 json.dump(j, open(p, "w"), indent=2)
 print("added", e)
 PY
 ```
-Expected: `added {'idx': 65, ... 'tag': '0065_store_phase1', 'when': 1781934611663}`
+Expected: `added {'idx': 66, ... 'tag': '0066_store_phase1', 'when': ...}` — idx/when are derived from whatever entry is currently last in the journal (self-adjusting), not hardcoded; as of 2026-07-18 the last entry is idx 65 `0065_entity_internet_public` (when 1784246400000), so this produces idx 66. Re-verify at execution time — the journal may have moved again.
 
 - [ ] **Step 3: Apply to the dev DB**
 
 Run (from `apps/api/`): `pnpm db:migrate:run`
-Expected: applies `0065_store_phase1` without error (NOT `db:migrate` — journal-schema gotcha)
+Expected: applies `0066_store_phase1` without error (NOT `db:migrate` — journal-schema gotcha)
 
 - [ ] **Step 4: Smoke the functions directly** (idempotency + trigger):
 
@@ -790,7 +790,7 @@ Expected: no-op, no error (already applied; file is re-runnable by hand too)
 - [ ] **Step 6: Commit** (if approved)
 
 ```bash
-git add apps/api/drizzle/0065_store_phase1.sql apps/api/drizzle/meta/_journal.json
+git add apps/api/drizzle/0066_store_phase1.sql apps/api/drizzle/meta/_journal.json
 git commit -s -m "feat(db): store phase 1 — tables, RLS, balance trigger, serialized purchase/gift/earn/stipend fns"
 ```
 
@@ -966,7 +966,7 @@ Expected: clean
 - [ ] **Step 7: Commit** (if approved)
 
 ```bash
-git add apps/api/src/lib/store-config.ts apps/api/src/routes/misc.ts apps/api/test/integration/store-admin.test.ts packages/core/src/db/schema/projects.ts apps/api/drizzle/0065_store_phase1.sql
+git add apps/api/src/lib/store-config.ts apps/api/src/routes/misc.ts apps/api/test/integration/store-admin.test.ts packages/core/src/db/schema/projects.ts apps/api/drizzle/0066_store_phase1.sql
 git commit -s -m "feat(store): store_config resolver + GET/PATCH /settings/store (sixth read-only-gated save)"
 ```
 
@@ -1271,7 +1271,7 @@ Expected: FAIL — 404 without the `store/not-enabled` code (router not mounted)
 ```ts
 // /v7/:projectId/store/* — Store Phase 1 (spec docs/superpowers/specs/2026-07-17-store-marketplace-design.md).
 // Agora extension domain (MANIFEST §store). Every endpoint sits behind storeGate (config off → 404).
-// Value mutations are ledger inserts via the 0065 SQL functions — never direct balance writes.
+// Value mutations are ledger inserts via the 0066 SQL functions — never direct balance writes.
 import { Hono } from "hono";
 import { and, eq, desc, isNull, lte, gte, or, sql, inArray, count } from "drizzle-orm";
 import type { Variables } from "../http/context.js";
@@ -2216,7 +2216,7 @@ git commit -s -m "feat(store): cosmetics ride loadUsers + single-user reads (zer
 - **Store (Phase 1)** — per-project opt-in digital-cosmetics marketplace (spec
   `docs/superpowers/specs/2026-07-17-store-marketplace-design.md`): admin-curated catalog
   (avatar decor, profile glam, emoji/reaction packs, badges, space flair), append-only coin
-  ledger with trigger-maintained balances (migration `0065`), atomic `purchase_store_item`,
+  ledger with trigger-maintained balances (migration `0066`), atomic `purchase_store_item`,
   participation earning with daily caps + moderation claw-back, daily stipend, coin/item
   gifting, equip slots surfacing as `User.cosmetics`, `GET/PATCH /settings/store`
   (settings-read-only-gated), admin grants + project ledger. Default OFF
@@ -2245,9 +2245,9 @@ git commit -s -m "docs(store): MANIFEST/MODELS store contract, security posture,
 ## Execution pre-flight (read before Task 1)
 
 1. **Commit authorization** (standing rule): ask Jenova whether per-task commits are approved for this run.
-2. **Migration number collision:** a parked plan (space-scoped stewards) ALSO reserves `0065`. Before Task 3, re-check `apps/api/drizzle/meta/_journal.json` — if 0065 is taken by then, renumber to the next free index and bump `when` past the new max (second-to-merge renumbers).
+2. **Migration number collision:** `0065` is now TAKEN (`0065_entity_internet_public`, merged to root 2026-07-18) — this plan and the parked space-scoped-stewards plan both now target `0066`; whichever executes first keeps it, the other renumbers to the next free index at its own execution time. Before Task 3, re-check `apps/api/drizzle/meta/_journal.json` regardless — if 0066 is taken by then too, renumber to the next free index and bump `when` past the new max.
 3. **Worktree:** use `superpowers:using-git-worktrees`; a fresh worktree needs `pnpm install && pnpm -r build` before anything runs (memory: `worktree-needs-install-and-build`).
-4. **Integration env:** needs `TEST_DATABASE_URL`; migrations auto-apply via globalSetup on first run (0065 must be in the journal first — Task 3 precedes every integration task).
+4. **Integration env:** needs `TEST_DATABASE_URL`; migrations auto-apply via globalSetup on first run (0066 must be in the journal first — Task 3 precedes every integration task).
 5. Line-number anchors (entities.ts:166/461/500, comments.ts:95, shape.ts:219, misc.ts settings block) were read at plan time — re-grep if the file has drifted.
 
 ## Deliberately NOT in this plan (tracked, not forgotten)

@@ -27,7 +27,7 @@
 
 **Files:**
 - Modify: `packages/core/src/db/schema/steward.ts` (the `projectRoles` table, ~line 1–15 of the file's `projectRoles` block)
-- Create: `apps/api/drizzle/0065_space_scoped_stewards.sql`
+- Create: `apps/api/drizzle/0066_space_scoped_stewards.sql`
 - Modify: `apps/api/drizzle/meta/_journal.json`
 
 **Interfaces:**
@@ -62,10 +62,10 @@ export const projectRoles = pgTable("project_roles", {
 
 - [ ] **Step 2: Hand-author the migration** (drizzle-kit generate is broken in this repo — migrations are hand-authored, idempotent)
 
-Create `apps/api/drizzle/0065_space_scoped_stewards.sql`:
+Create `apps/api/drizzle/0066_space_scoped_stewards.sql`:
 
 ```sql
--- 0065: space-scoped steward grants (spec: docs/superpowers/specs/2026-07-17-space-scoped-stewards-design.md).
+-- 0066: space-scoped steward grants (spec: docs/superpowers/specs/2026-07-17-space-scoped-stewards-design.md).
 -- project_roles.space_id: NULL = project-wide grant (unchanged semantics); set = scoped to one space.
 -- Only role='steward' may be space-scoped (CHECK). The old 3-column unique is replaced by a partial
 -- pair because Postgres treats NULLs as distinct.
@@ -89,10 +89,10 @@ ALTER TABLE "project_roles" ADD CONSTRAINT "project_roles_space_role_check"
 Append to the `entries` array in `apps/api/drizzle/meta/_journal.json` (after the `0064_auth_wall_revoke_public_read` entry; keep `version`/`dialect` fields of the entry identical in shape to the previous entry):
 
 ```json
-{ "idx": 65, "version": "7", "when": 1784350000000, "tag": "0065_space_scoped_stewards", "breakpoints": true }
+{ "idx": 66, "version": "7", "when": 1784350000000, "tag": "0066_space_scoped_stewards", "breakpoints": true }
 ```
 
-(`when` 1784350000000 > journal max 1781934611662 — required or the migrator strands it.)
+(`when` 1784350000000 > journal max — required or the migrator strands it. Re-confirm the max at execution time: `python3 -c "import json; print(json.load(open('apps/api/drizzle/meta/_journal.json'))['entries'][-1])"` — as of 2026-07-18 it's idx 65 `0065_entity_internet_public`, when 1784246400000, so 1784350000000 still clears it, but a parked store-marketplace plan ALSO reserves `0066` — whichever of the two executes first keeps 0066; the other renumbers to the next free idx/when at its own execution time.)
 
 - [ ] **Step 4: Build core + apply + verify**
 
@@ -112,8 +112,8 @@ Expected: clean typecheck; all unit tests pass (no behavior touched yet).
 - [ ] **Step 6: Commit** (if authorized at pre-flight)
 
 ```bash
-git add ../../packages/core/src/db/schema/steward.ts drizzle/0065_space_scoped_stewards.sql drizzle/meta/_journal.json
-git commit -s -m "feat(steward): migration 0065 — space-scoped steward grants column + constraints"
+git add ../../packages/core/src/db/schema/steward.ts drizzle/0066_space_scoped_stewards.sql drizzle/meta/_journal.json
+git commit -s -m "feat(steward): migration 0066 — space-scoped steward grants column + constraints"
 ```
 
 ---
@@ -1365,7 +1365,7 @@ git commit -s -m "feat(admin): space-steward tab gating, scope banner, bench man
 ```markdown
 ### Added
 - **Space-scoped stewards.** A steward grant can now be scoped to a single space
-  (`project_roles.space_id`, migration 0065): space stewards see only their space's caseload
+  (`project_roles.space_id`, migration 0066): space stewards see only their space's caseload
   (out-of-scope cases 404), open/escalate cases only in scope (escalation verifies the subject
   content actually lives in the case's space — 409 `steward/subject-space-mismatch`), and are
   notified (`steward-case-opened`, PII-free) when a case opens in their space. Benches are managed
