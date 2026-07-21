@@ -35,6 +35,10 @@ EOF
   emit projectId           "${AGORA_ADMIN_PROJECT_ID:-}"      # which project this admin manages
   emit socialGraphEnabled  "${AGORA_ADMIN_SOCIAL_GRAPH_ENABLED:-}" # show Social tab (needs NEO4J_URI)
   emit settingsReadOnly    "${AGORA_ADMIN_SETTINGS_READ_ONLY:-}"   # UI-only guard; see the note below
+  # Optional Umami analytics for the admin — BOTH required, else tracking stays off. Browser-side
+  # only: the admin posts events straight to your Umami; the API has no analytics code.
+  emit umamiUrl            "${AGORA_ADMIN_UMAMI_URL:-}"        # Umami mount (may carry a path prefix)
+  emit umamiId             "${AGORA_ADMIN_UMAMI_ID:-}"         # the ADMIN site's website id (a uuid)
   # ⚠️ PUBLIC BY CONSTRUCTION: /config.js is served to every visitor, so these credentials are readable
   # by anyone who loads the admin. That is inherent to a browser-side login prefill (they were equally
   # public inlined in the bundle). Only ever point them at an account you mean to publish — the shared

@@ -3,6 +3,7 @@
 import { createContext, useContext, useMemo, useSyncExternalStore, type ReactNode } from "react";
 import type { AuthUser } from "@agora-server/contract";
 import { api } from "../lib/api";
+import { track } from "../lib/analytics";
 import { getSession, setSession, subscribe, type Session } from "./session";
 
 interface SignInResponse {
@@ -47,6 +48,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           auth: false,
         });
         setSession({ user: data.user, accessToken: data.accessToken, refreshToken: data.refreshToken, projectId });
+        track("admin-login", { operator: !!data.user.isOperator });
       },
       async signOut() {
         const s = getSession();
@@ -57,6 +59,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             /* sign-out is best-effort; clear locally regardless */
           }
         }
+        track("admin-logout");
         setSession(null);
       },
     }),

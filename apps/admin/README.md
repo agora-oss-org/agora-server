@@ -136,6 +136,8 @@ placeholder degrades to the default instead of breaking the app.
 | `AGORA_ADMIN_SETTINGS_READ_ONLY` | `settingsReadOnly` | boolean | render Settings view-only — **UI guard only**, see below |
 | `AGORA_ADMIN_DEMO_EMAIL` | `demoEmail` | string | one-click demo login — ⚠️ **public**, see below |
 | `AGORA_ADMIN_DEMO_PASSWORD` | `demoPassword` | string | one-click demo login — ⚠️ **public**, see below |
+| `AGORA_ADMIN_UMAMI_URL` | `umamiUrl` | http(s) URL | Umami mount for admin analytics (may carry a path prefix) — set **with** the id or it stays off |
+| `AGORA_ADMIN_UMAMI_ID` | `umamiId` | uuid | the **admin** site's Umami website id — set **with** the URL or it stays off |
 
 Booleans accept `true`/`1`/`yes`/`on` and their negatives; anything else reads as *unset* (not `false`),
 so garbage can't silently switch off a feature the image enabled.
@@ -158,6 +160,14 @@ restricts via `OPERATOR_RO_EMAILS`; **never** a real operator account.
 controls; it does not stop anyone from calling the API directly with the same operator token. Real
 enforcement is server-side `OPERATOR_RO_EMAILS` → the `settingsReadonly` JWT claim →
 `assertSettingsWritable`. Set that too, and treat this flag purely as the matching UI.
+
+**Umami analytics are browser-side only.** The admin loads Umami's script and posts events straight
+from the browser to your Umami instance — the `@agora/api` server has no analytics code and never sees
+them (`8b72364` removed analytics from the API; only the admin's browser tracking came back). Both
+`AGORA_ADMIN_UMAMI_URL` and `AGORA_ADMIN_UMAMI_ID` must be set or nothing is injected. Pageviews
+(including SPA route changes) are automatic; `lib/analytics.ts` `track()` adds custom events for
+login/logout, moderation actions, re-analysis, and settings saves. There is no Analytics page in the
+admin — read the stats in Umami's own dashboard.
 
 **`apiBaseUrl` / `moderatorBaseUrl`** accept a root-relative path (`/v7`) or an absolute `http(s)` URL.
 Protocol-relative values (`//host`) are rejected: they read like a path but silently repoint every API

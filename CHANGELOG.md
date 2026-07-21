@@ -8,6 +8,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Admin-app Umami analytics are back — browser-side only, and runtime-configured.** `8b72364`
+  ("drop Umami integration entirely") was meant to remove analytics from the **API**, but it also took
+  the admin SPA's browser tracking with it. That half is restored: `lib/analytics.ts` `track()` plus
+  the eleven call sites (login/logout, moderation actions on both the report and AI-flag surfaces,
+  re-analysis, and the feed-ranking/moderator/webhooks settings saves + webhook test). Nothing returns
+  to the API — the browser posts events straight to your Umami instance, and the server still has no
+  analytics code. The **Analytics page** stays removed: it read stats back through the operator-only
+  `GET /admin/umami/overview` proxy, which necessarily lives server-side (the reporting API needs
+  credentials a browser can't hold), so it remains out by design. Read the stats in Umami's own
+  dashboard instead.
+- **`AGORA_ADMIN_UMAMI_URL` / `AGORA_ADMIN_UMAMI_ID`.** The tracking script used to be injected at
+  **build** time by `apps/admin/vite.config.ts`, which made it unreachable on a *pulled* `agora-proxy`
+  image — precisely the class of bug the `/config.js` seam was built to kill. It now loads at
+  **runtime** through that seam (`umamiUrl` / `umamiId`), so `AGORA_ADMIN_UMAMI_URL=… docker compose up
+  -d proxy` turns analytics on with no rebuild. Both must be set or nothing is injected; the URL is
+  validated as `http(s)` and the id as a uuid, so a typo or unsubstituted placeholder reads as *off*
+  rather than emitting a `<script>` that 404s on every page load. Wired through all three compose
+  files and the `selfhost`/`prod` env templates.
+
+### Fixed
+- **The three `.env.*.example` templates now declare every user-facing setting their compose file
+  reads.** An audit of `${VAR}` references against each template found real gaps: **`VAPID_PUBLIC_KEY`
+  / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` were absent from all three**, so web push — a shipped,
+  documented feature — was undiscoverable from any template. Same for `RATE_LIMIT_MAX` /
+  `RATE_LIMIT_AUTH_MAX` and `OPERATOR_USER_IDS` (its sibling `OPERATOR_EMAILS` was documented, the
+  id-based half wasn't) and `NEO4J_DATABASE`. `.env.dev.example` declared **none** of the six
+  `AGORA_ADMIN_*` runtime-config vars its compose file relays, and `.env.prod.example` had no
+  `AGORA_DEMO_*` block at all despite `docker-compose.prod.yml` reading seven of them. All added,
+  commented-out with their defaults. Internal plumbing knobs (`*_UPSTREAM`, `*_PORT`, `CADDYFILE`,
+  `ALLOY_*`, `OTEL_*_ENDPOINT`, image tags) are deliberately still omitted — they have sane defaults
+  and would bury the settings a human actually chooses.
 - **Events are searchable.** `POST /search/content` gains a fourth source type, `event`, alongside
   `entity`/`comment`/`message` — the Events domain (migration `0053`) had been invisible to every
   search surface since it shipped, since nothing embedded an event and `match_content` had no branch

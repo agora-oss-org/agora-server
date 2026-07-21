@@ -13,6 +13,7 @@ import { UnsavedBanner } from "../../components/ui/UnsavedBanner";
 import { useToast } from "../../components/ui/Toast";
 import { SETTINGS_READ_ONLY } from "../../config";
 import { ApiError } from "../../lib/api";
+import { track } from "../../lib/analytics";
 import { isDirty } from "../../lib/dirty";
 import {
   getWebhookConfig, updateWebhookConfig, testWebhook,
@@ -57,6 +58,7 @@ function WebhookForm({ initial }: { initial: WebhookConfigView }) {
   const save = useMutation({
     mutationFn: (patch: WebhookConfigPatch) => updateWebhookConfig(patch),
     onSuccess: (view) => {
+      track("admin-settings-save", { panel: "webhooks" });
       // Re-sync every field to the server's resolved view so the unsaved banner clears after a save.
       setUrl(view.url ?? "");
       setEvents(new Set(view.events));
@@ -72,6 +74,7 @@ function WebhookForm({ initial }: { initial: WebhookConfigView }) {
   const test = useMutation({
     mutationFn: () => testWebhook(),
     onSuccess: (r) => {
+      track("admin-settings-test", { target: "webhook", ok: !!r.ok });
       return r.ok
         ? toast({ title: "Test ping delivered", description: `HTTP ${r.status}`, variant: "success" })
         : toast({ title: "Test ping failed", description: r.error ?? `HTTP ${r.status}`, variant: "danger" });

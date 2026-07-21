@@ -80,3 +80,28 @@ export const SETTINGS_READ_ONLY =
 // otherwise the panels render but every graph endpoint returns 503. Runtime key: `socialGraphEnabled`.
 export const SOCIAL_GRAPH_ENABLED =
   resolveBool(runtimeConfig("socialGraphEnabled"), import.meta.env.VITE_SOCIAL_GRAPH_ENABLED) ?? false;
+
+// Optional Umami analytics for the admin app — BOTH must be set or tracking stays off.
+// `UMAMI_URL` is your Umami mount (may carry a path prefix, e.g. https://host/umami); `UMAMI_ID` is
+// the *admin* site's website id. Runtime keys: `umamiUrl` / `umamiId`.
+//
+// This is browser-side only: the admin loads Umami's script and posts events straight to your Umami
+// instance. The @agora/api server has no analytics code and never sees them.
+//
+// ⚠️ Like every other value here, these are PUBLIC — they ship to every visitor's browser. A Umami
+// website id is not a secret (it's in the page source of any Umami-tracked site), but don't put a
+// reporting API key here; the admin never reads stats back, it only sends.
+//
+// URL is validated as http(s) and the id as a uuid, so an unsubstituted placeholder or a typo reads
+// as unset (analytics silently off) instead of injecting a broken <script> that 404s on every load.
+export const UMAMI_URL =
+  resolve(
+    httpUrl(runtimeConfig("umamiUrl")),
+    httpUrl(import.meta.env.VITE_UMAMI_URL),
+  )?.replace(/\/+$/, "") ?? "";
+
+export const UMAMI_ID =
+  resolve(
+    uuid(runtimeConfig("umamiId")),
+    uuid(import.meta.env.VITE_UMAMI_ID),
+  ) ?? "";

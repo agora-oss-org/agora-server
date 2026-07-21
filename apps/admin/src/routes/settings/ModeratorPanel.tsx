@@ -24,6 +24,7 @@ import { useToast } from "../../components/ui/Toast";
 import { SETTINGS_READ_ONLY } from "../../config";
 import { ApiError } from "../../lib/api";
 import { isDirty } from "../../lib/dirty";
+import { track } from "../../lib/analytics";
 import {
   getModeratorConfig, updateModeratorConfig,
   type ModeratorConfigView, type ModeratorConfigPatch, type LlmProvider,
@@ -97,6 +98,7 @@ function ModeratorForm({
   const save = useMutation({
     mutationFn: (patch: ModeratorConfigPatch) => updateModeratorConfig(patch),
     onSuccess: (view) => {
+      track("admin-settings-save", { panel: "moderator" });
       // Re-sync every field to the server's resolved view so the unsaved banner clears after a save.
       setBlockThreshold(str(view.blockAutoActionThreshold));
       setReviewThreshold(str(view.reviewAutoActionThreshold));
