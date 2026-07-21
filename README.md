@@ -464,8 +464,11 @@ before going live. For Tor
 hidden services — or any deploy where Let's Encrypt can't reach you — a second
 [`Caddyfile.onion`](deploy/proxy/Caddyfile.onion) serves a cert you supply at startup instead of
 auto-ACME (selected via the `CADDYFILE` env var); plain HTTP behind your own TLS terminator: set
-`SERVER_NAME=:80`. See [`deploy/proxy/README.md`](deploy/proxy/README.md). (Optionally add `--profile
-scale` for Redis as the cross-replica rate-limit store.)
+`SERVER_NAME=:80`. See [`deploy/proxy/README.md`](deploy/proxy/README.md). Point
+`AGORA_PUBLIC_APP_URL` at your public consumer app's origin so the admin's "Open in app" deep links land
+on your real site (unset → the local demo dev server, `http://localhost:5174/`); it's read at **runtime**
+from `/config.js`, so `docker compose up -d proxy` retargets even a pulled image with no rebuild.
+(Optionally add `--profile scale` for Redis as the cross-replica rate-limit store.)
 
 ## Ecosystem
 

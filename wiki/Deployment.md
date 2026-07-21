@@ -86,6 +86,14 @@ validate on `:80`) and `RATE_LIMIT_TRUSTED_HOPS=1`.
   while you validate DNS/firewall). Set `ACME_CA=https://acme-v02.api.letsencrypt.org/directory` for
   real, browser-trusted certs before going live.
 - Plain HTTP behind your own TLS terminator: `SERVER_NAME=:80`.
+- **`AGORA_PUBLIC_APP_URL`** — origin of your **public consumer app** (the community front end your
+  users actually visit). The admin builds its "Open in app" deep links on reports, AI flags, and steward
+  cases from it; unset, they fall back to `http://localhost:5174/` (the local demo dev server), so set it
+  on any real deploy. It's the one front-door setting read at **runtime**: the admin SPA is a static Vite
+  build baked into the image, so its `VITE_*` vars are fixed at build time and unreachable on a *pulled*
+  image — this value instead comes from `/config.js`, which the proxy's entrypoint rewrites from its env
+  on every start. So `AGORA_PUBLIC_APP_URL=https://community.example.com/ docker compose up -d proxy`
+  retargets a running deployment with no rebuild.
 - Tor / bring-your-own-cert: the `Caddyfile.onion` static-cert variant (via `CADDYFILE`).
 - Custom routing / extra site blocks, and overriding the baked config via bind mounts:
   [`deploy/proxy/README.md`](https://github.com/agora-oss-org/agora-server/blob/root/deploy/proxy/README.md).

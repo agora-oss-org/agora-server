@@ -43,7 +43,8 @@ apps/admin/src/
   metrics) plus infra figures (e.g. `pg_database_size`).
 - **Moderation** — the report queue with per-item resolution, plus an **AI-flag queue** and an
   **AI assessment** panel in the report `ReviewDialog` (both backed by `services/scorer`). Reports
-  deep-link into the consumer app ("Open in app") via `VITE_DEMO_URL`.
+  deep-link into the consumer app ("Open in app") via `AGORA_PUBLIC_APP_URL` (runtime) /
+  `VITE_PUBLIC_APP_URL` (build-time).
 - **Settings** — feed-ranking config (`GET`/`PATCH /settings/feed`), project webhooks, and
   per-project moderation visibility (**hide** vs **placeholder** for removed content).
 
@@ -92,13 +93,37 @@ defaults work behind the bundled nginx image (and the dev proxy).
 # "/moderator" (same-origin; forwarded, prefix stripped). Override for a cross-origin scorer.
 # VITE_MODERATOR_BASE_URL=/moderator
 
-# Origin of your consumer app, for the moderation "Open in app" deep link.
-# VITE_DEMO_URL=https://demo.example.com/
+# Origin of your PUBLIC consumer app, for the "Open in app" deep links on reports, AI flags, and
+# steward cases. Build-time default; on a containerized deploy prefer the RUNTIME knob
+# AGORA_PUBLIC_APP_URL (see below), which works on a pulled image. `VITE_DEMO_URL` is the old name and
+# is still honoured as a last resort. Non-http(s) values are ignored.
+# VITE_PUBLIC_APP_URL=https://community.example.com/
 
 # Dev-only: prefill the login form with the seeded demo user. Leave unset in any real deployment.
 # VITE_DEMO_EMAIL=agora-admin@agora-oss.org
 # VITE_DEMO_PASSWORD=DemoPass123!
 ```
+
+### Runtime configuration (`/config.js`)
+
+Every `VITE_*` var above is inlined at **build** time, so a deployment that *pulls* the published
+`agora-proxy` image can't change them. Values that must be per-deployment are read instead from
+`/config.js`, which the proxy container's entrypoint (`deploy/proxy/docker-entrypoint.sh`) rewrites
+from its env on every start — served `no-store` so it's never cached. Precedence is
+**`/config.js` → `VITE_*` → built-in default**, and each candidate must parse as an `http(s)` URL.
+
+| env on the `proxy` service | `/config.js` key | what it sets |
+| --- | --- | --- |
+| `AGORA_PUBLIC_APP_URL` | `publicAppUrl` | origin of the public consumer app, for "Open in app" deep links |
+
+Point an existing deployment at a new site with no rebuild:
+
+```bash
+AGORA_PUBLIC_APP_URL=https://community.example.com/ docker compose up -d proxy
+```
+
+Adding a key: `emit` it in the entrypoint, relay it on `proxy` in the three compose files, and read it
+via `runtimeConfig()` in `src/config.ts`.
 
 ## Docker
 

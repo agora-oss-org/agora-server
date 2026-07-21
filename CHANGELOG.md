@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`AGORA_PUBLIC_APP_URL` — point the admin's "Open in app" deep links at your real site.** The
+  admin's report / AI-flag / steward-case dialogs link out to the reported content in the consumer
+  app, but the origin was only ever readable from `VITE_DEMO_URL`, which was wired into *no* `.env`
+  template, compose file, or image build arg — so every deployment silently fell back to
+  `http://localhost:5174/` (the local demo dev server) and the links were dead in production. It's
+  now a first-class setting on the `proxy` service in all three compose files, with entries in the
+  three `.env` templates.
+- **Runtime configuration seam for the admin SPA (`/config.js`).** The admin is a static Vite build
+  baked into the `agora-proxy` image, so `VITE_*` vars are inlined at *build* time and unreachable on
+  a **pulled** image (`docker-compose.prod.yml`). Settings that must vary per deployment are now read
+  at runtime from `/config.js`, rewritten from the container env by a new proxy entrypoint
+  (`deploy/proxy/docker-entrypoint.sh`) on every start — so `AGORA_PUBLIC_APP_URL=… docker compose up
+  -d proxy` retargets a running deployment with no rebuild. Precedence is `/config.js` → `VITE_*` →
+  built-in default; values are escaped when emitted and must parse as `http(s)` URLs to be accepted,
+  so neither a hostile env value nor an unsubstituted placeholder can reach an `<a href>`. Caddy
+  serves the file `no-store` (its contents change without its filename changing). See
+  `apps/admin/README.md` → "Runtime configuration".
+
+### Changed
+- The admin's `DEMO_URL` config export is now `PUBLIC_APP_URL`, reflecting that it points at a real
+  community front end rather than the demo harness. `VITE_DEMO_URL` still works as a deprecated
+  build-time fallback, behind the new `AGORA_PUBLIC_APP_URL` / `VITE_PUBLIC_APP_URL`.
+
 ## [0.22.0] - 2026-07-19
 
 ### Added

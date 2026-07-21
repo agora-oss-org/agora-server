@@ -73,6 +73,17 @@ profile-gated, so a bare `docker compose up` starts nothing.)
    > **staging** CA (untrusted certs, but safe against prod rate limits while you validate DNS/firewall).
    > Set `ACME_CA=https://acme-v02.api.letsencrypt.org/directory` in `.env` for real, browser-trusted
    > certs. See [deploy/proxy/README.md](../deploy/proxy/README.md#run-it).
+   >
+   > **`AGORA_PUBLIC_APP_URL`** is the origin of your **public consumer app** — the community front end
+   > your users actually visit. The admin builds its "Open in app" deep links (on reports, AI flags, and
+   > steward cases) from it; leave it unset and those links point at the local demo dev server
+   > (`http://localhost:5174/`), which is wrong on a real deployment. If you're serving the demo behind
+   > this front door, the natural value is `http://localhost/demo/` (or `https://<your.domain>/demo/`) —
+   > what the template sets. Unlike the admin's `VITE_*` flags (inlined into the static bundle at **build**
+   > time, so unreachable on a *pulled* image), this one is read at **runtime** from `/config.js`, which the
+   > proxy container's entrypoint rewrites from its env on every start — so
+   > `AGORA_PUBLIC_APP_URL=https://community.example.com/ docker compose up -d proxy` retargets a running
+   > deployment with no rebuild.
 
 2. **Bring the stack up** — `--profile selfhost` is the API + local db + minio (incl. the Caddy front
    door); add `--profile full` for all optional add-ons, or `--profile scorer`/`--profile secure-chat`/
