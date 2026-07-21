@@ -7,6 +7,12 @@
   </head>
   <body>
     <div id="root"></div>
+    <!-- Runtime config seam (src/lib/runtime-config.ts). A CLASSIC (non-module) script: it executes
+         inline during parsing, whereas the app bundle is type=module and therefore deferred until
+         after parsing — so window.__AGORA_CONFIG__ is always populated before src/config.ts reads it,
+         regardless of where the build hoists the module tag (Vite moves it into <head>).
+         Rewritten in-container by deploy/proxy/docker-entrypoint.sh. -->
+    <script src="/config.js"></script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

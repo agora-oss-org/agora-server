@@ -2,7 +2,7 @@
 // uses the space-scoped moderation + report-resolution endpoints (so a report must carry a spaceId).
 import type { PaginatedResponse, Report, Entity, Comment, ReportTargetType, UserSummary } from "@agora-server/contract";
 import { api } from "./api";
-import { DEMO_URL } from "../config";
+import { PUBLIC_APP_URL } from "../config";
 
 /** Display label for a poster/flagger: @username → name → "—". */
 export function displayName(u: UserSummary | null | undefined): string {
@@ -36,7 +36,7 @@ export function getReportTarget(report: Report): Promise<Entity | Comment | null
 }
 
 /**
- * Deep link from a report to the reported content in the consumer/demo app (DEMO_URL). The demo reads
+ * Deep link from a report to the reported content in the consumer/demo app (PUBLIC_APP_URL). The demo reads
  * `?entity=<id>[&comment=<id>]` off its URL. For a comment we need its parent `entityId`, which only
  * comes from the loaded target — so this returns null until the comment target is available.
  */
@@ -55,12 +55,12 @@ export function contentDeepLink(
   }
   if (!entityId) return null;
   try {
-    const url = new URL(DEMO_URL);
+    const url = new URL(PUBLIC_APP_URL);
     url.searchParams.set("entity", entityId);
     if (commentId) url.searchParams.set("comment", commentId);
     return url.toString();
   } catch {
-    return null; // malformed DEMO_URL
+    return null; // malformed PUBLIC_APP_URL
   }
 }
 

@@ -21,7 +21,7 @@ import { LoadingPanel, Spinner } from "../components/ui/Spinner";
 import { useToast } from "../components/ui/Toast";
 import { ApiError } from "../lib/api";
 import { cn } from "../lib/cn";
-import { DEMO_URL, SOCIAL_GRAPH_ENABLED } from "../config";
+import { PUBLIC_APP_URL, SOCIAL_GRAPH_ENABLED } from "../config";
 import {
   getCommunityOverview, communityOverviewKey, recomputeCommunityStats,
   getSocialWeather, socialWeatherKey,
@@ -444,7 +444,7 @@ function userLabel(u: User): string {
 
 function demoEntityLink(entityId: string): string | null {
   try {
-    const u = new URL(DEMO_URL);
+    const u = new URL(PUBLIC_APP_URL);
     u.searchParams.set("entity", entityId);
     return u.toString();
   } catch {

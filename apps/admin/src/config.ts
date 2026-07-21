@@ -1,5 +1,10 @@
-// Runtime configuration sourced from Vite env (VITE_-prefixed vars are the only ones exposed to the
-// client). Same-origin by default: in dev the vite proxy forwards /v7 to :4000, in prod nginx does.
+// Configuration for the admin SPA. Most of it is BUILD-time (VITE_-prefixed vars are the only ones
+// Vite exposes to the client, and they're inlined into the static bundle). Values that must be
+// settable on an already-published image read through the `/config.js` runtime seam instead — see
+// lib/runtime-config.ts. Same-origin by default: in dev the vite proxy forwards /v7 to :4000, in prod
+// the Caddy front door does.
+import { httpUrl, resolve, runtimeConfig } from "./lib/runtime-config";
+
 export const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? "/v7").replace(/\/+$/, "");
 
 // Base of the services/scorer service (LLM moderation: the AI-flag queue + per-item analysis).
@@ -17,10 +22,22 @@ export const ENV_PROJECT_ID = import.meta.env.VITE_PROJECT_ID || "11111111-1111-
 export const DEMO_EMAIL = import.meta.env.VITE_DEMO_EMAIL || "";
 export const DEMO_PASSWORD = import.meta.env.VITE_DEMO_PASSWORD || "";
 
-// Origin of the consumer/demo app, used to deep-link a moderator from a report straight to the
-// reported entity/comment (the demo reads ?entity=&comment= off its URL). Defaults to the local demo
-// dev server; set to your deployed app origin in prod.
-export const DEMO_URL = import.meta.env.VITE_DEMO_URL || "http://localhost:5174/";
+// Origin of the PUBLIC consumer app (your community's front end — the demo harness locally), used to
+// deep-link a moderator/steward from a report, AI flag, or case straight to the reported
+// entity/comment (the app reads ?entity=&comment= off its URL). Defaults to the local demo dev server.
+//
+// This one is RUNTIME-configurable (unlike the build-time flags above): set AGORA_PUBLIC_APP_URL in
+// the deployment's .env and the proxy container writes it into /config.js at start, so a PULLED
+// agora-proxy image can be pointed at your real site without a rebuild. VITE_PUBLIC_APP_URL still
+// works as a build-time default (handy for `pnpm dev`), and the legacy VITE_DEMO_URL is honoured last.
+// Each candidate is validated as an http(s) URL before it can win, so a malformed or non-web value
+// (an unsubstituted placeholder, a `javascript:` scheme) falls through instead of reaching an href.
+export const PUBLIC_APP_URL =
+  resolve(
+    httpUrl(runtimeConfig("publicAppUrl")),
+    httpUrl(import.meta.env.VITE_PUBLIC_APP_URL),
+    httpUrl(import.meta.env.VITE_DEMO_URL), // deprecated — kept so existing builds keep working
+  ) ?? "http://localhost:5174/";
 
 // When VITE_SETTINGS_READ_ONLY=true, the Settings page renders view-only: every Save control is
 // disabled and submits are blocked client-side. Lets you deploy the admin for viewing/operation
