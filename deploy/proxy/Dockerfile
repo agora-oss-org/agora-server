@@ -48,5 +48,13 @@ COPY --from=builder /repo/apps/admin/dist /srv
 # static-cert variant (advanced; mount Caddyfile.onion → /etc/caddy/Caddyfile + certs). See deploy/proxy/README.md.
 COPY deploy/proxy/Caddyfile /etc/caddy/Caddyfile
 COPY deploy/proxy/agora-routes.caddy /etc/caddy/agora-routes.caddy
+# Runtime config seam for the admin SPA: the entrypoint rewrites /srv/config.js from the container env
+# (AGORA_PUBLIC_APP_URL) before starting Caddy, so a PULLED image can be pointed at a deployment's real
+# public site with no rebuild. Unset vars leave the SPA on its build-time defaults.
+COPY deploy/proxy/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+CMD ["caddy", "run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]
 EXPOSE 80 443
-# The base caddy image's entrypoint runs `caddy run --config /etc/caddy/Caddyfile --adapter caddyfile`.
+# CMD above restates the base caddy image's default command, since our ENTRYPOINT replaces its
+# entrypoint (which supplied it) and ends by `exec "$@"`.

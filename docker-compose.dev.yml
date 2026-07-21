@@ -275,6 +275,12 @@ services:
       # Grafana upstream (the `observability` profile). Front door serves it at /grafana/ (502s until up).
       GRAFANA_UPSTREAM: ${GRAFANA_UPSTREAM:-http://grafana:3000}
       S3_BUCKET: ${S3_BUCKET:-agora}
+      # Origin of your PUBLIC consumer app, for the admin's "Open in app" deep links. The proxy
+      # entrypoint writes it into the BAKED SPA's /config.js — but in THIS dev compose the admin is
+      # served from the host vite server (ADMIN_UPSTREAM above), which serves its own config.js, so
+      # this is inert here. For host-side dev set VITE_PUBLIC_APP_URL in apps/admin/.env instead.
+      # It takes effect if you point the SPA route back at the image's baked build.
+      AGORA_PUBLIC_APP_URL: ${AGORA_PUBLIC_APP_URL:-}
     volumes:
       - ${CADDYFILE:-./deploy/proxy/Caddyfile}:/etc/caddy/Caddyfile:ro
       # Dev routing snippet — SPA + /assets reverse-proxied to the host vite server (no immutable cache).

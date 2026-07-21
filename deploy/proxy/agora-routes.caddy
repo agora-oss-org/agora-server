@@ -104,7 +104,17 @@
 		file_server
 	}
 
-	# 10. Catch-all: SPA static + client-side-routing fallback. Bare `handle` = lowest precedence.
+	# 10. Admin runtime config — rewritten from the container env on every start (see
+	#     deploy/proxy/docker-entrypoint.sh). MUST NOT be cached: it's the one file whose contents
+	#     change without the bundle's hashed filename changing, so a cached copy would silently pin the
+	#     SPA to a previous deployment's config.
+	handle /config.js {
+		header Cache-Control "no-store"
+		root * /srv
+		file_server
+	}
+
+	# 11. Catch-all: SPA static + client-side-routing fallback. Bare `handle` = lowest precedence.
 	handle {
 		root * /srv
 		try_files {path} /index.html

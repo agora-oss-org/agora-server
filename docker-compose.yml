@@ -357,6 +357,11 @@ services:
       # Grafana upstream (the `observability` profile). Front door serves it at /grafana/ (502s until up).
       GRAFANA_UPSTREAM: http://grafana:3000
       S3_BUCKET: ${S3_BUCKET:-agora}
+      # Origin of your PUBLIC consumer app (the community front end users actually visit). The admin
+      # SPA reads it at RUNTIME from /config.js (written by the proxy entrypoint at start) to build the
+      # "Open in app" deep links on reports / AI flags / steward cases. Unset → those links fall back to
+      # the local demo dev server (http://localhost:5174/), which is wrong on any real deployment.
+      AGORA_PUBLIC_APP_URL: ${AGORA_PUBLIC_APP_URL:-}
     volumes:
       # The default Caddyfile + routing snippet are BAKED into the agora-proxy image; these two mounts
       # just overlay the repo copies so you can HOT-EDIT routing/headers in dev without a rebuild (the
