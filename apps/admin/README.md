@@ -99,28 +99,69 @@ defaults work behind the bundled nginx image (and the dev proxy).
 # is still honoured as a last resort. Non-http(s) values are ignored.
 # VITE_PUBLIC_APP_URL=https://community.example.com/
 
+# Which project this admin manages. Defaults to the seed project UUID.
+# VITE_PROJECT_ID=11111111-1111-1111-1111-111111111111
+
+# Feature flags. Social needs NEO4J_URI wired up server-side, or the panels 503.
+# VITE_SOCIAL_GRAPH_ENABLED=true
+# VITE_SETTINGS_READ_ONLY=true
+
 # Dev-only: prefill the login form with the seeded demo user. Leave unset in any real deployment.
+# ⚠️ Whatever you set here ships to every visitor's browser.
 # VITE_DEMO_EMAIL=agora-admin@agora-oss.org
 # VITE_DEMO_PASSWORD=DemoPass123!
 ```
 
+On a containerized deploy these are only **build-time defaults** — prefer the `AGORA_*` runtime
+equivalents below, which work on a pulled image.
+
 ### Runtime configuration (`/config.js`)
 
 Every `VITE_*` var above is inlined at **build** time, so a deployment that *pulls* the published
-`agora-proxy` image can't change them. Values that must be per-deployment are read instead from
-`/config.js`, which the proxy container's entrypoint (`deploy/proxy/docker-entrypoint.sh`) rewrites
-from its env on every start — served `no-store` so it's never cached. Precedence is
-**`/config.js` → `VITE_*` → built-in default**, and each candidate must parse as an `http(s)` URL.
+`agora-proxy` image can't change them. **Every** setting is therefore also readable from `/config.js`,
+which the proxy container's entrypoint (`deploy/proxy/docker-entrypoint.sh`) rewrites from its env on
+every start — served `no-store` so a stale copy can't pin the SPA to an old deployment's config.
 
-| env on the `proxy` service | `/config.js` key | what it sets |
-| --- | --- | --- |
-| `AGORA_PUBLIC_APP_URL` | `publicAppUrl` | origin of the public consumer app, for "Open in app" deep links |
+Precedence is **`/config.js` → `VITE_*` → built-in default**. Each candidate is *type-validated* and an
+invalid one **falls through to the next** rather than winning, so a typo or an unsubstituted
+placeholder degrades to the default instead of breaking the app.
 
-Point an existing deployment at a new site with no rebuild:
+| env on the `proxy` service | `/config.js` key | validated as | what it sets |
+| --- | --- | --- | --- |
+| `AGORA_PUBLIC_APP_URL` | `publicAppUrl` | http(s) URL | origin of the public consumer app, for "Open in app" deep links |
+| `AGORA_ADMIN_PROJECT_ID` | `projectId` | uuid | which project this admin manages (default: the seed project) |
+| `AGORA_ADMIN_API_BASE_URL` | `apiBaseUrl` | rooted path or http(s) URL | the API base (default `/v7`, same-origin) |
+| `AGORA_ADMIN_MODERATOR_BASE_URL` | `moderatorBaseUrl` | rooted path or http(s) URL | the scorer base (default `/moderator`, same-origin) |
+| `AGORA_ADMIN_SOCIAL_GRAPH_ENABLED` | `socialGraphEnabled` | boolean | show the Social tab + Weather card (needs `NEO4J_URI` server-side) |
+| `AGORA_ADMIN_SETTINGS_READ_ONLY` | `settingsReadOnly` | boolean | render Settings view-only — **UI guard only**, see below |
+| `AGORA_ADMIN_DEMO_EMAIL` | `demoEmail` | string | one-click demo login — ⚠️ **public**, see below |
+| `AGORA_ADMIN_DEMO_PASSWORD` | `demoPassword` | string | one-click demo login — ⚠️ **public**, see below |
+
+Booleans accept `true`/`1`/`yes`/`on` and their negatives; anything else reads as *unset* (not `false`),
+so garbage can't silently switch off a feature the image enabled.
+
+Retarget a running deployment with no rebuild:
 
 ```bash
 AGORA_PUBLIC_APP_URL=https://community.example.com/ docker compose up -d proxy
 ```
+
+#### Two things that are not what they look like
+
+**`AGORA_ADMIN_DEMO_EMAIL` / `_PASSWORD` are public.** They are served to every visitor in
+`/config.js` (and were equally public inlined in the bundle). A browser-side login prefill cannot be
+otherwise — there is no way to hand the browser a credential without handing it to whoever loads the
+page. Point them at an account you are deliberately publishing, i.e. the shared demo login the server
+restricts via `OPERATOR_RO_EMAILS`; **never** a real operator account.
+
+**`AGORA_ADMIN_SETTINGS_READ_ONLY` is a UI guard, not a security boundary.** It disables the Save
+controls; it does not stop anyone from calling the API directly with the same operator token. Real
+enforcement is server-side `OPERATOR_RO_EMAILS` → the `settingsReadonly` JWT claim →
+`assertSettingsWritable`. Set that too, and treat this flag purely as the matching UI.
+
+**`apiBaseUrl` / `moderatorBaseUrl`** accept a root-relative path (`/v7`) or an absolute `http(s)` URL.
+Protocol-relative values (`//host`) are rejected: they read like a path but silently repoint every API
+call — and the Bearer token it carries — at another origin.
 
 Adding a key: `emit` it in the entrypoint, relay it on `proxy` in the three compose files, and read it
 via `runtimeConfig()` in `src/config.ts`.

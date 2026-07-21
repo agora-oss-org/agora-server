@@ -467,7 +467,9 @@ auto-ACME (selected via the `CADDYFILE` env var); plain HTTP behind your own TLS
 `SERVER_NAME=:80`. See [`deploy/proxy/README.md`](deploy/proxy/README.md). Point
 `AGORA_PUBLIC_APP_URL` at your public consumer app's origin so the admin's "Open in app" deep links land
 on your real site (unset → the local demo dev server, `http://localhost:5174/`); it's read at **runtime**
-from `/config.js`, so `docker compose up -d proxy` retargets even a pulled image with no rebuild.
+from `/config.js`, so `docker compose up -d proxy` retargets even a pulled image with no rebuild. The
+rest of the admin's settings ride the same seam as optional `AGORA_ADMIN_*` vars — project id, API and
+moderator bases, feature flags, demo login ([full table](apps/admin/README.md)).
 (Optionally add `--profile scale` for Redis as the cross-replica rate-limit store.)
 
 ## Ecosystem

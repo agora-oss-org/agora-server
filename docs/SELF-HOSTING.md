@@ -79,11 +79,19 @@ profile-gated, so a bare `docker compose up` starts nothing.)
    > steward cases) from it; leave it unset and those links point at the local demo dev server
    > (`http://localhost:5174/`), which is wrong on a real deployment. If you're serving the demo behind
    > this front door, the natural value is `http://localhost/demo/` (or `https://<your.domain>/demo/`) —
-   > what the template sets. Unlike the admin's `VITE_*` flags (inlined into the static bundle at **build**
-   > time, so unreachable on a *pulled* image), this one is read at **runtime** from `/config.js`, which the
-   > proxy container's entrypoint rewrites from its env on every start — so
-   > `AGORA_PUBLIC_APP_URL=https://community.example.com/ docker compose up -d proxy` retargets a running
-   > deployment with no rebuild.
+   > what the template sets. The admin is a static Vite build baked into the proxy image, so its `VITE_*`
+   > vars are fixed at **build** time and unreachable on a *pulled* image — every admin setting is
+   > therefore read at **runtime** from `/config.js`, which the proxy container's entrypoint rewrites from
+   > its env on every start. So `AGORA_PUBLIC_APP_URL=https://community.example.com/ docker compose up -d
+   > proxy` retargets a running deployment with no rebuild.
+   >
+   > The same seam carries the rest of the admin's settings as optional **`AGORA_ADMIN_*`** vars (project
+   > id, API/moderator bases, the Social tab, the demo login) — all listed, commented out, in the `.env`
+   > template, with the full table in [apps/admin/README.md](../apps/admin/README.md). Two carry warnings
+   > worth reading before you set them: `AGORA_ADMIN_DEMO_EMAIL`/`_PASSWORD` are **public** (served to
+   > every visitor, as any browser-side login prefill must be — use the shared demo account only), and
+   > `AGORA_ADMIN_SETTINGS_READ_ONLY` is a **UI guard, not a security boundary** (pair it with the
+   > server's `OPERATOR_RO_EMAILS`, which is the real enforcement).
 
 2. **Bring the stack up** — `--profile selfhost` is the API + local db + minio (incl. the Caddy front
    door); add `--profile full` for all optional add-ons, or `--profile scorer`/`--profile secure-chat`/

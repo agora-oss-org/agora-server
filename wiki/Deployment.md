@@ -89,11 +89,20 @@ validate on `:80`) and `RATE_LIMIT_TRUSTED_HOPS=1`.
 - **`AGORA_PUBLIC_APP_URL`** — origin of your **public consumer app** (the community front end your
   users actually visit). The admin builds its "Open in app" deep links on reports, AI flags, and steward
   cases from it; unset, they fall back to `http://localhost:5174/` (the local demo dev server), so set it
-  on any real deploy. It's the one front-door setting read at **runtime**: the admin SPA is a static Vite
+  on any real deploy. Read at **runtime**, like every admin setting: the admin SPA is a static Vite
   build baked into the image, so its `VITE_*` vars are fixed at build time and unreachable on a *pulled*
-  image — this value instead comes from `/config.js`, which the proxy's entrypoint rewrites from its env
+  image — these values instead come from `/config.js`, which the proxy's entrypoint rewrites from its env
   on every start. So `AGORA_PUBLIC_APP_URL=https://community.example.com/ docker compose up -d proxy`
   retargets a running deployment with no rebuild.
+- **`AGORA_ADMIN_*`** — the rest of the admin's settings, same runtime seam, all optional (unset keeps
+  the image's built-in default): `AGORA_ADMIN_PROJECT_ID` (which project this admin manages),
+  `AGORA_ADMIN_API_BASE_URL` / `AGORA_ADMIN_MODERATOR_BASE_URL` (default to same-origin `/v7` and
+  `/moderator` through this proxy), `AGORA_ADMIN_SOCIAL_GRAPH_ENABLED` (shows the Social tab — only
+  useful where `NEO4J_URI` is wired up), `AGORA_ADMIN_SETTINGS_READ_ONLY` (**UI guard only, not a
+  security boundary** — the server enforces via `OPERATOR_RO_EMAILS`), and
+  `AGORA_ADMIN_DEMO_EMAIL` / `AGORA_ADMIN_DEMO_PASSWORD` for the one-click demo login
+  (⚠️ **public** — served to every visitor; point them at the shared demo account only).
+  Full table: [`apps/admin/README.md`](https://github.com/agora-oss-org/agora-server/blob/root/apps/admin/README.md).
 - Tor / bring-your-own-cert: the `Caddyfile.onion` static-cert variant (via `CADDYFILE`).
 - Custom routing / extra site blocks, and overriding the baked config via bind mounts:
   [`deploy/proxy/README.md`](https://github.com/agora-oss-org/agora-server/blob/root/deploy/proxy/README.md).

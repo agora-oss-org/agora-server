@@ -26,6 +26,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   serves the file `no-store` (its contents change without its filename changing). See
   `apps/admin/README.md` → "Runtime configuration".
 
+- **Every remaining admin setting is now runtime-configurable too.** The seam started with one key;
+  the rest of the admin's config followed, so a *pulled* `agora-proxy` image no longer has any
+  build-time-only setting: `AGORA_ADMIN_PROJECT_ID`, `AGORA_ADMIN_API_BASE_URL`,
+  `AGORA_ADMIN_MODERATOR_BASE_URL`, `AGORA_ADMIN_SOCIAL_GRAPH_ENABLED`,
+  `AGORA_ADMIN_SETTINGS_READ_ONLY`, `AGORA_ADMIN_DEMO_EMAIL`, `AGORA_ADMIN_DEMO_PASSWORD`. One
+  published image can now serve a different project, API origin, or feature set with no rebuild.
+  Each value is validated by *type* (uuid / base / boolean / http(s) URL) and an invalid candidate
+  falls through to the next rather than winning. Two specifics worth knowing: booleans read an
+  unrecognised value as *unset* rather than `false`, so garbage can't silently switch off a feature
+  the image enabled; and the API/moderator bases reject protocol-relative values (`//host`), which
+  read like a path but would repoint every API call — and the Bearer token it carries — off-origin.
+  The corresponding `VITE_*` vars still work as build-time defaults.
+
 ### Changed
 - The admin's `DEMO_URL` config export is now `PUBLIC_APP_URL`, reflecting that it points at a real
   community front end rather than the demo harness. `VITE_DEMO_URL` still works as a deprecated
