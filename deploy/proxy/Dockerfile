@@ -20,16 +20,18 @@ RUN pnpm install --frozen-lockfile --filter @agora/admin...
 # allow CORS).
 ARG VITE_API_BASE_URL=/v7
 ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
-# Admin feature flags are Vite BUILD-TIME vars — they're inlined into the static bundle here and cannot
-# be set at container runtime. Pass them as build args (empty default = feature off) so a deployment
-# that wired NEO4J_URI can surface the Social tab / lock Settings read-only.
+# Admin feature flags are Vite BUILD-TIME vars — inlined into the static bundle here. They are now
+# only DEFAULTS: each is also settable at container RUNTIME via docker-entrypoint.sh (see the
+# AGORA_ADMIN_* env vars there), which is what a PULLED image must use since these args are long gone
+# by then. Baking them in is still useful for a custom image with opinionated defaults.
 ARG VITE_SOCIAL_GRAPH_ENABLED=
 ENV VITE_SOCIAL_GRAPH_ENABLED=$VITE_SOCIAL_GRAPH_ENABLED
 ARG VITE_SETTINGS_READ_ONLY=
 ENV VITE_SETTINGS_READ_ONLY=$VITE_SETTINGS_READ_ONLY
-# Optional one-click "Log in as admin" button on the login screen — shown only when BOTH are set,
-# inlined into the bundle here (the admin SPA has no runtime config seam). Point them at the
-# deployment's seeded demo operator account; leave empty and only the ordinary sign-in form shows.
+# Optional one-click "Log in as admin" button on the login screen — shown only when BOTH are set.
+# Point them at the deployment's seeded demo operator account; leave empty and only the ordinary
+# sign-in form shows. ⚠️ Whatever is set here ships to every visitor's browser inside the JS bundle —
+# a browser-side login prefill is public by construction. Never a real operator account.
 ARG VITE_DEMO_EMAIL=
 ENV VITE_DEMO_EMAIL=$VITE_DEMO_EMAIL
 ARG VITE_DEMO_PASSWORD=

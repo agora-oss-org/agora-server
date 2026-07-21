@@ -27,8 +27,20 @@ if [ -w "$(dirname "$CONFIG_JS")" ]; then
 // Generated at container start by deploy/proxy/docker-entrypoint.sh — do not edit.
 window.__AGORA_CONFIG__ = {
 EOF
-  # Origin of the public consumer app, used for the admin's "Open in app" deep links.
-  emit publicAppUrl "${AGORA_PUBLIC_APP_URL:-}"
+  # env var                              → /config.js key read by apps/admin/src/config.ts.
+  # Each is optional: unset → omitted → the SPA keeps its build-time VITE_* value / built-in default.
+  emit publicAppUrl        "${AGORA_PUBLIC_APP_URL:-}"        # public consumer app, for deep links
+  emit apiBaseUrl          "${AGORA_ADMIN_API_BASE_URL:-}"    # default /v7 (same-origin via this proxy)
+  emit moderatorBaseUrl    "${AGORA_ADMIN_MODERATOR_BASE_URL:-}" # default /moderator (same-origin)
+  emit projectId           "${AGORA_ADMIN_PROJECT_ID:-}"      # which project this admin manages
+  emit socialGraphEnabled  "${AGORA_ADMIN_SOCIAL_GRAPH_ENABLED:-}" # show Social tab (needs NEO4J_URI)
+  emit settingsReadOnly    "${AGORA_ADMIN_SETTINGS_READ_ONLY:-}"   # UI-only guard; see the note below
+  # ⚠️ PUBLIC BY CONSTRUCTION: /config.js is served to every visitor, so these credentials are readable
+  # by anyone who loads the admin. That is inherent to a browser-side login prefill (they were equally
+  # public inlined in the bundle). Only ever point them at an account you mean to publish — the shared
+  # demo login the server restricts via OPERATOR_RO_EMAILS — never a real operator account.
+  emit demoEmail           "${AGORA_ADMIN_DEMO_EMAIL:-}"
+  emit demoPassword        "${AGORA_ADMIN_DEMO_PASSWORD:-}"
   printf '};\n' >>"$CONFIG_JS"
 else
   echo "agora-proxy: $(dirname "$CONFIG_JS") is not writable — keeping the baked-in config.js" >&2
