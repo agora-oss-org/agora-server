@@ -175,7 +175,7 @@ Only `VITE_`-prefixed vars reach the browser; they're baked at build. See
 |---|---|---|
 | `VITE_API_BASE_URL` | ◻️ | API base. Default `/v7` (same-origin via the Caddy front door). Override only for a cross-origin API. |
 | `VITE_MODERATOR_BASE_URL` | ◻️ | Scorer base. Default `/moderator` (same-origin). |
-| `VITE_SETTINGS_READ_ONLY` | ◻️ | `true` → Settings page view-only (UI guard, not a security boundary). |
+| `VITE_SETTINGS_READ_ONLY` | ◻️ | `true` → Settings page view-only (UI guard, API security boundary). |
 | `VITE_SOCIAL_GRAPH_ENABLED` | ◻️ | `true` → surface the admin **Social** tab + Community Weather card (still operator-gated + needs `NEO4J_URI` on the API). Baked at build — set it before building/publishing the proxy image. |
 
 ---
