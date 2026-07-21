@@ -1,5 +1,7 @@
 // /v7/:projectId/search/*
 // content = semantic (Voyage embed query -> match_entities pgvector RPC), returns ContentSearchResult[].
+// Source types: entity | comment | message | event. Events are returned by DEFAULT (sourceTypes null);
+// their tiered public|members|invite visibility is gated inside match_content via can_view_event.
 // ask     = RAG Q&A: same retrieval, then stream a Claude answer over SSE (token/sources/done/error).
 // spaces/users = plain text (ILIKE), no embeddings needed.
 import { Hono } from "hono";
@@ -9,8 +11,9 @@ import type { Variables } from "../http/context.js";
 import { Errors } from "../http/errors.js";
 import { getDb } from "../db/index.js";
 import { logger } from "../lib/logger.js";
-import { entities, comments, chatMessages, spaces, profiles } from "../db/schema/index.js";
-import { shapeEntity, shapeComment, shapeChatMessage, shapeSpace, shapeUser } from "../lib/shape.js";
+import { entities, comments, chatMessages, spaces, profiles, events } from "../db/schema/index.js";
+import { shapeEntity, shapeComment, shapeChatMessage, shapeSpace, shapeUser, shapeEvent } from "../lib/shape.js";
+import { loadHostIds, loadRsvpCounts } from "./events.js";
 import { embedText, embeddingsEnabled, type SourceType } from "../lib/embeddings.js";
 import { allow } from "../lib/embed-throttle.js";
 import { streamText, llmEnabled } from "../lib/llm.js";
@@ -55,7 +58,7 @@ function relevance(q: string, ...fields: (string | null | undefined)[]): number 
   return best;
 }
 
-const VALID_SOURCE_TYPES: SourceType[] = ["entity", "comment", "message"];
+const VALID_SOURCE_TYPES: SourceType[] = ["entity", "comment", "message", "event"];
 
 /** Semantic retrieval across source types, shared by /content and /ask. Similarity order preserved. */
 async function retrieveContent(
@@ -126,6 +129,19 @@ async function retrieveContent(
     for (const r of await getDb().select().from(chatMessages)
       .where(and(eq(chatMessages.projectId, projectId), inArray(chatMessages.id, msgIds), isNull(chatMessages.userDeletedAt))))
       record.set(r.id, shapeChatMessage(r));
+  }
+  const evtIds = idsByType("event");
+  if (evtIds.length) {
+    // shapeEvent needs hostIds + rsvpCounts, which are DERIVED per request (not stored) — so unlike
+    // the three shapers above this costs 2 extra queries per matched event. That's noise next to the
+    // Voyage embed roundtrip already on this path, and it mirrors what the events list does today.
+    // Visibility was already decided inside match_content (can_view_event), so no filtering here.
+    const rows = await getDb().select().from(events)
+      .where(and(eq(events.projectId, projectId), inArray(events.id, evtIds), isNull(events.deletedAt)));
+    await Promise.all(rows.map(async (r) => {
+      const [hostIds, rsvpCounts] = await Promise.all([loadHostIds(r.id), loadRsvpCounts(r.id)]);
+      record.set(r.id, shapeEvent(r, { hostIds, rsvpCounts }));
+    }));
   }
 
   return matches

@@ -8,7 +8,7 @@ import { allow } from "./embed-throttle.js";
 import { enqueuePending } from "./pending-embeddings.js";
 import { embeddingDurationMs, embeddingsTotal } from "./telemetry.js";
 
-export type SourceType = "entity" | "comment" | "message";
+export type SourceType = "entity" | "comment" | "message" | "event";
 
 const VOYAGE_URL = "https://api.voyageai.com/v1/embeddings";
 

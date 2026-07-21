@@ -439,7 +439,7 @@ array** of `{ similarity, record }` results (NOT a `{ data, pagination }` envelo
 against the SDK's `useSearchContent`/`useAskContent`/`useSearchSpaces`/`useSearchUsers`.
 | Method | Path | Status |
 |---|---|---|
-| POST | `/search/content` (semantic across entity/comment/message; Voyage→`match_content` pgvector; honors `sourceTypes`, `spaceId`, `includeChildSpaces?`) → `ContentSearchResult[]` | ✅ |
+| POST | `/search/content` (semantic across entity/comment/message/**event**; Voyage→`match_content` pgvector; honors `sourceTypes`, `spaceId`, `includeChildSpaces?`) → `ContentSearchResult[]` | ✅ |
 | POST | `/search/ask` (RAG; SSE stream `token`→`sources`→`done`/`error`; honors the same `spaceId`/`includeChildSpaces?`) | ✅ |
 | POST | `/search/spaces` (ILIKE) → `SpaceSearchResult[]` | ✅ |
 | POST | `/search/users` (ILIKE) → `UserSearchResult[]` | ✅ |
@@ -447,6 +447,13 @@ against the SDK's `useSearchContent`/`useAskContent`/`useSearchSpaces`/`useSearc
 `includeChildSpaces?: boolean` (with a `spaceId`) resolves `{self ∪ descendants}` via a recursive CTE
 (`lib/space-tree.ts` `resolveSpaceSubtree`, migration `0063` — `match_content` gained `p_space_ids`)
 and scopes the search to that set instead of the single space.
+
+`sourceTypes` ∈ `entity` | `comment` | `message` | `event`. **Events are included by default** when
+`sourceTypes` is omitted (migration `0066`) — a client that switches on `record.sourceType` must
+handle `"event"` or pass an explicit `sourceTypes` to exclude it. Indexed text is the event's title,
+description, venue name and address. Event visibility (`public|members|invite`, on top of the
+space-read gate) is enforced *inside* `match_content` via `can_view_event()`, so search never
+enumerates more than `GET /events` lists.
 
 ### storage
 | Method | Path | Status |

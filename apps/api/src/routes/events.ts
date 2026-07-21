@@ -18,6 +18,7 @@ import { assertCanPostInSpace, assertCanReadSpace } from "../lib/space-access.js
 import { isEventHost, canViewEvent, canRsvpGoing, wouldOrphanHosts } from "../lib/events-policy.js";
 import { storeImageFromUpload } from "../lib/images.js";
 import { logger } from "../lib/logger.js";
+import { indexContentAsync } from "../lib/embeddings.js";
 
 type EventRow = typeof events.$inferSelect;
 
@@ -41,6 +42,15 @@ export async function loadRsvpCounts(eventId: string): Promise<{ going: number; 
   const out = { going: 0, maybe: 0, not_going: 0 };
   for (const r of rows) (out as any)[r.status] = r.n;
   return out;
+}
+
+// The event fields that feed the semantic index. Venue/address are included so location-flavoured
+// queries ("meetup in Portland") retrieve — they're part of what an event *is*, unlike an entity.
+export const EMBEDDED_FIELDS = ["title", "description", "venueName", "address"] as const;
+
+/** The text indexed for /search/content. Keep in sync with EMBEDDED_FIELDS. */
+export function eventSearchText(row: EventRow): string {
+  return [row.title, row.description, row.venueName, row.address].filter(Boolean).join("\n");
 }
 
 export async function loadLocation(eventId: string): Promise<{ lat: number; lng: number } | null> {
@@ -209,6 +219,7 @@ export const eventRoutes = new Hono<{ Variables: Variables }>()
     if (coverImageId) await getDb().update(events).set({ coverImageId }).where(eq(events.id, row.id));
 
     const [fresh] = await getDb().select().from(events).where(eq(events.id, row.id)).limit(1);
+    indexContentAsync(projectId, "event", row.id, eventSearchText(fresh!));
     logger.info({ projectId, eventId: row.id, userId, spaceId: row.spaceId ?? null, hosts: hostIds.length }, "event: created");
     return c.json(await buildEventResponse(c, fresh!), 201);
   })
@@ -250,6 +261,16 @@ export const eventRoutes = new Hono<{ Variables: Variables }>()
     // refinement is enforced on single GET; the list shows public + the caller's own visible set.)
     if (!(c.var.auth && isProjectAdmin(c.var.auth))) {
       const uid = c.var.auth?.userId ?? null;
+      // ⚠️ This predicate is duplicated as can_view_event() (migration 0066), which /search/content's
+      // match_content calls. Keep the two IN SYNC — a change here must be mirrored there, or search
+      // becomes an enumeration hole. The duplication is deliberate and measured: swapping this for a
+      // can_view_event() call collapses the plan to an opaque per-row `Filter: can_view_event(...)`,
+      // losing the `hashed SubPlan` treatment the planner gives the space_members lookups below
+      // (it computes them once and reuses them across rows). match_content can afford the per-row
+      // call — its candidate set is already tiny and vector-limited — but this list cannot.
+      // The drift guard is behavioural, not structural: test/integration/event-search-visibility.test.ts
+      // asserts search results stay a SUBSET of this list for every caller.
+      //
       // Can the caller READ the event's space? (mirrors assertCanReadSpace / readableEntitiesFilter):
       // space null, OR readingPermission='anyone', OR the caller owns / actively belongs to the space.
       // Fail closed for anonymous.
@@ -313,6 +334,11 @@ export const eventRoutes = new Hono<{ Variables: Variables }>()
       }
     }
     const [fresh] = await getDb().select().from(events).where(eq(events.id, row.id)).limit(1);
+    // Re-embed only when the indexed text actually changed — a PATCH that only flips `status` or
+    // `capacity` shouldn't burn a Voyage call.
+    if (EMBEDDED_FIELDS.some((f) => body[f] !== undefined)) {
+      indexContentAsync(c.var.projectId, "event", row.id, eventSearchText(fresh!));
+    }
     return c.json(await buildEventResponse(c, fresh!));
   })
   .delete("/:eventId", requireAuth, async (c) => {

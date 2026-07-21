@@ -8,6 +8,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Events are searchable.** `POST /search/content` gains a fourth source type, `event`, alongside
+  `entity`/`comment`/`message` — the Events domain (migration `0053`) had been invisible to every
+  search surface since it shipped, since nothing embedded an event and `match_content` had no branch
+  that could return one. Events are now embedded on create and re-embedded on update (title,
+  description, venue name, address — venue/address included so location-flavoured queries retrieve),
+  and `/search/ask` can cite them in RAG answers. Events are returned **by default** when `sourceTypes`
+  is omitted; pass an explicit `sourceTypes` to exclude them. Migration `0066`.
+
+### Changed
+- **`match_content`'s source-type `CASE` now fails closed.** Its `else` arm returned `true`, so any
+  source type without an explicit visibility branch was returned to every caller with no gating at
+  all. Harmless while only the three known types existed, but live the moment app code ships ahead of
+  its migration: the app would begin writing `event` embeddings that the old function would hand to
+  anonymous callers, invite-only events included. Unknown types are now invisible until their branch
+  exists. Migration `0066`.
+
+### Security
+- **Event visibility is enforced inside search, not after it.** Events are tiered
+  (`public|members|invite`) on top of the space-read gate, so `0066` adds `can_view_event()` — a port
+  of the events-list enumeration predicate — and `match_content` delegates to it. The space gate is
+  AND'd across the whole predicate rather than OR'd into the public branch, so an invitee or host who
+  cannot read the event's space does not see it in search (matching the `403` from `GET /events/:id`).
+  Removed and soft-deleted events never surface to non-privileged callers.
 - **`AGORA_PUBLIC_APP_URL` — point the admin's "Open in app" deep links at your real site.** The
   admin's report / AI-flag / steward-case dialogs link out to the reported content in the consumer
   app, but the origin was only ever readable from `VITE_DEMO_URL`, which was wired into *no* `.env`
