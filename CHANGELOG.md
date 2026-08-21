@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.22.1] - 2026-08-20
+
 ### Added
 - **`genesis.mjs --project <uuid>`** — seed the fixture world under a caller-chosen project id instead
   of the default `11111111-1111-1111-1111-111111111111` (also honors the same `PROJECT_ID` env var the
@@ -2390,7 +2392,8 @@ cloud Supabase — no stubbed endpoints remain.
   (`@agora/*`), a repointed fork of `@replyke/core`.
 - Backlog: rate limiting, refresh-token cleanup sweep, RLS write policies, turnkey deploy guide.
 
-[Unreleased]: https://github.com/jenova-marie/agora/compare/v0.22.0...HEAD
+[Unreleased]: https://github.com/jenova-marie/agora/compare/v0.22.1...HEAD
+[0.22.1]: https://github.com/jenova-marie/agora/compare/v0.22.0...v0.22.1
 [0.22.0]: https://github.com/jenova-marie/agora/compare/v0.21.0...v0.22.0
 [0.21.0]: https://github.com/jenova-marie/agora/compare/v0.20.0...v0.21.0
 [0.20.0]: https://github.com/jenova-marie/agora/compare/v0.19.0...v0.20.0
