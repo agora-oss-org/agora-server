@@ -9,6 +9,13 @@
 //                                               # (also honors the PROJECT_ID env the seed-* scripts use;
 //                                               #  the flag wins. The rebuilt DB contains ONLY this project —
 //                                               #  genesis is from-nothing, it does not ADD a second project.)
+//   node scripts/genesis.mjs --admin            # then run seeds/00-seed-auth-admin.mjs for the seeded
+//                                               # project: the admin LOGIN only. Prompts for credentials
+//                                               # unless ADMIN_EMAIL/ADMIN_PASSWORD are set (CI).
+//   node scripts/genesis.mjs --seed             # then run the FULL seeds/seed.mjs orchestrator (admin +
+//                                               # the gated demo content — the content phase signs in
+//                                               # over HTTP, so the API must be RUNNING at API_BASE_URL).
+//                                               # --seed wins over --admin (it seeds the admin anyway).
 //
 // DESTRUCTIVE. This wraps `drop.mjs --yes --migrate` (which drops private/drizzle/public and rebuilds
 // from migrations — see that file for the safety model) and then applies `seeds/seed.sql` in-process.
@@ -45,6 +52,8 @@ const argv = process.argv.slice(2);
 const args = new Set(argv);
 const isTest = args.has("--test");
 const force = args.has("--force") || args.has("-f");
+const seedFull = args.has("--seed");        // full seeds/seed.mjs orchestrator (admin + gated demo content)
+const seedAdminOnly = args.has("--admin") && !seedFull; // admin login only; --seed wins when both are passed
 
 // The default fixture project id, as written in seeds/seed.sql. Every occurrence of THIS uuid in
 // seed.sql is the project id (other fixture uuids all differ in their leading byte), so a targeted
@@ -153,7 +162,32 @@ try {
   await sql.end();
 }
 
-// ── 3. empty the social graph (Neo4j/DozerDB) so it can't desync from the rebuilt Postgres ──────
+// ── 3. optional seeding (--seed → full seeds/seed.mjs; --admin → login only) ────
+// --admin runs seeds/00-seed-auth-admin.mjs: the admin LOGIN for the seeded project's active auth
+// backend, nothing else. --seed runs the FULL seeds/seed.mjs orchestrator instead — admin + the
+// demo-content phase behind its confirm gate (the content seeders sign in over HTTP, so the API must
+// be RUNNING and reachable at API_BASE_URL). --seed wins when both flags are passed (the orchestrator
+// seeds the admin anyway). Creds resolve from ADMIN_EMAIL/ADMIN_PASSWORD or one prompt; the project
+// flows via the PROJECT_ID env (the helpers' ADMIN_PROJECT_ID → PROJECT_ID → default fallback) and
+// the target DB via the DATABASE_URL override (so --test lands on TEST_DATABASE_URL here too).
+if ((seedFull || seedAdminOnly) && process.exitCode !== 1) {
+  const script = seedFull ? "seed.mjs" : "00-seed-auth-admin.mjs";
+  const label = seedFull ? "full seed (admin + demo content)" : "admin seed";
+  console.log(`\n${seedFull ? "🌱" : "👤"} ${label} → project ${projectId}`);
+  const res = spawnSync(
+    process.execPath,
+    [join(here, "seeds", script), ...(seedFull ? [] : isTest ? ["--test"] : [])],
+    { stdio: "inherit", env: { ...process.env, DATABASE_URL: url, PROJECT_ID: projectId } },
+  );
+  if (res.status !== 0) {
+    console.error(`✗ ${label} failed — schema + fixtures are in place; re-run \`node scripts/seeds/${script}\` standalone.`);
+    process.exitCode = 1;
+  }
+} else if (seedFull || seedAdminOnly) {
+  console.log("○ seeding skipped (seed.sql failed — nothing to attach to).");
+}
+
+// ── 4. empty the social graph (Neo4j/DozerDB) so it can't desync from the rebuilt Postgres ──────
 // Genesis means "from nothing": a fresh Postgres schema with stale graph edges would leave /social/*
 // reading INTERACTED/FOLLOWS/… relationships whose rows no longer exist. See the NEO4J note in the
 // header for the scope (dev-only, best-effort). Parse NEO4J_AUTH exactly like lib/neo4j.ts.

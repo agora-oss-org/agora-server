@@ -5,6 +5,15 @@
 //
 //   node scripts/new-project.mjs --project <uuid>                 # required (or PROJECT_ID env)
 //   node scripts/new-project.mjs --project <uuid> --name "My Community" --client-id my-client
+//   node scripts/new-project.mjs --project <uuid> --admin         # then run seeds/00-seed-auth-admin.mjs
+//                                                                 # for the project (admin LOGIN only —
+//                                                                 # prompts unless ADMIN_EMAIL/ADMIN_PASSWORD
+//                                                                 # are set). Works on an existing project
+//                                                                 # too (add a login to a bare project).
+//   node scripts/new-project.mjs --project <uuid> --seed          # then run the FULL seeds/seed.mjs
+//                                                                 # orchestrator (admin + gated demo content
+//                                                                 # — needs the API RUNNING at API_BASE_URL).
+//                                                                 # --seed wins over --admin.
 //
 // After the row exists, seed the admin login + demo content THROUGH the running API (the content
 // seeders are all PROJECT_ID-aware; the auth-admin helpers honor ADMIN_PROJECT_ID ?? PROJECT_ID):
@@ -14,7 +23,12 @@
 // Idempotent: an existing project id is reported and left untouched (`on conflict do nothing` —
 // we never clobber a live project's name/config/auth_provider).
 import "dotenv/config";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
 import postgres from "postgres";
+
+const here = dirname(fileURLToPath(import.meta.url));
 
 const argv = process.argv.slice(2);
 
@@ -44,6 +58,8 @@ if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(proje
 
 const name = readArg("--name") ?? "Agora Project";
 const clientId = readArg("--client-id") ?? "agora-client";
+const seedFull = argv.includes("--seed");        // full seeds/seed.mjs orchestrator (admin + gated demo content)
+const seedAdminOnly = argv.includes("--admin") && !seedFull; // admin login only; --seed wins when both are passed
 
 const url = process.env.DATABASE_URL;
 if (!url) {
@@ -67,19 +83,23 @@ console.log(`   project : ${projectId}`);
 console.log(`   name    : ${name}   client_id: ${clientId}   auth_provider: ${authProvider}\n`);
 
 const sql = postgres(url, { max: 1, prepare: false, onnotice() {} });
+let projectReady = false;
 try {
   const inserted = await sql`
     insert into projects (id, client_id, name, auth_provider)
     values (${projectId}, ${clientId}, ${name}, ${authProvider}::auth_provider)
     on conflict (id) do nothing
     returning id`;
+  projectReady = true;
   if (inserted.length === 0) {
     const [existing] = await sql`select name, auth_provider from projects where id = ${projectId}`;
     console.log(`○ project ${projectId} already exists ("${existing.name}", auth_provider=${existing.auth_provider}) — left untouched.`);
   } else {
     console.log(`✅ project ${projectId} created.`);
-    console.log(`\nNext — seed the admin login + demo content through the running API:`);
-    console.log(`   PROJECT_ID=${projectId} pnpm seed`);
+    if (!seedFull && !seedAdminOnly) {
+      console.log(`\nNext — seed the admin login + demo content through the running API:`);
+      console.log(`   PROJECT_ID=${projectId} pnpm seed`);
+    }
   }
 } catch (err) {
   // relation-missing means the schema was never built — that IS a genesis job (fresh DB, nothing to preserve).
@@ -91,4 +111,30 @@ try {
   process.exitCode = 1;
 } finally {
   await sql.end();
+}
+
+// ── optional seeding (--seed → full seeds/seed.mjs; --admin → login only) ───────
+// Same semantics as genesis: --admin runs seeds/00-seed-auth-admin.mjs (the LOGIN for the project's
+// active auth backend, nothing else); --seed runs the FULL seeds/seed.mjs orchestrator (admin + the
+// demo-content phase behind its confirm gate — the content seeders sign in over HTTP, so the API must
+// be RUNNING at API_BASE_URL). --seed wins when both are passed. The helpers pick the project up via
+// the PROJECT_ID env. Runs for a pre-existing project too — that's how a bare project gets its first login.
+if ((seedFull || seedAdminOnly) && projectReady) {
+  const script = seedFull ? "seed.mjs" : "00-seed-auth-admin.mjs";
+  const label = seedFull ? "full seed (admin + demo content)" : "admin seed";
+  console.log(`\n${seedFull ? "🌱" : "👤"} ${label} → project ${projectId}`);
+  const res = spawnSync(
+    process.execPath,
+    [join(here, "seeds", script)],
+    { stdio: "inherit", env: { ...process.env, PROJECT_ID: projectId } },
+  );
+  if (res.status !== 0) {
+    console.error(`✗ ${label} failed — the project row is in place; re-run \`node scripts/seeds/${script}\` standalone.`);
+    process.exitCode = 1;
+  } else if (seedAdminOnly) {
+    console.log(`\nNext — demo content (optional), through the running API:`);
+    console.log(`   PROJECT_ID=${projectId} pnpm seed`);
+  }
+} else if (seedFull || seedAdminOnly) {
+  console.log("○ seeding skipped (project creation failed).");
 }

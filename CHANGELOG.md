@@ -15,6 +15,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Idempotent: an existing id is reported and left untouched. Then `PROJECT_ID=<uuid> pnpm seed` builds
   the admin login + demo content through the running API. To make that one env var drive the whole
   flow, the auth-admin seed helpers now fall back `ADMIN_PROJECT_ID → PROJECT_ID → default`.
+- **`--seed` / `--admin` on both `genesis.mjs` and `new-project.mjs`** — chain the seeding into the
+  same command. `--admin` runs `seeds/00-seed-auth-admin.mjs`: the admin **login** only (credentials
+  for the project's active auth backend; prompts unless `ADMIN_EMAIL`/`ADMIN_PASSWORD` are set).
+  `--seed` runs the **full** `seeds/seed.mjs` orchestrator — admin plus the demo-content phase behind
+  its confirm gate (the content seeders sign in over HTTP, so the API must be running at
+  `API_BASE_URL`). `--seed` wins when both are passed. On genesis they compose with
+  `--project`/`--test` and are skipped when the fixture seed failed; on new-project they also work
+  against a **pre-existing** project (how a bare project gets its first login). A failed seed exits
+  non-zero with a pointer to the standalone script, leaving the schema/row work intact.
 
 ## [0.22.1] - 2026-08-20
 
