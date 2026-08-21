@@ -4,7 +4,26 @@
 > Phase 2 (web client crypto) and Phase 3 (native + full multi-device) are tracked in
 > [`CHAT_TODO.md`](../CHAT_TODO.md).
 
-Agora's **secure chat** is a genuinely end-to-end-encrypted messaging surface where **the server can
+> ## ⚠️ Status: unaudited
+>
+> Secure Chat implements MLS (RFC 9420) via [`ts-mls`](https://github.com/LukaJCB/ts-mls) (pinned
+> `1.6.2` in `@agora-sdk/secure-chat-crypto`). **Neither `ts-mls` nor Agora's integration around it has
+> received an independent security audit.** `ts-mls`'s own README states it "has not undergone a formal
+> security audit"; it is single-maintainer. Agora's client layer on top — session management,
+> persistence, key-package handling, history restore — is likewise unreviewed.
+>
+> The blind-relay architecture described in this document is sound *by design*: the server stores only
+> ciphertext and holds no keys. But **design intent is not the same as verified implementation**, and a
+> client-side protocol flaw would not be visible from the server side at all. **Do not rely on Secure
+> Chat where compromise would put someone at risk.**
+>
+> Independent cryptographic review is explicitly welcome and is a reason this code is public. All MLS
+> sits behind the `SecureChatCrypto` seam ([§8](#8-the-securechatcrypto-seam)), so the concrete core is a
+> deferred, reversible choice — [OpenMLS](https://github.com/openmls/openmls) (Rust/WASM, independently
+> audited by SRLabs, March 2026) is the intended upgrade path; the server contract does not change
+> either way. See [`SECURITY.md`](SECURITY.md) → *Known limitations & hardening roadmap*.
+
+Agora's **secure chat** is an end-to-end-encrypted messaging surface built so that **the server can
 never read message content**. It is a *separate path* from the Replyke-compatible plaintext chat
 ([`apps/api/src/routes/chat.ts`](../apps/api/src/routes/chat.ts)) — that surface is untouched, so the
 1:1 SDK contract never drifts. As of the service split it is also a *separate process* — its own

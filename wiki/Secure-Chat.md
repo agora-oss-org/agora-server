@@ -2,7 +2,15 @@
 
 A community backend that keeps everyone's DMs in readable plaintext is a breach waiting to happen.
 Storing readable private messages is the bad default Agora refuses to ship — so **secure chat is
-genuinely end-to-end encrypted, and the server *cannot* read it.**
+end-to-end encrypted, and built so the server *cannot* read it.**
+
+> ### ⚠️ Status: unaudited
+>
+> Secure Chat implements MLS (RFC 9420) via [`ts-mls`](https://github.com/LukaJCB/ts-mls). Neither
+> `ts-mls` nor Agora's integration around it has received an independent security audit. The design is
+> documented below and the server stores only ciphertext — but **design intent is not the same as
+> verified implementation**. Do not rely on Secure Chat where compromise would put someone at risk.
+> Independent cryptographic review is explicitly welcome — see [[Security]].
 
 > Full design, threat model, schema, endpoints, and roadmap:
 > [`docs/SECURE_CHAT.md`](https://github.com/agora-oss-org/agora-server/blob/root/docs/SECURE_CHAT.md).

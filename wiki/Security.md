@@ -20,7 +20,9 @@ underneath as a verified backstop.
 - **Private chat** — conversation messages are readable only by active members, enforced on the REST
   routes *and* inside the search RPC.
 - **End-to-end-encrypted secure chat** — an optional, separate surface where the server stores only
-  ciphertext and *cannot* read messages at all (deny-all RLS on every secure table). See [[Secure Chat]].
+  ciphertext, built so it *cannot* read messages at all (deny-all RLS on every secure table).
+  ⚠️ **Unaudited** (MLS via `ts-mls`) — don't rely on it where compromise would put someone at risk.
+  See [[Secure Chat]].
 - **Moderation visibility** — removed content is always hidden from non-privileged readers (omitted from
   lists, 404'd on single reads, filtered in the search RPC); operators bypass to review. See [[Governance]].
 - **Operators, owners/admins, stewards** — a deployment-operator allowlist grants a project-wide

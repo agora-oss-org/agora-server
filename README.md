@@ -87,7 +87,15 @@ to every client from day one — not gated behind an external service's limits.
 A community backend that keeps everyone's direct messages in **readable plaintext** is a breach waiting
 to happen: one database leak, one subpoena, one over-broad admin, one "smart" feature that quietly reads
 DMs, and the trust is gone. Storing readable private messages is the bad default we refuse to ship — so
-Agora's **secure chat** is genuinely **end-to-end encrypted**, and the server *cannot read it*.
+Agora's **secure chat** is **end-to-end encrypted**, and is built so the server *cannot read it*.
+
+> ### ⚠️ Status: unaudited
+>
+> Secure Chat implements MLS (RFC 9420) via [`ts-mls`](https://github.com/LukaJCB/ts-mls). Neither
+> `ts-mls` nor Agora's integration around it has received an independent security audit. The design is
+> documented below and the server stores only ciphertext — but **design intent is not the same as
+> verified implementation**. Do not rely on Secure Chat where compromise would put someone at risk.
+> Independent cryptographic review is explicitly welcome — see [`SECURITY.md`](docs/SECURITY.md).
 
 It's built as a **blind delivery service** on **MLS (RFC 9420)** — the IETF messaging-layer-security
 standard, the same family of guarantees as Signal but designed for large, dynamic groups:
@@ -361,7 +369,8 @@ every read/write rule in the handlers, with RLS underneath as a verified backsto
 - **Private chat** — conversation messages are readable only by active members, enforced on the REST
   routes *and* inside the search RPC.
 - **End-to-end-encrypted secure chat** — an optional, separate chat surface where the server stores only
-  **ciphertext** and *cannot* read messages at all (MLS / RFC 9420; deny-all RLS on every secure table).
+  **ciphertext**, built so it *cannot* read messages at all (MLS / RFC 9420; deny-all RLS on every
+  secure table). **Unaudited — see the status note above.**
   See [`docs/SECURE_CHAT.md`](docs/SECURE_CHAT.md).
 - **Moderation visibility** — removed content is always hidden from non-privileged readers (omitted from
   lists, 404'd on single reads, filtered in the search RPC); operators bypass to review.
