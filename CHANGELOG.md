@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`new-project.mjs` — additive tenant creation in a live database.** The non-destructive sibling of
+  genesis: `pnpm new-project --project <uuid> [--name … --client-id …]` inserts ONE `projects` row
+  (auth_provider from `DEFAULT_AUTH_PROVIDER`, like genesis) into the existing DB — no schema drop, no
+  seed.sql fixtures, no Neo4j touch — so a new project can live **alongside** the ones already there.
+  Idempotent: an existing id is reported and left untouched. Then `PROJECT_ID=<uuid> pnpm seed` builds
+  the admin login + demo content through the running API. To make that one env var drive the whole
+  flow, the auth-admin seed helpers now fall back `ADMIN_PROJECT_ID → PROJECT_ID → default`.
+
 ## [0.22.1] - 2026-08-20
 
 ### Added

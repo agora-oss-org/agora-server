@@ -26,6 +26,7 @@
     "db:clean:secure-chat": "pnpm --filter @agora/secure-chat db:clean:secure-chat",
     "db:migrate": "pnpm --filter @agora/api db:migrate:run",
     "db:generate": "pnpm --filter @agora/api db:generate",
+    "new-project": "pnpm --filter @agora/api new-project",
     "genesis": "pnpm --filter @agora/api genesis && pnpm --filter @agora/api seed",
     "release": "bash scripts/release.sh"
   },

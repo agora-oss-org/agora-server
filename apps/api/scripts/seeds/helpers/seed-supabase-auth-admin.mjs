@@ -47,7 +47,9 @@ if (!dbUrl) {
 }
 
 // Defaults to the genesis seed project so a fresh `node scripts/genesis.mjs` DB works out of the box.
-const projectId = process.env.ADMIN_PROJECT_ID || "11111111-1111-1111-1111-111111111111";
+// PROJECT_ID (the var every content seeder honors) is the fallback so one env retargets the whole
+// seed flow at a non-default project; ADMIN_PROJECT_ID stays the specific override.
+const projectId = process.env.ADMIN_PROJECT_ID || process.env.PROJECT_ID || "11111111-1111-1111-1111-111111111111";
 
 // ── Provider gate (BEFORE we touch Supabase) ────────────────────────────────────────────────────
 // Symmetric with seed-native-auth-admin.mjs: a Supabase auth user is only honored when the project's

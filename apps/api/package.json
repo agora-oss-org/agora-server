@@ -21,6 +21,7 @@
     "db:wipe": "node scripts/wipe.mjs",
     "db:drop": "node scripts/drop.mjs",
     "migrate": "node scripts/migrate.mjs",
+    "new-project": "node scripts/new-project.mjs",
     "genesis": "node scripts/genesis.mjs",
     "genesis:test": "node scripts/genesis.mjs --test",
     "check:propagation": "tsx scripts/check-propagation.ts",
