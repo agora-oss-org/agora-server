@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`new-blog.mjs` — create a blog-post entity owned by the admin, through the running API.**
+  `pnpm new-blog --slug <kebab-slug> [--title … --content …|--file <path>] [--space <uuid>]
+  [--public] [--project <uuid>]` signs in as the admin (`ADMIN_EMAIL`/`ADMIN_PASSWORD`, demo default)
+  and POSTs the entity so the normal pipeline runs (posting gates, validation webhook, embeddings).
+  The slug lands on `foreignId` — unique per project — and doubles as the idempotency key (an
+  existing slug is reported and left untouched, without `createIfNotFound`'s authorless-anchor
+  side effect). `--space` posts into an existing space (optional; space-less otherwise); `--public`
+  lifts the post onto the anonymous `/public/*` surface via `PATCH /entities/:id/visibility`
+  (server enforces the ladder: space-less or public-space content only). Title defaults to the
+  humanized slug; content to a draft placeholder.
 - **`new-project.mjs` — additive tenant creation in a live database.** The non-destructive sibling of
   genesis: `pnpm new-project --project <uuid> [--name … --client-id …]` inserts ONE `projects` row
   (auth_provider from `DEFAULT_AUTH_PROVIDER`, like genesis) into the existing DB — no schema drop, no
