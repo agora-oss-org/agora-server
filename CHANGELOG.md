@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`genesis.mjs --project <uuid>`** — seed the fixture world under a caller-chosen project id instead
+  of the default `11111111-1111-1111-1111-111111111111` (also honors the same `PROJECT_ID` env var the
+  content seeders already read, so `PROJECT_ID=… pnpm genesis` at the repo root retargets both the DB
+  fixtures *and* the demo-content phase in one go; the flag wins over the env). The id is validated as
+  a UUID before use and refused if it collides with a non-project fixture uuid in `seed.sql`. Genesis
+  stays from-nothing: the rebuilt DB contains **only** the requested project, it does not add a second
+  one alongside.
 - **Admin-app Umami analytics are back — browser-side only, and runtime-configured.** `8b72364`
   ("drop Umami integration entirely") was meant to remove analytics from the **API**, but it also took
   the admin SPA's browser tracking with it. That half is restored: `lib/analytics.ts` `track()` plus

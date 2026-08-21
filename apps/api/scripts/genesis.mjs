@@ -2,9 +2,13 @@
 //   Drop the schema → rebuild from migrations (0000…N) → seed fixtures + validate triggers/RPC →
 //   empty the social graph (Neo4j) so it can't desync from the freshly-rebuilt Postgres.
 //
-//   node scripts/genesis.mjs            # → DATABASE_URL
-//   node scripts/genesis.mjs --test     # → TEST_DATABASE_URL (disposable test project; non-interactive)
-//   node scripts/genesis.mjs --force    # skip the prompt — LOCAL non-prod throwaway only
+//   node scripts/genesis.mjs                    # → DATABASE_URL
+//   node scripts/genesis.mjs --test             # → TEST_DATABASE_URL (disposable test project; non-interactive)
+//   node scripts/genesis.mjs --force            # skip the prompt — LOCAL non-prod throwaway only
+//   node scripts/genesis.mjs --project <uuid>   # seed THIS project id instead of the default 1111…1111
+//                                               # (also honors the PROJECT_ID env the seed-* scripts use;
+//                                               #  the flag wins. The rebuilt DB contains ONLY this project —
+//                                               #  genesis is from-nothing, it does not ADD a second project.)
 //
 // DESTRUCTIVE. This wraps `drop.mjs --yes --migrate` (which drops private/drizzle/public and rebuilds
 // from migrations — see that file for the safety model) and then applies `seeds/seed.sql` in-process.
@@ -37,9 +41,38 @@ import { readFileSync } from "node:fs";
 import postgres from "postgres";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const args = new Set(process.argv.slice(2));
+const argv = process.argv.slice(2);
+const args = new Set(argv);
 const isTest = args.has("--test");
 const force = args.has("--force") || args.has("-f");
+
+// The default fixture project id, as written in seeds/seed.sql. Every occurrence of THIS uuid in
+// seed.sql is the project id (other fixture uuids all differ in their leading byte), so a targeted
+// textual substitution retargets the whole seed at another project. --project wins over the
+// PROJECT_ID env (the same var the seed-*/03-seed-engine content scripts honor downstream).
+const DEFAULT_PROJECT_ID = "11111111-1111-1111-1111-111111111111";
+const projectId = (readProjectArg() ?? process.env.PROJECT_ID ?? DEFAULT_PROJECT_ID).toLowerCase();
+
+// Strict uuid check — this value is substituted into SQL text before execution, so the regex is the
+// injection guard, exactly like isDroppableDatabase()'s DB_NAME_RE for the Neo4j DDL below.
+if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(projectId)) {
+  console.error(`✗ --project must be a UUID, got: ${projectId}`);
+  process.exit(1);
+}
+
+function readProjectArg() {
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === "--project") {
+      if (!argv[i + 1] || argv[i + 1].startsWith("--")) {
+        console.error("✗ --project requires a value (a project UUID)");
+        process.exit(1);
+      }
+      return argv[i + 1];
+    }
+    if (argv[i].startsWith("--project=")) return argv[i].slice("--project=".length);
+  }
+  return null;
+}
 
 const urlVar = isTest ? "TEST_DATABASE_URL" : "DATABASE_URL";
 const url = process.env[urlVar];
@@ -54,6 +87,7 @@ const target = describeTarget(url);
 
 console.log(`🌱 genesis → ${isTest ? "TEST" : "DEV"} (${urlVar})`);
 console.log(`   target : ${target.host}${target.database ? `/${target.database}` : ""}`);
+console.log(`   project : ${projectId}${projectId === DEFAULT_PROJECT_ID ? "" : "  (⚠ non-default — the rebuilt DB contains ONLY this project)"}`);
 console.log(`   AGORA_ENV : ${process.env.AGORA_ENV ?? "(unset)"}\n`);
 
 function describeTarget(u) {
@@ -85,23 +119,33 @@ if (drop.status !== 0) {
 // seed.sql is pure SQL except a single trailing `\echo` (a psql meta-command). Strip backslash lines
 // and run via the simple protocol (required for the multi-statement begin/…/commit script). Any failed
 // ASSERT aborts the transaction → the query rejects → we surface it. On success we print the ✅.
-const seedSql = readFileSync(join(here, "seeds", "seed.sql"), "utf8")
+let seedSql = readFileSync(join(here, "seeds", "seed.sql"), "utf8")
   .split("\n")
   .filter((line) => !/^\s*\\/.test(line))
   .join("\n");
+
+// Retarget the seed at the requested project. Guard first: if the requested id already appears in
+// seed.sql as some OTHER fixture (profile/entity/space/… uuid), the substitution would silently
+// collide two fixtures — refuse rather than seed a corrupted world.
+if (projectId !== DEFAULT_PROJECT_ID) {
+  if (seedSql.includes(projectId)) {
+    console.error(`✗ --project ${projectId} collides with a non-project fixture uuid in seeds/seed.sql — pick another id.`);
+    process.exit(1);
+  }
+  seedSql = seedSql.replaceAll(DEFAULT_PROJECT_ID, projectId);
+}
 
 // Identity backend for the seeded project. A Supabase-less (self-contained) deploy sets
 // DEFAULT_AUTH_PROVIDER=native so the fixture project uses the in-API password backend out of the box;
 // otherwise it stays the column default ('supabase'). An existing project switches later via admin
 // settings / SQL — getAuthProvider() reads projects.auth_provider, never the env.
-const SEED_PROJECT_ID = "11111111-1111-1111-1111-111111111111";
 const authProvider = process.env.DEFAULT_AUTH_PROVIDER === "native" ? "native" : "supabase";
 
 const sql = postgres(url, { max: 1, prepare: false, onnotice() {} });
 try {
   await sql.unsafe(seedSql).simple();
-  await sql`update projects set auth_provider = ${authProvider}::auth_provider where id = ${SEED_PROJECT_ID}`;
-  console.log(`\n✅ genesis complete — schema rebuilt, fixtures seeded (auth_provider=${authProvider}), triggers + RPC validated.`);
+  await sql`update projects set auth_provider = ${authProvider}::auth_provider where id = ${projectId}`;
+  console.log(`\n✅ genesis complete — schema rebuilt, project ${projectId} seeded (auth_provider=${authProvider}), triggers + RPC validated.`);
 } catch (err) {
   console.error("\n✗ seed.sql failed:", err.message);
   process.exitCode = 1;

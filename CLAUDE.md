@@ -218,6 +218,9 @@ Project id is the seed UUID `11111111-1111-1111-1111-111111111111`.
 - `docs/MANIFEST.md` — **the contract**: every REST endpoint (method+path, ✅SDK-confirmed vs
   🔶inferred), socket.io event names, auth/pagination/error envelopes, SDK fork points.
 - `docs/MODELS.md` — field-level response shapes (source of truth for API output + schema).
+- `ROADMAP.md` (repo root) — the living index of parked/approved-but-unexecuted work; each item
+  points at its spec (`docs/superpowers/specs/`) + plan (`docs/superpowers/plans/`). Check it before
+  starting new feature work (a spec/plan may already exist) and update it when a spec/plan lands or ships.
 - `packages/contract/src/*.ts` — shared types + zod schemas (`@agora-server/contract`); 1:1 with the docs above.
 - `apps/api/src/db/schema/*.ts` — Drizzle schema, the **single source of truth** for the DB.
 - `apps/api/drizzle/` — generated + custom SQL migrations (see DB section).
@@ -249,7 +252,9 @@ pnpm dev:api                 # run the backend from the root (also dev:secure-ch
 pnpm dev:api:log             # same, with LOG_LEVEL=trace teed to /tmp/agora-api.log (diag capture)
 pnpm db:migrate              # ROOT alias → apps/api `db:migrate:run` (safe; the root name differs from api's)
 pnpm genesis                 # DESTRUCTIVE from-nothing rebuild: drop schema → migrations → seed.sql →
-                             # Neo4j graph reset → `pnpm seed` (typed-ref confirm guards protected targets)
+                             # Neo4j graph reset → `pnpm seed` (typed-ref confirm guards protected targets).
+                             # PROJECT_ID=<uuid> retargets the seeded project id through BOTH phases
+                             # (genesis.mjs also takes --project <uuid>; the DB then contains ONLY that project)
 pnpm release                 # scripts/release.sh (version bump + changelog roll + tag)
 
 cd apps/api                  # the backend lives here
@@ -261,6 +266,8 @@ pnpm test                    # vitest unit suite (src/**/*.test.ts — pure fns,
 pnpm test -- shape           # single file/pattern (vitest name filter)
 pnpm test:integration        # real-Postgres suite (test/integration/**) — needs TEST_DATABASE_URL
 pnpm test:cov                # unit suite + v8 coverage
+# secure-chat has its OWN integration suite (apps/secure-chat/test/integration) — from the root:
+pnpm test:integration:secure-chat
 
 pnpm db:generate     # after editing src/db/schema/*.ts -> new migration in drizzle/
 pnpm db:migrate:run  # apply migrations — USE THIS, not db:migrate (drizzle-kit's journal schema is
@@ -498,7 +505,15 @@ and `CHANGELOG.md` for what each migration did. Only the non-obvious conventions
   the admin queue). List/feed paths filter in SQL; recursive/semantic reads delegate to the `0019`
   RPCs (`p_hide_removed`). Any new read path over moderatable content must apply `removedPolicy(c)` —
   don't return raw `removed` rows.
-- **Auth:** `requireAuth`/`optionalAuth` only *verify* tokens; minting + refresh
+- **Auth wall — private by default.** The group-mounted `authWall` middleware
+  (`@agora/core` `middleware/auth.ts`, mounted in `routes/index.ts` in place of `optionalAuth`)
+  requires an authenticated account for **every** project-scoped request except the
+  `AUTH_WALL_ALLOWLIST` (the API's *entire* anonymous surface: `/auth/`, `/public/`, and a handful of
+  exact pre-sign-in paths). Every new route is therefore authed by default — **adding an allowlist
+  entry is a security decision** that must ship with a spec rationale and an update to the unit test
+  pinning the list (`middleware/auth-wall.test.ts`). The wall also binds the token's `pid` claim to
+  the request's project. Design: `docs/superpowers/specs/2026-07-17-auth-wall-private-by-default-design.md`.
+- **Auth:** `requireAuth`/`optionalAuth`/`authWall` only *verify* tokens; minting + refresh
   rotation/reuse-detection/30s-grace live in `lib/tokens.ts` (`refresh_tokens` table).
   Identity is backed by Supabase Auth via the lazy anon client.
 - **Social graph gates** (`routes/social.ts`): config gate fires **before** infra gate — check
@@ -544,14 +559,27 @@ and `CHANGELOG.md` for what each migration did. Only the non-obvious conventions
 - ✅ **Chat**: REST conversations/members/messages/reactions in `chat.ts`; socket.io fan-out via
   `emitToConversation()` (module singleton in `realtime/socket.ts`). E2E-validated incl. realtime
   delivery (`scripts/chat-e2e.mjs`). Message reports use the `reaction_target` enum extended with `message`.
-- ✅ **Search**: `search.ts` — `/content` (Voyage `voyage-3.5` @ 1024 dims embed query → `match_entities`
-  pgvector RPC), `/spaces` + `/users` (ILIKE). `lib/embeddings.ts` embeds entities on create/update
+- ✅ **Search**: `search.ts` — `/content` (Voyage `voyage-3.5` @ 1024 dims embed query → the
+  `match_content` pgvector RPC; source types `entity|comment|message|event`, all returned by default —
+  visibility incl. tiered event access is gated **inside** the RPC via `can_view_event`, migration
+  `0066`), `/spaces` + `/users` (ILIKE). `lib/embeddings.ts` embeds content on create/update
   (fire-and-forget `indexEntityAsync`). Embedding column is `vector(1024)`; set `VOYAGE_API_KEY` to enable.
 - ✅ **Storage**: `storage.ts` — POST `/storage` (multipart → the configured backend's `agora` bucket →
   `files` row), POST `/storage/images` (sharp → webp original + thumbnail/small/medium variants).
   Backend is pluggable via the `lib/storage/` seam (`STORAGE_PROVIDER` = `supabase` | `s3`).
 - ✅ **Misc**: `misc.ts` — `/oauth/identities` (list/delete), `/projects/lean`, `/utils/get-metadata`
   (OG/link preview, SSRF-guarded). Only `crypto/sign-testing-jwt` remains a stub (dev convenience).
+- ✅ **Internet-public read surface**: `public.ts` — `/public/*`, the anonymous GET-only surface for
+  entities opted into internet visibility (migration `0065`). The only project-scoped
+  `AUTH_WALL_ALLOWLIST` prefix besides `/auth/`; **every** route re-runs the gate itself
+  (`assertEntityInternetPublic`) — no route trusts another ran first. CDN-cacheable with a 300s
+  takedown window. Docs: `docs/PUBLIC-API.md`; spec in `docs/superpowers/specs/`.
+- ✅ **Custom tables**: `db.ts` — `/db/:tableName/*`, the SDK's schemaless per-project JSONB row
+  store (`useTable`/`tablesApi`). Access model is **per-row ownership** (callers see/mutate only rows
+  they created; project admins/operators bypass); all filter inputs are bound as parameters.
+- 🔶 **Match (stub)**: `match.ts` — `/match/*` ships the v7.8.2 request **contract only** (validates,
+  resolves "no matches"); the facet/embedding engine is unbuilt and undesigned — start from
+  `docs/SDK-V7.8.2-SERVER-SPEC.md` §5 with a design, not code.
 - **REST surface is complete** and the backend is feature-complete.
 - ✅ **RLS**: deny-all backstop on all tables + public-read (`0008`) + `authenticated` self-access
   reads + enablement guard (`0017`). Server bypasses RLS (the trust boundary); RLS is defense-in-depth.

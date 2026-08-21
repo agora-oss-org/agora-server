@@ -1,5 +1,5 @@
 // /v7/:projectId/search/*
-// content = semantic (Voyage embed query -> match_entities pgvector RPC), returns ContentSearchResult[].
+// content = semantic (Voyage embed query -> match_content pgvector RPC), returns ContentSearchResult[].
 // Source types: entity | comment | message | event. Events are returned by DEFAULT (sourceTypes null);
 // their tiered public|members|invite visibility is gated inside match_content via can_view_event.
 // ask     = RAG Q&A: same retrieval, then stream a Claude answer over SSE (token/sources/done/error).
