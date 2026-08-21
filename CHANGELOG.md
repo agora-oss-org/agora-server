@@ -10,7 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **`new-blog.mjs` — create a blog-post entity owned by the admin, through the running API.**
   `pnpm new-blog --slug <kebab-slug> [--title … --content …|--file <path>] [--space <uuid>]
-  [--public] [--project <uuid>]` signs in as the admin (`ADMIN_EMAIL`/`ADMIN_PASSWORD`, demo default)
+  [--public] [--project <uuid>] [--un <email> --pw <password>]` signs in as the admin (the `--un`/`--pw`
+  flags win over `ADMIN_EMAIL`/`ADMIN_PASSWORD`, then the demo default; argv is visible in `ps`, so
+  prefer the env vars for real secrets)
   and POSTs the entity so the normal pipeline runs (posting gates, validation webhook, embeddings).
   The slug lands on `foreignId` — unique per project — and doubles as the idempotency key (an
   existing slug is reported and left untouched, without `createIfNotFound`'s authorless-anchor

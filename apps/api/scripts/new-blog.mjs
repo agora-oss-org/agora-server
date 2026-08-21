@@ -12,10 +12,14 @@
 //                                                                         # (PATCH /:id/visibility —
 //                                                                         # space-less or public-space
 //                                                                         # content only, per the server)
+//   node scripts/new-blog.mjs --slug hello --un me@x.org --pw 's3cret'    # sign in as this account
+//                                                                         # (⚠ argv is visible in `ps` +
+//                                                                         # shell history — prefer the
+//                                                                         # env vars for real secrets)
 //
 // Env: API_BASE_URL (default http://localhost:4000), PROJECT_ID (default the seed project; --project
-// wins), ADMIN_EMAIL/ADMIN_PASSWORD (falls back to DEMO_EMAIL/DEMO_PASSWORD, then the demo default) —
-// the entity is owned by whoever these credentials sign in as.
+// wins), ADMIN_EMAIL/ADMIN_PASSWORD (falls back to DEMO_EMAIL/DEMO_PASSWORD, then the demo default;
+// --un/--pw win over all of them) — the entity is owned by whoever these credentials sign in as.
 import "dotenv/config";
 import { readFileSync } from "node:fs";
 
@@ -75,8 +79,10 @@ const content = filePath ? readFileSync(filePath, "utf8") : contentArg ?? `Draft
 const makePublic = argv.includes("--public");
 
 const BASE = (process.env.API_BASE_URL || "http://localhost:4000").replace(/\/$/, "").replace(/\/v7$/, "");
-const EMAIL = process.env.ADMIN_EMAIL || process.env.DEMO_EMAIL || "agora-admin@agora-oss.org";
-const PASSWORD = process.env.ADMIN_PASSWORD || process.env.DEMO_PASSWORD || "DemoPass123!";
+const EMAIL =
+  readArg("--un") || process.env.ADMIN_EMAIL || process.env.DEMO_EMAIL || "agora-admin@agora-oss.org";
+const PASSWORD =
+  readArg("--pw") || process.env.ADMIN_PASSWORD || process.env.DEMO_PASSWORD || "DemoPass123!";
 const api = (path) => `${BASE}/v7/${projectId}${path}`;
 
 console.log(`📝 new-blog → ${BASE}  project ${projectId}`);
