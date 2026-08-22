@@ -9,7 +9,7 @@ import { Errors } from "../http/errors.js";
 import { requireAuth } from "../middleware/auth.js";
 import { getDb } from "../db/index.js";
 import { oauthIdentities, oauthStates, profiles, projects, projectIntegrations } from "../db/schema/index.js";
-import { pkceClient, oauthConfigured } from "../lib/oauth.js";
+import { pkceClient, oauthConfigured, rewritePublicAuthUrl } from "../lib/oauth.js";
 import { env } from "../lib/env.js";
 import { defaultUsername } from "../lib/profiles.js";
 import { mintSession } from "../lib/tokens.js";
@@ -382,7 +382,8 @@ async function startOAuth(
     id: stateId, projectId, profileId, provider: body.provider, flow,
     redirectAfterAuth: body.redirectAfterAuth, pkce: dump(),
   });
-  return { authorizationUrl: data.url };
+  // Self-hosted GoTrue: SUPABASE_URL may be the internal shim — swap in the public origin for the browser.
+  return { authorizationUrl: rewritePublicAuthUrl(data.url, env.SUPABASE_URL, env.SUPABASE_PUBLIC_AUTH_URL) };
 }
 
 // Create-or-return the profile for an OAuth-authenticated Supabase user (keyed by auth user id).
