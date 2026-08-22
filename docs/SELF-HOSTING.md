@@ -31,8 +31,8 @@ profile-gated, so a bare `docker compose up` starts nothing.)
 
 1. **Start from the local template.** [`.env.selfhost.example`](../.env.selfhost.example) is a ready-made
    config for exactly this deploy — `--profile selfhost` (or `--profile full --profile selfhost`) — with
-   every self-hosted var pre-wired (local Postgres, MinIO, native auth, the Caddy front door on plain
-   HTTP) and an `openssl` command beside each secret placeholder. Copy it to `.env` and fill the
+   every self-hosted var pre-wired (local Postgres, MinIO, bundled GoTrue auth, the Caddy front door on
+   plain HTTP) and a generator command beside each secret placeholder. Copy it to `.env` and fill the
    `<GENERATE: …>` placeholders (compose reads `.env` for both `${VAR}` interpolation **and** the
    services' `env_file`):
 
@@ -57,12 +57,24 @@ profile-gated, so a bare `docker compose up` starts nothing.)
    MINIO_ROOT_USER=agora
    MINIO_ROOT_PASSWORD=<strong-password>     # must equal S3_SECRET_ACCESS_KEY
 
-   # Auth — native (no Supabase Auth). Leave all SUPABASE_* unset.
-   DEFAULT_AUTH_PROVIDER=native
+   # Auth — bundled GoTrue (Supabase Auth, self-hosted): email+password AND social login.
+   # Generate the trio with: node apps/api/scripts/gen-gotrue-keys.mjs
+   DEFAULT_AUTH_PROVIDER=supabase
+   SUPABASE_URL=http://proxy:9998            # internal shim — server-side calls only
+   SUPABASE_PUBLIC_AUTH_URL=http://localhost # public origin used in browser-facing OAuth URLs
+   SUPABASE_ANON_KEY=<gen-gotrue-keys.mjs>
+   SUPABASE_SERVICE_ROLE_KEY=<gen-gotrue-keys.mjs>
+   GOTRUE_JWT_SECRET=<gen-gotrue-keys.mjs>
+   GOTRUE_EXTERNAL_URL=http://localhost/auth/v1
+   GOTRUE_SITE_URL=http://localhost
 
    # Required regardless of backend
    ACCESS_TOKEN_SECRET=<openssl rand -base64 48>
    ```
+
+   > Prefer no extra auth container? The template keeps Agora's **native** email+password backend as a
+   > commented alternative block (`DEFAULT_AUTH_PROVIDER=native` + the Postmark vars) — email+password
+   > only, no social login. See **SSO / social login** below for the full GoTrue story.
 
    > The template uses `SERVER_NAME=:80` (plain HTTP) and `S3_PUBLIC_URL=http://localhost/media` for a
    > friction-free local run — `http://localhost` is a browser "secure context", so secure-chat's
@@ -101,7 +113,8 @@ profile-gated, so a bare `docker compose up` starts nothing.)
    docker compose --profile selfhost up --build
    ```
 
-   This starts `db`, `minio`, `agora`, `proxy` (the Caddy front door that serves the admin SPA) (+ `cron`).
+   This starts `db`, `minio`, `gotrue` (bundled Supabase Auth — see **SSO / social login** below),
+   `agora`, `proxy` (the Caddy front door that serves the admin SPA) (+ `cron`).
    `agora` has `restart: unless-stopped`, so if
    it boots before `db` is ready it crash-loops briefly, then connects — no manual ordering needed.
 
@@ -221,6 +234,102 @@ degrade.
 > **Note (compose hot-edit on macOS).** Editing `deploy/proxy/agora-routes.caddy` while the proxy is
 > running may not take effect: Docker Desktop's bind mount can serve the container a stale view. Force a
 > fresh read with `docker compose up -d --force-recreate --no-deps proxy`.
+
+## SSO / social login (bundled GoTrue)
+
+The `selfhost` profile bundles **Supabase Auth (GoTrue)** as its own container — email+password
+**and** Google / GitHub / Apple sign-in with **no cloud dependency**. Every Supabase-auth call in the
+API already goes through supabase-js (`${SUPABASE_URL}/auth/v1/*` — GoTrue's API), so the existing
+`supabase` auth provider and the PKCE OAuth brokering work against the local GoTrue unchanged.
+
+**Architecture.** GoTrue (`supabase/auth`) runs against the local `supabase/postgres` `db` (which
+ships the `auth` schema + `supabase_auth_admin` role; GoTrue applies its own migrations there at
+boot). It is reached ONLY through the Caddy front door, on two routes:
+
+- **Public `/auth/v1/*`** — what browsers, OAuth provider callbacks (`/auth/v1/callback`), and email
+  links (`/auth/v1/verify`) hit. Admin endpoints under `/auth/v1/admin/*` are gated by GoTrue itself
+  (the `service_role` JWT) — the same public posture as cloud Supabase.
+- **Internal `:9998`** — a proxy-internal listener the API uses as `SUPABASE_URL`
+  (`http://proxy:9998`), so server-side calls never hairpin through the public origin. It is not
+  published to the host; never expose it. Because browser-facing OAuth authorize URLs are built from
+  `SUPABASE_URL`, the API swaps in **`SUPABASE_PUBLIC_AUTH_URL`** (your public origin) before
+  returning them — set it or social login buttons will point at the internal name.
+
+**Setup.**
+
+1. Generate the key trio and paste it into `.env` (the anon/service_role "keys" are long-lived HS256
+   JWTs signed with the GoTrue secret — exactly what cloud Supabase issues):
+
+   ```bash
+   node apps/api/scripts/gen-gotrue-keys.mjs
+   # GOTRUE_JWT_SECRET=…  SUPABASE_ANON_KEY=…  SUPABASE_SERVICE_ROLE_KEY=…
+   ```
+
+   ⚠️ `SUPABASE_SERVICE_ROLE_KEY` is a **root credential** for the auth store — server-only, never in
+   client code or logs.
+
+2. Set the public URLs: `GOTRUE_EXTERNAL_URL=https://<your.domain>/auth/v1` (what OAuth providers
+   redirect back to), `GOTRUE_SITE_URL` (your front-end origin), `GOTRUE_URI_ALLOW_LIST`
+   (comma-separated globs of every origin your apps return to after sign-in), and
+   `SUPABASE_PUBLIC_AUTH_URL=https://<your.domain>`.
+
+3. Email: set the `GOTRUE_SMTP_*` block (host/port/user/pass/sender) for real confirmation +
+   password-reset mail. For a quick trial, `GOTRUE_MAILER_AUTOCONFIRM=true` skips email entirely
+   (sign-ups confirm instantly; password-reset-by-email is unavailable).
+
+4. `docker compose --profile selfhost up -d` — a **fresh** db volume auto-provisions the
+   `supabase_auth_admin` password via [`deploy/db/init-auth-role.sql`](../deploy/db/init-auth-role.sql)
+   (the image itself doesn't derive one from `POSTGRES_PASSWORD`). A volume initialized **before**
+   that file existed needs the one-time equivalent by hand, then a `gotrue` restart:
+
+   ```bash
+   docker compose exec db psql -h 127.0.0.1 -U supabase_admin -d postgres \
+     -c "alter role supabase_auth_admin password '<POSTGRES_PASSWORD>'"
+   docker compose restart gotrue
+   ```
+
+   > direnv users: an `.envrc` that exports repo env vars **shadows `.env`** during compose
+   > interpolation (shell env wins). If a value change mysteriously doesn't take, check `direnv` first.
+
+**Per-provider setup.** Every provider's authorized redirect URI is
+`${GOTRUE_EXTERNAL_URL}/callback` (e.g. `https://<your.domain>/auth/v1/callback`). Enable each with
+its `GOTRUE_EXTERNAL_<PROVIDER>_*` env block (all off by default):
+
+- **Google** — [Google Cloud Console](https://console.cloud.google.com/apis/credentials) → Create
+  OAuth client ID (Web application) → add the redirect URI → copy client id + secret into
+  `GOTRUE_EXTERNAL_GOOGLE_{ENABLED,CLIENT_ID,SECRET}`.
+- **GitHub** — GitHub → Settings → Developer settings → OAuth Apps → New OAuth App → set the
+  callback URL → copy into `GOTRUE_EXTERNAL_GITHUB_{ENABLED,CLIENT_ID,SECRET}`.
+- **Apple** — needs a paid Apple Developer account: create a **Services ID** (this is the
+  `CLIENT_ID`), enable "Sign in with Apple" for it with your domain + the redirect URI, and create a
+  **key** (`.p8`) with Sign in with Apple. Apple's client "secret" is itself a signed ES256 JWT that
+  **expires (≤180 days)** — generate it, and regenerate before expiry (a recurring operational task):
+
+  ```bash
+  node apps/api/scripts/gen-apple-client-secret.mjs --key AuthKey_<KEYID>.p8 \
+    --team-id <TEAM_ID> --client-id <SERVICES_ID> --key-id <KEYID>
+  # → GOTRUE_EXTERNAL_APPLE_SECRET=… (stderr prints the expiry date)
+  ```
+
+  Other GoTrue-supported providers follow the same `GOTRUE_EXTERNAL_<NAME>_*` pattern — add the env
+  block to the `gotrue` service in your compose override.
+
+**Migrating an existing native-auth deployment (opt-in).** Native auth keeps working — nothing is
+removed — but to move a project onto GoTrue (and gain social login), use the migration script. It
+imports each `auth_credentials` row into GoTrue **preserving the argon2id password hash** (users keep
+their passwords), remaps `profiles.auth_user_id` to the new GoTrue identity, and flips
+`projects.auth_provider`:
+
+```bash
+cd apps/api
+node scripts/migrate-native-to-gotrue.mjs --project <uuid> --dry-run   # report first
+node scripts/migrate-native-to-gotrue.mjs --project <uuid>             # apply
+```
+
+Idempotent by email; native rows are never deleted — **rollback = set `projects.auth_provider` back
+to `'native'`**. A credential whose hash can't be imported degrades to reset-required (the script
+reports which path each account took). The api caches the provider ~30s, so the flip takes effect
+within that window (or restart `agora`).
 
 ## Running on your own / non-Supabase Postgres
 
