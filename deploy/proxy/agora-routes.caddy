@@ -65,6 +65,16 @@
 		reverse_proxy {$MINIO_UPSTREAM:http://minio:9000}
 	}
 
+	# 5b. GoTrue (selfhost SSO) — Supabase Auth behind the front door. supabase-js and cloud Supabase
+	#     address GoTrue at <origin>/auth/v1/*; GoTrue itself serves at its root (cloud fronts it with
+	#     Kong stripping the prefix — handle_path reproduces that). Serves OAuth provider callbacks
+	#     (/auth/v1/callback) and email links (/auth/v1/verify). Lazily resolved → 502s until
+	#     `--profile selfhost` brings gotrue up. Admin endpoints under /auth/v1/admin/* are gated by
+	#     GoTrue itself (service_role JWT) — same public posture as cloud Supabase.
+	handle_path /auth/v1/* {
+		reverse_proxy {$GOTRUE_UPSTREAM:http://gotrue:9999}
+	}
+
 	# 6. the rest of the API surface → agora. (secure-chat is already consumed by handle #1.)
 	handle /v7/* {
 		reverse_proxy {$API_UPSTREAM:http://agora:4000}

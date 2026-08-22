@@ -8,6 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Self-hosted SSO: the `selfhost` profile now bundles Supabase Auth (GoTrue).** A new `gotrue`
+  compose service (`supabase/auth:v2.170.0`, both compose files) runs against the local
+  `supabase/postgres` `db` behind the Caddy front door: publicly at `/auth/v1/*` (OAuth provider
+  callbacks + email links) and on an internal-only `:9998` listener the api uses as `SUPABASE_URL` —
+  email+password **and** Google/GitHub/Apple social login with no cloud dependency. The selfhost/prod
+  env templates default to `DEFAULT_AUTH_PROVIDER=supabase` (native auth remains a commented
+  alternative and the dev default). New optional env `SUPABASE_PUBLIC_AUTH_URL`: when set, the
+  `/oauth/authorize` handler swaps the internal `SUPABASE_URL` origin for it in browser-facing
+  authorize URLs (unset → unchanged; cloud Supabase unaffected). Fresh `db` volumes auto-provision
+  the `supabase_auth_admin` password via `deploy/db/init-auth-role.sql` (the image doesn't derive it
+  from `POSTGRES_PASSWORD`). New scripts: `gen-gotrue-keys.mjs` (JWT secret + anon/service_role
+  keys), `gen-apple-client-secret.mjs` (Apple's expiring ES256 client secret), and
+  `migrate-native-to-gotrue.mjs` (opt-in native→GoTrue migration that preserves argon2id password
+  hashes and remaps `profiles.auth_user_id`; native rows retained — rollback is flipping
+  `projects.auth_provider` back). Docs: `docs/SELF-HOSTING.md` → "SSO / social login". Spec:
+  `docs/superpowers/specs/2026-08-22-selfhost-gotrue-sso-design.md`.
 - **`new-blog.mjs` — create a blog-post entity owned by the admin, through the running API.**
   `pnpm new-blog --slug <kebab-slug> [--title … --content …|--file <path>] [--space <uuid>]
   [--public] [--project <uuid>] [--un <email> --pw <password>]` signs in as the admin (the `--un`/`--pw`

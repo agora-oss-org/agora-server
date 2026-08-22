@@ -262,9 +262,15 @@ does both). Copy it to `.env` and fill the `<…>` placeholders:
 
 | Template → `.env` | Compose file | Runs the app | Default data plane |
 |---|---|---|---|
-| `cp .env.dev.example .env` | `docker-compose.dev.yml` | on the **host** (HMR) | local PG + MinIO |
-| `cp .env.selfhost.example .env` | `docker-compose.yml` | in a **container** (built from source) | local PG + MinIO |
-| `cp .env.prod.example .env` | `docker-compose.prod.yml` | in a **container** (pulled image) | local PG + MinIO |
+| `cp .env.dev.example .env` | `docker-compose.dev.yml` | on the **host** (HMR) | local PG + MinIO (native auth) |
+| `cp .env.selfhost.example .env` | `docker-compose.yml` | in a **container** (built from source) | local PG + MinIO + GoTrue |
+| `cp .env.prod.example .env` | `docker-compose.prod.yml` | in a **container** (pulled image) | local PG + MinIO + GoTrue |
+
+The selfhost/prod data plane bundles **GoTrue** (Supabase Auth as its own container) behind the Caddy
+front door — email+password **and** Google/GitHub/Apple SSO with no cloud dependency; dev keeps
+Agora's zero-infra **native** auth. The api reaches it via the internal `SUPABASE_URL` shim while
+`SUPABASE_PUBLIC_AUTH_URL` supplies the public origin for browser-facing OAuth URLs. See
+[docs/SELF-HOSTING.md → SSO / social login](docs/SELF-HOSTING.md#sso--social-login-bundled-gotrue).
 
 **Switching a template to cloud Supabase** is an in-file edit: comment its LOCAL data-plane block,
 uncomment the CLOUD block (the full `SUPABASE_*` + pooler vars are right there), and run

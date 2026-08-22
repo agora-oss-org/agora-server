@@ -48,3 +48,17 @@ export function pkceClient(seed?: Record<string, string>): { client: SupabaseCli
 export function oauthConfigured(): boolean {
   return !!(env.SUPABASE_URL && env.SUPABASE_ANON_KEY);
 }
+
+/**
+ * Swap the SUPABASE_URL origin in a browser-facing authorize URL for a public one.
+ * Self-hosted GoTrue deployments point SUPABASE_URL at an internal-only shim (proxy:9998), but
+ * signInWithOAuth bakes that base into the URL the BROWSER must follow — so when
+ * SUPABASE_PUBLIC_AUTH_URL is set, the internal prefix is replaced with it before returning the
+ * URL to the client. Unset (cloud Supabase, where SUPABASE_URL is already public) → no rewrite.
+ */
+export function rewritePublicAuthUrl(url: string, internalBase: string | undefined, publicBase: string | undefined): string {
+  if (!internalBase || !publicBase) return url;
+  const trim = (s: string) => s.replace(/\/+$/, "");
+  const int = trim(internalBase);
+  return url.startsWith(int) ? trim(publicBase) + url.slice(int.length) : url;
+}

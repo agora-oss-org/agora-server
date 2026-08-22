@@ -74,6 +74,9 @@ services:
       REDIS_URL: ${REDIS_URL:-}
       # ── Supabase (auth + storage; optional) ───────────────────────────────────
       SUPABASE_URL: ${SUPABASE_URL:-}
+      # Public origin swapped into browser-facing OAuth authorize URLs when SUPABASE_URL is the
+      # internal GoTrue shim (selfhost SSO). Unset → no rewrite (cloud Supabase).
+      SUPABASE_PUBLIC_AUTH_URL: ${SUPABASE_PUBLIC_AUTH_URL:-}
       SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY:-}
       SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
       # ── storage (S3 / MinIO) ──────────────────────────────────────────────────
@@ -141,6 +144,9 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-please_change_me}
     volumes:
       - db-data:/var/lib/postgresql/data
+      # First-boot only: give supabase_auth_admin a password (the image doesn't derive one from
+      # POSTGRES_PASSWORD; the bundled GoTrue needs it). Existing volumes: see the file's header.
+      - ./deploy/db/init-auth-role.sql:/docker-entrypoint-initdb.d/init-scripts/99-agora-auth-role.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
@@ -168,6 +174,71 @@ services:
       timeout: 5s
       retries: 5
       start_period: 10s
+    init: true
+    restart: unless-stopped
+
+  # GoTrue — Supabase Auth, self-hosted (SSO for the selfhost profile). Runs against the local
+  # supabase/postgres `db` (ships the `auth` schema + supabase_auth_admin role; GoTrue self-migrates
+  # at boot). Reached ONLY through the Caddy front door: publicly at /auth/v1/* (OAuth callbacks +
+  # email links), internally on proxy:9998 (the api's server-side supabase-js base URL). Internal
+  # only; no host port. Keys: `node apps/api/scripts/gen-gotrue-keys.mjs` → paste the trio into .env.
+  gotrue:
+    image: supabase/auth:v2.170.0
+    profiles: ["selfhost"]
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      GOTRUE_API_HOST: 0.0.0.0
+      GOTRUE_API_PORT: "9999"
+      GOTRUE_DB_DRIVER: postgres
+      # The supabase/postgres image provisions supabase_auth_admin with POSTGRES_PASSWORD.
+      GOTRUE_DB_DATABASE_URL: postgres://supabase_auth_admin:${POSTGRES_PASSWORD:-please_change_me}@db:5432/postgres
+      # Public base of THIS GoTrue as browsers/providers see it — your origin + /auth/v1.
+      API_EXTERNAL_URL: ${GOTRUE_EXTERNAL_URL:-http://localhost/auth/v1}
+      # Where email links / OAuth flows land by default: your front-end origin.
+      GOTRUE_SITE_URL: ${GOTRUE_SITE_URL:-http://localhost}
+      # Comma-separated extra redirect origins/globs the OAuth + email flows may target.
+      GOTRUE_URI_ALLOW_LIST: ${GOTRUE_URI_ALLOW_LIST:-}
+      GOTRUE_JWT_SECRET: ${GOTRUE_JWT_SECRET:?generate with apps/api/scripts/gen-gotrue-keys.mjs}
+      GOTRUE_JWT_EXP: "3600"
+      GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated
+      GOTRUE_JWT_ADMIN_ROLES: service_role
+      GOTRUE_JWT_AUD: authenticated
+      GOTRUE_EXTERNAL_EMAIL_ENABLED: "true"
+      GOTRUE_DISABLE_SIGNUP: "false"
+      # Email: real deployments set the SMTP block; AUTOCONFIRM=true is the no-SMTP trial switch
+      # (sign-ups confirm instantly; password-reset-by-email is unavailable).
+      GOTRUE_MAILER_AUTOCONFIRM: ${GOTRUE_MAILER_AUTOCONFIRM:-false}
+      GOTRUE_SMTP_HOST: ${GOTRUE_SMTP_HOST:-}
+      GOTRUE_SMTP_PORT: ${GOTRUE_SMTP_PORT:-587}
+      GOTRUE_SMTP_USER: ${GOTRUE_SMTP_USER:-}
+      GOTRUE_SMTP_PASS: ${GOTRUE_SMTP_PASS:-}
+      GOTRUE_SMTP_ADMIN_EMAIL: ${GOTRUE_SMTP_ADMIN_EMAIL:-}
+      GOTRUE_SMTP_SENDER_NAME: ${GOTRUE_SMTP_SENDER_NAME:-Agora}
+      GOTRUE_MAILER_URLPATHS_CONFIRMATION: /auth/v1/verify
+      GOTRUE_MAILER_URLPATHS_RECOVERY: /auth/v1/verify
+      GOTRUE_MAILER_URLPATHS_INVITE: /auth/v1/verify
+      GOTRUE_MAILER_URLPATHS_EMAIL_CHANGE: /auth/v1/verify
+      # Social providers — all off until configured. REDIRECT_URI is always <origin>/auth/v1/callback.
+      GOTRUE_EXTERNAL_GOOGLE_ENABLED: ${GOTRUE_EXTERNAL_GOOGLE_ENABLED:-false}
+      GOTRUE_EXTERNAL_GOOGLE_CLIENT_ID: ${GOTRUE_EXTERNAL_GOOGLE_CLIENT_ID:-}
+      GOTRUE_EXTERNAL_GOOGLE_SECRET: ${GOTRUE_EXTERNAL_GOOGLE_SECRET:-}
+      GOTRUE_EXTERNAL_GOOGLE_REDIRECT_URI: ${GOTRUE_EXTERNAL_URL:-http://localhost/auth/v1}/callback
+      GOTRUE_EXTERNAL_GITHUB_ENABLED: ${GOTRUE_EXTERNAL_GITHUB_ENABLED:-false}
+      GOTRUE_EXTERNAL_GITHUB_CLIENT_ID: ${GOTRUE_EXTERNAL_GITHUB_CLIENT_ID:-}
+      GOTRUE_EXTERNAL_GITHUB_SECRET: ${GOTRUE_EXTERNAL_GITHUB_SECRET:-}
+      GOTRUE_EXTERNAL_GITHUB_REDIRECT_URI: ${GOTRUE_EXTERNAL_URL:-http://localhost/auth/v1}/callback
+      GOTRUE_EXTERNAL_APPLE_ENABLED: ${GOTRUE_EXTERNAL_APPLE_ENABLED:-false}
+      GOTRUE_EXTERNAL_APPLE_CLIENT_ID: ${GOTRUE_EXTERNAL_APPLE_CLIENT_ID:-}
+      GOTRUE_EXTERNAL_APPLE_SECRET: ${GOTRUE_EXTERNAL_APPLE_SECRET:-}
+      GOTRUE_EXTERNAL_APPLE_REDIRECT_URI: ${GOTRUE_EXTERNAL_URL:-http://localhost/auth/v1}/callback
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9999/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
     init: true
     restart: unless-stopped
 
@@ -360,6 +431,8 @@ services:
       # Grafana upstream (the `observability` profile). Front door serves it at /grafana/ (502s until up).
       # Grafana requires a login in prod (anonymous is disabled below), so this route is safe to expose.
       GRAFANA_UPSTREAM: http://grafana:3000
+      # GoTrue upstream (selfhost SSO). Lazily resolved — /auth/v1/* 502s until the profile is up.
+      GOTRUE_UPSTREAM: ${GOTRUE_UPSTREAM:-http://gotrue:9999}
       S3_BUCKET: ${S3_BUCKET:-agora}
       # Origin of your PUBLIC consumer app (the community front end users actually visit). The admin
       # SPA reads it at RUNTIME from /config.js (written by the proxy entrypoint at start) to build the

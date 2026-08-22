@@ -15,6 +15,9 @@ const schema = z.object({
   // Supabase Auth + Storage only. Optional until those handlers are built, so the
   // DB-backed server boots without them. Empty strings in .env are treated as unset.
   SUPABASE_URL: z.preprocess((v) => (v === "" ? undefined : v), z.string().url().optional()),
+  // Public origin substituted for SUPABASE_URL in browser-facing OAuth authorize URLs — needed when
+  // SUPABASE_URL is an internal-only base (the self-hosted GoTrue shim). Unset → no rewrite.
+  SUPABASE_PUBLIC_AUTH_URL: z.preprocess((v) => (v === "" ? undefined : v), z.string().url().optional()),
   SUPABASE_SERVICE_ROLE_KEY: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
   SUPABASE_ANON_KEY: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
   // Default identity backend stamped onto a NEW project at genesis (scripts/genesis.mjs). There is no
