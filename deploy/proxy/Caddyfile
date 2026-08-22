@@ -34,3 +34,13 @@ import agora-routes.caddy
 {$SERVER_NAME:localhost} {
 	import agora-site
 }
+
+# Internal GoTrue shim (selfhost SSO): supabase-js always calls ${SUPABASE_URL}/auth/v1/*, and the
+# api container can't hairpin to the public origin when SERVER_NAME is a hostname it can't resolve
+# (localhost!). This port-only site matches any Host, so the api sets SUPABASE_URL=http://proxy:9998.
+# NOT published in compose — reachable only on the internal network.
+http://:9998 {
+	handle_path /auth/v1/* {
+		reverse_proxy {$GOTRUE_UPSTREAM:http://gotrue:9999}
+	}
+}
