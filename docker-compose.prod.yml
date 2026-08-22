@@ -74,6 +74,9 @@ services:
       REDIS_URL: ${REDIS_URL:-}
       # ── Supabase (auth + storage; optional) ───────────────────────────────────
       SUPABASE_URL: ${SUPABASE_URL:-}
+      # Public origin swapped into browser-facing OAuth authorize URLs when SUPABASE_URL is the
+      # internal GoTrue shim (selfhost SSO). Unset → no rewrite (cloud Supabase).
+      SUPABASE_PUBLIC_AUTH_URL: ${SUPABASE_PUBLIC_AUTH_URL:-}
       SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY:-}
       SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
       # ── storage (S3 / MinIO) ──────────────────────────────────────────────────
@@ -141,6 +144,9 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-please_change_me}
     volumes:
       - db-data:/var/lib/postgresql/data
+      # First-boot only: give supabase_auth_admin a password (the image doesn't derive one from
+      # POSTGRES_PASSWORD; the bundled GoTrue needs it). Existing volumes: see the file's header.
+      - ./deploy/db/init-auth-role.sql:/docker-entrypoint-initdb.d/init-scripts/99-agora-auth-role.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s

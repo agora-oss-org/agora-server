@@ -100,6 +100,9 @@ services:
       - "${DB_PORT:-5432}:5432"
     volumes:
       - db-data:/var/lib/postgresql/data
+      # First-boot only: give supabase_auth_admin a password (the image doesn't derive one from
+      # POSTGRES_PASSWORD; the bundled GoTrue needs it). Existing volumes: see the file's header.
+      - ./deploy/db/init-auth-role.sql:/docker-entrypoint-initdb.d/init-scripts/99-agora-auth-role.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
