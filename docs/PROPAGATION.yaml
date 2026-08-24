@@ -66,6 +66,13 @@ exceptions:
   - subject: SUPABASE_PUBLIC_AUTH_URL
     target: docker-compose.dev.yml
     reason: dev api runs on the host (apps/api/.env); dev compose has no api service env
+  # OAUTH_REDIRECT_ALLOWED_ORIGINS — same passthrough story as SUPABASE_PUBLIC_AUTH_URL above.
+  - subject: OAUTH_REDIRECT_ALLOWED_ORIGINS
+    target: docker-compose.yml
+    reason: passed via env_file; no compose default needed
+  - subject: OAUTH_REDIRECT_ALLOWED_ORIGINS
+    target: docker-compose.dev.yml
+    reason: dev api runs on the host (apps/api/.env); dev compose has no api service env
   # MAX_POOLS is a generic, optional pool-tuning knob (default 50) that is irrelevant to a
   # single-DATABASE_URL deployment — which is every deployment of this (single-tenant) repo.
   # It ships in the .env templates + CLAUDE.md as a documented knob; compose passes it through
