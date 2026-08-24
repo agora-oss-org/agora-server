@@ -1,9 +1,10 @@
 import { Hexagon } from "lucide-react";
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { ApiError } from "../lib/api";
-import { DEMO_EMAIL, DEMO_PASSWORD, ENV_PROJECT_ID } from "../config";
+import { DEMO_EMAIL, DEMO_PASSWORD, ENV_PROJECT_ID, OAUTH_PROVIDERS } from "../config";
+import { PROVIDER_LABELS, parseCallbackError, parseCallbackHash, type OAuthProvider } from "../auth/oauth";
 import { Button } from "../components/ui/Button";
 import { Input, Label } from "../components/ui/Input";
 
@@ -17,8 +18,12 @@ import { Input, Label } from "../components/ui/Input";
 // unset and only the ordinary form shows.
 const ADMIN_LOGIN = Boolean(DEMO_EMAIL && DEMO_PASSWORD);
 
+// Social sign-in (bundled GoTrue / Supabase) is opt-in per deployment: no configured providers ⇒
+// no buttons, and this screen is exactly what it was before.
+const OAUTH_LOGIN = OAUTH_PROVIDERS.length > 0;
+
 export function LoginPage() {
-  const { session, signIn } = useAuth();
+  const { session, signIn, signInWithOAuth, completeOAuth } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const from = (location.state as { from?: { pathname: string } } | null)?.from?.pathname ?? "/dashboard";
@@ -29,6 +34,35 @@ export function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // StrictMode mounts effects twice in dev; the callback's refresh token is single-use, so a second
+  // redemption would 401. Latch it.
+  const completing = useRef(false);
+
+  // Social sign-in lands back HERE with either tokens in the fragment or ?error= in the query.
+  useEffect(() => {
+    if (completing.current) return;
+    const failure = parseCallbackError(window.location.search);
+    const tokens = parseCallbackHash(window.location.hash);
+    if (!failure && !tokens) return;
+    completing.current = true;
+    // Never leave tokens (or a stale error) in the address bar or session history.
+    window.history.replaceState(null, "", window.location.pathname);
+    if (failure) {
+      setError(failure);
+      return;
+    }
+    setBusy(true);
+    void (async () => {
+      try {
+        await completeOAuth(tokens!, ENV_PROJECT_ID);
+        navigate("/dashboard", { replace: true });
+      } catch (err) {
+        setError(err instanceof ApiError ? err.message : "Couldn't finish signing in with that provider.");
+      } finally {
+        setBusy(false);
+      }
+    })();
+  }, [completeOAuth, navigate]);
 
   if (session) return <Navigate to={from} replace />;
 
@@ -48,6 +82,16 @@ export function LoginPage() {
   function onSubmit(e: FormEvent) {
     e.preventDefault();
     void authenticate(email, password, "Sign-in failed. Check your connection and try again.");
+  }
+
+  function onOAuth(provider: OAuthProvider) {
+    setError(null);
+    setBusy(true);
+    // Success navigates away from this page, so `busy` is only cleared on failure.
+    void signInWithOAuth(provider, ENV_PROJECT_ID).catch((err) => {
+      setError(err instanceof ApiError ? err.message : "Couldn't start sign-in with that provider.");
+      setBusy(false);
+    });
   }
 
   function onAdminLogin() {
@@ -83,6 +127,30 @@ export function LoginPage() {
               {busy ? "Signing in…" : "Sign in"}
             </Button>
           </form>
+
+          {OAUTH_LOGIN ? (
+            <>
+              <div className="flex items-center gap-3 text-xs text-muted">
+                <span className="h-px flex-1 bg-border" />
+                or continue with
+                <span className="h-px flex-1 bg-border" />
+              </div>
+              <div className="space-y-2">
+                {OAUTH_PROVIDERS.map((provider) => (
+                  <Button
+                    key={provider}
+                    type="button"
+                    variant="outline"
+                    className="w-full"
+                    disabled={busy}
+                    onClick={() => onOAuth(provider)}
+                  >
+                    {PROVIDER_LABELS[provider]}
+                  </Button>
+                ))}
+              </div>
+            </>
+          ) : null}
 
           {ADMIN_LOGIN ? (
             <>

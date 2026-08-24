@@ -13,6 +13,9 @@ interface ImportMetaEnv {
   /** When "true", the Social Graph settings panel and Community Weather card are shown. Default false.
    *  Set to "true" only on deployments with NEO4J_URI configured on the server. */
   readonly VITE_SOCIAL_GRAPH_ENABLED?: string;
+  /** Social sign-in buttons to show on the login screen, e.g. "google,github,apple". Each provider
+   *  must also be configured server-side. Unset ⇒ email+password only. */
+  readonly VITE_OAUTH_PROVIDERS?: string;
 }
 
 interface ImportMeta {
