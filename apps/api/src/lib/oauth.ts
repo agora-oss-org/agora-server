@@ -62,3 +62,50 @@ export function rewritePublicAuthUrl(url: string, internalBase: string | undefin
   const int = trim(internalBase);
   return url.startsWith(int) ? trim(publicBase) + url.slice(int.length) : url;
 }
+
+/**
+ * The origins an OAuth `redirectAfterAuth` may target. The /oauth/callback handler redirects the
+ * browser there **with freshly minted Agora tokens in the URL fragment**, so an unvalidated value is
+ * an open redirect that hands an attacker a session — hence a server-side allowlist, mirroring
+ * native auth's AUTH_EMAIL_LINK_ALLOWED_ORIGINS.
+ *
+ * `list` is the comma-separated OAUTH_REDIRECT_ALLOWED_ORIGINS. When unset we fall back to
+ * PUBLIC_BASE_URL, so an ordinary single-origin deployment needs no extra config. Neither set →
+ * empty, and the caller fails CLOSED (503) rather than trusting client input.
+ */
+export function resolveRedirectAllowlist(list: string | undefined, publicBaseUrl: string | undefined): string[] {
+  const explicit = (list ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+  if (explicit.length > 0) return explicit;
+  const fallback = (publicBaseUrl ?? "").trim();
+  return fallback ? [fallback] : [];
+}
+
+/**
+ * Is `target` allowed by `allowed`? http(s) entries match by ORIGIN (any path/query is fine, but a
+ * different host, port or scheme is not — so `http://localhost.evil.example` can't pass as
+ * `http://localhost`). Non-http entries are mobile deep-link scheme prefixes (`myapp://`) and match
+ * literally. Malformed / protocol-relative / non-web targets are always rejected.
+ */
+export function isAllowedRedirect(target: string, allowed: string[]): boolean {
+  if (allowed.length === 0) return false;
+  let targetOrigin: string | null = null;
+  try {
+    const u = new URL(target);
+    if (u.protocol === "http:" || u.protocol === "https:") targetOrigin = u.origin;
+  } catch {
+    return false; // relative ("//evil"), malformed — never a valid post-auth destination
+  }
+  for (const entry of allowed) {
+    if (targetOrigin !== null) {
+      try {
+        const e = new URL(entry);
+        if ((e.protocol === "http:" || e.protocol === "https:") && e.origin === targetOrigin) return true;
+      } catch {
+        /* not a URL — fall through to the deep-link prefix check below */
+      }
+    }
+    // Deep-link entries (`myapp://`) only ever match a literal prefix, never an http(s) target.
+    if (targetOrigin === null && !/^https?:\/\//i.test(entry) && target.startsWith(entry)) return true;
+  }
+  return false;
+}

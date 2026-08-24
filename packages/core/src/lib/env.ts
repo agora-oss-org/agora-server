@@ -184,6 +184,10 @@ const schema = z.object({
   // unvalidated client value or a possibly-wrong default. Supabase-backed projects ignore this (they
   // broker their own emails + redirect validation). Empty=unset.
   AUTH_EMAIL_LINK_ALLOWED_ORIGINS: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
+  // Comma-separated origins an OAuth `redirectAfterAuth` may target. The callback redirects there
+  // WITH tokens in the fragment, so this is an open-redirect guard, not a convenience. Unset →
+  // falls back to PUBLIC_BASE_URL; neither set → /oauth/authorize fails closed (503).
+  OAUTH_REDIRECT_ALLOWED_ORIGINS: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
 });
 
 export const env = schema.parse(process.env);
