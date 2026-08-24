@@ -10,6 +10,7 @@
 // Every candidate is type-validated, and an invalid one FALLS THROUGH to the next rather than
 // winning — so a typo'd or unsubstituted value degrades to the default instead of breaking the app.
 import { baseUrl, httpUrl, resolve, resolveBool, runtimeConfig, uuid } from "./lib/runtime-config";
+import { parseProviders } from "./auth/oauth";
 
 // Base of the @agora/api server. Same-origin by default: in dev the vite proxy forwards /v7 to :4000,
 // in prod the Caddy front door does. Point it at an absolute URL for a cross-origin API (which then
@@ -105,3 +106,12 @@ export const UMAMI_ID =
     uuid(runtimeConfig("umamiId")),
     uuid(import.meta.env.VITE_UMAMI_ID),
   ) ?? "";
+
+// Social sign-in providers offered on the login screen, comma-separated ("google,github,apple").
+// Each must ALSO be configured on the SERVER (GOTRUE_EXTERNAL_<PROVIDER>_* for the bundled GoTrue,
+// or the Supabase dashboard for cloud) — this only decides which buttons render. Default empty ⇒
+// email+password only, so deployments without SSO are unchanged. Unknown names are dropped (no
+// label to render). Runtime key: `oauthProviders` (env AGORA_ADMIN_OAUTH_PROVIDERS).
+export const OAUTH_PROVIDERS = parseProviders(
+  resolve(runtimeConfig("oauthProviders"), import.meta.env.VITE_OAUTH_PROVIDERS),
+);

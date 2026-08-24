@@ -51,6 +51,12 @@
 	}
 
 	# 6. the rest of the API surface → host API.
+	# GoTrue (selfhost SSO) — same route as the production snippet: supabase-js and OAuth providers
+	# address GoTrue at <origin>/auth/v1/*, GoTrue serves at its root. 502s until `--profile selfhost`.
+	handle_path /auth/v1/* {
+		reverse_proxy {$GOTRUE_UPSTREAM:http://gotrue:9999}
+	}
+
 	handle /v7/* {
 		reverse_proxy {$API_UPSTREAM:http://host.docker.internal:4000}
 	}

@@ -5,6 +5,7 @@ import type { AuthUser } from "@agora-server/contract";
 import { api } from "../lib/api";
 import { track } from "../lib/analytics";
 import { getSession, setSession, subscribe, type Session } from "./session";
+import type { OAuthCallbackTokens, OAuthProvider } from "./oauth";
 
 interface SignInResponse {
   user: AuthUser;
@@ -20,6 +21,10 @@ interface AuthValue {
   isProjectOwner: boolean;
   isProjectAdmin: boolean;
   signIn: (email: string, password: string, projectId: string) => Promise<void>;
+  /** Start a social sign-in: navigates the browser to the provider (never returns normally). */
+  signInWithOAuth: (provider: OAuthProvider, projectId: string) => Promise<void>;
+  /** Finish one: trade the callback's refresh token for a session (and the user object). */
+  completeOAuth: (tokens: OAuthCallbackTokens, projectId: string) => Promise<void>;
   signOut: () => Promise<void>;
 }
 
@@ -49,6 +54,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         });
         setSession({ user: data.user, accessToken: data.accessToken, refreshToken: data.refreshToken, projectId });
         track("admin-login", { operator: !!data.user.isOperator });
+      },
+      async signInWithOAuth(provider, projectId) {
+        const { authorizationUrl } = await api<{ authorizationUrl: string }>("/oauth/authorize", {
+          method: "POST",
+          // Come back to this screen: LoginPage completes the flow from the URL on mount. The server
+          // allowlists this origin (OAUTH_REDIRECT_ALLOWED_ORIGINS / PUBLIC_BASE_URL).
+          body: { provider, redirectAfterAuth: `${window.location.origin}/login` },
+          projectId,
+          auth: false,
+        });
+        track("admin-oauth-start", { provider });
+        window.location.assign(authorizationUrl);
+      },
+      async completeOAuth({ refreshToken }, projectId) {
+        // The callback also puts an access token in the fragment, but we deliberately redeem the
+        // refresh token instead: it rotates the pair (invalidating the one that just travelled
+        // through the URL) and is the only response that carries the shaped AuthUser.
+        const data = await api<{ accessToken: string; refreshToken: string; user?: AuthUser }>(
+          "/auth/request-new-access-token",
+          { method: "POST", body: { refreshToken }, projectId, auth: false },
+        );
+        if (!data.user) throw new Error("Signed in, but the account could not be loaded.");
+        setSession({ user: data.user, accessToken: data.accessToken, refreshToken: data.refreshToken, projectId });
+        track("admin-login", { operator: !!data.user.isOperator, oauth: true });
       },
       async signOut() {
         const s = getSession();

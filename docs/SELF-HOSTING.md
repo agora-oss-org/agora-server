@@ -331,6 +331,33 @@ to `'native'`**. A credential whose hash can't be imported degrades to reset-req
 reports which path each account took). The api caches the provider ~30s, so the flip takes effect
 within that window (or restart `agora`).
 
+**Redirect allowlist (open-redirect guard).** `/oauth/callback` redirects the browser back to the
+client's `redirectAfterAuth` **with a freshly minted Agora session in the URL fragment** — so that
+value is server-validated against `OAUTH_REDIRECT_ALLOWED_ORIGINS` (comma-separated origins, or
+mobile deep-link scheme prefixes like `myapp://`) before the state is even created, and re-checked on
+the callback itself. Unset → falls back to `PUBLIC_BASE_URL` (fine for the common single-origin
+deploy — the admin baked into the same Caddy front door, say). If **neither** is set, `/oauth/*` fails
+closed with `503 oauth/redirect-not-configured` rather than trusting the client. Add every extra
+front end you run (a separately-hosted admin, a Vite dev server, a mobile app's deep link).
+
+**Admin login buttons.** The bundled `@agora/admin` SPA can offer social sign-in buttons on its login
+screen — set `AGORA_ADMIN_OAUTH_PROVIDERS=google,github,apple` (comma-separated; unset → email+password
+only) via the same runtime `/config.js` seam as the other `AGORA_ADMIN_*` settings. Each listed
+provider must ALSO be enabled on `gotrue` (the `GOTRUE_EXTERNAL_<PROVIDER>_*` block above) — the admin
+var only decides which buttons render, GoTrue decides whether the provider actually works. The admin
+signs in the same way the SDK does: `POST /oauth/authorize` → provider consent → GoTrue callback →
+`/oauth/callback` → back to the admin's own `/login` route with tokens in the fragment, which it
+exchanges via `POST /auth/request-new-access-token` (rotates the pair and returns the shaped user).
+
+**Trying SSO in dev.** `docker-compose.dev.yml` also ships a `gotrue` service (opt-in, same
+`selfhost` profile) — the topology differs slightly because the API runs on your **host**
+(`pnpm dev`), not in a container: the browser still uses the public `http://localhost/auth/v1/*`
+route, but the host-run API talks to GoTrue through the proxy's **published** internal shim
+(`SUPABASE_URL=http://localhost:9998` — published only in dev; a real deploy never exposes it). See
+the commented "SSO in dev" block in `.env.dev.example` for the full var list (generate the key trio,
+uncomment, `docker compose -f docker-compose.dev.yml --profile selfhost up -d`). Dev still **defaults**
+to native auth — this is opt-in, not a change to the zero-infra baseline.
+
 ## Running on your own / non-Supabase Postgres
 
 The `selfhost` profile pins `supabase/postgres` so you don't have to think about any of this. But the

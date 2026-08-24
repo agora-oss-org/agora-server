@@ -113,9 +113,10 @@ validate on `:80`) and `RATE_LIMIT_TRUSTED_HOPS=1`.
 The `selfhost` data plane runs the *same* server fully self-contained via provider seams — a bundled
 **GoTrue** auth container (`DEFAULT_AUTH_PROVIDER=supabase` pointed at the local GoTrue behind the
 Caddy front door: email+password AND Google/GitHub/Apple SSO, with `SUPABASE_PUBLIC_AUTH_URL`
-supplying the public origin for browser-facing OAuth URLs; Agora's **native** backend remains the
-no-extra-container alternative) + **S3-compatible** storage (`STORAGE_PROVIDER=s3` → MinIO/AWS) + a
-local Postgres. "No Supabase" means **no Supabase cloud** — the local DB is still the
+supplying the public origin for browser-facing OAuth URLs and `OAUTH_REDIRECT_ALLOWED_ORIGINS`
+gating where the callback may hand tokens back to; the bundled admin SPA can show the same provider
+buttons via `AGORA_ADMIN_OAUTH_PROVIDERS`; Agora's **native** backend remains the no-extra-container
+alternative) + **S3-compatible** storage (`STORAGE_PROVIDER=s3` → MinIO/AWS) + a local Postgres. "No Supabase" means **no Supabase cloud** — the local DB is still the
 `supabase/postgres` distribution (required for pgvector/PostGIS/pgmq + the `auth` roles; a vanilla
 Postgres won't migrate). See
 [`docs/SELF-HOSTING.md`](https://github.com/agora-oss-org/agora-server/blob/root/docs/SELF-HOSTING.md).

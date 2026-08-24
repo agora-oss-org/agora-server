@@ -268,8 +268,11 @@ does both). Copy it to `.env` and fill the `<…>` placeholders:
 
 The selfhost/prod data plane bundles **GoTrue** (Supabase Auth as its own container) behind the Caddy
 front door — email+password **and** Google/GitHub/Apple SSO with no cloud dependency; dev keeps
-Agora's zero-infra **native** auth. The api reaches it via the internal `SUPABASE_URL` shim while
-`SUPABASE_PUBLIC_AUTH_URL` supplies the public origin for browser-facing OAuth URLs. See
+Agora's zero-infra **native** auth (SSO is opt-in there too — see the docs). The api reaches it via
+the internal `SUPABASE_URL` shim while `SUPABASE_PUBLIC_AUTH_URL` supplies the public origin for
+browser-facing OAuth URLs, and `OAUTH_REDIRECT_ALLOWED_ORIGINS` gates where the callback may hand
+tokens back to. The bundled `@agora/admin` SPA can offer the same social buttons on its login screen
+(`AGORA_ADMIN_OAUTH_PROVIDERS`). See
 [docs/SELF-HOSTING.md → SSO / social login](docs/SELF-HOSTING.md#sso--social-login-bundled-gotrue).
 
 **Switching a template to cloud Supabase** is an in-file edit: comment its LOCAL data-plane block,

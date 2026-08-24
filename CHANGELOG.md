@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Admin social sign-in + a redirect-target allowlist for OAuth.** The bundled `@agora/admin` SPA can
+  now show Google/GitHub/Apple login buttons (`AGORA_ADMIN_OAUTH_PROVIDERS`, opt-in, default off) that
+  drive the existing `/oauth/authorize` → provider → `/oauth/callback` flow and complete on the admin's
+  own `/login` route (`POST /auth/request-new-access-token` to redeem the callback's tokens). New
+  server-side `OAUTH_REDIRECT_ALLOWED_ORIGINS`: `/oauth/authorize`/`/oauth/callback` now validate
+  `redirectAfterAuth` against an allowlist (falls back to `PUBLIC_BASE_URL`; fails closed with 503 if
+  neither is set) — the callback redirects with a live session in the URL fragment, so an unvalidated
+  target was an open redirect. `docker-compose.dev.yml` gained an opt-in `gotrue` service (published
+  internal shim on `:9998`) so SSO is testable against `pnpm dev`; dev still defaults to native auth.
+
+### Added
 - **Self-hosted SSO: the `selfhost` profile now bundles Supabase Auth (GoTrue).** A new `gotrue`
   compose service (`supabase/auth:v2.170.0`, both compose files) runs against the local
   `supabase/postgres` `db` behind the Caddy front door: publicly at `/auth/v1/*` (OAuth provider

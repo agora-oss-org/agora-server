@@ -318,7 +318,10 @@ are validated as optional: `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` + `SUPAB
 (Auth + Storage — cloud Supabase OR the selfhost profile's bundled GoTrue behind the Caddy front
 door), `SUPABASE_PUBLIC_AUTH_URL` (selfhost SSO: public origin swapped into browser-facing OAuth
 authorize URLs when `SUPABASE_URL` is the internal GoTrue shim; unset → no rewrite),
-`VOYAGE_API_KEY` (semantic search), `RATE_LIMIT_MAX`/`RATE_LIMIT_AUTH_MAX` (edge
+`OAUTH_REDIRECT_ALLOWED_ORIGINS` (comma-separated origins/deep-link prefixes `/oauth/authorize` and
+`/oauth/callback` may hand a session to — the callback puts tokens in the URL fragment, so this is an
+open-redirect guard, checked on both halves; unset → falls back to `PUBLIC_BASE_URL`; neither set →
+`/oauth/*` fails closed with 503), `VOYAGE_API_KEY` (semantic search), `RATE_LIMIT_MAX`/`RATE_LIMIT_AUTH_MAX` (edge
 rate limiting, off unless set), `OPERATOR_USER_IDS`/`OPERATOR_EMAILS` (deployment-operator allowlist),
 `OPERATOR_RO_EMAILS` (comma-separated emails; full operator view but blocked from the five
 settings-save endpoints — `403 settings/read-only`; powers the shared demo login),

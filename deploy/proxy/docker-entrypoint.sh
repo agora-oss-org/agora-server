@@ -35,6 +35,7 @@ EOF
   emit projectId           "${AGORA_ADMIN_PROJECT_ID:-}"      # which project this admin manages
   emit socialGraphEnabled  "${AGORA_ADMIN_SOCIAL_GRAPH_ENABLED:-}" # show Social tab (needs NEO4J_URI)
   emit settingsReadOnly    "${AGORA_ADMIN_SETTINGS_READ_ONLY:-}"   # UI-only guard; see the note below
+  emit oauthProviders      "${AGORA_ADMIN_OAUTH_PROVIDERS:-}"      # social login buttons, e.g. "google,github"
   # Optional Umami analytics for the admin — BOTH required, else tracking stays off. Browser-side
   # only: the admin posts events straight to your Umami; the API has no analytics code.
   emit umamiUrl            "${AGORA_ADMIN_UMAMI_URL:-}"        # Umami mount (may carry a path prefix)

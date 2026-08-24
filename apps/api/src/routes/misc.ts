@@ -9,7 +9,7 @@ import { Errors } from "../http/errors.js";
 import { requireAuth } from "../middleware/auth.js";
 import { getDb } from "../db/index.js";
 import { oauthIdentities, oauthStates, profiles, projects, projectIntegrations } from "../db/schema/index.js";
-import { pkceClient, oauthConfigured, rewritePublicAuthUrl } from "../lib/oauth.js";
+import { pkceClient, oauthConfigured, rewritePublicAuthUrl, isAllowedRedirect, resolveRedirectAllowlist } from "../lib/oauth.js";
 import { env } from "../lib/env.js";
 import { defaultUsername } from "../lib/profiles.js";
 import { mintSession } from "../lib/tokens.js";
@@ -69,6 +69,10 @@ export const miscRoutes = new Hono<{ Variables: Variables }>()
     await getDb().delete(oauthStates).where(eq(oauthStates.id, state.id)); // one-shot
 
     const base = state.redirectAfterAuth;
+    // Defense in depth: re-validate the stored target before redirecting with tokens in the
+    // fragment. /oauth/authorize checked it when the state was created, but this route never
+    // assumes another ran first (same posture as the /public/* surface).
+    assertRedirectAllowed(base);
     const providerError = c.req.query("error");
     if (providerError) return errorRedirect(c, base, providerError, c.req.query("error_description") ?? "");
     const code = c.req.query("code");
@@ -369,6 +373,7 @@ async function startOAuth(
   profileId: string | null
 ): Promise<{ authorizationUrl: string }> {
   if (!oauthConfigured()) throw Errors.badRequest("oauth/not-configured", "OAuth is not configured (Supabase keys unset)");
+  assertRedirectAllowed(body.redirectAfterAuth);
   const projectId = c.var.projectId;
   const stateId = randomUUID();
   const callbackUrl = `${publicOrigin(c)}/v7/${projectId}/oauth/callback?aid=${stateId}`;
@@ -415,6 +420,22 @@ async function recordIdentity(projectId: string, profileId: string, provider: st
   const am = (p?.am ?? []) as string[];
   if (!am.includes(provider)) {
     await getDb().update(profiles).set({ authMethods: [...am, provider] }).where(eq(profiles.id, profileId));
+  }
+}
+
+// The OAuth callback redirects the browser to `redirectAfterAuth` WITH freshly minted Agora tokens
+// in the URL fragment. An unvalidated target is therefore an open redirect that hands out a session,
+// so both the authorize and callback halves run this. Fails CLOSED when nothing is configured.
+function assertRedirectAllowed(target: string): void {
+  const allowlist = resolveRedirectAllowlist(env.OAUTH_REDIRECT_ALLOWED_ORIGINS, env.PUBLIC_BASE_URL);
+  if (allowlist.length === 0) {
+    throw Errors.unavailable(
+      "oauth/redirect-not-configured",
+      "OAuth redirects are not configured: set OAUTH_REDIRECT_ALLOWED_ORIGINS (or PUBLIC_BASE_URL)",
+    );
+  }
+  if (!isAllowedRedirect(target, allowlist)) {
+    throw Errors.badRequest("oauth/redirect-not-allowed", "redirectAfterAuth is not an allowed origin", "redirectAfterAuth");
   }
 }
 
