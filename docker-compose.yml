@@ -444,6 +444,9 @@ services:
       AGORA_ADMIN_SOCIAL_GRAPH_ENABLED: ${AGORA_ADMIN_SOCIAL_GRAPH_ENABLED:-}
       # UI guard only, NOT a security boundary — the server enforces via OPERATOR_RO_EMAILS.
       AGORA_ADMIN_SETTINGS_READ_ONLY: ${AGORA_ADMIN_SETTINGS_READ_ONLY:-}
+      # Social sign-in buttons on the admin login screen, e.g. "google,github,apple". Each
+      # provider must also be configured on the gotrue service. Unset → email+password only.
+      AGORA_ADMIN_OAUTH_PROVIDERS: ${AGORA_ADMIN_OAUTH_PROVIDERS:-}
       # ⚠️ PUBLIC: served to every visitor in /config.js. Point at the shared demo login only.
       # Optional Umami analytics for the admin app — BOTH required or tracking stays off. Browser-side
       # only: the admin posts events straight to your Umami instance; the API has no analytics code.

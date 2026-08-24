@@ -116,6 +116,66 @@ services:
     init: true
     restart: unless-stopped
 
+  # GoTrue — Supabase Auth, self-hosted (SSO). OPT-IN in dev: the api runs on the HOST here, so it
+  # reaches GoTrue through the proxy's published shim (SUPABASE_URL=http://localhost:9998), while the
+  # BROWSER uses the public route (http://localhost/auth/v1/*). :9999 is published too, purely for
+  # curl/debugging against GoTrue directly (health, admin API).
+  #
+  # Unlike the container deploys, GOTRUE_JWT_SECRET has NO `:?` guard here — an unset secret must not
+  # break a plain `docker compose -f docker-compose.dev.yml --profile selfhost up` for devs who never
+  # touch SSO. Set the trio (node apps/api/scripts/gen-gotrue-keys.mjs) before using it; see
+  # .env.dev.example → "SSO in dev".
+  gotrue:
+    image: supabase/auth:v2.170.0
+    profiles: ["selfhost"]
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      GOTRUE_API_HOST: 0.0.0.0
+      GOTRUE_API_PORT: "9999"
+      GOTRUE_DB_DRIVER: postgres
+      GOTRUE_DB_DATABASE_URL: postgres://supabase_auth_admin:${POSTGRES_PASSWORD:-please_change_me}@db:5432/postgres
+      API_EXTERNAL_URL: ${GOTRUE_EXTERNAL_URL:-http://localhost/auth/v1}
+      GOTRUE_SITE_URL: ${GOTRUE_SITE_URL:-http://localhost:5175}
+      GOTRUE_URI_ALLOW_LIST: ${GOTRUE_URI_ALLOW_LIST:-}
+      GOTRUE_JWT_SECRET: ${GOTRUE_JWT_SECRET:-}
+      GOTRUE_JWT_EXP: "3600"
+      GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated
+      GOTRUE_JWT_ADMIN_ROLES: service_role
+      GOTRUE_JWT_AUD: authenticated
+      GOTRUE_EXTERNAL_EMAIL_ENABLED: "true"
+      GOTRUE_DISABLE_SIGNUP: "false"
+      # Dev default: no SMTP, sign-ups confirm instantly.
+      GOTRUE_MAILER_AUTOCONFIRM: ${GOTRUE_MAILER_AUTOCONFIRM:-true}
+      GOTRUE_MAILER_URLPATHS_CONFIRMATION: /auth/v1/verify
+      GOTRUE_MAILER_URLPATHS_RECOVERY: /auth/v1/verify
+      GOTRUE_MAILER_URLPATHS_INVITE: /auth/v1/verify
+      GOTRUE_MAILER_URLPATHS_EMAIL_CHANGE: /auth/v1/verify
+      # Social providers — off until configured. Redirect URI is always <API_EXTERNAL_URL>/callback.
+      GOTRUE_EXTERNAL_GOOGLE_ENABLED: ${GOTRUE_EXTERNAL_GOOGLE_ENABLED:-false}
+      GOTRUE_EXTERNAL_GOOGLE_CLIENT_ID: ${GOTRUE_EXTERNAL_GOOGLE_CLIENT_ID:-}
+      GOTRUE_EXTERNAL_GOOGLE_SECRET: ${GOTRUE_EXTERNAL_GOOGLE_SECRET:-}
+      GOTRUE_EXTERNAL_GOOGLE_REDIRECT_URI: ${GOTRUE_EXTERNAL_URL:-http://localhost/auth/v1}/callback
+      GOTRUE_EXTERNAL_GITHUB_ENABLED: ${GOTRUE_EXTERNAL_GITHUB_ENABLED:-false}
+      GOTRUE_EXTERNAL_GITHUB_CLIENT_ID: ${GOTRUE_EXTERNAL_GITHUB_CLIENT_ID:-}
+      GOTRUE_EXTERNAL_GITHUB_SECRET: ${GOTRUE_EXTERNAL_GITHUB_SECRET:-}
+      GOTRUE_EXTERNAL_GITHUB_REDIRECT_URI: ${GOTRUE_EXTERNAL_URL:-http://localhost/auth/v1}/callback
+      GOTRUE_EXTERNAL_APPLE_ENABLED: ${GOTRUE_EXTERNAL_APPLE_ENABLED:-false}
+      GOTRUE_EXTERNAL_APPLE_CLIENT_ID: ${GOTRUE_EXTERNAL_APPLE_CLIENT_ID:-}
+      GOTRUE_EXTERNAL_APPLE_SECRET: ${GOTRUE_EXTERNAL_APPLE_SECRET:-}
+      GOTRUE_EXTERNAL_APPLE_REDIRECT_URI: ${GOTRUE_EXTERNAL_URL:-http://localhost/auth/v1}/callback
+    ports:
+      - "${GOTRUE_PORT:-9999}:9999"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9999/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    init: true
+    restart: unless-stopped
+
   # Neo4j / DozerDB — social-graph DB. PUBLISHED (:7474 browser, :7687 Bolt) so the host API reaches it
   # at bolt://localhost:7687 (NEO4J_URI in .env). The scorer-worker container reaches it in-network at the
   # fixed bolt://neo4j:7687. Rides the `scorer` profile (scorer-worker hard-deps it).
@@ -274,6 +334,8 @@ services:
       DEMO_UPSTREAM: ${DEMO_UPSTREAM:-http://demo:80}
       # Grafana upstream (the `observability` profile). Front door serves it at /grafana/ (502s until up).
       GRAFANA_UPSTREAM: ${GRAFANA_UPSTREAM:-http://grafana:3000}
+      # GoTrue upstream (selfhost SSO). Lazily resolved — /auth/v1/* 502s until the profile is up.
+      GOTRUE_UPSTREAM: ${GOTRUE_UPSTREAM:-http://gotrue:9999}
       S3_BUCKET: ${S3_BUCKET:-agora}
       # Origin of your PUBLIC consumer app, for the admin's "Open in app" deep links. The proxy
       # entrypoint writes it into the BAKED SPA's /config.js — but in THIS dev compose the admin is
@@ -290,6 +352,9 @@ services:
       AGORA_ADMIN_SOCIAL_GRAPH_ENABLED: ${AGORA_ADMIN_SOCIAL_GRAPH_ENABLED:-}
       # UI guard only, NOT a security boundary — the server enforces via OPERATOR_RO_EMAILS.
       AGORA_ADMIN_SETTINGS_READ_ONLY: ${AGORA_ADMIN_SETTINGS_READ_ONLY:-}
+      # Social sign-in buttons on the admin login screen, e.g. "google,github,apple". Each
+      # provider must also be configured on the gotrue service. Unset → email+password only.
+      AGORA_ADMIN_OAUTH_PROVIDERS: ${AGORA_ADMIN_OAUTH_PROVIDERS:-}
       # ⚠️ PUBLIC: served to every visitor in /config.js. Point at the shared demo login only.
       # Optional Umami analytics for the admin app — BOTH required or tracking stays off. Browser-side
       # only: the admin posts events straight to your Umami instance; the API has no analytics code.
@@ -307,6 +372,9 @@ services:
     ports:
       - "${HTTP_PORT:-80}:80"
       - "${HTTPS_PORT:-443}:443"
+      # The internal GoTrue shim, published for DEV only: the api runs on the HOST here, so it needs
+      # a reachable SUPABASE_URL (http://localhost:9998). Container deploys keep it network-internal.
+      - "${GOTRUE_SHIM_PORT:-9998}:9998"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
