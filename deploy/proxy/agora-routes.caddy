@@ -87,8 +87,9 @@
 		redir {uri}/ 308
 	}
 
-	# handle_path strips /demo so the demo's own nginx sees /, /assets/*, /config.js (the bundle is built
-	# with Vite base=/demo/, so its asset refs already carry the prefix). Same origin as /v7 above → no
+	# handle_path strips /demo so the demo's own nginx sees /, /assets/*, /config.js. The bundle's asset
+	# refs are RELATIVE, so the image must be told its mount prefix (AGORA_DEMO_BASE_PATH=/demo/, set by
+	# the compose demo service) to rewrite index.html's <base href>. Same origin as /v7 above → no
 	# CORS; chat rides #2/#3. Lazily resolved, so /demo/* just 502s until `--profile demo` is up.
 	handle_path /demo/* {
 		reverse_proxy {$DEMO_UPSTREAM:http://demo:80}

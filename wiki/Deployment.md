@@ -75,7 +75,9 @@ A few deploy-significant knobs beyond the data plane:
   API's `SUPABASE_ANON_KEY`/`SUPABASE_SERVICE_ROLE_KEY` are **one** generated trio; the API reaches
   GoTrue only through the proxy image's internal `:9998` shim (`SUPABASE_URL=http://proxy:9998`),
   so the proxy image must be current; every front end (the admin included) goes in **both**
-  `GOTRUE_URI_ALLOW_LIST` and `OAUTH_REDIRECT_ALLOWED_ORIGINS`; GoTrue sends its own email
+  `GOTRUE_URI_ALLOW_LIST` and `OAUTH_REDIRECT_ALLOWED_ORIGINS` — and `GOTRUE_URI_ALLOW_LIST` needs
+  the **API** origin too, globbed `/**` (a `/*` entry matches one path segment, so GoTrue silently
+  drops the deeper `/v7/:projectId/oauth/callback` and dead-ends at `GOTRUE_SITE_URL`); GoTrue sends its own email
   (`GOTRUE_SMTP_*`, or `GOTRUE_MAILER_AUTOCONFIRM=true` for trials); Apple's client secret expires
   every ≤180 days; and existing projects stay on native auth until
   `migrate-native-to-gotrue.mjs` is run against a healthy GoTrue. Full checklist + troubleshooting

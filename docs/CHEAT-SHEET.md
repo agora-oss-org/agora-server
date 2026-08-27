@@ -115,7 +115,7 @@ Postgres works too — see the bootstrap scripts in [`docs/SELF-HOSTING.md`](SEL
 | `GOTRUE_JWT_SECRET` / `SUPABASE_ANON_KEY` / `SUPABASE_SERVICE_ROLE_KEY` | ✅ | **One** run of `node apps/api/scripts/gen-gotrue-keys.mjs` — the trio must match. |
 | `SUPABASE_URL` | ✅ | `http://proxy:9998` — the proxy's internal path-stripping shim (never GoTrue directly, never published). |
 | `SUPABASE_PUBLIC_AUTH_URL` / `GOTRUE_EXTERNAL_URL` / `GOTRUE_SITE_URL` | ✅ | Your public origin (`+ /auth/v1` for `GOTRUE_EXTERNAL_URL`). Providers redirect to `GOTRUE_EXTERNAL_URL/callback`. |
-| `GOTRUE_URI_ALLOW_LIST` / `OAUTH_REDIRECT_ALLOWED_ORIGINS` | ✅ | Every front end incl. the admin — GoTrue's hop and the API's hop, respectively. |
+| `GOTRUE_URI_ALLOW_LIST` / `OAUTH_REDIRECT_ALLOWED_ORIGINS` | ✅ | Every front end incl. the admin — GoTrue's hop and the API's hop, respectively. `GOTRUE_URI_ALLOW_LIST` also needs the **API** origin and `/**` globs (`/*` stops at one path segment → GoTrue silently falls back to `GOTRUE_SITE_URL`). |
 | `GOTRUE_MAILER_AUTOCONFIRM` or `GOTRUE_SMTP_*` | ✅ | `true` = no mail (trials); otherwise real SMTP — GoTrue sends its own, `POSTMARK_*` is native-only. |
 | `GOTRUE_EXTERNAL_<GOOGLE\|GITHUB\|APPLE>_*` + `AGORA_ADMIN_OAUTH_PROVIDERS` | — | Per provider: enabled + client id + secret; the admin var lists which buttons to draw. Apple's secret: `gen-apple-client-secret.mjs`, ≤180 days. |
 | `S3_BUCKET` | ◻️ | `agora` (default; auto-created on first upload). |

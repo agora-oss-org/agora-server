@@ -270,7 +270,8 @@ boot). It is reached ONLY through the Caddy front door, on two routes:
 
 2. Set the public URLs: `GOTRUE_EXTERNAL_URL=https://<your.domain>/auth/v1` (what OAuth providers
    redirect back to), `GOTRUE_SITE_URL` (your front-end origin), `GOTRUE_URI_ALLOW_LIST`
-   (comma-separated globs of every origin your apps return to after sign-in), and
+   (comma-separated globs of every origin your apps return to after sign-in — **including the API's
+   own origin**, and written with `/**`, see the trap below), and
    `SUPABASE_PUBLIC_AUTH_URL=https://<your.domain>`.
 
 3. Email: set the `GOTRUE_SMTP_*` block (host/port/user/pass/sender) for real confirmation +
@@ -383,6 +384,31 @@ order they bite:
    `OAUTH_REDIRECT_ALLOWED_ORIGINS` (the API's hop). The admin SPA counts: its login button sends
    `redirectAfterAuth=<admin origin>/login`, and an origin missing from the API allowlist fails with
    `400 oauth/redirect-not-allowed`.
+
+   ⚠️ **`GOTRUE_URI_ALLOW_LIST` needs `/**`, not `/*`, and must include the API origin.** GoTrue
+   compiles each entry as a glob with `.` and `/` as separators, so `https://api.example.org/*`
+   matches only a ONE-segment path — and GoTrue's first hop is
+   `https://api.example.org/v7/:projectId/oauth/callback?aid=…`, which is four. A non-matching
+   `redirect_to` is **silently discarded** (no error, no log): GoTrue falls back to
+   `GOTRUE_SITE_URL`, so the browser lands on your front-end root with a stray `?code=…` and the
+   sign-in never completes. Paths on `GOTRUE_SITE_URL`'s own host bypass the glob entirely, which is
+   why a single-origin deploy (`http://localhost`) works and split `api.` / `admin.` hostnames don't.
+   Verify without a browser — decode the `state` JWT the authorize hop returns and check `referrer`
+   is *your* URL, not `site_url`:
+
+   ```bash
+   RT='https://api.example.org/v7/<projectId>/oauth/callback?aid=probe'
+   ENC=$(python3 -c 'import sys,urllib.parse; print(urllib.parse.quote(sys.argv[1],safe=""))' "$RT")
+   LOC=$(curl -sD- -o /dev/null \
+     "https://api.example.org/auth/v1/authorize?provider=google&redirect_to=$ENC" \
+     | tr -d '\r' | sed -n 's/^[Ll]ocation: //p')
+   python3 -c 'import sys,urllib.parse,base64,json; \
+     t=urllib.parse.parse_qs(urllib.parse.urlparse(sys.argv[1]).query)["state"][0].split(".")[1]; \
+     print(json.loads(base64.urlsafe_b64decode(t + "=" * (-len(t) % 4)))["referrer"])' "$LOC"
+   # → prints the redirect GoTrue actually kept. Must equal $RT; if it prints GOTRUE_SITE_URL
+   #   instead, the glob rejected your redirect_to and every SSO sign-in will dead-end.
+   ```
+
 6. **Email is GoTrue's, not the API's.** Supabase-provider projects never touch `POSTMARK_*` /
    `AUTH_EMAIL_*`; GoTrue sends its own via `GOTRUE_SMTP_*`. `GOTRUE_MAILER_AUTOCONFIRM=true` is the
    no-mail escape hatch for trials (no password-reset-by-email). Postmark works as plain SMTP —
