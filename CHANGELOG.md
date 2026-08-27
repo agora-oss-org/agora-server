@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`bootstrap-gotrue-role.sql` — GoTrue's database role on a Postgres that isn't `supabase/postgres`.**
+  `deploy/db/init-auth-role.sql` only covers the `supabase/postgres` image (whose `supabase_auth_admin`
+  role pre-exists). On a plain Postgres the naive `CREATE ROLE` + `GRANT` still crash-loops GoTrue
+  twice (`permission denied for schema public` — its `schema_migrations` table follows `search_path`;
+  `must be owner of function uid` — it ships its own `auth.uid()`). The new idempotent script pins
+  `search_path`, transfers `auth` schema + function ownership, and takes the password as a psql
+  variable; verified on `postgres:17` (16 tables in `auth`, nothing in `public`, RLS's `auth.uid()`
+  still callable). `docs/SELF-HOSTING.md` gained a "GoTrue on your own Postgres" section, a
+  production deployment checklist, and a troubleshooting table of real failures; `docs/SECURITY.md`
+  gained the GoTrue/SSO posture (§10); the stale "OAuth is unavailable without Supabase" statements in
+  SELF-HOSTING and the cheat-sheet's `DEFAULT_AUTH_PROVIDER=native` default were corrected.
+
 ## [0.23.0] - 2026-08-25
 
 ### Added

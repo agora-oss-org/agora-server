@@ -1,8 +1,8 @@
 # Self-hosting Agora without Supabase
 
 Agora ships pointed at Supabase by default, but the same `@agora/api` image runs **fully
-self-contained** — local Postgres + local object storage + in-API password auth — with no Supabase
-account at all. Supabase is one of two interchangeable backends, not a hard dependency.
+self-contained** — local Postgres + local object storage + a bundled Supabase Auth (GoTrue) for
+passwords **and** social sign-in — with no Supabase account at all. Supabase is one of two interchangeable backends, not a hard dependency.
 
 > ⚠️ **"Local Postgres" means the `supabase/postgres` image — not a vanilla Postgres.** Self-hosting
 > drops the Supabase **cloud** (hosted DB / Auth / Storage); it does **not** drop the Supabase Postgres
@@ -20,7 +20,7 @@ Three things are pluggable, each chosen by config (nothing is replaced — flip 
 |----------|-------------------------------------|----------------------------------------------|------------------------|
 | Database | Supabase Postgres (pooler `:6543`)  | `supabase/postgres` container (`db`)         | `DATABASE_URL`         |
 | Storage  | Supabase Storage public bucket      | MinIO container (`minio`), S3 API            | `STORAGE_PROVIDER=s3`  |
-| Auth     | Supabase Auth (passwords + OAuth)   | Native in-API passwords (`auth_provider`)    | `DEFAULT_AUTH_PROVIDER`|
+| Auth     | Supabase Auth (passwords + OAuth)   | Bundled **GoTrue** (passwords + Google/Apple/GitHub SSO), or native in-API passwords | `DEFAULT_AUTH_PROVIDER` + `projects.auth_provider` |
 
 The `selfhost` compose profile is one of the two data planes: it brings up the API itself plus the two
 local backends (you do NOT pair it with `full` to get the API). It's opt-in — a Supabase-backed deploy
@@ -358,6 +358,61 @@ the commented "SSO in dev" block in `.env.dev.example` for the full var list (ge
 uncomment, `docker compose -f docker-compose.dev.yml --profile selfhost up -d`). Dev still **defaults**
 to native auth — this is opt-in, not a change to the zero-infra baseline.
 
+**Deploying GoTrue to production — checklist.** The compose files wire everything for a single-box
+deploy; on anything else (Swarm, Kubernetes, a hand-run image) these are the load-bearing facts, in the
+order they bite:
+
+1. **Database role first.** `supabase/postgres` → the `init-auth-role.sql` init script covers a *fresh*
+   volume; an *existing* volume needs the one-time `ALTER ROLE` above. Any other Postgres → run
+   [`bootstrap-gotrue-role.sql`](#3-gotrue-on-your-own-postgres-sso-without-the-supabasepostgres-image)
+   before the first start. GoTrue **crash-loops until this exists** — it self-migrates at boot.
+2. **One key trio, two services.** `GOTRUE_JWT_SECRET` (on `gotrue`) and `SUPABASE_ANON_KEY` /
+   `SUPABASE_SERVICE_ROLE_KEY` (on the API) come from **one** run of `gen-gotrue-keys.mjs`. Mix
+   generations and every token is rejected. `SUPABASE_SERVICE_ROLE_KEY` is a root credential for the
+   auth store — secrets store only.
+3. **The proxy image must carry the `:9998` shim.** `SUPABASE_URL` cannot point at GoTrue directly:
+   supabase-js appends `/auth/v1/*` and GoTrue serves at its root, so `http://gotrue:9999/auth/v1/token`
+   404s. It must hit the path-stripping listener the `agora-proxy` image exposes internally on `:9998`
+   — an image built from a release that predates the GoTrue work has no such listener. Never publish
+   that port.
+4. **Four URL vars, all your public origin.** `GOTRUE_EXTERNAL_URL` (= what every provider console gets
+   as the redirect URI, + `/callback`), `GOTRUE_SITE_URL`, `GOTRUE_URI_ALLOW_LIST`, and the API's
+   `SUPABASE_PUBLIC_AUTH_URL`. Forget the last one and the social buttons send browsers to your
+   *internal* proxy name.
+5. **Every front end in BOTH allowlists** — `GOTRUE_URI_ALLOW_LIST` (GoTrue's hop) *and*
+   `OAUTH_REDIRECT_ALLOWED_ORIGINS` (the API's hop). The admin SPA counts: its login button sends
+   `redirectAfterAuth=<admin origin>/login`, and an origin missing from the API allowlist fails with
+   `400 oauth/redirect-not-allowed`.
+6. **Email is GoTrue's, not the API's.** Supabase-provider projects never touch `POSTMARK_*` /
+   `AUTH_EMAIL_*`; GoTrue sends its own via `GOTRUE_SMTP_*`. `GOTRUE_MAILER_AUTOCONFIRM=true` is the
+   no-mail escape hatch for trials (no password-reset-by-email). Postmark works as plain SMTP —
+   `smtp.postmarkapp.com:587`, server token as **both** user and password.
+7. **Register the real callback with each provider** — `<GOTRUE_EXTERNAL_URL>/callback`. Apple
+   additionally refuses `localhost` and any non-HTTPS origin, so Apple can only ever be verified on a
+   real deployment; Google accepts `http://localhost/...` alongside the production URI on one client.
+8. **Apple's secret expires.** `GOTRUE_EXTERNAL_APPLE_SECRET` is a signed JWT capped at 180 days —
+   `gen-apple-client-secret.mjs` prints the expiry; rotate it before then or Apple sign-in fails silently.
+9. **Existing projects stay native until migrated.** `DEFAULT_AUTH_PROVIDER` only stamps *new*
+   projects; the running API reads `projects.auth_provider`. Deploy GoTrue, confirm it is healthy
+   (`GET /auth/v1/health` through the front door), **then** run `migrate-native-to-gotrue.mjs` — it calls
+   GoTrue's admin API, so GoTrue must be up first. From a workstation, point `SUPABASE_URL` at the
+   **public** origin for that run (your laptop can't resolve the internal proxy name).
+
+**Troubleshooting.** Every entry below was hit for real while building this.
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `gotrue` crash-loops: `password authentication failed for user "supabase_auth_admin"` … `User … has no password assigned` | `supabase/postgres` volume initialized before the init script existed | the one-time `ALTER ROLE … PASSWORD` as `supabase_admin` (setup step 4), then `restart gotrue` |
+| same message on your **own** Postgres | the role does not exist / lacks grants | `bootstrap-gotrue-role.sql` (§3) |
+| `permission denied for schema public` / `must be owner of function uid` | plain Postgres, naive grants | `bootstrap-gotrue-role.sql` — it pins `search_path` and moves ownership |
+| `POST /oauth/authorize` returns an `authorizationUrl` on `http://proxy:9998/…` | `SUPABASE_PUBLIC_AUTH_URL` unset | set it to the public origin |
+| `400 oauth/redirect-not-allowed` | the front end's origin is not in `OAUTH_REDIRECT_ALLOWED_ORIGINS` | add it (or `PUBLIC_BASE_URL` for a single-origin deploy) |
+| `503 oauth/redirect-not-configured` | neither `OAUTH_REDIRECT_ALLOWED_ORIGINS` nor `PUBLIC_BASE_URL` set | set one — the guard fails closed by design |
+| GoTrue: `Unsupported provider: provider is not enabled` | the button is on (`AGORA_ADMIN_OAUTH_PROVIDERS`) but `GOTRUE_EXTERNAL_<P>_ENABLED` is not | enable + configure the provider on `gotrue` |
+| Google: `redirect_uri_mismatch` | the console lacks `<GOTRUE_EXTERNAL_URL>/callback` | add it to the OAuth client (propagation can take minutes) |
+| a var change "doesn't take" after `docker compose restart` | `restart` never re-reads `.env`; and a direnv-exported shell var **overrides** `.env` during interpolation | `up -d --force-recreate <svc>`; run compose with `env -u VAR …` or a clean env |
+| `pnpm genesis` / seed scripts: `getaddrinfo ENOTFOUND db` | `.env` holds container hostnames, the script runs on the host | prefix the run with `DATABASE_URL=…@localhost:5432/… SUPABASE_URL=http://localhost` |
+
 ## Running on your own / non-Supabase Postgres
 
 The `selfhost` profile pins `supabase/postgres` so you don't have to think about any of this. But the
@@ -394,8 +449,47 @@ create schema if not exists auth;
 create or replace function auth.uid() returns uuid language sql stable as $$ select null::uuid $$;
 ```
 
-That's the whole surface — no `auth.users` table or FK is required (`profiles.auth_user_id` is a plain
-uuid the app links). With `DEFAULT_AUTH_PROVIDER=native`, Supabase Auth/GoTrue isn't used at all.
+That's the whole surface for the **API** — no `auth.users` table or FK is required
+(`profiles.auth_user_id` is a plain uuid the app links). The copy-paste version of this bootstrap (plus
+the extension schema layout the migrations expect) is
+[`apps/api/scripts/bootstrap-supabase-compat.sql`](../apps/api/scripts/bootstrap-supabase-compat.sql).
+With native auth that is everything; with GoTrue there is one more step.
+
+### 3. GoTrue on your own Postgres (SSO without the `supabase/postgres` image)
+
+The bundled GoTrue connects as **`supabase_auth_admin`** and self-migrates its tables into the `auth`
+schema at boot. The `supabase/postgres` image ships that role ready-made, so the `selfhost` profile only
+has to give it a password ([`deploy/db/init-auth-role.sql`](../deploy/db/init-auth-role.sql), a
+first-boot init script). **A plain Postgres has no such role**, and — verified against `postgres:17`
+seeded exactly like the bootstrap above — the obvious `CREATE ROLE` + `GRANT ON SCHEMA auth` is *not*
+enough. GoTrue dies twice on the way:
+
+| GoTrue log line | Cause | Fix |
+|---|---|---|
+| `permission denied for schema public` | GoTrue creates its `schema_migrations` bookkeeping table wherever `search_path` points — `public` by default | `ALTER ROLE supabase_auth_admin SET search_path TO auth` |
+| `must be owner of function uid` | GoTrue's `00_init_auth_schema` ships its **own** `auth.uid()`; `CREATE OR REPLACE` needs ownership of the stub you created in §2 | make the role own the `auth` schema **and** every function already in it |
+
+Run the packaged script **once, as a superuser, after §2 and before the first `gotrue` start** — it
+does all of the above idempotently and takes the password as a psql variable (never on the command
+line):
+
+```bash
+psql "postgres://<superuser>@<host>/<agora-db>" -v ON_ERROR_STOP=1 \
+  -v gotrue_password='<strong password>' -f apps/api/scripts/bootstrap-gotrue-role.sql
+```
+
+then point the service at it:
+
+```bash
+GOTRUE_DB_DATABASE_URL=postgres://supabase_auth_admin:<that password>@<host>:5432/<agora-db>
+```
+
+(that is what the compose files derive from `POSTGRES_PASSWORD` — on your own Postgres you set it
+directly, and mirror whatever `sslmode` your `DATABASE_URL` carries). Verified outcome: GoTrue creates
+its 16 tables in `auth`, **nothing** lands in `public`, and the app role can still execute `auth.uid()`
+— the RLS policies from migration `0017` keep working. Reusing the app's own DB role for GoTrue instead
+also boots, but then GoTrue holds full read/write on every application table; the dedicated role is
+the least-privilege default.
 
 ### The one real gotcha: pgmq on *managed* Postgres
 
@@ -443,9 +537,11 @@ settings or SQL:
 update projects set auth_provider = 'native' where id = '<project-id>';
 ```
 
-**OAuth (social login) is Supabase-brokered** and therefore unavailable in a Supabase-less deploy:
-`/oauth/authorize` and `/oauth/callback` return `oauth/not-configured`. Native email/password is the
-full self-hosted auth surface.
+**OAuth (social login) is brokered by Supabase Auth** — either the cloud service or the bundled
+[GoTrue](#sso--social-login-bundled-gotrue) — so it is available to any project whose `auth_provider`
+is `supabase`. `/oauth/authorize` returns `oauth/not-configured` only when no `SUPABASE_URL` /
+`SUPABASE_ANON_KEY` is set at all; a *native*-provider project has no social login by design (native
+is the email/password-only backend).
 
 **Operator (god-view) is an env allowlist, not a DB role.** `OPERATOR_EMAILS` / `OPERATOR_USER_IDS`
 (`lib/operators.ts`) are matched at token-mint time and stamped as `isOperator` in the access JWT — a
@@ -488,8 +584,13 @@ self-hosted means migrating the data, which is out of scope for the seam:
 
 - **Files** already in Supabase Storage keep their old absolute URLs in `files.original_path`; new
   uploads go to MinIO. Copy the objects + rewrite the URLs if you need the old media on the new store.
-- **Auth users** in Supabase Auth aren't in the native `auth_credentials` table; switching
-  `auth_provider` to `native` doesn't move passwords. Plan a migration / re-registration.
+- **Auth users** live in different stores per backend and flipping `projects.auth_provider` moves
+  nothing by itself. **Native → GoTrue is scripted**:
+  [`migrate-native-to-gotrue.mjs`](#sso--social-login-bundled-gotrue) imports every `auth_credentials`
+  row into `auth.users` **preserving the argon2id password hash** (users keep their passwords), remaps
+  `profiles.auth_user_id`, then flips the column; rollback is flipping it back (native rows are never
+  deleted). **GoTrue/Supabase → native** has no script: `auth.users` password hashes are not exported
+  to `auth_credentials` — plan a re-registration or a password-reset campaign.
 
 ## Security posture
 

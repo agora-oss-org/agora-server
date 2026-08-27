@@ -68,6 +68,18 @@ A few deploy-significant knobs beyond the data plane:
   against it (open-redirect guard), so a multi-front-end deploy sends each user's link back to the site
   they signed up on. Native transactional email goes out over **Postmark** (`POSTMARK_*`);
   Supabase-backed auth brokers its own emails and is unaffected.
+- **Bundled GoTrue (SSO)** — the selfhost data plane runs Supabase Auth as its own container. Ops
+  facts that bite: its DB role must exist *before* first boot (`supabase/postgres` → the
+  `deploy/db/init-auth-role.sql` first-boot script, existing volumes need a one-time `ALTER ROLE`;
+  any other Postgres → `apps/api/scripts/bootstrap-gotrue-role.sql`); `GOTRUE_JWT_SECRET` and the
+  API's `SUPABASE_ANON_KEY`/`SUPABASE_SERVICE_ROLE_KEY` are **one** generated trio; the API reaches
+  GoTrue only through the proxy image's internal `:9998` shim (`SUPABASE_URL=http://proxy:9998`),
+  so the proxy image must be current; every front end (the admin included) goes in **both**
+  `GOTRUE_URI_ALLOW_LIST` and `OAUTH_REDIRECT_ALLOWED_ORIGINS`; GoTrue sends its own email
+  (`GOTRUE_SMTP_*`, or `GOTRUE_MAILER_AUTOCONFIRM=true` for trials); Apple's client secret expires
+  every ≤180 days; and existing projects stay on native auth until
+  `migrate-native-to-gotrue.mjs` is run against a healthy GoTrue. Full checklist + troubleshooting
+  table: [`docs/SELF-HOSTING.md`](https://github.com/agora-oss-org/agora-server/blob/root/docs/SELF-HOSTING.md#sso--social-login-bundled-gotrue).
 - **Push notifications** — set the `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` trio to
   enable Web Push dispatch (unset → push is a no-op); FCM/APNs providers are credential-gated. See
   [[API & Contract|API-Contract]].

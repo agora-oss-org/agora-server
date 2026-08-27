@@ -132,6 +132,35 @@ image current.
 
 ---
 
+### 10. Self-hosted auth (GoTrue) and social sign-in
+
+The `selfhost` profile runs Supabase Auth (GoTrue) as its own container. Its posture, and the knobs
+that keep it that way:
+
+- **`/auth/v1/*` is public on purpose** — OAuth providers redirect to `/auth/v1/callback` and
+  confirmation emails link to `/auth/v1/verify`. That is the same exposure as cloud Supabase. The
+  admin surface under `/auth/v1/admin/*` is gated by GoTrue itself: it accepts only a JWT whose `role`
+  is `service_role`, verified against `GOTRUE_JWT_SECRET`.
+- **`SUPABASE_SERVICE_ROLE_KEY` is a root credential** for the identity store (it can mint, read and
+  delete any user). It belongs on the API service only, from a secrets store — never in a client, a
+  `/config.js`, or a log. The `anon` key is deliberately low-privilege and is the one supabase-js uses
+  for password sign-in.
+- **The `:9998` shim is internal-only.** The proxy exposes a second, unauthenticated path-stripping
+  listener so the API can reach GoTrue; it must never be published to the host or a public network.
+  In dev compose it *is* published (the API runs on the host there) — a dev-only concession.
+- **Redirect targets are allowlisted twice.** `/oauth/callback` hands the browser a live Agora session
+  in the URL fragment, so `redirectAfterAuth` is validated on `/oauth/authorize` *and* re-validated on
+  the callback against `OAUTH_REDIRECT_ALLOWED_ORIGINS` (falling back to `PUBLIC_BASE_URL`; failing
+  closed with `503` when neither is set). GoTrue's own `GOTRUE_URI_ALLOW_LIST` guards its hop. Keep both
+  lists to exact origins you control.
+- **Provider secrets rotate.** Apple's client secret is a ≤180-day JWT
+  (`gen-apple-client-secret.mjs`); treat its expiry as an operational deadline. Google/GitHub secrets
+  are long-lived — revoke and regenerate from the provider console if they leak.
+- **GoTrue's database role is least-privilege by design** — `supabase_auth_admin` owns only the
+  `auth` schema. On a non-`supabase/postgres` database use
+  `apps/api/scripts/bootstrap-gotrue-role.sql` rather than reusing the application's DB role, which
+  would hand GoTrue read/write on every table. See `docs/SELF-HOSTING.md`.
+
 ## 🧭 Security model
 
 How Agora is *designed* to be secure — useful context for both operators and reviewers.

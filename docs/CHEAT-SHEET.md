@@ -95,11 +95,12 @@ server boots without these, but identity + uploads stay off until set.
 
 ### 2.2 — Data plane B: **Self-host** (`--profile selfhost`)
 
-Runs the same API on a local Postgres + MinIO — **no Supabase cloud/account** (no hosted Auth, Storage,
-or DB). The local Postgres is still the **`supabase/postgres`** image, though (the profile pins
-`15.8.1.060`) — **not** a vanilla Postgres, since the migrations need its bundled pgvector/PostGIS/pgmq +
-the `auth` roles. So "self-hosted" drops the Supabase *service*, not the Supabase Postgres
-*distribution*. See [`docs/SELF-HOSTING.md`](SELF-HOSTING.md).
+Runs the same API on a local Postgres + MinIO + a bundled **GoTrue** (Supabase Auth as a container:
+passwords **and** Google/Apple/GitHub sign-in) — **no Supabase cloud/account**. The local Postgres is
+still the **`supabase/postgres`** image, though (the profile pins `15.8.1.060`) — **not** a vanilla
+Postgres, since the migrations need its bundled pgvector/PostGIS/pgmq + the `auth` roles. So
+"self-hosted" drops the Supabase *service*, not the Supabase Postgres *distribution*. (Your own
+Postgres works too — see the bootstrap scripts in [`docs/SELF-HOSTING.md`](SELF-HOSTING.md).)
 
 | Var | | Value & where to get it |
 |---|---|---|
@@ -110,6 +111,13 @@ the `auth` roles. So "self-hosted" drops the Supabase *service*, not the Supabas
 | `S3_ENDPOINT` | ✅ | `http://minio:9000` (internal compose DNS). |
 | `S3_PUBLIC_URL` | ✅ | Browser-reachable base for public objects — the Caddy `/media` mount, e.g. `https://your-host/media`. |
 | `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` | ✅ | = `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD`. |
+| `DEFAULT_AUTH_PROVIDER` | ✅ | `supabase` — the bundled GoTrue (the template default). `native` = in-API passwords only, no GoTrue container, no SSO. |
+| `GOTRUE_JWT_SECRET` / `SUPABASE_ANON_KEY` / `SUPABASE_SERVICE_ROLE_KEY` | ✅ | **One** run of `node apps/api/scripts/gen-gotrue-keys.mjs` — the trio must match. |
+| `SUPABASE_URL` | ✅ | `http://proxy:9998` — the proxy's internal path-stripping shim (never GoTrue directly, never published). |
+| `SUPABASE_PUBLIC_AUTH_URL` / `GOTRUE_EXTERNAL_URL` / `GOTRUE_SITE_URL` | ✅ | Your public origin (`+ /auth/v1` for `GOTRUE_EXTERNAL_URL`). Providers redirect to `GOTRUE_EXTERNAL_URL/callback`. |
+| `GOTRUE_URI_ALLOW_LIST` / `OAUTH_REDIRECT_ALLOWED_ORIGINS` | ✅ | Every front end incl. the admin — GoTrue's hop and the API's hop, respectively. |
+| `GOTRUE_MAILER_AUTOCONFIRM` or `GOTRUE_SMTP_*` | ✅ | `true` = no mail (trials); otherwise real SMTP — GoTrue sends its own, `POSTMARK_*` is native-only. |
+| `GOTRUE_EXTERNAL_<GOOGLE\|GITHUB\|APPLE>_*` + `AGORA_ADMIN_OAUTH_PROVIDERS` | — | Per provider: enabled + client id + secret; the admin var lists which buttons to draw. Apple's secret: `gen-apple-client-secret.mjs`, ≤180 days. |
 | `S3_BUCKET` | ◻️ | `agora` (default; auto-created on first upload). |
 | `DEFAULT_AUTH_PROVIDER` | ✅ | Set to `native` (in-API passwords, no Supabase Auth). |
 
@@ -194,7 +202,7 @@ templates are canonical, so don't hand-assemble an `.env`.
 
 **Local Postgres (default).** Fill the placeholders; **`POSTGRES_PASSWORD` must equal the password inside
 `DATABASE_URL`**, and **`MINIO_ROOT_PASSWORD` must equal `S3_SECRET_ACCESS_KEY`**. The template already sets
-`STORAGE_PROVIDER=s3` + `DEFAULT_AUTH_PROVIDER=native`. Bring it up with `--profile selfhost`.
+`STORAGE_PROVIDER=s3` + `DEFAULT_AUTH_PROVIDER=supabase` (the bundled GoTrue — generate its key trio; native auth is the commented alternative). Bring it up with `--profile selfhost`.
 
 **Cloud Supabase (switch).** In the template, comment the LOCAL data-plane block and uncomment the CLOUD
 block (`DATABASE_URL` pooler `:6543` + `SUPABASE_URL`/`_ANON_KEY`/`_SERVICE_ROLE_KEY` +
