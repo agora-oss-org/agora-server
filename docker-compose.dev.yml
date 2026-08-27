@@ -418,6 +418,13 @@ services:
     environment:
       # Browser-facing — same-origin through Caddy → host API. Override for a non-localhost front door.
       AGORA_DEMO_API_BASE_URL: ${AGORA_DEMO_API_BASE_URL:-http://localhost/v7}
+      # See docker-compose.yml's demo service for what each of these does. BASE_PATH must match the
+      # front door's handle_path (/demo/) or the emailed-link pages render blank; EMAIL_REDIRECT_TO
+      # must be overridden because the image defaults it to the PUBLIC demo origin.
+      AGORA_DEMO_PROJECT_ID: ${AGORA_DEMO_PROJECT_ID:-11111111-1111-1111-1111-111111111111}
+      AGORA_DEMO_BASE_PATH: ${AGORA_DEMO_BASE_PATH:-/demo/}
+      AGORA_DEMO_EMAIL_REDIRECT_TO: ${AGORA_DEMO_EMAIL_REDIRECT_TO:-http://localhost/demo/}
+      AGORA_DEMO_GIPHY_API_KEY: ${AGORA_DEMO_GIPHY_API_KEY:-}
     init: true
     restart: unless-stopped
 

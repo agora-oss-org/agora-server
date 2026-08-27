@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **The compose `demo` service passed only 7 of the demo image's 11 runtime knobs.** Three of the four
+  it dropped default to values that are wrong for any self-hosted deployment:
+  `AGORA_DEMO_BASE_PATH` (image default `/`, but the front door serves the demo under `/demo/` via
+  `handle_path` — the bundle's asset refs are relative, so `/auth/verify-email` and
+  `/auth/reset-password`, the two pages an emailed link navigates to directly, resolved their assets
+  one level deep and rendered blank), `AGORA_DEMO_EMAIL_REDIRECT_TO` (image default is the **public**
+  demo origin, so a self-hoster's sign-up/reset emails pointed off their own deployment), and
+  `AGORA_DEMO_PROJECT_ID` (image default is the genesis fixture id, unsettable from compose). The
+  fourth, `AGORA_DEMO_GIPHY_API_KEY`, simply had no way in. All four are now wired in
+  `docker-compose.yml`, `docker-compose.prod.yml` and `docker-compose.dev.yml` and templated in the
+  three `.env.*.example` files. A stale comment in `deploy/proxy/agora-routes.caddy` claiming the
+  bundle is built with `Vite base=/demo/` was corrected — it is relative, which is why the mount
+  prefix has to be handed to the image.
+- **`GOTRUE_URI_ALLOW_LIST` templates used `/*`, which silently broke SSO on split hostnames.** GoTrue
+  compiles each allow-list entry as a glob with `.` and `/` as separators, so `https://api.example/*`
+  matches a ONE-segment path — never the API's own `/v7/:projectId/oauth/callback?aid=…` first hop. A
+  non-matching `redirect_to` is discarded without an error or log line: GoTrue substitutes
+  `GOTRUE_SITE_URL`, the browser lands on the front-end root with a stray `?code=`, and sign-in
+  dead-ends. Paths on `GOTRUE_SITE_URL`'s own host bypass the glob, so single-origin deployments
+  (`http://localhost`) never saw it while split `api.` / `admin.` hostnames always fail. All three
+  `.env.*.example` templates now ship `/**` globs and list the API origin alongside the front ends;
+  `docs/SELF-HOSTING.md` (with a browser-free `state`-JWT verification snippet), `docs/CHEAT-SHEET.md`
+  and `wiki/Deployment.md` document the trap.
+
 ### Added
 - **`bootstrap-gotrue-role.sql` — GoTrue's database role on a Postgres that isn't `supabase/postgres`.**
   `deploy/db/init-auth-role.sql` only covers the `supabase/postgres` image (whose `supabase_auth_admin`
