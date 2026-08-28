@@ -19,3 +19,5 @@ deploy/proxy/certs/*
 !deploy/proxy/certs/.gitkeep
 
 # docs/superpowers/
+# Local scratch — deployment config dumps etc. Never tracked.
+tmp/
